@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IMAP API - Texas Fortress (Rust)</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+            background-color: #f9f9f9;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #2980b9;
+            margin-top: 30px;
+        }
+        pre {
+            background-color: #ecf0f1;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            position: relative;
+            font-family: 'Courier New', Courier, monospace;
+            white-space: pre-wrap;       /* Since CSS 2.1 */
+            white-space: -moz-pre-wrap;  /* Mozilla, since 1999 */
+            white-space: -pre-wrap;      /* Opera 4-6 */
+            white-space: -o-pre-wrap;    /* Opera 7 */
+            word-wrap: break-word;       /* Internet Explorer 5.5+ */
+        }
+        code {
+            color: #e74c3c;
+        }
+        .endpoint {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .method {
+            font-weight: bold;
+            color: #8e44ad;
+            margin-right: 10px;
+        }
+        .path {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #f0f0f0;
+            padding: 2px 4px;
+            border-radius: 3px;
+        }
+        .response, .request-body {
+            margin-left: 20px;
+        }
+        .workflow {
+            background-color: #e8f4f8;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+        a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+    <h1>IMAP API - Texas Fortress (Rust Implementation)</h1>
+    <p>Welcome to the Rust implementation of the IMAP API! This service provides access to your email mailbox with endpoints to list folders, emails, manage folders, and manage emails. Built with ❤️ by Texas Fortress AI.</p>
+    <p>For a JSON representation of these endpoints, visit <a href="/api-docs">/api-docs</a>.</p>
+
+    <h2>Endpoints</h2>
+
+    <!-- Folder Endpoints -->
+    <div class="endpoint">
+        <h3><span class="method">GET</span><span class="path">/folders</span></h3>
+        <p>Lists all folders in the IMAP mailbox.</p>
+        <pre><code>curl http://localhost:{{ port }}/folders</code></pre>
+        <div class="response">
+            <strong>Success Response (200 OK):</strong><br>
+            <pre>{"folders": ["INBOX", "Sent", "Trash", ...]}</pre>
+            <strong>Error Response (500 Internal Server Error):</strong><br>
+            <pre>{"error": "Failed to list folders"}</pre>
+        </div>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method">POST</span><span class="path">/folders</span></h3>
+        <p>Creates a new folder.</p>
+        <pre><code>curl -X POST -H "Content-Type: application/json" -d '{"name": "MyNewFolder"}' http://localhost:{{ port }}/folders</code></pre>
+        <div class="request-body">
+            <strong>Request Body:</strong><br>
+            <pre>{"name": "string (required)"}</pre>
+        </div>
+        <div class="response">
+            <strong>Success Response (201 Created):</strong><br>
+            <pre>{"message": "Folder created successfully", "name": "MyNewFolder"}</pre>
+            <strong>Error Response (400 Bad Request):</strong><br>
+            <pre>{"error": "Failed to create folder: reason"}</pre>
+        </div>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method">DELETE</span><span class="path">/folders/{folder}</span></h3>
+        <p>Deletes an empty folder.</p>
+        <pre><code>curl -X DELETE http://localhost:{{ port }}/folders/MyEmptyFolder</code></pre>
+        <div class="response">
+            <strong>Success Response (200 OK):</strong><br>
+            <pre>{"message": "Folder deleted successfully"}</pre>
+            <strong>Error Response (400 Bad Request):</strong><br>
+            <pre>{"error": "Folder not empty", "message_count": N}</pre>
+            <pre>{"error": "Failed to delete folder: reason"}</pre>
+            <strong>Error Response (404 Not Found):</strong><br>
+            <pre>{"error": "Folder 'MyEmptyFolder' not found"}</pre>
+        </div>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method">PUT</span><span class="path">/folders/{folder}/rename</span></h3>
+        <p>Renames a folder.</p>
+        <pre><code>curl -X PUT -H "Content-Type: application/json" -d '{"new_name": "RenamedFolder"}' http://localhost:{{ port }}/folders/OldFolder/rename</code></pre>
+        <div class="request-body">
+            <strong>Request Body:</strong><br>
+            <pre>{"new_name": "string (required)"}</pre>
+        </div>
+        <div class="response">
+            <strong>Success Response (200 OK):</strong><br>
+            <pre>{"message": "Folder renamed successfully", "old_name": "OldFolder", "new_name": "RenamedFolder"}</pre>
+            <strong>Error Response (400 Bad Request):</strong><br>
+            <pre>{"error": "Failed to rename folder: reason"}</pre>
+            <strong>Error Response (404 Not Found):</strong><br>
+            <pre>{"error": "Folder 'OldFolder' not found"}</pre>
+        </div>
+    </div>
+
+     <div class="endpoint">
+        <h3><span class="method">GET</span><span class="path">/folders/{folder}/stats</span></h3>
+        <p>Retrieves statistics for a specific folder.</p>
+        <pre><code>curl http://localhost:{{ port }}/folders/INBOX/stats</code></pre>
+        <div class="response">
+            <strong>Success Response (200 OK):</strong><br>
+            <pre>{
+  "name": "INBOX",
+  "total_messages": 150,
+  "unread_messages": 5,
+  "size_bytes": 1234567,
+  "first_message_date": "2023-01-10T10:00:00Z",
+  "last_message_date": "2024-04-05T12:30:00Z"
+}</pre>
+            <strong>Error Response (404 Not Found):</strong><br>
+            <pre>{"error": "Folder 'INBOX' not found"}</pre>
+            <strong>Error Response (400 Bad Request/500 Internal Server Error):</strong><br>
+            <pre>{"error": "Failed to get folder stats: reason"}</pre>
+        </div>
+    </div>
+
+
+    <!-- Email Endpoints -->
+    <h2>Email Endpoints</h2>
+
+    <div class="endpoint">
+        <h3><span class="method">GET</span><span class="path">/emails/{folder}</span></h3>
+        <p>Lists all emails in the specified folder (metadata only).</p>
+        <pre><code>curl http://localhost:{{ port }}/emails/INBOX</code></pre>
+        <div class="response">
+            <strong>Success Response (200 OK):</strong><br>
+            <pre>{"emails": [
+  {"uid": "123", "subject": "Test Subject 1", "from": "Sender <sender@example.com>", "date": "Fri, 04 Apr 2025 00:45:23 +0000", "message_id": "<id1@domain>"},
+  {"uid": "124", "subject": "Test Subject 2", "from": "sender@example.com", "date": "(No Date)", "message_id": null}
+]}</pre>
+            <strong>Error Response (404 Not Found):</strong><br>
+            <pre>{"error": "Folder 'INBOX' not found"}</pre>
+        </div>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method">GET</span><span class="path">/emails/{folder}/unread</span></h3>
+        <p>Lists unread emails in the specified folder (metadata only).</p>
+        <pre><code>curl http://localhost:{{ port }}/emails/INBOX/unread</code></pre>
+        <div class="response">
+            <strong>Success Response (200 OK):</strong><br>
+             <pre>{"emails": [
+  {"uid": "125", "subject": "Unread Email", "from": "urgent@example.com", "date": "Fri, 04 Apr 2025 01:00:00 +0000", "message_id": "<id3@domain>"}
+]}</pre>
+            <strong>Error Response (404 Not Found):</strong><br>
+            <pre>{"error": "Folder 'INBOX' not found"}</pre>
+        </div>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method">GET</span><span class="path">/emails/{folder}/{uid}</span></h3>
+        <p>Fetches the full details, including body, of a specific email by UID.</p>
+        <pre><code>curl http://localhost:{{ port }}/emails/INBOX/123</code></pre>
+        <div class="response">
+            <strong>Success Response (200 OK):</strong><br>
+            <pre>{
+  "uid": "123",
+  "subject": "Test Subject 1",
+  "from": "Sender <sender@example.com>",
+  "date": "Fri, 04 Apr 2025 00:45:23 +0000",
+  "body": {
+    "text_plain": "Hello, this is the plain text body.\n",
+    "text_html": "&lt;p&gt;Hello, this is the &lt;b&gt;HTML&lt;/b&gt; body.&lt;/p&gt;"
+  }
+}</pre>
+            <strong>Error Response (404 Not Found):</strong><br>
+            <pre>{"error": "Email 'INBOX/123' not found"}</pre>
+        </div>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method">POST</span><span class="path">/emails/move</span></h3>
+        <p>Moves an email from one folder to another.</p>
+        <pre><code>curl -X POST -H "Content-Type: application/json" -d '{"uid": "123", "source_folder": "INBOX", "dest_folder": "Archive"}' http://localhost:{{ port }}/emails/move</code></pre>
+        <div class="request-body">
+            <strong>Request Body:</strong><br>
+            <pre>{
+  "uid": "string (required)",
+  "source_folder": "string (required)",
+  "dest_folder": "string (required)"
+}</pre>
+        </div>
+        <div class="response">
+            <strong>Success Response (200 OK):</strong><br>
+            <pre>{"message": "Moved email 123 from INBOX to Archive"}</pre>
+            <strong>Error Response (400 Bad Request):</strong><br>
+            <pre>{"error": "Missing uid, source_folder, or dest_folder"}</pre>
+            <strong>Error Response (404 Not Found):</strong><br>
+            <pre>{"error": "Folder '...' not found"}</pre>
+            <pre>{"error": "Email 'INBOX/123 (source)' not found"}</pre>
+        </div>
+    </div>
+
+    <div class="endpoint">
+        <h3><span class="method">POST</span><span class="path">/emails/{folder}</span></h3>
+        <p>Creates (appends) a new email to the specified folder.</p>
+        <pre><code>curl -X POST -H "Content-Type: application/json" -d '{...}' http://localhost:{{ port }}/emails/INBOX</code></pre>
+        <div class="request-body">
+            <strong>Request Body:</strong><br>
+            <pre>{
+  "subject": "string (required)",
+  "body": {
+    "text_plain": "string (optional)",
+    "text_html": "string (optional)"
+  },
+  "to": ["string (required, at least one)"],
+  "cc": ["string (optional)"],
+  "bcc": ["string (optional)"],
+  "attachments": [
+    {
+      "filename": "string (required)",
+      "content": "string (base64 encoded, required)",
+      "content_type": "string (optional, e.g., 'text/plain', 'image/png')"
+    }
+  ]
+}</pre>
+        </div>
+        <div class="response">
+            <strong>Success Response (201 Created):</strong><br>
+            <pre>{"message": "Email created successfully", "uid": "126", "message_id": "&lt;id4@domain&gt;"}</pre>
+             <strong>Note:</strong> UID might be "(UID not found)" if the server indexing is slow.
+            <strong>Error Response (400 Bad Request):</strong><br>
+            <pre>{"error": "Subject and body (plain or html) are required"}</pre>
+            <pre>{"error": "Failed to create email: reason"}</pre>
+        </div>
+    </div>
+
+</body>
+</html>
+
+

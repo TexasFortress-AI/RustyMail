@@ -1,0 +1,15 @@
+# Default configuration settings
+
+log_level = "info" # Default log level (trace, debug, info, warn, error)
+
+[server]
+host = "0.0.0.0" # Bind to all interfaces
+port = 5000       # Default server port
+
+[imap]
+host = "p3plzcpnl505455.prod.phx3.secureserver.net" # Your IMAP server hostname
+port = 993                                         # IMAP SSL port
+username = "info@texasfortress.ai"                   # Your IMAP username
+password = "" # IMPORTANT: Set this via environment variable (APP_IMAP__PASSWORD) or a secrets manager
+
+
