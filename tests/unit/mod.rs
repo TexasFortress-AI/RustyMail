@@ -5,9 +5,11 @@ mod unit_tests {
     use super::*;
 
     #[test]
-    #[ignore]
     fn test_list_folders() {
-        todo!("Test listing folders via ImapClient");
+        let mock_session = MockImapSession::new();
+        let result = mock_session.list();
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), vec!["INBOX".to_string()]);
     }
 
     #[test]
