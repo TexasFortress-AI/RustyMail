@@ -689,6 +689,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "core"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "async-trait",
+ "base64 0.21.7",
+ "bstr",
+ "bytes",
+ "chrono",
+ "config",
+ "derive_more",
+ "futures-util",
+ "imap",
+ "lettre",
+ "mail-parser",
+ "native-tls",
+ "parking_lot",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "core-foundation"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1615,6 +1640,7 @@ dependencies = [
  "bytes",
  "chrono",
  "config",
+ "core",
  "criterion",
  "derive_more",
  "env_logger",
@@ -1627,6 +1653,7 @@ dependencies = [
  "mockall",
  "mockito",
  "native-tls",
+ "parking_lot",
  "reqwest",
  "serde",
  "serde_json",

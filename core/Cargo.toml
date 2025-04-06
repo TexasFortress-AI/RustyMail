@@ -1,0 +1,27 @@
+[package]
+name = "core"
+version = "0.1.0"
+edition = "2021"
+authors = ["Texas Fortress AI <info@texasfortress.ai>"]
+description = "Core IMAP and business logic for unified REST + MCP server"
+
+[dependencies]
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tokio = { version = "1", features = ["full"] }
+imap = "2.4.1"
+native-tls = "0.2"
+lettre = { version = "0.10", features = ["builder", "native-tls", "tokio1-native-tls", "smtp-transport", "tracing"] }
+uuid = { version = "1", features = ["v4", "fast-rng", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.21"
+bstr = "1.4"
+bytes = "1.4"
+derive_more = "2.0"
+futures-util = "0.3"
+parking_lot = "0.12"
+mail-parser = "0.9.1"
+config = { version = "0.13.3", features = ["toml", "yaml"] }
+actix-web = "4.3.1"
