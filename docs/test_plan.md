@@ -10,6 +10,7 @@
 - **Integration tests for REST and MCP interfaces**
 - **Cross-interface consistency tests**
 - **Security and performance tests**
+- **Mocks allowed only in unit tests, forbidden in integration tests**
 
 ---
 
@@ -31,6 +32,11 @@
   - Folder stats
   - Data transformations
   - Error conversions
+- **MCP protocol helpers**
+  - JSON-RPC framing/parsing
+  - Error code mapping
+  - Capability negotiation logic
+  - Prompt handling (if applicable)
 
 ---
 
@@ -50,20 +56,24 @@
 #### **MCP stdio server (`mcp_stdio.rs`)**
 
 - Initialize connection
+- Capability negotiation
 - List tools/resources
 - Call tools (list folders, fetch email, move email, etc.)
 - Read resources (email content, folder list)
-- Error cases
+- Error cases and error code mapping
 - Streaming responses (if applicable)
+- Prompt handling (if applicable)
 
 #### **MCP SSE server (`mcp_sse.rs`)**
 
 - Initialize connection
+- Capability negotiation
 - List tools/resources
 - Call tools
 - Read resources
-- Error cases
+- Error cases and error code mapping
 - Streaming responses
+- Prompt handling (if applicable)
 
 ---
 
@@ -98,6 +108,7 @@
 - Use **test containers** if possible
 - No mocks in integration tests
 - Isolate side effects (create/delete test folders/emails)
+- Document IMAP test account setup and teardown
 
 ---
 
@@ -106,9 +117,10 @@
 - Write **failing tests first**
 - Use `#[ignore]` or `todo!()` for unimplemented tests
 - Gradually implement features to pass tests
-- Maintain high coverage
-- Automate tests in CI pipeline
+- Maintain **high coverage** (aim >90% for core logic)
+- Automate tests in **CI pipeline** (GitHub Actions, etc.)
+- Run tests on **every pull request**
 
 ---
 
-# END OF TEST PLAN
+# END OF UPDATED TEST PLAN
