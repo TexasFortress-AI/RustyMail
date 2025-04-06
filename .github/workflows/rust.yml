@@ -51,3 +51,16 @@
 #         name: benchmark-results
 #         path: target/criterion/
 #         if-no-files-found: error 
+
+name: Rust
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Do nothing
+      run: echo "This is a placeholder workflow that does nothing." 
