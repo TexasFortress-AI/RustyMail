@@ -162,10 +162,11 @@ Please report any security vulnerabilities to security@example.com.
 
 ## Authors
 
-- Your Name - Initial work - [YourGitHub](https://github.com/yourusername)
+- Steve Olson - Initial work - [Steve's GitHub](https://github.com/rangersdo)
+- Contact: [steve@texasfortress.ai](mailto:steve@texasfortress.ai)
 
 ## Sponsors
 
-Support this project by becoming a sponsor. Your logo will show up here with a link to your website.
+Sponsored by Texas Fortress AI.
 
-[Become a sponsor](https://github.com/sponsors/yourusername) 
+[Become a sponsor](https://github.com/sponsors/rangersdo) 
