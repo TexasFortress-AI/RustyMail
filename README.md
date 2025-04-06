@@ -7,14 +7,32 @@
 [![Crates.io](https://img.shields.io/crates/v/rustymail)](https://crates.io/crates/rustymail)
 [![Documentation](https://docs.rs/rustymail/badge.svg)](https://docs.rs/rustymail)
 
-A high-performance, type-safe IMAP API server written in Rust. RustyMail provides a RESTful interface to IMAP servers, making it easy to integrate email functionality into your applications.
+A high-performance, type-safe IMAP API server written in Rust. RustyMail provides multiple interfaces to IMAP servers:
+
+1. **REST API** (✅ Implemented)
+   - RESTful HTTP endpoints
+   - JSON request/response
+   - Traditional web API interface
+   - Ideal for web applications
+
+2. **MCP Stdio Server** (⏳ Coming Soon)
+   - JSON-RPC 2.0 over stdin/stdout
+   - Local CLI integration
+   - Synchronous command execution
+   - Perfect for IDE extensions and local tools
+
+3. **MCP SSE Server** (⏳ Coming Soon)
+   - HTTP POST for client requests
+   - Server-Sent Events for responses
+   - Real-time streaming capabilities
+   - Great for real-time applications
 
 ## Features
 
 - 🚀 **High Performance**: Built with Rust for maximum speed and efficiency
 - 🔒 **Type Safety**: Leverages Rust's type system for reliable code
 - 📧 **Full IMAP Support**: Access all your email folders and messages
-- 🔄 **Async Operations**: Non-blocking I/O for better performance
+- 🔄 **Multiple Interfaces**: REST API, MCP stdio, and MCP SSE
 - 🔐 **Secure**: TLS support and proper authentication
 - 📊 **Monitoring**: Built-in metrics and logging
 - 🧪 **Comprehensive Testing**: Unit, integration, and performance tests
@@ -48,49 +66,84 @@ A high-performance, type-safe IMAP API server written in Rust. RustyMail provide
    cargo run --release
    ```
 
-The server will start on `http://localhost:8080` by default.
+## Interface Usage
 
-## Configuration
+### 1. REST API
 
-Create a `.env` file in the project root with the following variables:
-
-```env
-IMAP_HOST=imap.example.com
-IMAP_PORT=993
-IMAP_USERNAME=your_username
-IMAP_PASSWORD=your_password
-SERVER_HOST=0.0.0.0
-SERVER_PORT=8080
-```
-
-See `.env.example` for all available configuration options.
-
-## API Documentation
-
-The API documentation is available in the `docs` directory:
-
-- [API Reference](docs/API.md)
-- [Error Codes](docs/ERRORS.md)
-- [Usage Examples](docs/EXAMPLES.md)
-- [Deployment Guide](docs/DEPLOYMENT.md)
-
-## Examples
-
-### List Folders
+The REST API server starts on `http://localhost:8080` by default.
 
 ```bash
+# List folders
 curl -X GET http://localhost:8080/folders \
   -H "Authorization: Basic $(echo -n 'username:password' | base64)"
-```
 
-### List Emails in a Folder
-
-```bash
+# List emails in INBOX
 curl -X GET http://localhost:8080/emails/INBOX \
   -H "Authorization: Basic $(echo -n 'username:password' | base64)"
 ```
 
-See [EXAMPLES.md](docs/EXAMPLES.md) for more examples in various programming languages.
+### 2. MCP Stdio Server
+
+Use the `--mcp-stdio` flag to start in stdio mode:
+
+```bash
+# Start in MCP stdio mode
+cargo run --release -- --mcp-stdio
+
+# Example JSON-RPC request (via stdin)
+{"jsonrpc": "2.0", "method": "list_folders", "params": {}, "id": 1}
+```
+
+### 3. MCP SSE Server
+
+Use the `--mcp-sse` flag to start in SSE mode:
+
+```bash
+# Start in MCP SSE mode
+cargo run --release -- --mcp-sse
+
+# Connect and receive events
+curl -N http://localhost:8081/events
+
+# Send commands (in another terminal)
+curl -X POST http://localhost:8081/command \
+  -H "Content-Type: application/json" \
+  -d '{"method": "list_folders", "params": {}}'
+```
+
+## Configuration
+
+Create a `.env` file in the project root:
+
+```env
+# IMAP Settings
+IMAP_HOST=imap.example.com
+IMAP_PORT=993
+IMAP_USERNAME=your_username
+IMAP_PASSWORD=your_password
+
+# REST API Settings
+REST_HOST=0.0.0.0
+REST_PORT=8080
+
+# MCP SSE Settings
+SSE_HOST=0.0.0.0
+SSE_PORT=8081
+
+# General Settings
+LOG_LEVEL=info
+INTERFACE=rest  # Options: rest, stdio, sse
+```
+
+See `.env.example` for all available configuration options.
+
+## Documentation
+
+- [API Reference](docs/API.md) - REST API documentation
+- [MCP Protocol](docs/MCP.md) - MCP protocol specification
+- [Error Codes](docs/ERRORS.md) - Error code reference
+- [Usage Examples](docs/EXAMPLES.md) - Code examples for all interfaces
+- [Deployment Guide](docs/DEPLOYMENT.md) - Deployment instructions
 
 ## Development
 
@@ -100,33 +153,13 @@ See [EXAMPLES.md](docs/EXAMPLES.md) for more examples in various programming lan
 # Run all tests
 cargo test
 
-# Run integration tests
-cargo test --test integration_tests
+# Test specific interface
+cargo test --test rest_api_tests
+cargo test --test mcp_stdio_tests
+cargo test --test mcp_sse_tests
 
 # Run benchmarks
 cargo bench
-```
-
-### Building Documentation
-
-```bash
-# Build and open documentation
-cargo doc --open
-```
-
-## Performance
-
-RustyMail is designed for high performance. Here are some benchmark results:
-
-```
-folder_operations/list_folders
-                        time:   [472.50 ms 554.99 ms 663.12 ms]
-
-folder_operations/folder_stats
-                        time:   [511.27 ms 686.22 ms 894.69 ms]
-
-email_operations/list_emails
-                        time:   [496.81 ms 675.59 ms 861.86 ms]
 ```
 
 ## Contributing
@@ -137,13 +170,6 @@ Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for det
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Acknowledgments
-
-- [imap](https://crates.io/crates/imap) - IMAP protocol implementation
-- [actix-web](https://actix.rs/) - Web framework
-- [tokio](https://tokio.rs/) - Async runtime
-- [tracing](https://crates.io/crates/tracing) - Structured logging
-
 ## Support
 
 If you encounter any issues or have questions, please:
@@ -151,14 +177,6 @@ If you encounter any issues or have questions, please:
 1. Check the [documentation](docs/)
 2. Search for existing issues
 3. Create a new issue if needed
-
-## Roadmap
-
-- TBD
-
-## Security
-
-Please report any security vulnerabilities to security@example.com.
 
 ## Authors
 
