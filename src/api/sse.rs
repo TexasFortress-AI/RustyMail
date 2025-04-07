@@ -1,15 +1,16 @@
-use actix_web::{web, get, post, App, HttpServer, Responder, HttpResponse, Error};
+use actix_web::{web, Responder, HttpResponse, Error};
 use actix_web::rt::time::interval;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::Duration;
-use futures_util::stream::StreamExt as _; // Import StreamExt
 use std::sync::Arc;
 use std::collections::HashMap;
-use rustymail::prelude::*;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use log::{info, warn, error};
+use crate::config::RestConfig;
+use futures::stream::StreamExt;
+use async_stream::stream;
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug)]
 struct SseCommandPayload {
     command: String,
     params: serde_json::Value,
@@ -73,14 +74,13 @@ impl SseState {
 pub struct SseAdapter {
     // Might need IMAP client later
     shared_state: Arc<Mutex<SseState>>,
-    // SSE might run alongside REST, sharing its config for host/port
-    // Or have its own dedicated port config.
-    // For simplicity, assume it uses REST config for now.
-    rest_config: crate::api::rest::RestConfig, 
+    // Use imported RestConfig
+    rest_config: RestConfig, 
 }
 
 impl SseAdapter {
-    pub fn new(rest_config: crate::api::rest::RestConfig) -> Self {
+    // Update signature to use imported RestConfig
+    pub fn new(rest_config: RestConfig) -> Self {
         Self {
             shared_state: Arc::new(Mutex::new(SseState::new())),
             rest_config,
@@ -91,15 +91,13 @@ impl SseAdapter {
     async fn sse_connect_handler(state: web::Data<Arc<Mutex<SseState>>>) -> impl Responder {
         let (tx, rx) = mpsc::channel::<String>(10);
         
-        // Add client and get ID
-        let client_id = state.lock().unwrap().add_client(tx.clone());
+        let client_id = state.lock().await.add_client(tx.clone());
         info!("New SSE Client connected: {}", client_id);
 
         // Example: Send a welcome message with client ID
         let welcome_msg = format!("event: welcome\ndata: {{ \"clientId\": {} }}\n\n", client_id);
         if tx.send(welcome_msg).await.is_err() {
-            // Client likely disconnected immediately
-            state.lock().unwrap().remove_client(client_id);
+            state.lock().await.remove_client(client_id);
             return HttpResponse::InternalServerError().finish();
         }
 
@@ -118,7 +116,7 @@ impl SseAdapter {
                     // Yield messages received on the channel
                     maybe_msg = message_stream.next() => {
                         if let Some(msg) = maybe_msg {
-                             yield Result::<_, Error>(actix_web::web::Bytes::from(msg));
+                             yield std::result::Result::<_, Error>::Ok(actix_web::web::Bytes::from(msg));
                         } else {
                             break; // Channel closed
                         }
@@ -129,8 +127,7 @@ impl SseAdapter {
                 }
             }
 
-            // Cleanup when stream ends (client disconnects)
-            state.lock().unwrap().remove_client(client_id);
+            state.lock().await.remove_client(client_id);
         };
 
         HttpResponse::Ok()
@@ -156,8 +153,7 @@ impl SseAdapter {
             }
         };
 
-        // Acquire lock ONCE for broadcast
-        let state_guard = state.lock().unwrap();
+        let state_guard = state.lock().await;
         state_guard.broadcast(&broadcast_message).await;
         drop(state_guard); // Release lock explicitly if needed elsewhere
 

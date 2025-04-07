@@ -1,46 +1,54 @@
+use crate::prelude::*; // MOVE TO TOP
 use actix_web::{web, App, HttpServer, Responder, HttpResponse, ResponseError};
 use actix_web::http::StatusCode;
 use actix_web::middleware::Logger;
 use std::sync::Arc;
 use thiserror::Error; // For defining API-specific errors
 use serde::Deserialize; // Added for email payloads
-
-// Import from our core library (assuming rustymail is the crate name)
-use rustymail::prelude::*;
+use crate::imap::error::ImapError as InternalImapError;
+use crate::config::RestConfig;
 
 // --- API Specific Error Handling ---
 
 #[derive(Debug, Error)]
-enum ApiError {
-    #[error("IMAP Client Error: {0}")]
-    Imap(#[from] ImapError),
-    #[error("Invalid Request: {0}")]
+pub enum ApiError {
+    #[error("Bad Request: {0}")]
     BadRequest(String),
-    #[error("Resource Not Found: {0}")]
+    #[error("Unauthorized")]
+    Unauthorized,
+    #[error("Forbidden")]
+    Forbidden,
+    #[error("Not Found: {0}")]
     NotFound(String),
+    #[error("Conflict: {0}")]
+    Conflict(String),
     #[error("Internal Server Error: {0}")]
-    InternalError(String), // Allow passing internal details
+    InternalError(String),
+    #[error("IMAP Error")]
+    ImapError(#[from] InternalImapError),
 }
 
 impl ResponseError for ApiError {
     fn status_code(&self) -> StatusCode {
         match self {
-            ApiError::Imap(ref imap_err) => match imap_err {
-                ImapError::Auth(_) => StatusCode::UNAUTHORIZED,
-                ImapError::Folder(s) | ImapError::Email(s) if s.contains("not found") => StatusCode::NOT_FOUND,
-                ImapError::Folder(s) | ImapError::Email(s) if s.contains("already exists") => StatusCode::CONFLICT,
-                 // Add more specific mappings as needed
-                _ => StatusCode::INTERNAL_SERVER_ERROR, // Default for other IMAP errors
-            },
             ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
+            ApiError::Forbidden => StatusCode::FORBIDDEN,
             ApiError::NotFound(_) => StatusCode::NOT_FOUND,
+            ApiError::Conflict(_) => StatusCode::CONFLICT,
             ApiError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::ImapError(ref imap_err) => {
+                match imap_err {
+                    InternalImapError::Auth(_) => StatusCode::UNAUTHORIZED,
+                    InternalImapError::Mailbox(_) => StatusCode::NOT_FOUND,
+                    _ => StatusCode::INTERNAL_SERVER_ERROR,
+                }
+            },
         }
     }
 
     fn error_response(&self) -> HttpResponse {
         let message = match self {
-             // Avoid leaking too many internal details for some errors
             ApiError::InternalError(_) => "Internal Server Error".to_string(),
             _ => self.to_string()
         };
@@ -58,13 +66,6 @@ fn parse_uids(uids_str: &str) -> Result<Vec<u32>, ApiError> {
 }
 
 // --- Configuration and State ---
-
-// Placeholder for actual configuration loading
-#[derive(Clone)]
-pub struct RestConfig {
-    pub host: String,
-    pub port: u16,
-}
 
 // Placeholder for application state, including the IMAP client
 // We'll likely inject the ImapClient or ImapSession trait object here
@@ -215,10 +216,9 @@ async fn move_email_handler(
 
 // --- Routes Configuration ---
 
-// We need to adapt the route configuration from the old `api::routes` module
-
-// Placeholder for route configuration
-fn configure_routes(cfg: &mut web::ServiceConfig) {
+// Configuration function for Actix-Web routes
+// Make this public for tests
+pub fn configure_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api/v1")
             .route("/health", web::get().to(health_check))
@@ -245,7 +245,7 @@ fn configure_routes(cfg: &mut web::ServiceConfig) {
 
 pub async fn run_server(
     config: RestConfig,
-    imap_client: Arc<ImapClient>, // Pass in the initialized client
+    imap_client: Arc<ImapClient>,
 ) -> std::io::Result<()> {
     
     let app_state = web::Data::new(AppState {

@@ -26,7 +26,7 @@ serde_json = "1.0"
 
 # Configuration
 dotenvy = "0.15"
-config = { version = "0.13", features = ["yaml", "json", "toml", "ini", "ron", "json5"] }
+config = { version = "0.14", features = ["toml"] }
 log = "0.4"
 env_logger = "0.10"
 
@@ -42,14 +42,15 @@ thiserror = "1.0"
 # Chrono for date/time
 chrono = { version = "0.4", features = ["serde"] }
 
-# Add async-imap crate with tokio and rustls features
-# async-imap = { version = "0.10.2", features = ["tokio", "rustls-tls"] } 
-async-imap = { version = "0.10.3" } # Use latest patch, remove features - check docs if 'tokio' needs enabling
-# Change imap-types to the specific alpha version suggested
-imap-types = "2.0.0-alpha.4" 
+# Revert async-imap to a released version
+# async-imap = { version = "4.0.0-alpha.1", features = ["runtime-tokio", "tls-rustls"] }
+async-imap = "0.10.3" # Use latest stable release
+# Revert imap-types to a compatible version
+# imap-types = "4.0.0-alpha.1" 
+imap-types = { version = "1.0", features = ["serde"] } # Enable serde feature
 
 # Ensure Tokio and Rustls crates for establishing the connection are present
-tokio-rustls = "0.24" # Keep this one
+tokio-rustls = "0.26"
 
 # Add tokio-util dependency with the compat feature
 tokio-util = { version = "0.7", features = ["compat"] }
@@ -58,6 +59,12 @@ rustls-native-certs = "0.7"
 
 # Add imap-codec dependency
 # imap-codec = "1.0.0-alpha.5" # Needed for manual command encoding
+
+# Added missing dependencies:
+uuid = { version = "1", features = ["v4", "serde"] }
+futures = "0.3" # Or futures-util? Let's try futures first.
+async-stream = "0.3"
+tokio-stream = "0.1" # Needed for ReceiverStream
 
 [dev-dependencies]
 # Add reqwest for E2E HTTP tests

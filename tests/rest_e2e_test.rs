@@ -115,29 +115,28 @@ mod e2e_tests {
     // Note: These run sequentially because they share the TestServer setup.
     // Using a framework like serial_test or explicit locking would be needed for parallel execution.
 
-    #[test]
+    #[tokio::test]
     async fn run_rest_e2e_tests() {
-        let rt = Runtime::new().expect("Failed to create Tokio runtime");
         let _server = TestServer::start(); // Start server, will be killed on drop
         let client = Client::new();
 
-        // Run async tests within the async test function
+        // Run async tests sequentially
+        println!("\n--- Running E2E: Basic Folder Operations ---");
         test_e2e_list_folders(&client).await;
-        test_e2e_get_emails_in_folder(&client, TEST_FOLDER_A).await;
-        
-        // Folder Management
+        test_e2e_get_emails_in_folder(&client, "INBOX").await; // Check INBOX first
         let created_folder_name = test_e2e_create_folder(&client).await;
-        test_e2e_rename_folder(&client, &created_folder_name).await;
-        // test_e2e_delete_folder is implicitly tested by create/rename cleanup
-        
-        // Email operations
-        let unique_subj = unique_id("move_test");
-        let appended_uid = test_e2e_append_email(&client, TEST_FOLDER_A, &unique_subj).await;
-        test_e2e_search_email(&client, TEST_FOLDER_A, &unique_subj, appended_uid).await;
-        test_e2e_move_email(&client, TEST_FOLDER_A, TEST_FOLDER_B, appended_uid, &unique_subj).await;
-        test_e2e_fetch_single_email(&client, TEST_FOLDER_B, appended_uid, &unique_subj).await;
-        
-        // Error conditions
+        test_e2e_rename_folder(&client, &created_folder_name).await; // Rename the created folder
+        // Deletion is implicitly tested by cleanup in other tests/Drop
+
+        println!("\n--- Running E2E: Email Operations ---");
+        // Append an email to use for search/move/fetch
+        let unique_subject = unique_id("email_ops");
+        let appended_uid = test_e2e_append_email(&client, TEST_FOLDER_A, &unique_subject).await;
+        test_e2e_search_email(&client, TEST_FOLDER_A, &unique_subject, appended_uid).await;
+        test_e2e_move_email(&client, TEST_FOLDER_A, TEST_FOLDER_B, appended_uid, &unique_subject).await;
+        test_e2e_fetch_single_email(&client, TEST_FOLDER_B, appended_uid, &unique_subject).await;
+
+        println!("\n--- Running E2E: Error Conditions ---");
         test_e2e_fetch_non_existent_folder(&client).await;
         test_e2e_fetch_non_existent_uid(&client).await;
         test_e2e_move_invalid_uid(&client).await;

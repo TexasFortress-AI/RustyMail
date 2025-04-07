@@ -9,7 +9,7 @@ pub struct Message {
     pub payload: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(PartialEq, Debug, Clone, Serialize, Deserialize)]
 pub enum MessageKind {
     Request,
     Response,

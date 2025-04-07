@@ -8,11 +8,14 @@ mod tests {
     use crate::api::sse::{SseAdapter, SseState, configure_sse_service, SseCommandPayload};
     use crate::api::rest::RestConfig;
     use tokio::time::{timeout, Duration};
+    use actix_web::dev::{Service, ServiceResponse};
+    use actix_web::Error;
+    use actix_web::HttpRequest;
 
     // Helper function to extract SSE events from response body
     async fn extract_sse_events(body: impl MessageBody + Unpin) -> Vec<String> {
         let mut events = Vec::new();
-        let mut stream = Box::pin(body.into_stream());
+        let mut stream = Box::pin(body).into_stream();
         // Use a timeout to avoid waiting forever if no more events come
         while let Ok(Some(Ok(chunk))) = timeout(Duration::from_millis(100), stream.next()).await {
             if let Ok(text) = String::from_utf8(chunk.to_vec()) {
@@ -24,7 +27,7 @@ mod tests {
     }
 
     // --- Test Setup ---
-    async fn setup_test_sse_app() -> (impl actix_web::dev::Service<actix_http::Request, Response = actix_web::dev::ServiceResponse>, Arc<Mutex<SseState>>) {
+    async fn setup_test_sse_app() -> (impl Service<HttpRequest, Response = ServiceResponse>, Arc<Mutex<SseState>>) {
         let dummy_rest_config = RestConfig { host: "localhost".to_string(), port: 0 }; 
         let sse_adapter = SseAdapter::new(dummy_rest_config);
         let sse_state_arc = sse_adapter.shared_state.clone(); 

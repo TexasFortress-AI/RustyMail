@@ -1,4 +1,4 @@
-use rustymail::prelude::*;
+use crate::prelude::*;
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -11,7 +11,8 @@ use log::{debug, error, info, warn};
 // --- JSON-RPC Structures ---
 
 #[derive(Deserialize, Debug)]
-struct JsonRpcRequest {
+// Make public for tests
+pub struct JsonRpcRequest {
     jsonrpc: String,
     id: Option<Value>, // Can be string, number, or null
     method: String,
@@ -19,7 +20,8 @@ struct JsonRpcRequest {
 }
 
 #[derive(Serialize, Debug)]
-struct JsonRpcResponse {
+// Make public for tests
+pub struct JsonRpcResponse {
     jsonrpc: String,
     id: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -29,15 +31,17 @@ struct JsonRpcResponse {
 }
 
 #[derive(Serialize, Debug)]
-struct JsonRpcError {
+// Make public for tests
+pub struct JsonRpcError {
     code: i32,
     message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     data: Option<Value>,
 }
 
-// Standard JSON-RPC error codes
-mod error_codes {
+// Specific error codes for JSON-RPC
+// Make this module public for tests
+pub mod error_codes {
     pub const PARSE_ERROR: i32 = -32700;
     pub const INVALID_REQUEST: i32 = -32600;
     pub const METHOD_NOT_FOUND: i32 = -32601;
@@ -56,32 +60,30 @@ mod error_codes {
 fn map_mcp_error(e: McpPortError) -> (i32, String) {
     match e {
         McpPortError::InvalidParams(msg) => (error_codes::INVALID_PARAMS, msg),
-        McpPortError::NotImplemented(msg) => (error_codes::METHOD_NOT_FOUND, msg), // Or INTERNAL_ERROR
+        McpPortError::NotImplemented(msg) => (error_codes::METHOD_NOT_FOUND, msg), 
         McpPortError::ResourceError(msg) => (error_codes::INTERNAL_ERROR, msg),
         McpPortError::ToolError(msg) => {
-            // Attempt to parse IMAP errors for better codes
-            if msg.starts_with("IMAP Error:") {
-                let imap_msg = msg.trim_start_matches("IMAP Error: ").to_lowercase();
-                if imap_msg.contains("already exists") {
-                    (error_codes::IMAP_FOLDER_EXISTS, msg)
-                } else if imap_msg.contains("not found") {
-                    (error_codes::IMAP_FOLDER_NOT_FOUND, msg) // Could be email too
-                } else if imap_msg.contains("authentication") || imap_msg.contains("login failed") {
-                    (error_codes::IMAP_AUTH_ERROR, msg)
-                } else if imap_msg.contains("connection") {
-                     (error_codes::IMAP_CONNECTION_ERROR, msg)
-                } else {
-                    (error_codes::IMAP_OPERATION_FAILED, msg)
-                }
+            // Attempt to parse logical errors from the message string
+            let lower_msg = msg.to_lowercase();
+            if lower_msg.contains("already exists") {
+                (error_codes::IMAP_FOLDER_EXISTS, msg)
+            } else if lower_msg.contains("not found") { // Could be folder or email
+                (error_codes::IMAP_FOLDER_NOT_FOUND, msg) // Use folder not found for simplicity
+            } else if lower_msg.contains("authentication") || lower_msg.contains("login failed") {
+                (error_codes::IMAP_AUTH_ERROR, msg)
+            } else if lower_msg.contains("connection") {
+                 (error_codes::IMAP_CONNECTION_ERROR, msg)
+            // Add more specific string checks if needed for other ImapError variants
             } else {
-                 (error_codes::INTERNAL_ERROR, msg) // Generic internal if ToolError is not IMAP
+                (error_codes::IMAP_OPERATION_FAILED, msg) // Generic operation failure
             }
         }
     }
 }
 
 // Helper to create an error response from McpPortError
-fn create_mcp_error_response(id: Option<Value>, error: McpPortError) -> JsonRpcResponse {
+// Make public for tests
+pub fn create_mcp_error_response(id: Option<Value>, error: McpPortError) -> JsonRpcResponse {
     let (code, message) = map_mcp_error(error);
     JsonRpcResponse {
         jsonrpc: "2.0".to_string(),
@@ -96,7 +98,8 @@ fn create_mcp_error_response(id: Option<Value>, error: McpPortError) -> JsonRpcR
 }
 
 // Helper for standard JSON-RPC errors
-fn create_jsonrpc_error_response(id: Option<Value>, code: i32, message: &str) -> JsonRpcResponse {
+// Make public for tests
+pub fn create_jsonrpc_error_response(id: Option<Value>, code: i32, message: &str) -> JsonRpcResponse {
      JsonRpcResponse {
         jsonrpc: "2.0".to_string(),
         id: id.unwrap_or(Value::Null),
@@ -148,7 +151,8 @@ impl McpTool for McpCreateFolderTool {
             return Err(McpPortError::InvalidParams("Folder name cannot be empty".into()));
         }
         self.imap_client.create_folder(&p.name).await
-            .map_err(|e| McpPortError::ToolError(format!("IMAP Error: {}", e)))?;
+            // Map the specific ImapError if possible, otherwise ToolError
+            .map_err(|e| McpPortError::ToolError(format!("{}", e)))?;
         Ok(serde_json::json!({ "message": "Folder created", "name": p.name }))
     }
 }
@@ -340,7 +344,8 @@ impl McpStdioAdapter {
     }
 
     // Handles valid JSON-RPC requests
-    async fn handle_request(&self, req: JsonRpcRequest) -> Option<JsonRpcResponse> {
+    // Make public for tests if needed by run_adapter_test
+    pub async fn handle_request(&self, req: JsonRpcRequest) -> Option<JsonRpcResponse> {
         let request_id = req.id.clone(); // Keep ID for response
 
         match self.tool_registry.get(&req.method) {

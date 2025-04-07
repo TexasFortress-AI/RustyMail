@@ -67,3 +67,6 @@ Code Conventions:
 
 $END$
 END SPECIFICATION
+
+Use terminal tool for rust cargo commands.
+

@@ -1,12 +1,12 @@
 use crate::imap::error::ImapError;
-use crate::imap::session::{AsyncImapSessionWrapper, ImapSession, TlsImapSession};
-use crate::imap::types::{Email, Folder, SearchCriteria, OwnedMailbox};
+use crate::imap::session::{AsyncImapSessionWrapper, ImapSession};
+use crate::imap::types::{Email, Folder, SearchCriteria};
 use async_imap::Client as AsyncImapClientProto;
 use tokio_util::compat::TokioAsyncReadCompatExt;
 use tokio::net::TcpStream as TokioTcpStream;
 use tokio_rustls::TlsConnector;
-use rustls::pki_types::{IpAddr as PkiIpAddr, ServerName as PkiServerName};
-use tokio_rustls::rustls::{Certificate, ClientConfig, RootCertStore, ServerName as RustlsServerName};
+use rustls::pki_types::{IpAddr as PkiIpAddr, ServerName as PkiServerName, CertificateDer};
+use rustls::{ClientConfig, RootCertStore};
 use rustls_native_certs;
 use std::sync::Arc;
 use std::time::Duration;
@@ -27,22 +27,23 @@ async fn connect_and_login(
     username: &str,
     password: &str,
     connect_timeout: Duration,
-) -> Result<TlsImapSession, ImapError> { // Return the async-imap Session
+) -> Result<AsyncImapSessionWrapper, ImapError> { // Changed return type
     log::info!("Connecting to IMAP server: {}:{}", server, port);
     
     // --- TLS Setup --- 
-    let pki_server_name = PkiServerName::try_from(server)
+    let server_owned = server.to_string();
+    let pki_server_name = PkiServerName::try_from(server_owned)
         .map_err(|_| ImapError::Connection(format!("Invalid server name format: {}", server)))?;
     let rustls_server_name = match pki_server_name {
-        PkiServerName::DnsName(dns) => RustlsServerName::try_from(dns.as_ref())
+        PkiServerName::DnsName(dns) => rustls::pki_types::ServerName::try_from(dns.as_ref().to_string())
             .map_err(|e| ImapError::Connection(format!("Failed to convert DNS name: {}", e)))?,
-        // Manually match PkiIpAddr and construct std::net::IpAddr
         PkiServerName::IpAddress(pki_ip) => {
             let std_ip = match pki_ip {
                 PkiIpAddr::V4(pki_v4_addr) => std::net::IpAddr::V4(std::net::Ipv4Addr::from(pki_v4_addr)),
                 PkiIpAddr::V6(pki_v6_addr) => std::net::IpAddr::V6(std::net::Ipv6Addr::from(pki_v6_addr)),
             };
-            RustlsServerName::IpAddress(std_ip)
+            // Convert std::net::IpAddr to rustls::pki_types::IpAddr
+            rustls::pki_types::ServerName::IpAddress(std_ip.into())
         }
         _ => return Err(ImapError::Connection("Server name must be a DNS name or IP address".into())),
     };
@@ -51,8 +52,7 @@ async fn connect_and_login(
     match rustls_native_certs::load_native_certs() {
         Ok(certs) => {
             for cert in certs {
-                // Use Certificate from tokio_rustls::rustls
-                if root_store.add(&Certificate(cert.clone().to_vec())).is_err() {
+                if root_store.add(CertificateDer::from(cert.clone().to_vec())).is_err() {
                     log::warn!("Failed to add native certificate to root store");
                 }
             }
@@ -67,9 +67,8 @@ async fn connect_and_login(
         log::warn!("No native root certificates loaded, TLS connection might fail verification");
     }
 
-    // Re-add with_safe_defaults() and pass root_store directly
+    // Fix builder chain order
     let config = ClientConfig::builder()
-        .with_safe_defaults()
         .with_root_certificates(root_store)
         .with_no_client_auth();
     let connector = TlsConnector::from(Arc::new(config));
@@ -96,15 +95,21 @@ async fn connect_and_login(
     log::debug!("Creating IMAP client...");
     let client = AsyncImapClientProto::new(compat_tls_stream);
     log::info!("Logging in as user: {}", username);
-    let session = client.login(username, password)
-        .await
-        .map_err(|(e, _client)| {
-            log::error!("IMAP login failed for user {}: {}", username, e);
-            ImapError::Authentication(format!("Login failed: {}", e))
-        })?;
-    log::info!("IMAP login successful for user {}.", username);
+    let login_result = client.login(username, password).await;
 
-    Ok(session) // Return the established async-imap session
+    // Handle the login result explicitly
+    match login_result {
+        Ok(session) => {
+            log::info!("Login successful");
+            // Create the wrapper here
+            let wrapper = AsyncImapSessionWrapper::new(session);
+            Ok(wrapper) // Return the wrapper directly
+        }
+        Err((e, _client)) => {
+            log::error!("Login failed: {}", e);
+            Err(ImapError::Auth(format!("Login failed: {}", e)))
+        }
+    }
 }
 
 impl ImapClient {
@@ -126,12 +131,12 @@ impl ImapClient {
     ) -> Result<Arc<dyn ImapSession>, ImapError> {
         let connect_timeout = timeout.unwrap_or_else(|| Duration::from_secs(10));
         
-        // Call the helper to get the logged-in async-imap session
-        let async_session = connect_and_login(server, port, username, password, connect_timeout).await?;
+        // connect_and_login now returns the wrapper
+        let session_wrapper = connect_and_login(server, port, username, password, connect_timeout).await?;
         
-        // Wrap the session
-        let session_wrapper = Arc::new(AsyncImapSessionWrapper::new(async_session));
-        Ok(session_wrapper)
+        // Wrap in Arc for the trait object
+        let session_arc: Arc<dyn ImapSession> = Arc::new(session_wrapper);
+        Ok(session_arc)
     }
 
     // Pass-through methods to the ImapSession trait object
@@ -151,7 +156,7 @@ impl ImapClient {
         self.session.rename_folder(from, to).await
     }
 
-    pub async fn select_folder(&self, name: &str) -> Result<OwnedMailbox, ImapError> {
+    pub async fn select_folder(&self, name: &str) -> Result<async_imap::types::Mailbox, ImapError> {
         self.session.select_folder(name).await
     }
 

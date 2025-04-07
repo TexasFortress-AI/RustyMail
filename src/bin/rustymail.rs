@@ -1,49 +1,50 @@
-use rustymail::config::{Settings, ImapConnectConfig};
+use rustymail::config::{Settings, InterfaceType};
 use rustymail::imap::{ImapClient, ImapSession, ImapError};
+use rustymail::api::rest::run_server as run_rest_server;
 // Remove API imports for now
 // use rustymail::api::rest::run_server as run_rest_server;
 // use rustymail::api::mcp::McpStdioAdapter;
 // Remove native_tls
 // use native_tls::TlsConnector;
-use log::{info, error, debug, LevelFilter};
+use log::{info, error, LevelFilter};
 use std::sync::Arc;
-use std::time::Duration;
+// Remove unused imports
+// use std::time::Duration;
 
-// Simplified helper to directly return the session Arc
-async fn connect_to_imap(config: &ImapConnectConfig) -> Result<Arc<dyn ImapSession>, ImapError> {
-    info!(
-        "Connecting to IMAP: {}@{}:{}",
-        config.user,
-        config.host,
-        config.port
-    );
-    // Call ImapClient::connect directly
-    ImapClient::connect(
-        &config.host,
-        config.port,
-        &config.user,
-        &config.pass,
-        Some(Duration::from_secs(15)), // Example timeout
-    ).await
+// Define the setup_logging function
+fn setup_logging(level_str: &str) {
+    let level = level_str.parse().unwrap_or(LevelFilter::Info);
+    env_logger::Builder::new()
+        .filter_level(level)
+        .init();
+    info!("Logging initialized with level: {}", level);
+}
+
+// Helper function (assuming one exists or needs creating)
+async fn connect_to_imap(host: &str, port: u16, user: &str, pass: &str) -> Result<Arc<dyn ImapSession>, ImapError> {
+    // Use the provided arguments directly
+    ImapClient::connect(host, port, user, pass, None).await
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> { // Correct async typo
-    // Load Settings
-    let settings = Settings::new(None).expect("Failed to load configuration.");
-    
-    // Initialize logging
-    env_logger::Builder::new()
-        .filter_level(settings.log.level.parse().unwrap_or(LevelFilter::Info))
-        .init();
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
+    // Load settings
+    let settings = Settings::new(None).expect("Failed to load settings");
 
-    debug!("Loaded settings: {:?}", settings);
+    // Setup logging (using settings.log.level)
+    setup_logging(&settings.log.level);
 
-    // Connect to IMAP - use the simplified helper
-    info!("Establishing IMAP connection...");
-    let imap_session = match connect_to_imap(&settings.imap).await {
+    // --- IMAP Connection ---
+    // Pass flattened fields to the connection helper
+    let imap_session = match connect_to_imap(
+        &settings.imap_host, 
+        settings.imap_port, 
+        &settings.imap_user, 
+        &settings.imap_pass
+    ).await {
         Ok(session) => {
-            info!("IMAP connection successful.");
+            log::info!("Successfully connected to IMAP server for user {}", settings.imap_user);
             session
         }
         Err(e) => {
@@ -53,17 +54,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> { // Correct async typ
         }
     };
 
-    // Comment out interface selection for now
-    /*
+    let imap_client = Arc::new(ImapClient::new(imap_session.clone()));
+
+    // Uncomment interface selection
     match settings.interface {
         InterfaceType::Rest => {
             if let Some(rest_config) = settings.rest {
                 if rest_config.enabled {
                     info!("Starting REST API server at {}:{}...", rest_config.host, rest_config.port);
-                    // Placeholder: Need API implementation
-                    // let imap_client_for_rest = Arc::new(ImapClient::new(imap_session.clone()));
-                    // run_rest_server(rest_config, imap_client_for_rest).await?;
-                    error!("REST API not implemented yet.");
+                    // Uncomment call to run_rest_server
+                    run_rest_server(rest_config, imap_client.clone()).await?;
                 } else {
                     info!("REST interface is disabled in config.");
                 }
@@ -76,8 +76,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> { // Correct async typ
                 if mcp_config.enabled {
                     info!("Starting MCP Stdio interface...");
                     // Placeholder: Need API implementation
-                    // let imap_client_for_mcp = Arc::new(ImapClient::new(imap_session.clone()));
-                    // let adapter = McpStdioAdapter::new(imap_client_for_mcp);
+                    // let adapter = McpStdioAdapter::new(imap_client.clone());
                     // adapter.run().await?;
                     error!("MCP Stdio not implemented yet.");
                 } else {
@@ -88,33 +87,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> { // Correct async typ
             }
         }
         InterfaceType::Sse => {
+             // Placeholder: Need API implementation for SSE
             error!("SSE interface not implemented yet.");
         }
     }
-    */
 
-    info!("Binary finished (no interface selected/implemented).");
-    // Example usage: List folders (using the established session)
-    info!("Listing folders...");
-    match imap_session.list_folders().await {
-        Ok(folders) => {
-            info!("Folders found:");
-            for folder in folders {
-                info!("- {}", folder.name);
-            }
-        }
-        Err(e) => {
-            error!("Failed to list folders: {}", e);
-        }
-    }
-
-    // Explicitly logout
-    info!("Logging out...");
-    // Call logout directly on the Arc<dyn ImapSession>
-    match imap_session.logout().await {
-        Ok(_) => info!("Logout successful."),
-        Err(e) => error!("Logout failed: {}", e),
-    }
+    // Remove example folder listing and logout if server runs indefinitely
+    // info!("Binary finished (no interface selected/implemented).");
+    // ... (remove folder list and logout code) ...
 
     Ok(())
 } 

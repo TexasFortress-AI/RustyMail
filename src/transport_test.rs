@@ -2,9 +2,22 @@
 mod tests {
     use crate::transport::*;
     use async_trait::async_trait;
-    use serde_json::json;
+    use serde_json::{json, Value};
     use std::sync::Arc;
     use tokio::sync::Mutex;
+    // Import necessary traits for the dummy error
+    use std::error::Error as StdError;
+    use std::fmt::{Display, Formatter, Result as FmtResult};
+
+    // Dummy Error for testing Message::new_error
+    #[derive(Debug)]
+    struct TestError(String);
+    impl Display for TestError {
+        fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+            write!(f, "TestError: {}", self.0)
+        }
+    }
+    impl StdError for TestError {}
 
     // Mock transport implementation for testing
     #[derive(Clone, Default)]
@@ -15,8 +28,8 @@ mod tests {
     }
 
     impl MockTransport {
-        fn set_message_to_receive(&self, msg: Option<Message>) {
-            *self.message_to_receive.blocking_lock() = msg;
+        async fn set_message_to_receive(&self, msg: Option<Message>) {
+            *self.message_to_receive.lock().await = msg;
         }
     }
 
@@ -52,34 +65,35 @@ mod tests {
     #[tokio::test]
     async fn test_message_creation() {
         let request = Message::new_request(
-            "test_id".to_string(),
-            json!({ "param": "value" }),
+            "test_id".to_string(), 
+            // No method field, only payload
+            json!({ "param": "value" })
         );
         assert_eq!(request.id, Some("test_id".to_string()));
         assert!(matches!(request.kind, MessageKind::Request));
 
         let response = Message::new_response(
-            "test_id".to_string(),
-            json!({ "result": "success" }),
+            "test_id".to_string(), 
+            json!({ "result": "success" })
         );
         assert_eq!(response.id, Some("test_id".to_string()));
         assert!(matches!(response.kind, MessageKind::Response));
 
         let notification = Message::new_notification(
-            "test_event".to_string(),
-            json!({ "data": 123 }),
+            // Only payload needed
+            json!({ "data": 123 })
         );
-        assert_eq!(notification.id, None);
+        assert!(notification.id.is_none());
         assert!(matches!(notification.kind, MessageKind::Notification));
 
-        let error = Message::new_error(
+        let test_error = TestError("Something failed".to_string());
+        let error_message = Message::new_error(
             Some("req_id".to_string()),
-            -32000,
-            "Test error".to_string(),
-            Some(json!({ "details": "info" })),
+            test_error 
         );
-        assert_eq!(error.id, Some("req_id".to_string()));
-        assert!(matches!(error.kind, MessageKind::Error));
+        assert_eq!(error_message.id, Some("req_id".to_string()));
+        assert!(matches!(error_message.kind, MessageKind::Error));
+        assert!(error_message.payload["error"].is_string());
     }
 
     #[tokio::test]
@@ -87,8 +101,8 @@ mod tests {
         let transport = MockTransport::default();
         *transport.is_connected.lock().await = true;
 
-        let msg = Message::new_request("1".into(), "test".into(), json!({}));
-        transport.set_message_to_receive(Some(msg.clone()));
+        let msg = Message::new_request("1".into(), json!({}));
+        transport.set_message_to_receive(Some(msg.clone())).await;
 
         let send_result = transport.send(msg.clone()).await;
         assert!(send_result.is_ok());
@@ -108,7 +122,7 @@ mod tests {
     async fn test_mock_transport_not_connected() {
         let transport = MockTransport::default();
         
-        let msg = Message::new_request("1".into(), "test".into(), json!({}));
+        let msg = Message::new_request("1".into(), json!({}));
 
         let send_result = transport.send(msg).await;
         assert!(send_result.is_err());
