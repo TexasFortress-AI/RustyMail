@@ -7,6 +7,17 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use crate::imap::ImapClient; // Import ImapClient
 use log::{debug, error, info, warn};
+use crate::imap::types::{
+    Folder as MappedFolder,
+    Email as MappedEmail,
+    AppendRequest as McpAppendRequest,
+    AppendResponse as McpAppendResponse,
+};
+use crate::mcp_port::Session;
+use crate::imap::client::ImapClient;
+use crate::imap::error::ImapError;
+use crate::imap::types::{FlagOperation, Flags, ModifyFlagsPayload, AppendEmailPayload, ExpungeResponse, MailboxInfo}; // Ensure all needed types are here
+use crate::imap::types::SearchCriteria as ImapSearchCriteria;
 
 // --- JSON-RPC Structures ---
 
@@ -225,8 +236,10 @@ impl McpTool for McpFetchEmailsTool {
         if let Some(ref folder_name) = p.folder {
             self.imap_client.select_folder(folder_name).await.map_err(|e| McpPortError::ToolError(format!("IMAP Error selecting folder: {}", e)))?;
         }
-        let emails = self.imap_client.fetch_emails(p.uids).await.map_err(|e| McpPortError::ToolError(format!("IMAP fetch error: {}", e)))?;
-        Ok(serde_json::to_value(emails).unwrap_or(Value::Null))
+        let fetch_body = false; // Default MCP fetch doesn't get body
+        let emails = self.imap_client.fetch_emails(p.uids, fetch_body).await.map_err(|e| McpPortError::ToolError(format!("IMAP fetch error: {}", e)))?;
+        // MCP likely expects a single email or needs adjustment for multiple
+        emails.into_iter().next().ok_or_else(|| McpPortError::ResourceNotFound("Email not found".to_string()))
     }
 }
 

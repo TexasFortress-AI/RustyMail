@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use imap_types::envelope::Envelope as ImapEnvelope;
+use imap_types::envelope::Envelope;
 
 // Custom Email struct (ensure it's public)
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -7,7 +7,9 @@ pub struct Email {
     pub uid: u32,
     pub flags: Vec<String>,
     pub size: Option<u32>,
-    pub envelope: Option<ImapEnvelope<'static>>,
+    pub envelope: Option<Envelope<'static>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
 }
 
 // Custom Folder struct (ensure it's public)
@@ -51,4 +53,45 @@ pub enum SearchCriteria {
     And(Vec<SearchCriteria>),
     Or(Vec<SearchCriteria>),
     Not(Box<SearchCriteria>),
+}
+
+// --- New Types for Added Features ---
+
+/// Represents the operation to perform on flags.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum FlagOperation {
+    Add,
+    Remove,
+    Set,
+}
+
+/// Represents a list of flags for modification.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Flags {
+    // Represent flags as simple strings for now
+    #[serde(default)]
+    pub items: Vec<String>,
+}
+
+/// Payload for modifying email flags.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModifyFlagsPayload {
+    pub uids: Vec<u32>,
+    pub operation: FlagOperation,
+    pub flags: Flags, // Use the Flags struct
+}
+
+/// Payload for appending an email.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppendEmailPayload {
+    // Raw email content as bytes/string
+    pub content: String, // Or consider bytes if more appropriate
+    pub flags: Flags, // Flags to set on the appended message
+}
+
+/// Response after expunging a folder.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExpungeResponse {
+    pub message: String,
+    // Potentially add expunged UIDs if the command returns them
 }

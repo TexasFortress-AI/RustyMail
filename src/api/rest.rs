@@ -9,7 +9,7 @@ use crate::config::RestConfig;
 use log::{error, warn};
 use serde_json::json; // Make sure json macro is imported
 use crate::imap::client::ImapClient;
-use crate::imap::types::{Folder, Email, MailboxInfo, SearchCriteria}; // Include SearchCriteria
+use crate::imap::types::{MailboxInfo, SearchCriteria, ModifyFlagsPayload, AppendEmailPayload}; // Include SearchCriteria and new payload types
 use urlencoding;
 
 // --- API Specific Error Handling ---
@@ -231,15 +231,17 @@ async fn select_folder(
     Ok(HttpResponse::Ok().json(mailbox_info))
 }
 
-// GET /emails/search?criteria=... (Simplified: uses query params)
+// Updated search_emails to handle more query params
 #[derive(Deserialize, Debug)]
 struct EmailSearchQuery {
     subject: Option<String>,
     from: Option<String>,
+    to: Option<String>, // Added TO
     body: Option<String>,
-    all: Option<String>, // Flag-like param
-    unseen: Option<String>, // Flag-like param
-    // Add other criteria as needed
+    since: Option<String>, // Added SINCE
+    uid: Option<String>,   // Added UID set
+    unseen: Option<String>,
+    // Add other criteria as needed, potentially moving to POST with JSON body for complex AND/OR/NOT
 }
 
 async fn search_emails(
@@ -247,43 +249,47 @@ async fn search_emails(
     query: web::Query<EmailSearchQuery>,
 ) -> Result<impl Responder, ApiError> {
     log::info!("Handling GET /emails/search with query: {:?}", query);
-    // Note: This assumes a folder is implicitly selected (e.g., INBOX by default
-    // or by a previous `select_folder` call). A real implementation might require
-    // the folder name in the path or query params.
-
-    // Build SearchCriteria from query params (example)
-    let criteria = if query.subject.is_some() {
-        SearchCriteria::Subject(query.subject.clone().unwrap())
-    } else if query.from.is_some() {
-        SearchCriteria::From(query.from.clone().unwrap())
-    } else if query.body.is_some() {
-        SearchCriteria::Body(query.body.clone().unwrap())
-    } else if query.unseen.is_some() {
-        SearchCriteria::Unseen
-    } else {
-        SearchCriteria::All // Default
+    
+    // Build SearchCriteria list from query params
+    let mut criteria_list = Vec::new();
+    if let Some(s) = &query.subject { criteria_list.push(SearchCriteria::Subject(s.clone())); }
+    if let Some(s) = &query.from { criteria_list.push(SearchCriteria::From(s.clone())); }
+    if let Some(s) = &query.to { criteria_list.push(SearchCriteria::To(s.clone())); }
+    if let Some(s) = &query.body { criteria_list.push(SearchCriteria::Body(s.clone())); }
+    if let Some(s) = &query.since { criteria_list.push(SearchCriteria::Since(s.clone())); }
+    if let Some(s) = &query.uid { criteria_list.push(SearchCriteria::Uid(s.clone())); }
+    if query.unseen.is_some() { criteria_list.push(SearchCriteria::Unseen); }
+    
+    // Combine criteria using AND if multiple are provided, else use single or ALL
+    let final_criteria = match criteria_list.len() {
+        0 => SearchCriteria::All,
+        1 => criteria_list.remove(0),
+        _ => SearchCriteria::And(criteria_list),
     };
 
-    log::debug!("Constructed search criteria: {:?}", criteria);
-    let uids = state.imap_client.search_emails(criteria).await?;
+    log::debug!("Constructed search criteria: {:?}", final_criteria);
+    let uids = state.imap_client.search_emails(final_criteria).await?;
     Ok(HttpResponse::Ok().json(json!({ "uids": uids })))
 }
 
-// GET /emails/fetch?uids=1,2,3
+// Updated fetch_emails to accept optional body flag
 #[derive(Deserialize, Debug)]
-struct EmailFetchQuery { uids: String }
+struct EmailFetchQuery {
+    uids: String,
+    body: Option<String>, // Accept `?body=true` or similar
+}
 
 async fn fetch_emails(
     state: web::Data<AppState>,
     query: web::Query<EmailFetchQuery>,
 ) -> Result<impl Responder, ApiError> {
-    log::info!("Handling GET /emails/fetch with uids: {}", query.uids);
+    let fetch_body = query.body.as_deref().map_or(false, |v| v == "true");
+    log::info!("Handling GET /emails/fetch with uids: {}, fetch_body: {}", query.uids, fetch_body);
     let uids = parse_uids(&query.uids)?;
     if uids.is_empty() {
         return Err(ApiError::BadRequest("No valid UIDs provided in query string".to_string()));
     }
-    // Note: Assumes a folder is selected.
-    let emails = state.imap_client.fetch_emails(uids).await?;
+    let emails = state.imap_client.fetch_emails(uids, fetch_body).await?;
     Ok(HttpResponse::Ok().json(emails))
 }
 
@@ -312,34 +318,86 @@ async fn move_emails(
         .json(json!({ "message": format!("Emails moved to '{}'", dest_folder) })))
 }
 
-// --- Service Configuration ---
+// POST /emails/flags { "uids": [...], "operation": "Add|Remove|Set", "flags": { "items": ["\\Seen"] } }
+async fn modify_email_flags(
+    state: web::Data<AppState>,
+    payload: web::Json<ModifyFlagsPayload>,
+) -> Result<impl Responder, ApiError> {
+    log::info!("Handling POST /emails/flags with payload: {:?}", payload);
+    if payload.uids.is_empty() {
+        return Err(ApiError::BadRequest("UID list cannot be empty".to_string()));
+    }
+    // Note: Assumes folder is already selected.
+    state.imap_client.store_flags(payload.uids.clone(), payload.operation.clone(), payload.flags.clone()).await?;
+    Ok(HttpResponse::Ok().json(json!({ "message": "Flags updated successfully" })))
+}
 
-// Renamed function to be more specific
+// POST /folders/{folder_name}/append { "content": "...", "flags": { "items": [...] } }
+async fn append_email(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    payload: web::Json<AppendEmailPayload>,
+) -> Result<impl Responder, ApiError> {
+    let encoded_folder_name = path.into_inner();
+     let folder_name = urlencoding::decode(&encoded_folder_name)
+        .map_err(|e| ApiError::BadRequest(format!("Invalid folder name encoding: {}", e)))?
+        .into_owned();
+    log::info!("Handling POST /folders/{}/append (decoded: {})", encoded_folder_name, folder_name);
+    if folder_name.is_empty() {
+        return Err(ApiError::BadRequest("Folder name cannot be empty".to_string()));
+    }
+    
+    let result = state.imap_client.append(&folder_name, payload.into_inner()).await?;
+    // Result might contain the UID of the appended message
+    match result {
+        Some(uid) => Ok(HttpResponse::Created().json(json!({ "message": "Email appended successfully", "uid": uid }))),
+        None => Ok(HttpResponse::Created().json(json!({ "message": "Email appended successfully (UID not provided by server)" }))),
+    }
+}
+
+// POST /folders/{folder_name}/expunge
+async fn expunge_folder(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> Result<impl Responder, ApiError> {
+    let encoded_folder_name = path.into_inner();
+    let folder_name = urlencoding::decode(&encoded_folder_name)
+        .map_err(|e| ApiError::BadRequest(format!("Invalid folder name encoding: {}", e)))?
+        .into_owned();
+    log::info!("Handling POST /folders/{}/expunge (decoded: {})", encoded_folder_name, folder_name);
+    // Note: Expunge operates on the *currently selected* folder in the session.
+    // We might want to add a select call here or document this requirement clearly.
+    // For now, just call expunge, assuming select was done prior.
+    let response = state.imap_client.expunge().await?;
+    Ok(HttpResponse::Ok().json(response))
+}
+
+// --- Service Configuration (Updated) ---
+
 pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
     log::info!("Configuring REST API routes under /api/v1");
     cfg.service(
-        web::scope("/api/v1") // Base path for this API version
+        web::scope("/api/v1")
             .route("/health", web::get().to(health_check))
             .service(
                 web::scope("/folders")
                     .route("", web::get().to(list_folders))
                     .route("", web::post().to(create_folder))
                     .route("/{folder_name}", web::delete().to(delete_folder))
-                    // Route for rename needs path param and body
                     .route("/{folder_name}", web::put().to(rename_folder))
-                     // POST for select action
                     .route("/{folder_name}/select", web::post().to(select_folder))
+                    // Add append and expunge routes under specific folder
+                    .route("/{folder_name}/append", web::post().to(append_email))
+                    .route("/{folder_name}/expunge", web::post().to(expunge_folder))
             )
             .service(
                 web::scope("/emails")
-                    // Search endpoint (example uses query params)
                     .route("/search", web::get().to(search_emails))
-                    // Fetch endpoint (requires UIDs in query)
                     .route("/fetch", web::get().to(fetch_emails))
-                    // Move endpoint
                     .route("/move", web::post().to(move_emails))
+                    // Add route for modifying flags
+                    .route("/flags", web::post().to(modify_email_flags))
             )
-            // Add other resources/scopes here
     );
 }
 

@@ -1,7 +1,6 @@
 use crate::imap::error::ImapError;
 use crate::imap::session::{AsyncImapSessionWrapper, ImapSession};
-use crate::imap::types::{Email, Folder, SearchCriteria};
-use crate::imap::types::MailboxInfo;
+use crate::imap::types::{Email, Folder, SearchCriteria, MailboxInfo, FlagOperation, Flags, AppendEmailPayload, ExpungeResponse};
 use async_imap::{Client as AsyncImapClient, Session as AsyncImapSession};
 use rustls::pki_types::ServerName as PkiServerName;
 use rustls::{ClientConfig, RootCertStore};
@@ -200,32 +199,47 @@ impl ImapClient {
         self.session.lock().await.search_emails(criteria).await
     }
 
-    pub async fn fetch_emails(&self, uids: Vec<u32>) -> Result<Vec<Email>, ImapError> {
-        // Consider adding UID validation or chunking here if needed
+    pub async fn fetch_emails(&self, uids: Vec<u32>, fetch_body: bool) -> Result<Vec<Email>, ImapError> {
         if uids.is_empty() {
             return Ok(Vec::new());
         }
-        self.session.lock().await.fetch_emails(uids).await
+        self.session.lock().await.fetch_emails(uids, fetch_body).await
     }
 
     pub async fn move_email(&self, uids: Vec<u32>, destination: &str) -> Result<(), ImapError> {
-        // Consider adding UID validation or chunking here if needed
         if uids.is_empty() {
             return Ok(());
         }
         self.session.lock().await.move_email(uids, destination).await
     }
 
+    /// Modifies flags for specified emails.
+    pub async fn store_flags(&self, uids: Vec<u32>, operation: FlagOperation, flags: Flags) -> Result<(), ImapError> {
+        if uids.is_empty() {
+            return Err(ImapError::Command("UID list cannot be empty".to_string()));
+        }
+        self.session.lock().await.store_flags(uids, operation, flags).await
+    }
+
+    /// Appends an email to the specified folder.
+    pub async fn append(&self, folder: &str, payload: AppendEmailPayload) -> Result<Option<u32>, ImapError> {
+        if folder.is_empty() {
+            return Err(ImapError::Command("Folder name cannot be empty for APPEND".to_string()));
+        }
+        self.session.lock().await.append(folder, payload).await
+    }
+
+    /// Expunges emails marked for deletion in the currently selected folder.
+    pub async fn expunge(&self) -> Result<ExpungeResponse, ImapError> {
+        self.session.lock().await.expunge().await
+    }
+
     /// Logs out from the IMAP server.
     /// Note: This consumes the client to prevent further operations after logout.
     /// The underlying session's logout implementation should handle cleanup.
     pub async fn logout(self) -> Result<(), ImapError> {
-        // Lock once and move out of Arc if possible, or just call logout
-        // Assuming ImapSession::logout takes &self or similar
-        // If it takes Arc<Mutex<...>> itself, adapt accordingly.
-         let session_guard = self.session.lock().await;
-         session_guard.logout().await
-        // Session Arc/Mutex is dropped here when `self` goes out of scope.
+        let session_guard = self.session.lock().await;
+        session_guard.logout().await
     }
 }
 
