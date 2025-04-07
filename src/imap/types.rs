@@ -17,6 +17,26 @@ pub struct Folder {
     pub delimiter: Option<String>,
 }
 
+/// Represents information about a selected mailbox.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MailboxInfo {
+    /// Flags defined for this mailbox.
+    pub flags: Vec<String>,
+    /// Number of messages in the mailbox.
+    pub exists: u32,
+    /// Number of recent messages.
+    pub recent: u32,
+    /// Number of unseen messages (if available).
+    pub unseen: Option<u32>,
+    /// Permanent flags that can be set.
+    pub permanent_flags: Vec<String>,
+    /// Predicted next UID.
+    pub uid_next: Option<u32>,
+    /// UID validity value.
+    pub uid_validity: Option<u32>,
+    // highest_modseq is often not needed for clients, omitting for simplicity
+}
+
 // Custom SearchCriteria enum (ensure it's public)
 #[derive(Debug, Clone, Deserialize)]
 pub enum SearchCriteria {
