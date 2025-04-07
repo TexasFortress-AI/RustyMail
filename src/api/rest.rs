@@ -108,12 +108,12 @@ impl AppState {
 // --- Route Handlers ---
 
 // GET /api/v1/health
-async fn health_check() -> impl Responder {
+pub async fn health_check() -> impl Responder {
     HttpResponse::Ok().json(json!({ "status": "OK" }))
 }
 
 // GET /folders
-async fn list_folders(state: web::Data<AppState>) -> Result<impl Responder, ApiError> {
+pub async fn list_folders(state: web::Data<AppState>) -> Result<impl Responder, ApiError> {
     log::info!("Handling GET /folders");
     let folders = state.imap_client.list_folders().await?;
     Ok(HttpResponse::Ok().json(folders))
@@ -121,9 +121,9 @@ async fn list_folders(state: web::Data<AppState>) -> Result<impl Responder, ApiE
 
 // POST /folders { "name": "folder_name" }
 #[derive(Deserialize, Debug)]
-struct FolderCreatePayload { name: String }
+pub struct FolderCreatePayload { pub name: String }
 
-async fn create_folder(
+pub async fn create_folder(
     state: web::Data<AppState>,
     payload: web::Json<FolderCreatePayload>,
 ) -> Result<impl Responder, ApiError> {
@@ -155,7 +155,7 @@ async fn create_folder(
 }
 
 // DELETE /folders/{folder_name}
-async fn delete_folder(
+pub async fn delete_folder(
     state: web::Data<AppState>,
     path: web::Path<String>,
 ) -> Result<impl Responder, ApiError> {
@@ -188,28 +188,49 @@ async fn delete_folder(
 
 // PUT /folders/{from_name} { "to_name": "new_name" }
 #[derive(Deserialize, Debug)]
-struct FolderRenamePayload { to_name: String }
+pub struct FolderRenamePayload { pub to_name: String }
 
-async fn rename_folder(
+pub async fn rename_folder(
     state: web::Data<AppState>,
     path: web::Path<String>,
     payload: web::Json<FolderRenamePayload>,
 ) -> Result<impl Responder, ApiError> {
     let encoded_from = path.into_inner();
-    let from_name = urlencoding::decode(&encoded_from)
+    let from_name_base = urlencoding::decode(&encoded_from)
         .map_err(|e| ApiError::BadRequest(format!("Invalid 'from' name encoding: {}", e)))?
         .into_owned();
+    let to_name_base = payload.to_name.trim();
 
-    let to_name = payload.to_name.trim();
-    log::info!("Handling PUT /folders/{} with to_name: {} (decoded from: {})", encoded_from, to_name, from_name);
+    log::info!(
+        "Handling PUT /folders/{} with payload {{ to_name: {} }} (decoded from: {}, decoded to: {})",
+        encoded_from,
+        payload.to_name, // Log original payload value
+        from_name_base,
+        to_name_base
+    );
 
-    if from_name.is_empty() || to_name.is_empty() {
-         return Err(ApiError::BadRequest("Folder names cannot be empty".to_string()));
+    if from_name_base.is_empty() || to_name_base.is_empty() {
+        log::warn!("Rename failed: folder name cannot be empty.");
+        return Err(ApiError::BadRequest("Folder names cannot be empty".to_string()));
     }
 
-    state.imap_client.rename_folder(&from_name, to_name).await?;
-    Ok(HttpResponse::Ok()
-        .json(json!({ "message": format!("Folder '{}' renamed to '{}'", from_name, to_name) })))
+    // Prepend INBOX. prefix
+    let from_full_name = format!("INBOX.{}", from_name_base);
+    let to_full_name = format!("INBOX.{}", to_name_base);
+    log::info!("Attempting to rename IMAP folder from '{}' to '{}'", from_full_name, to_full_name);
+
+    // Add detailed logging for the IMAP call
+    match state.imap_client.rename_folder(&from_full_name, &to_full_name).await {
+        Ok(_) => {
+            log::info!("IMAP rename_folder succeeded for '{}' -> '{}'", from_full_name, to_full_name);
+            Ok(HttpResponse::Ok().json(json!({ "message": format!("Folder '{}' renamed to '{}'", from_name_base, to_name_base) })))
+        }
+        Err(e) => {
+            log::error!("IMAP rename_folder failed for '{}' -> '{}': {:?}", from_full_name, to_full_name, e);
+            // Consider mapping specific IMAP errors to more specific ApiErrors if possible
+            Err(e.into()) 
+        }
+    }
 }
 
 // POST /folders/{folder_name}/select

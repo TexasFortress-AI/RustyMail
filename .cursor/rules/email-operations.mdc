@@ -1,55 +1,55 @@
 # email-operations
 
-### Session State Management
-- MUST: Implement IMAP sessions using `Arc<Mutex<ImapSession>>` in `src/imap/session.rs`
-- MUST: Track folder selection state via `selected_folder` field
-- AVOID: Global session state or raw connection sharing
-- WHY: Ensures thread-safe concurrent access to IMAP sessions
-- EXAMPLE: `src/imap/session.rs` implements `ImapSession` struct
-
-### Atomic Email Operations
-- MUST: Use three-phase move implementation in `src/imap/session.rs`:
-  1. Copy messages to destination
-  2. Mark source messages as deleted 
-  3. Expunge source folder
-- AVOID: Direct message deletion without copy verification
-- WHY: Prevents data loss during move operations
-- EXAMPLE: `moveEmail` method in `src/imap/session.rs`
+### Email Movement Operations
+- MUST: Use atomic move operations between folders via AsyncImapSession
+- AVOID: Moving emails without checking folder existence first
+- WHY: Maintains data integrity during email transfers 
+- EXAMPLE: `src/imap/session.rs`
+```rust
+pub async fn move_email(&mut self, uids: &[u32], from: &str, to: &str) -> Result<()> {
+    self.select_folder(from).await?;
+    self.copy_messages(uids, to).await?;
+    self.delete_messages(uids).await?;
+    self.expunge().await?;
+}
+```
 
 ### Folder Synchronization
-- MUST: Handle INBOX vs custom folders separately in `src/imap/session.rs`
-- MUST: Verify folder existence before operations
-- MUST: Lock folder state during sync using session mutex
-- AVOID: Recursive folder operations without state checks
-- WHY: Maintains folder hierarchy consistency
-- EXAMPLE: `syncFolder` method in `src/imap/session.rs`
+- MUST: Implement folder status checks before operations
+- AVOID: Direct folder manipulation without status verification
+- WHY: Prevents data corruption from race conditions
+- EXAMPLE: `src/imap/session.rs::select_folder()`
 
-### Search Implementation 
-- MUST: Implement search criteria via enum in `src/imap/types.rs`:
-  - Subject search
-  - From address search
-  - Unseen filtering
-  - Global search
-- MUST: Validate criteria before execution
-- AVOID: Raw string searches without criteria validation
-- WHY: Ensures consistent search behavior
-- EXAMPLE: `SearchCriteria` enum in `src/imap/types.rs`
+### Search Implementation
+- MUST: Use async-imap's native search capabilities with transformed criteria
+- AVOID: Client-side email filtering
+- WHY: Leverages server-side optimizations
+- EXAMPLE: `src/imap/session.rs::format_search_criteria()`
 
-### Email Movement Validation
-- MUST: Check source/destination folders exist
-- MUST: Verify message existence by UID
-- MUST: Handle bulk moves atomically
-- AVOID: Partial moves that leave inconsistent state
-- WHY: Maintains email data integrity
-- EXAMPLE: `src/imap/client.rs` move operation implementation
+### Session State Management
+- MUST: Track folder selection state via ImapSession wrapper
+- AVOID: Global session state or unmanaged connections
+- WHY: Ensures consistent session handling
+- EXAMPLE: `src/imap/session.rs::AsyncImapSessionWrapper`
 
-### Status Code Processing
-- MUST: Map IMAP response codes to domain errors in `src/imap/error.rs`:
-  - Alert conditions (-32000)
-  - Authentication failures (-32001) 
-  - Resource errors (-32002)
-- AVOID: Generic error mapping without context
-- WHY: Provides meaningful error handling
-- EXAMPLE: Error mapping in `src/imap/error.rs`
+### Atomic Flag Operations
+- MUST: Implement store_flags using STORE command
+- AVOID: Multiple separate flag operations
+- WHY: Maintains atomic guarantees for flag updates
+- EXAMPLE: `src/imap/session.rs::store_flags()`
+
+Testing Requirements:
+1. Unit tests for each atomic operation
+2. Integration tests for multi-step workflows
+3. Error handling tests for connection failures
+4. Concurrent operation tests
+5. Session state verification tests
+
+Importance Scores:
+- Email Movement: 95 (core business operation)
+- Folder Sync: 90 (data integrity critical)
+- Search: 85 (key business functionality)
+- Session State: 90 (operational integrity)
+- Flag Operations: 85 (core metadata management)
 
 $END$

@@ -2655,6 +2655,7 @@ dependencies = [
  "rustls",
  "rustls-native-certs",
  "rustls-pki-types",
+ "scopeguard",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

@@ -71,10 +71,10 @@ impl Settings {
             // Add default values
             .set_default("interface", "rest")?
             .set_default("log.level", "info")?
-            // Load config file source
-            .add_source(File::from(config_file_path.clone()).required(true))
-            // Restore automatic environment source for APP__ prefix
-            .add_source(Environment::with_prefix("APP").separator("__"));
+            // Load config file source, but make it optional
+            .add_source(File::from(config_file_path.clone()).required(false))
+            // Use Environment::default() to load unprefixed variables
+            .add_source(Environment::default().separator("__"));
             // Remove manual overrides
 
         // Build and deserialize

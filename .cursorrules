@@ -1,4 +1,9 @@
 
+
+Use terminal tool for rust cargo commands.
+
+Tests: Integration tests should never use mocks
+
 START SPECIFICATION:
 # main-overview
 
@@ -11,63 +16,66 @@ START SPECIFICATION:
 - Explain your OBSERVATIONS clearly, then provide REASONING to identify the exact issue. Add console logs when needed to gather more information.
 
 
-RustyMail implements a high-performance IMAP API server providing REST, MCP Stdio, and MCP SSE interfaces for email access.
+RustyMail is a high-performance IMAP API server implementing the following core business capabilities:
 
-Core Business Components:
+### Core Email Management
+- Multiple interface support: REST API, MCP Stdio, MCP SSE
+- Full IMAP folder and message operations 
+- Email search with complex criteria
+- Flag management and email movement between folders
+- Real-time updates via Server-Sent Events (SSE)
+
+### Key Components:
 
 1. IMAP Session Management (`src/imap/session.rs`)
-- Stateful session handling with concurrent access control 
-- Domain-specific command execution workflows
-- Mailbox synchronization logic with IMAP protocol states
-- Custom error mapping between IMAP and business domains
+- Session abstraction for IMAP operations
+- Custom search criteria transformation
+- Email metadata and content fetching
+- Flag and folder operation handling
 
-2. Email Operations (`src/imap/client.rs`, `src/api/rest.rs`)
-- Atomic email movement with 3-phase commit
-- Folder hierarchy management with domain rules
-- Search functionality via rich criteria system
-- Real-time email state monitoring
+2. MCP Protocol Implementation (`src/api/mcp.rs`) 
+- JSON-RPC 2.0 compliant interface
+- Custom IMAP operation tools
+- Support for stdio and SSE transports
+- Error mapping between IMAP and JSON-RPC
 
-3. Message Control Protocol (`src/api/mcp.rs`)
-- JSON-RPC command interface for email operations
-- Custom error codes mapped to business scenarios
-- Session state persistence across commands
-- Tool/resource capability model
+3. SSE Real-time Updates (`src/api/sse.rs`)
+- Client registration and tracking
+- Message broadcasting system
+- Heartbeat mechanism
+- Session cleanup handling
 
-4. Event Streaming (`src/api/sse.rs`) 
-- Real-time email updates via server-sent events
-- Client connection lifecycle management
-- Broadcast patterns for email notifications
-- Heartbeat-based connection monitoring
+4. REST API Interface (`src/api/rest.rs`)
+- IMAP operation endpoints
+- Folder prefix handling
+- Email body conditional fetching
+- Custom error mapping
 
-Code Conventions:
+### Code Conventions
 
-### Email Operations
-- MUST: Implement atomic moves using copy+delete+expunge pattern
-- AVOID: Direct deletion without verifying copy success
-- WHY: Maintains email integrity during failures
-- EXAMPLE: `src/imap/session.rs:move_email()`
+#### IMAP Operations
+- MUST: Use `async-imap` for all IMAP interactions
+- AVOID: Direct socket connections or custom IMAP implementations
+- WHY: Ensures protocol compliance and security
+- EXAMPLE: `src/imap/client.rs`
 
-### Folder Management  
-- MUST: Validate folder existence before operations
-- AVOID: Deleting non-empty folders
-- WHY: Prevents data loss and maintains hierarchy
-- EXAMPLE: `src/api/rest.rs:delete_folder()`
+#### Error Handling
+- MUST: Map domain errors to appropriate HTTP/JSON-RPC codes
+- AVOID: Generic error responses without context
+- WHY: Provides clear error feedback to clients
+- EXAMPLE: `src/api/rest.rs` error mapping
 
-### Search Implementation
-- MUST: Use SearchCriteria enum for all searches
-- AVOID: Direct string-based search queries
-- WHY: Type-safe search operations
-- EXAMPLE: `src/imap/types.rs:SearchCriteria`
+#### Message Processing
+- MUST: Handle both text and HTML email bodies
+- AVOID: Assuming single content type
+- WHY: Supports all email formats
+- EXAMPLE: `src/imap/types.rs`
 
-### Protocol Handling
-- MUST: Map IMAP errors to domain-specific codes
-- AVOID: Exposing raw IMAP errors to clients
-- WHY: Provides consistent error handling
-- EXAMPLE: `src/api/mcp.rs:error_mapping`
+#### Real-time Updates
+- MUST: Use SSE for live notifications
+- AVOID: Polling or websockets
+- WHY: Efficient server-push updates
+- EXAMPLE: `src/api/sse.rs`
 
 $END$
 END SPECIFICATION
-
-Use terminal tool for rust cargo commands.
-
-Tests: Integration tests should never use mocks

@@ -1,64 +1,71 @@
 # mcp-protocol
 
-### Transport Layer Implementation
-- MUST: Use JSON-RPC 2.0 format for all MCP messages 
-- MUST: Handle error codes in range -32000 to -32099 for domain errors
-- AVOID: Custom message formats outside JSON-RPC spec
-- WHY: Ensures consistent protocol handling across transports
-- EXAMPLE: `src/api/mcp.rs` request format:
+### Protocol Message Format
+- MUST: Use JSON-RPC 2.0 format for all MCP messages
+- AVOID: Custom message formats or non-standard JSON-RPC extensions 
+- WHY: Ensures compatibility and standard error handling
+- EXAMPLE: (`src/api/mcp.rs`)
 ```json
 {
-  "jsonrpc": "2.0", 
+  "jsonrpc": "2.0",
   "id": "unique-id",
   "method": "imap/listFolders",
   "params": {}
 }
 ```
 
-### Error Code Management
-- MUST: Map IMAP errors to domain-specific codes:
-  - -32000: IMAP connection errors
-  - -32001: Authentication failures  
-  - -32002: Folder not found
-  - -32003: Folder exists
-  - -32004: Email not found
-- AVOID: Generic error codes for domain-specific failures
-- WHY: Provides clear error context for clients
-- EXAMPLE: `src/api/mcp.rs` error handler
+### Transport Layer
+- MUST: Implement both stdio and SSE transports using `Transport` trait
+- AVOID: Direct socket/stream handling without transport abstraction
+- WHY: Enables consistent protocol handling across transport types
+- EXAMPLE: (`src/transport.rs`)
 
-### State Management
-- MUST: Maintain IMAP session state per connection using Arc<Mutex>
-- MUST: Handle connection drops with cleanup
-- AVOID: Global state for session data
-- WHY: Ensures thread-safe concurrent access
-- EXAMPLE: `src/transport.rs` connection handling
+### Error Handling
+- MUST: Map domain errors to standard JSON-RPC error codes:
+  - -32700: Parse error
+  - -32600: Invalid request
+  - -32601: Method not found 
+  - -32000 to -32099: IMAP-specific errors
+- AVOID: Custom error codes outside JSON-RPC spec
+- WHY: Maintains protocol compliance and error handling consistency
+- EXAMPLE: (`src/api/mcp.rs`)
 
 ### Method Implementation
-- MUST: Support core IMAP operations:
-  - imap/listFolders
-  - imap/createFolder
-  - imap/deleteFolder 
-  - imap/renameFolder
-  - imap/searchEmails
-  - imap/fetchEmails
-  - imap/moveEmail
-- AVOID: Non-standard method names
-- WHY: Maintains consistent API surface
-- EXAMPLE: `src/api/mcp.rs` method handlers
+- MUST: Implement methods as `McpTool` trait objects
+- AVOID: Direct IMAP calls without MCP abstraction
+- WHY: Provides uniform interface for all MCP operations
+- EXAMPLE: (`src/api/mcp.rs`)
+```rust
+#[derive(Debug)]
+struct McpListFoldersTool {
+    name: &'static str,
+    desc: &'static str,
+}
+```
 
-### Transport Types
-- MUST: Implement both stdio and SSE transports
-- MUST: Use event streams for SSE notifications
-- AVOID: Mixed transport types in single connection
-- WHY: Provides flexibility for different client types
-- EXAMPLE: `src/transport.rs` transport implementations
+### State Management 
+- MUST: Track client state using `SseState` for SSE transport
+- AVOID: Global state or direct connection tracking
+- WHY: Enables proper client lifecycle management
+- EXAMPLE: (`src/api/sse.rs`)
 
-### Session Lifecycle
-- MUST: Track client connection state
-- MUST: Implement 10s heartbeat for SSE
-- MUST: Clean up resources on disconnect
-- AVOID: Leaked connections
-- WHY: Maintains system stability
-- EXAMPLE: `src/api/sse.rs` connection handling
+### Testing Requirements
+- MUST: Test all message formats and error cases
+- MUST: Verify transport independence of protocol
+- MUST: Include transport-specific edge cases
+- EXAMPLE: (`src/transport_test.rs`)
+
+### Response Formatting
+- MUST: Return all results in standardized JSON-RPC response format
+- AVOID: Custom response structures
+- WHY: Maintains protocol consistency
+- EXAMPLE: (`src/api/mcp.rs`)
+```json
+{
+  "jsonrpc": "2.0", 
+  "id": "unique-id",
+  "result": { "folders": ["INBOX", "Sent"] }
+}
+```
 
 $END$

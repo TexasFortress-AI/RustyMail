@@ -1,93 +1,79 @@
 # imap-data-models
 
-### Core IMAP Data Structures
-- MUST: Define all IMAP types in `src/imap/types.rs`
-- AVOID: Using raw strings for IMAP identifiers
-- WHY: Ensures type safety and protocol compliance
-- EXAMPLE: 
-```rust
-// src/imap/types.rs
-pub struct Email {
-    uid: Uid,
-    flags: Vec<Flag>,
-    envelope: Envelope
-}
-```
+### Email Model Structure
+- MUST: Define Email struct with fields:
+  ```rust
+  struct Email {
+    uid: u32,
+    flags: Vec<String>,
+    envelope: ImapEnvelope,
+    body: Option<String>, 
+    size: u32
+  }
+  ```
+- AVOID: Storing raw IMAP message data directly
+- WHY: Provides clean domain model for email manipulation
+- EXAMPLE: `src/imap/types.rs`
 
-### Message Envelope Design
-- MUST: Implement envelope parsing in `src/imap/types.rs`
-- AVOID: Direct string manipulation of address components
-- WHY: IMAP has strict envelope format requirements
-- EXAMPLE: `src/imap/types.rs` Envelope struct with Address components
+### Envelope Data Model 
+- MUST: Implement ImapEnvelope with:
+  - From/To/CC addresses as ImapAddress vectors
+  - Subject and date as Strings
+  - Message-ID and In-Reply-To for threading
+- AVOID: Custom string parsing of envelope data
+- WHY: Standardizes email metadata handling
+- EXAMPLE: `src/imap/types.rs`
 
-### Mailbox State Management
-- MUST: Use OwnedMailbox struct in `src/imap/types.rs` for mailbox state
-- AVOID: Storing mutable mailbox state outside OwnedMailbox
-- WHY: Maintains IMAP protocol state consistency
-- EXAMPLE:
-```rust
-// src/imap/types.rs
-pub struct OwnedMailbox {
-    flags: HashSet<String>,
-    permanent_flags: HashSet<String>,
-    uid_validity: u32
-}
-```
+### Address Structure
+- MUST: Model ImapAddress with:
+  ```rust
+  struct ImapAddress {
+    name: Option<String>,
+    mailbox: String,
+    host: String
+  }
+  ```
+- AVOID: Free-form address strings
+- WHY: Enables proper email address validation and formatting
+- EXAMPLE: `src/imap/types.rs`
+
+### Folder Model
+- MUST: Implement Folder with:
+  - Name as String
+  - Delimiter as char
+  - Metadata via MailboxInfo struct
+- AVOID: Nested folder hierarchies in memory
+- WHY: Maps to IMAP folder structure
+- EXAMPLE: `src/imap/types.rs`
 
 ### Search Criteria Model
-- MUST: Implement SearchCriteria enum in `src/imap/types.rs`
-- AVOID: Custom search implementations outside SearchCriteria
-- WHY: Ensures consistent IMAP search capabilities
-- EXAMPLE:
-```rust 
-// src/imap/types.rs
-pub enum SearchCriteria {
-    All,
-    Unseen,
-    Subject(String),
-    From(String)
-}
-```
+- MUST: Define SearchCriteria enum with:
+  - Basic criteria (Subject, From, Body etc)
+  - Compound criteria (And, Or, Not)
+  - Date-based criteria
+- AVOID: Raw IMAP search strings
+- WHY: Type-safe search query construction
+- EXAMPLE: `src/imap/types.rs`
 
-### Address Formatting
-- MUST: Use structured Address type from `src/imap/types.rs`
-- AVOID: Manual address string parsing
-- WHY: IMAP requires specific address component handling
-- EXAMPLE:
-```rust
-// src/imap/types.rs
-pub struct Address {
-    name: Option<String>,
-    adl: Option<String>,
-    mailbox: Option<String>,
-    host: Option<String>
-}
-```
-
-### Folder Hierarchy
-- MUST: Use Folder struct in `src/imap/types.rs` for folder representation
-- AVOID: Raw path strings for folder operations
-- WHY: Maintains IMAP folder attribute consistency
-- EXAMPLE:
-```rust
-// src/imap/types.rs
-pub struct Folder {
-    name: String,
-    delimiter: String,
-    attributes: Vec<String>
-}
-```
-
-### Flag Management
-- MUST: Use typed Flag enum in `src/imap/types.rs`
-- AVOID: String constants for flags
-- WHY: Ensures valid IMAP flag usage
-- EXAMPLE: `src/imap/types.rs` Flag implementation
+### Flag Operations
+- MUST: Model flag changes via:
+  ```rust
+  enum FlagOperation {
+    Add(Vec<String>),
+    Remove(Vec<String>),
+    Set(Vec<String>)
+  }
+  ```
+- AVOID: Direct flag string manipulation
+- WHY: Safe flag state transitions
+- EXAMPLE: `src/imap/types.rs`
 
 ### Testing Requirements
-- MUST: Test all type conversions in `src/imap/types_test.rs`
-- MUST: Verify envelope parsing with malformed data
-- MUST: Test address component validation
-- MUST: Verify folder attribute consistency
+- MUST: Test all model serialization/deserialization
+- MUST: Validate all field constraints
+- MUST: Test flag operation combinations
+- MUST: Verify search criteria composition
+- AVOID: Testing raw IMAP protocol details
+- EXAMPLE: `src/imap/types_test.rs`
 
 $END$

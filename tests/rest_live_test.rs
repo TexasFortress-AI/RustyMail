@@ -120,6 +120,10 @@ mod live_tests {
          assert!(!folders_after.iter().any(|f| f.name == full_folder_name), "Folder '{}' was not deleted", full_folder_name);
     }
 
+    #[actix_web::test]
+    async fn test_live_rename_folder() {
+        let (_app, _client) = setup_test_app_live().await; // Use per-test setup
     // TODO: Add live tests for rename, select, search, fetch, move, including setup/teardown
+    }
 
-} 
+}

@@ -1,64 +1,85 @@
 # interface-implementations
 
-### Interface Selection Layer
-- MUST: Use enum-based interface selection in `src/bin/rustymail.rs`:
-  ```rust
-  enum Interface {
-    Rest,
-    Stdio,
-    Sse
-  }
-  ```
-- AVOID: Global flags or runtime switching between interfaces
-- WHY: Ensures single interface mode at runtime
-- EXAMPLE: See `src/bin/rustymail.rs:init_interface()`
+### REST API Interface
+- MUST: Implement REST endpoints using actix-web for IMAP operations
+- AVOID: Mixing HTTP method semantics (e.g. using POST for read operations)
+- WHY: Ensures consistent and RESTful access to IMAP functionality
+- EXAMPLE: `src/api/rest.rs`
 
-### REST Interface Implementation
-- MUST: Implement in `src/api/rest.rs` using actix-web
-- MUST: Use JSON for all request/response bodies
-- AVOID: Mixing protocol-specific code with business logic
-- WHY: Maintains clean separation between transport and domain logic
-- EXAMPLE: `src/api/rest.rs:handle_list_folders()`
+```rust
+// Endpoint for folder operations
+async fn create_folder(
+    folder_name: String,
+    imap_client: Arc<ImapClient>
+) -> Result<HttpResponse, ApiError> {
+    // Domain-specific folder name validation
+    validate_folder_name(&folder_name)?;
+    imap_client.create_folder(&folder_name).await?;
+    Ok(HttpResponse::Created().finish())
+}
+```
 
-### SSE Interface Implementation 
-- MUST: Implement in `src/api/sse.rs` using actix-web EventStream
-- MUST: Send heartbeats every 10 seconds
-- MUST: Use unique client IDs for connection tracking
-- AVOID: Long-lived IMAP connections in event handlers
-- WHY: Ensures proper connection management and client tracking
-- EXAMPLE: `src/api/sse.rs:handle_client_connect()`
+### MCP Stdio Interface
+- MUST: Use JSON-RPC 2.0 protocol for all MCP stdio communication
+- AVOID: Custom message formats or raw stdin/stdout handling
+- WHY: Provides standardized request/response pattern for mail operations
+- EXAMPLE: `src/api/mcp.rs`
 
-### MCP Stdio Implementation
-- MUST: Implement in `src/api/mcp.rs` using JSON-RPC 2.0
-- MUST: Handle line-buffered input/output
-- MUST: Use proper JSON-RPC error codes:
-  - -32000: IMAP connection errors
-  - -32001: Authentication failures  
-  - -32002: Folder errors
-- AVOID: Blocking operations in message handling
-- WHY: Ensures proper protocol compliance
-- EXAMPLE: `src/api/mcp.rs:process_command()`
+```rust
+// MCP tool implementation
+impl McpTool for McpListFoldersTool {
+    fn execute(&self, _params: Value) -> Result<Value, McpPortError> {
+        let folders = self.imap_client.list_folders()?;
+        Ok(json!({"folders": folders}))
+    }
+}
+```
 
-### State Management
-- MUST: Use Arc<Mutex<Session>> for shared IMAP state
-- MUST: Implement connection pooling in `src/imap/session.rs`
-- AVOID: Global state or singletons
-- WHY: Thread-safe state management across interfaces
-- EXAMPLE: `src/imap/session.rs:ImapSession`
+### Server-Sent Events Interface
+- MUST: Implement SSE using actix-web-lab for real-time updates
+- AVOID: Long-polling or WebSocket for one-way notifications
+- WHY: Efficient server-to-client push for mailbox changes
+- EXAMPLE: `src/api/sse.rs`
 
-### Error Handling
-- MUST: Map interface-specific errors to domain errors in `src/api/error.rs`
-- MUST: Use custom error types for each interface
-- AVOID: Generic error types or string errors
-- WHY: Proper error context preservation
-- EXAMPLE: `src/api/error.rs:RestError`
+```rust
+// SSE connection handler
+async fn sse_connect_handler(
+    state: Data<SseState>,
+) -> Sse<SseStream> {
+    let (tx, rx) = mpsc::channel(100);
+    state.clients.lock().await.insert(tx);
+    
+    Sse::new(SseStream::new(rx))
+        .keep_alive(Duration::from_secs(15))
+}
+```
 
-### Testing Requirements
-- MUST: Test each interface independently
-- MUST: Include connection failure scenarios
-- MUST: Verify protocol compliance
-- MUST: Test concurrent access patterns
-- WHY: Ensures interface reliability
-- EXAMPLE: `src/api/rest_test.rs`, `src/api/sse_test.rs`
+### Interface State Management
+- MUST: Use atomic reference counting (Arc) for shared IMAP client state
+- AVOID: Global mutable state or unsafe static variables
+- WHY: Thread-safe access to IMAP client across interfaces
+- EXAMPLE: `src/bin/rustymail.rs`
+
+```rust
+let imap_client = Arc::new(ImapClient::connect(config).await?);
+```
+
+### Interface Error Handling
+- MUST: Map domain errors to interface-specific error types
+- AVOID: Generic error messages or exposing internal errors
+- WHY: Consistent error handling across interfaces
+- EXAMPLE: `src/api/rest.rs`
+
+```rust
+impl From<ImapError> for ApiError {
+    fn from(err: ImapError) -> Self {
+        match err {
+            ImapError::Auth(_) => ApiError::Unauthorized,
+            ImapError::Mailbox(_) => ApiError::NotFound,
+            _ => ApiError::InternalError
+        }
+    }
+}
+```
 
 $END$
