@@ -1,4 +1,3 @@
-use rustymail::prelude::*;
 use rustymail::config::Settings;
 use rustymail::api::rest::run_server as run_rest_server;
 // Comment out MCP server import for now
@@ -16,44 +15,36 @@ use std::process::exit;
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     env_logger::init();
-    // Use Settings::new(None) instead of Settings::load()
     let config = Settings::new(None).unwrap_or_else(|err| {
         eprintln!("Failed to load configuration: {}", err);
         exit(1);
     });
 
-    // --- IMAP Connection ---
     info!("Attempting initial IMAP connection...");
-    // Access fields directly
     let host = &config.imap_host;
     let port = config.imap_port;
     let user = &config.imap_user;
     let pass = &config.imap_pass;
 
-    // Correct connect call (4 args) and store the Result<Wrapper>
-    let imap_session_wrapper_result = ImapClient::connect(host, port, user, pass).await;
+    // Call connect and handle the Result directly
+    let imap_client_result = ImapClient::connect(host, port, user, pass).await;
 
-    let imap_session_wrapper = match imap_session_wrapper_result {
-        Ok(wrapper) => {
-            info!("IMAP connection successful.");
-            wrapper
+    let imap_client = match imap_client_result {
+        Ok(client) => {
+            info!("IMAP connection and client creation successful.");
+            // Wrap the successfully created client in Arc for sharing
+            Arc::new(client)
         },
         Err(e) => {
-            error!("Initial IMAP connection failed: {}. Exiting.", e);
-            // Consider retry logic here instead of exiting directly
-            exit(1); 
+            error!("Initial IMAP connection/client creation failed: {}. Exiting.", e);
+            exit(1);
         }
     };
-
-    // Create the ImapClient using the wrapper directly
-    let imap_client = Arc::new(ImapClient::new(imap_session_wrapper));
-    info!("ImapClient created successfully.");
 
     // --- Start REST Server Directly (if configured) ---
     if let Some(rest_config) = config.rest {
         info!("Starting REST server directly on {}:{}...", rest_config.host, rest_config.port);
-        // Run the server directly, don't spawn
-        // Pass the necessary clones
+        // Pass the Arc<ImapClient> clone
         match run_rest_server(rest_config.clone(), imap_client.clone()).await {
             Ok(_) => info!("REST server finished."),
             Err(e) => error!("REST server failed: {}", e),

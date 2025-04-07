@@ -6,10 +6,10 @@ use thiserror::Error; // For defining API-specific errors
 use serde::Deserialize; // Added for email payloads
 use crate::imap::error::ImapError as InternalImapError;
 use crate::config::RestConfig;
-use log::{error};
+use log::{error, warn};
 use serde_json::json; // Make sure json macro is imported
 use crate::imap::client::ImapClient;
-use crate::imap::types::{SearchCriteria}; // Include SearchCriteria
+use crate::imap::types::{Folder, Email, MailboxInfo, SearchCriteria}; // Include SearchCriteria
 use urlencoding;
 
 // --- API Specific Error Handling ---
@@ -18,265 +18,289 @@ use urlencoding;
 pub enum ApiError {
     #[error("Bad Request: {0}")]
     BadRequest(String),
-    #[error("Unauthorized")]
-    Unauthorized,
-    #[error("Forbidden")]
-    Forbidden,
     #[error("Not Found: {0}")]
     NotFound(String),
     #[error("Conflict: {0}")]
     Conflict(String),
     #[error("Internal Server Error: {0}")]
     InternalError(String),
-    #[error("IMAP Error")]
-    ImapError(#[from] InternalImapError),
+    #[error("IMAP operation failed")]
+    ImapOperationFailed(#[source] InternalImapError),
+}
+
+// Manual implementation to avoid issues with #[from] on non-Clone InternalImapError if it were not Clone
+// Also allows for more specific mapping logic.
+impl From<InternalImapError> for ApiError {
+    fn from(err: InternalImapError) -> Self {
+        warn!("Converting InternalImapError to ApiError: {:?}", err);
+        match err {
+            InternalImapError::Auth(_) => ApiError::InternalError("Authentication failed internally".to_string()),
+            InternalImapError::Mailbox(msg) | InternalImapError::Operation(msg) if msg.to_lowercase().contains("not found") || msg.to_lowercase().contains("doesn't exist") => ApiError::NotFound(msg),
+            InternalImapError::Command(msg) | InternalImapError::Parse(msg) => ApiError::BadRequest(msg),
+            InternalImapError::Connection(msg) | InternalImapError::Tls(msg) => ApiError::InternalError(msg),
+            _ => ApiError::ImapOperationFailed(err),
+        }
+    }
 }
 
 impl ResponseError for ApiError {
     fn status_code(&self) -> StatusCode {
         match self {
             ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
-            ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
-            ApiError::Forbidden => StatusCode::FORBIDDEN,
             ApiError::NotFound(_) => StatusCode::NOT_FOUND,
             ApiError::Conflict(_) => StatusCode::CONFLICT,
             ApiError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-            ApiError::ImapError(ref imap_err) => {
-                match imap_err {
-                    InternalImapError::Auth(_) => StatusCode::UNAUTHORIZED,
-                    InternalImapError::Mailbox(_) => StatusCode::NOT_FOUND,
-                    _ => StatusCode::INTERNAL_SERVER_ERROR,
-                }
+            ApiError::ImapOperationFailed(ref source_err) => match source_err {
+                InternalImapError::Auth(_) => StatusCode::UNAUTHORIZED,
+                InternalImapError::Mailbox(_) => StatusCode::NOT_FOUND,
+                InternalImapError::Command(_) => StatusCode::BAD_REQUEST,
+                InternalImapError::Parse(_) => StatusCode::BAD_REQUEST,
+                _ => StatusCode::INTERNAL_SERVER_ERROR,
             },
         }
     }
 
     fn error_response(&self) -> HttpResponse {
+        let status = self.status_code();
         let message = match self {
-            ApiError::InternalError(_) => "Internal Server Error".to_string(),
-            _ => self.to_string()
+            ApiError::InternalError(_) => "An internal server error occurred.".to_string(),
+            ApiError::ImapOperationFailed(ref source_err) if status == StatusCode::INTERNAL_SERVER_ERROR => {
+                 error!("Unhandled IMAP Error resulted in 500: {:?}", source_err);
+                "An internal server error occurred during IMAP operation.".to_string()
+            }
+            _ => self.to_string(),
         };
-        HttpResponse::build(self.status_code())
-            .json(serde_json::json!({ "error": message }))
+
+        error!("Responding with status {} and message: {}", status, message);
+
+        HttpResponse::build(status)
+            .json(json!({ "error": message }))
     }
 }
 
 // Helper to convert string UIDs to Vec<u32>
 fn parse_uids(uids_str: &str) -> Result<Vec<u32>, ApiError> {
-    uids_str.split(',')
-        .map(|s| s.trim().parse::<u32>()
-             .map_err(|_| ApiError::BadRequest(format!("Invalid UID format: {}", s))))
+    uids_str
+        .split(',')
+        .map(|s| {
+            s.trim().parse::<u32>().map_err(|_| {
+                ApiError::BadRequest(format!("Invalid UID format: {}", s))
+            })
+        })
         .collect()
 }
 
 // --- Configuration and State ---
 
-// Define the application state shared across handlers
-#[derive(Clone)] // Ensure AppState is Clone
+// Application state shared across handlers
+#[derive(Clone)] // AppState must be Clone to be used with web::Data
 struct AppState {
-    // Uncomment imap_client field
-    imap_client: Arc<ImapClient>,
-    rest_config: RestConfig, 
+    imap_client: Arc<ImapClient>, // Use Arc for shared ownership
+    // rest_config: RestConfig, // Keep or remove based on future needs
 }
 
 // --- Route Handlers ---
 
 // GET /api/v1/health
 async fn health_check() -> impl Responder {
-    HttpResponse::Ok().body("OK")
+    HttpResponse::Ok().json(json!({ "status": "OK" }))
 }
 
 // GET /folders
-async fn list_folders(app_state: web::Data<AppState>) -> impl Responder {
-    // Uncomment handler body
-    match app_state.imap_client.list_folders().await {
-        Ok(folders) => HttpResponse::Ok().json(folders),
-        Err(e) => {
-            error!("Failed to list folders: {}", e);
-            // Use ApiError or simplify error response
-            HttpResponse::InternalServerError().json(json!({ "error": e.to_string() }))
-        }
-    }
+async fn list_folders(state: web::Data<AppState>) -> Result<impl Responder, ApiError> {
+    log::info!("Handling GET /folders");
+    let folders = state.imap_client.list_folders().await?;
+    Ok(HttpResponse::Ok().json(folders))
 }
 
 // POST /folders { "name": "folder_name" }
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct FolderCreatePayload { name: String }
 
-async fn create_folder(app_state: web::Data<AppState>, payload: web::Json<FolderCreatePayload>) -> impl Responder {
-    // Uncomment handler body
-    let name = &payload.name;
-    if name.trim().is_empty() {
-        return HttpResponse::BadRequest().json(json!({ "error": "Folder name cannot be empty" }));
+async fn create_folder(
+    state: web::Data<AppState>,
+    payload: web::Json<FolderCreatePayload>,
+) -> Result<impl Responder, ApiError> {
+    let name = payload.name.trim();
+    log::info!("Handling POST /folders with name: {}", name);
+    if name.is_empty() {
+        return Err(ApiError::BadRequest("Folder name cannot be empty".to_string()));
     }
-    match app_state.imap_client.create_folder(name).await {
-        Ok(_) => HttpResponse::Created().json(json!({ "message": format!("Folder '{}' created", name) })),
-        Err(e) => {
-            error!("Failed to create folder '{}': {}", name, e);
-            HttpResponse::InternalServerError().json(json!({ "error": e.to_string() }))
-        }
-    }
+    state.imap_client.create_folder(name).await?;
+    Ok(HttpResponse::Created().json(json!({ "message": format!("Folder '{}' created", name) })))
 }
 
 // DELETE /folders/{folder_name}
-async fn delete_folder(app_state: web::Data<AppState>, path: web::Path<String>) -> impl Responder {
-    // Uncomment handler body
-    let name = path.into_inner();
-    // Basic URL decode (consider more robust library if needed)
-    let decoded_name = match urlencoding::decode(&name) {
-        Ok(decoded) => decoded.into_owned(),
-        Err(e) => {
-            error!("Failed to URL decode folder name '{}': {}", name, e);
-            return HttpResponse::BadRequest().json(json!({ "error": "Invalid folder name encoding" }));
-        }
-    };
-    match app_state.imap_client.delete_folder(&decoded_name).await {
-        Ok(_) => HttpResponse::Ok().json(json!({ "message": format!("Folder '{}' deleted", decoded_name) })),
-        Err(e) => {
-            error!("Failed to delete folder '{}': {}", decoded_name, e);
-            HttpResponse::InternalServerError().json(json!({ "error": e.to_string() }))
-        }
+async fn delete_folder(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> Result<impl Responder, ApiError> {
+    let encoded_name = path.into_inner();
+    let name = urlencoding::decode(&encoded_name)
+        .map_err(|e| ApiError::BadRequest(format!("Invalid folder name encoding: {}", e)))?
+        .into_owned();
+    log::info!("Handling DELETE /folders/{} (decoded: {})", encoded_name, name);
+    if name.is_empty() {
+         return Err(ApiError::BadRequest("Folder name cannot be empty after decoding".to_string()));
     }
+    state.imap_client.delete_folder(&name).await?;
+    Ok(HttpResponse::Ok().json(json!({ "message": format!("Folder '{}' deleted", name) })))
 }
 
 // PUT /folders/{from_name} { "to_name": "new_name" }
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct FolderRenamePayload { to_name: String }
 
-async fn rename_folder(app_state: web::Data<AppState>, path: web::Path<String>, payload: web::Json<FolderRenamePayload>) -> impl Responder {
-    // Uncomment handler body
-    let from_name = path.into_inner();
-    let to_name = &payload.to_name;
-    // Decode names
-    let decoded_from = match urlencoding::decode(&from_name) {
-        Ok(decoded) => decoded.into_owned(),
-        Err(e) => return HttpResponse::BadRequest().json(json!({ "error": format!("Invalid 'from' name encoding: {}", e) })),
-    };
-     let decoded_to = match urlencoding::decode(&to_name) {
-        Ok(decoded) => decoded.into_owned(),
-        Err(e) => return HttpResponse::BadRequest().json(json!({ "error": format!("Invalid 'to' name encoding: {}", e) })),
-    };
-     if decoded_to.trim().is_empty() {
-         return HttpResponse::BadRequest().json(json!({ "error": "New folder name cannot be empty" }));
-     }
+async fn rename_folder(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+    payload: web::Json<FolderRenamePayload>,
+) -> Result<impl Responder, ApiError> {
+    let encoded_from = path.into_inner();
+    let from_name = urlencoding::decode(&encoded_from)
+        .map_err(|e| ApiError::BadRequest(format!("Invalid 'from' name encoding: {}", e)))?
+        .into_owned();
 
-    match app_state.imap_client.rename_folder(&decoded_from, &decoded_to).await {
-        Ok(_) => HttpResponse::Ok().json(json!({ "message": format!("Folder '{}' renamed to '{}'", decoded_from, decoded_to) })),
-        Err(e) => {
-            error!("Failed to rename folder '{}' to '{}': {}", decoded_from, decoded_to, e);
-            HttpResponse::InternalServerError().json(json!({ "error": e.to_string() }))
-        }
+    let to_name = payload.to_name.trim();
+    log::info!("Handling PUT /folders/{} with to_name: {} (decoded from: {})", encoded_from, to_name, from_name);
+
+    if from_name.is_empty() || to_name.is_empty() {
+         return Err(ApiError::BadRequest("Folder names cannot be empty".to_string()));
     }
+
+    state.imap_client.rename_folder(&from_name, to_name).await?;
+    Ok(HttpResponse::Ok()
+        .json(json!({ "message": format!("Folder '{}' renamed to '{}'", from_name, to_name) })))
 }
 
 // POST /folders/{folder_name}/select
-async fn select_folder(app_state: web::Data<AppState>, path: web::Path<String>) -> impl Responder {
-    // Uncomment handler body
-    let name = path.into_inner();
-    let decoded_name = match urlencoding::decode(&name) {
-        Ok(decoded) => decoded.into_owned(),
-        Err(e) => return HttpResponse::BadRequest().json(json!({ "error": format!("Invalid folder name encoding: {}", e) })),
-    };
-    match app_state.imap_client.select_folder(&decoded_name).await {
-        // TODO: Determine how to serialize async_imap::types::Mailbox if needed
-        // Ok(mailbox_info) => HttpResponse::Ok().json(mailbox_info), 
-        Ok(_) => HttpResponse::Ok().json(json!({ "message": format!("Folder '{}' selected", decoded_name)})), // Temp response
-        Err(e) => {
-            error!("Failed to select folder '{}': {}", decoded_name, e);
-            HttpResponse::InternalServerError().json(json!({ "error": e.to_string() }))
-        }
+async fn select_folder(
+    state: web::Data<AppState>,
+    path: web::Path<String>,
+) -> Result<impl Responder, ApiError> {
+    let encoded_name = path.into_inner();
+    let name = urlencoding::decode(&encoded_name)
+        .map_err(|e| ApiError::BadRequest(format!("Invalid folder name encoding: {}", e)))?
+        .into_owned();
+    log::info!("Handling POST /folders/{}/select (decoded: {})", encoded_name, name);
+     if name.is_empty() {
+         return Err(ApiError::BadRequest("Folder name cannot be empty after decoding".to_string()));
     }
+    // Call the updated client method which now returns MailboxInfo
+    let mailbox_info: MailboxInfo = state.imap_client.select_folder(&name).await?;
+    // Return the serializable MailboxInfo in the JSON response
+    Ok(HttpResponse::Ok().json(mailbox_info))
 }
 
-// GET /folders/{name}/emails (Search - simplified)
+// GET /emails/search?criteria=... (Simplified: uses query params)
 #[derive(Deserialize, Debug)]
-struct EmailSearchQuery { subject: Option<String>, from: Option<String> }
-async fn search_emails_handler(
+struct EmailSearchQuery {
+    subject: Option<String>,
+    from: Option<String>,
+    body: Option<String>,
+    all: Option<String>, // Flag-like param
+    unseen: Option<String>, // Flag-like param
+    // Add other criteria as needed
+}
+
+async fn search_emails(
     state: web::Data<AppState>,
-    folder_name: web::Path<String>,
     query: web::Query<EmailSearchQuery>,
 ) -> Result<impl Responder, ApiError> {
-    // Uncomment handler body (Simplified example criteria)
-    // Select folder first (often required)
-    let decoded_folder = urlencoding::decode(&folder_name).map_err(|_| ApiError::BadRequest("Invalid folder encoding".to_string()))?.into_owned();
-    state.imap_client.select_folder(&decoded_folder).await?; // Use `?` to propagate ImapError -> ApiError
+    log::info!("Handling GET /emails/search with query: {:?}", query);
+    // Note: This assumes a folder is implicitly selected (e.g., INBOX by default
+    // or by a previous `select_folder` call). A real implementation might require
+    // the folder name in the path or query params.
 
-    // Build criteria (example)
-    let criteria = if let Some(subj) = &query.subject {
-        SearchCriteria::Subject(subj.clone()) 
-    } else if let Some(sender) = &query.from {
-         SearchCriteria::From(sender.clone())
+    // Build SearchCriteria from query params (example)
+    let criteria = if query.subject.is_some() {
+        SearchCriteria::Subject(query.subject.clone().unwrap())
+    } else if query.from.is_some() {
+        SearchCriteria::From(query.from.clone().unwrap())
+    } else if query.body.is_some() {
+        SearchCriteria::Body(query.body.clone().unwrap())
+    } else if query.unseen.is_some() {
+        SearchCriteria::Unseen
     } else {
-        SearchCriteria::All
+        SearchCriteria::All // Default
     };
 
+    log::debug!("Constructed search criteria: {:?}", criteria);
     let uids = state.imap_client.search_emails(criteria).await?;
     Ok(HttpResponse::Ok().json(json!({ "uids": uids })))
 }
 
-// GET /emails/fetch?uids=1,2,3 
+// GET /emails/fetch?uids=1,2,3
 #[derive(Deserialize, Debug)]
 struct EmailFetchQuery { uids: String }
-async fn fetch_emails_handler(
+
+async fn fetch_emails(
     state: web::Data<AppState>,
     query: web::Query<EmailFetchQuery>,
 ) -> Result<impl Responder, ApiError> {
-    // Uncomment handler body
-    let uids: Vec<u32> = query.uids.split(',').filter_map(|s| s.trim().parse().ok()).collect();
+    log::info!("Handling GET /emails/fetch with uids: {}", query.uids);
+    let uids = parse_uids(&query.uids)?;
     if uids.is_empty() {
-        return Err(ApiError::BadRequest("Invalid or empty UIDs provided".to_string()));
+        return Err(ApiError::BadRequest("No valid UIDs provided in query string".to_string()));
     }
-    // Note: Assumes a folder is already selected or fetch works across folders
+    // Note: Assumes a folder is selected.
     let emails = state.imap_client.fetch_emails(uids).await?;
     Ok(HttpResponse::Ok().json(emails))
 }
 
 // POST /emails/move { "uids": [1, 2], "destination_folder": "Archive" }
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct EmailMovePayload { uids: Vec<u32>, destination_folder: String }
-async fn move_email_handler(
+
+async fn move_emails(
     state: web::Data<AppState>,
     payload: web::Json<EmailMovePayload>,
 ) -> Result<impl Responder, ApiError> {
-    // Uncomment handler body
+    log::info!("Handling POST /emails/move with payload: {:?}", payload);
     let uids = payload.uids.clone();
+    let dest_folder = payload.destination_folder.trim();
+
     if uids.is_empty() {
         return Err(ApiError::BadRequest("UID list cannot be empty".to_string()));
     }
-    let dest = &payload.destination_folder;
-     if dest.trim().is_empty() {
+    if dest_folder.is_empty() {
         return Err(ApiError::BadRequest("Destination folder cannot be empty".to_string()));
     }
-    // Note: Assumes source folder is selected
-    state.imap_client.move_email(uids.clone(), dest).await?;
-    Ok(HttpResponse::Ok().json(json!({ "message": "Emails moved successfully" })))
+
+    // Note: Assumes source folder is selected.
+    state.imap_client.move_email(uids, dest_folder).await?;
+    Ok(HttpResponse::Ok()
+        .json(json!({ "message": format!("Emails moved to '{}'", dest_folder) })))
 }
 
-// --- Routes Configuration ---
+// --- Service Configuration ---
 
-// Configuration function for Actix-Web routes
-// Make this public for tests
-pub fn configure_routes(cfg: &mut web::ServiceConfig) {
+// Renamed function to be more specific
+pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
+    log::info!("Configuring REST API routes under /api/v1");
     cfg.service(
-        web::scope("/api/v1")
+        web::scope("/api/v1") // Base path for this API version
             .route("/health", web::get().to(health_check))
             .service(
                 web::scope("/folders")
                     .route("", web::get().to(list_folders))
                     .route("", web::post().to(create_folder))
-                    .route("/{name}", web::delete().to(delete_folder))
-                    .route("/{name}/rename", web::put().to(rename_folder))
-                    .route("/{name}/select", web::post().to(select_folder))
-                    // Route to search emails within a specific folder
-                    .route("/{name}/emails", web::get().to(search_emails_handler))
+                    .route("/{folder_name}", web::delete().to(delete_folder))
+                    // Route for rename needs path param and body
+                    .route("/{folder_name}", web::put().to(rename_folder))
+                     // POST for select action
+                    .route("/{folder_name}/select", web::post().to(select_folder))
             )
             .service(
-                 web::scope("/emails")
-                    // Route to fetch specific emails by UID (comma-separated)
-                    .route("/fetch", web::get().to(fetch_emails_handler)) // Requires uids query param
-                    // Route to move emails
-                    .route("/move", web::post().to(move_email_handler))
+                web::scope("/emails")
+                    // Search endpoint (example uses query params)
+                    .route("/search", web::get().to(search_emails))
+                    // Fetch endpoint (requires UIDs in query)
+                    .route("/fetch", web::get().to(fetch_emails))
+                    // Move endpoint
+                    .route("/move", web::post().to(move_emails))
             )
+            // Add other resources/scopes here
     );
 }
 
@@ -284,35 +308,24 @@ pub fn configure_routes(cfg: &mut web::ServiceConfig) {
 
 pub async fn run_server(
     config: RestConfig,
-    imap_client: Arc<ImapClient>, // Use the parameter
+    imap_client: Arc<ImapClient>, // Pass the Arc<ImapClient>
   ) -> std::io::Result<()> {
-    
-    let app_state = web::Data::new(AppState {
-        // Uncomment imap_client field assignment
-        imap_client: imap_client.clone(),
-        rest_config: config.clone(),
-    });
+    let bind_address = format!("{}:{}", config.host, config.port);
+    log::info!("Starting REST API server at {}", bind_address);
 
-    log::info!("Starting Actix server at http://{}:{}", config.host, config.port);
+    // Create the application state
+    let app_state = AppState {
+        imap_client, // Move the Arc into the state
+        // rest_config: config.clone(), // Clone config if needed by handlers
+    };
 
     HttpServer::new(move || {
         App::new()
-            .app_data(app_state.clone()) // Add shared state
-            .wrap(Logger::default()) // Enable basic logging
-            .service(
-                web::scope("/api/v1") // Group routes under /api/v1
-                    // Restore actual handlers
-                    .route("/folders", web::get().to(list_folders))
-                    .route("/folders", web::post().to(create_folder))
-                    .route("/folders/{name}", web::delete().to(delete_folder))
-                    .route("/folders/{name}/rename", web::put().to(rename_folder))
-                    .route("/folders/{name}/select", web::post().to(select_folder))
-                    .route("/folders/{name}/emails", web::get().to(search_emails_handler))
-                    .route("/emails/fetch", web::get().to(fetch_emails_handler))
-                    .route("/emails/move", web::post().to(move_email_handler))
-            )
+            .app_data(web::Data::new(app_state.clone())) // Share state
+            .wrap(Logger::default()) // Basic request logging
+            .configure(configure_rest_service) // Register routes
     })
-    .bind((config.host.as_str(), config.port))?
+    .bind(&bind_address)?
     .run()
     .await
 } 

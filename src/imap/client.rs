@@ -1,8 +1,8 @@
 use crate::imap::error::ImapError;
 use crate::imap::session::{AsyncImapSessionWrapper, ImapSession};
 use crate::imap::types::{Email, Folder, SearchCriteria};
+use crate::imap::types::MailboxInfo;
 use async_imap::{Client as AsyncImapClient, Session as AsyncImapSession};
-use async_imap::types::Mailbox as AsyncMailbox;
 use rustls::pki_types::ServerName as PkiServerName;
 use rustls::{ClientConfig, RootCertStore};
 use std::sync::Arc;
@@ -192,7 +192,7 @@ impl ImapClient {
         self.session.lock().await.rename_folder(from, to).await
     }
 
-    pub async fn select_folder(&self, name: &str) -> Result<AsyncMailbox, ImapError> {
+    pub async fn select_folder(&self, name: &str) -> Result<MailboxInfo, ImapError> {
         self.session.lock().await.select_folder(name).await
     }
 

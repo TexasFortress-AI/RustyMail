@@ -12,8 +12,8 @@ use async_imap::{
     types::{Flag as AsyncImapFlag, Name, Fetch, Mailbox as AsyncMailbox},
 };
 
-use crate::imap::types::{Email, Folder, SearchCriteria};
-use crate::prelude::*;
+use crate::imap::types::{Email, Folder, MailboxInfo, SearchCriteria};
+use crate::imap::error::ImapError;
 
 // Type alias for the stream compatible with futures_util::io traits
 pub type TlsImapSession = AsyncImapSession<Compat<TokioTlsStream<TokioTcpStream>>>;
@@ -144,7 +144,9 @@ pub trait ImapSession: Send + Sync {
     async fn create_folder(&self, name: &str) -> Result<(), ImapError>;
     async fn delete_folder(&self, name: &str) -> Result<(), ImapError>;
     async fn rename_folder(&self, from: &str, to: &str) -> Result<(), ImapError>;
-    async fn select_folder(&self, name: &str) -> Result<AsyncMailbox, ImapError>;
+    /// Selects a folder, making it the current folder for subsequent operations.
+    /// Returns metadata about the selected folder.
+    async fn select_folder(&self, name: &str) -> Result<MailboxInfo, ImapError>;
     async fn search_emails(&self, criteria: SearchCriteria) -> Result<Vec<u32>, ImapError>;
     async fn fetch_emails(&self, uids: Vec<u32>) -> Result<Vec<Email>, ImapError>;
     async fn move_email(&self, uids: Vec<u32>, destination_folder: &str) -> Result<(), ImapError>;
@@ -184,10 +186,30 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
         Ok(())
     }
 
-    async fn select_folder(&self, name: &str) -> Result<AsyncMailbox, ImapError> {
-        let mut session = self.session.lock().await;
-        let async_mailbox = session.select(name).await?;
-        Ok(async_mailbox)
+    async fn select_folder(&self, name: &str) -> Result<MailboxInfo, ImapError> {
+        log::debug!("ImapSession::select_folder called for '{}'", name);
+        let mut session_guard = self.session.lock().await;
+        let mailbox = session_guard.select(name).await?;
+        log::trace!("Raw mailbox selected: {:?}", mailbox);
+
+        // Construct and return the MailboxInfo struct
+        Ok(MailboxInfo {
+            flags: mailbox
+                .flags
+                .iter()
+                .map(convert_async_flag_to_string)
+                .collect(),
+            exists: mailbox.exists,
+            recent: mailbox.recent,
+            unseen: mailbox.unseen,
+            permanent_flags: mailbox
+                .permanent_flags
+                .iter()
+                .map(convert_async_flag_to_string)
+                .collect(),
+            uid_next: mailbox.uid_next,
+            uid_validity: mailbox.uid_validity,
+        })
     }
 
     async fn search_emails(&self, criteria: SearchCriteria) -> Result<Vec<u32>, ImapError> {

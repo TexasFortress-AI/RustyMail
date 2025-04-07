@@ -3,8 +3,7 @@ mod tests {
     use crate::imap::client::ImapClient;
     use crate::imap::error::ImapError;
     use crate::imap::session::ImapSession; // Use the trait
-    use crate::imap::types::{Email, Folder, SearchCriteria};
-    use async_imap::types::Mailbox as AsyncMailbox; // Correct import path
+    use crate::imap::types::{Email, Folder, SearchCriteria, MailboxInfo};
     use async_trait::async_trait;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
@@ -29,15 +28,13 @@ mod tests {
     }
 
     // The Mock Session implementation
-    #[derive(Debug)]
+    #[derive(Debug, Clone)]
     struct MockImapSession {
         tracker: Arc<MockCallTracker>,
-        // Control specific outcomes
         list_folders_result: Result<Vec<Folder>, ImapError>,
-        select_folder_result: Result<AsyncMailbox, ImapError>,
+        select_folder_result: Result<MailboxInfo, ImapError>,
         search_emails_result: Result<Vec<u32>, ImapError>,
         fetch_emails_result: Result<Vec<Email>, ImapError>,
-        // Generic results for simple Ok/Err control
         create_result: Result<(), ImapError>,
         delete_result: Result<(), ImapError>,
         rename_result: Result<(), ImapError>,
@@ -60,22 +57,20 @@ mod tests {
                         delimiter: Some("/".to_string()),
                     },
                 ]),
-                select_folder_result: Ok(AsyncMailbox {
-                    // Default valid mailbox
-                    flags: Vec::new(),
+                select_folder_result: Ok(MailboxInfo {
+                    flags: vec!["\\Seen".to_string()],
                     exists: 10,
                     recent: 1,
                     unseen: Some(5),
-                    permanent_flags: Vec::new(),
+                    permanent_flags: vec!["\\".to_string()],
                     uid_next: Some(101),
                     uid_validity: Some(12345),
-                    highest_modseq: None,
                 }),
                 search_emails_result: Ok(vec![1, 2, 3]),
                 fetch_emails_result: Ok(vec![Email {
                     uid: 1,
-                    flags: vec!["\\Seen".to_string()],
-                    size: Some(1024),
+                    flags: vec![],
+                    size: Some(100),
                     envelope: None,
                 }]),
                 create_result: Ok(()),
@@ -135,7 +130,7 @@ mod tests {
             self.rename_result.clone()
         }
 
-        async fn select_folder(&self, _name: &str) -> Result<AsyncMailbox, ImapError> {
+        async fn select_folder(&self, _name: &str) -> Result<MailboxInfo, ImapError> {
             self.tracker
                 .select_folder_called
                 .store(true, Ordering::SeqCst);
@@ -237,14 +232,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_select_folder_success() {
+    async fn test_select_folder_delegation() {
         let mock_session = MockImapSession::default_ok();
         let tracker = mock_session.tracker.clone();
         let client = ImapClient::new_with_session(Arc::new(Mutex::new(mock_session)));
 
         let result = client.select_folder("INBOX").await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().exists, 10); // Check some mailbox data
+        let info = result.unwrap();
+        assert_eq!(info.exists, 10);
         assert!(tracker.select_folder_called.load(Ordering::SeqCst));
     }
 
