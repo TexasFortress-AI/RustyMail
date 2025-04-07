@@ -4,7 +4,7 @@ mod live_tests {
     use actix_web::{test, web, App, http::StatusCode};
     use rustymail::{
         api::rest::{configure_rest_service, AppState},
-        imap::{client::ImapClient, types::Folder},
+        imap::{client::ImapClient, types::Folder, types::MailboxInfo, types::SearchCriteria, types::ModifyFlagsPayload, types::AppendEmailPayload, types::Email},
     };
     use std::sync::Arc;
     use serde_json::json;
@@ -178,4 +178,151 @@ mod live_tests {
         let _ = client.delete_folder(&new_full_name).await;
     }
 
+    #[actix_web::test]
+    async fn test_live_select_folder() {
+        let (mut app, _client) = setup_test_app_live().await;
+        let folder_name = "INBOX"; // Select a standard folder
+        let encoded_name = urlencoding::encode(folder_name);
+
+        println!("Live Test: Selecting folder '{}'", folder_name);
+
+        let select_req = test::TestRequest::post()
+            .uri(&format!("/api/v1/folders/{}/select", encoded_name))
+            .to_request();
+        let select_resp = test::call_service(&mut app, select_req).await;
+
+        assert!(select_resp.status().is_success(), "Select API call failed with status: {}", select_resp.status());
+        let mailbox_info: MailboxInfo = test::read_body_json(select_resp).await;
+
+        println!("Select result: {:?}", mailbox_info);
+        assert!(mailbox_info.exists > 0, "Expected INBOX to have existing emails");
+    }
+
+    #[actix_web::test]
+    async fn test_live_search_emails() {
+        let (mut app, _client) = setup_test_app_live().await;
+        let folder_name = "INBOX"; 
+        let encoded_folder_name = urlencoding::encode(folder_name);
+        // Simple search for all emails
+        let search_query = "ALL";
+        let encoded_query = urlencoding::encode(search_query);
+
+        println!("Live Test: Searching folder '{}' with query '{}'", folder_name, search_query);
+
+        let search_req = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{}/emails/search?query={}", encoded_folder_name, encoded_query))
+            .to_request();
+        let search_resp = test::call_service(&mut app, search_req).await;
+
+        assert!(search_resp.status().is_success(), "Search API call failed with status: {}", search_resp.status());
+        let uids: Vec<u32> = test::read_body_json(search_resp).await;
+
+        println!("Search result UIDs: {:?}", uids);
+        assert!(!uids.is_empty(), "Expected search query '{}' in folder '{}' to return some UIDs", search_query, folder_name);
+    }
+
+    #[actix_web::test]
+    async fn test_live_fetch_emails() {
+        let (mut app, _client) = setup_test_app_live().await;
+        let folder_name = "INBOX";
+        let encoded_folder_name = urlencoding::encode(folder_name);
+
+        // First, find some UIDs to fetch (reuse search logic)
+        let search_query = "ALL";
+        let encoded_query = urlencoding::encode(search_query);
+        let search_req = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{}/emails/search?query={}", encoded_folder_name, encoded_query))
+            .to_request();
+        let search_resp = test::call_service(&mut app, search_req).await;
+        let uids: Vec<u32> = test::read_body_json(search_resp).await;
+        assert!(!uids.is_empty(), "Need UIDs from search to run fetch test");
+        let uids_to_fetch = uids.iter().take(2).cloned().collect::<Vec<u32>>(); // Fetch first 2
+        let uids_param = uids_to_fetch.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",");
+
+        println!("Live Test: Fetching UIDs '{}' from folder '{}'", uids_param, folder_name);
+
+        // Fetch without body first
+        let fetch_req_no_body = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{}/emails?uids={}", encoded_folder_name, uids_param))
+            .to_request();
+        let fetch_resp_no_body = test::call_service(&mut app, fetch_req_no_body).await;
+        assert!(fetch_resp_no_body.status().is_success(), "Fetch (no body) API call failed: {}", fetch_resp_no_body.status());
+        let emails_no_body: Vec<Email> = test::read_body_json(fetch_resp_no_body).await;
+        println!("Fetch (no body) result count: {}", emails_no_body.len()); // Log count for clarity
+        assert_eq!(emails_no_body.len(), uids_to_fetch.len());
+        assert!(emails_no_body.iter().all(|e| e.body.is_none()), "Expected no bodies when fetchBody=false");
+        assert!(emails_no_body.iter().all(|e| uids_to_fetch.contains(&e.uid)), "Fetched UIDs don't match requested");
+
+        // Fetch *with* body
+        println!("Live Test: Fetching UIDs '{}' WITH BODY from folder '{}'", uids_param, folder_name);
+        let fetch_req_with_body = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{}/emails?uids={}&fetchBody=true", encoded_folder_name, uids_param))
+            .to_request();
+        let fetch_resp_with_body = test::call_service(&mut app, fetch_req_with_body).await;
+        assert!(fetch_resp_with_body.status().is_success(), "Fetch (with body) API call failed: {}", fetch_resp_with_body.status());
+        let emails_with_body: Vec<Email> = test::read_body_json(fetch_resp_with_body).await;
+        println!("Fetch (with body) result count: {}", emails_with_body.len());
+        assert_eq!(emails_with_body.len(), uids_to_fetch.len());
+        // Check if the body field is present and not empty
+        assert!(emails_with_body.iter().all(|e| e.body.is_some() && !e.body.as_ref().unwrap().is_empty()), "Expected non-empty bodies when fetchBody=true");
+        assert!(emails_with_body.iter().all(|e| uids_to_fetch.contains(&e.uid)), "Fetched UIDs don't match requested");
+    }
+
+    #[actix_web::test]
+    async fn test_live_move_email() {
+        let (mut app, client) = setup_test_app_live().await;
+        let source_folder = "INBOX";
+        let dest_base_folder = "LiveTestMoveDest";
+        let dest_full_folder = format!("INBOX.{}", dest_base_folder);
+        let encoded_source_folder = urlencoding::encode(source_folder);
+        // Note: The API expects the BASE destination name in the payload
+
+        println!("Live Test: Setting up for move from '{}' to '{}'", source_folder, dest_base_folder);
+
+        // 1. Ensure destination folder exists (and cleanup if needed)
+        let _ = client.delete_folder(&dest_full_folder).await; // Cleanup previous run
+        let create_res = client.create_folder(&dest_full_folder).await;
+        assert!(create_res.is_ok(), "Failed to create destination folder '{}' for move test", dest_full_folder);
+
+        // 2. Get a UID from the source folder (INBOX)
+        let search_req = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{}/emails/search?query=ALL", encoded_source_folder))
+            .to_request();
+        let search_resp = test::call_service(&mut app, search_req).await;
+        let uids: Vec<u32> = test::read_body_json(search_resp).await;
+        assert!(!uids.is_empty(), "INBOX must have emails to test move");
+        let uid_to_move = uids[0]; // Move the first email found
+        println!("Live Test: Attempting to move UID {} from {} to {}", uid_to_move, source_folder, dest_base_folder);
+
+        // 3. Perform the move via API
+        let move_req = test::TestRequest::post()
+            .uri(&format!("/api/v1/folders/{}/emails/move", encoded_source_folder))
+            .set_json(&serde_json::json!({
+                "uids": [uid_to_move],
+                "destination_folder": dest_base_folder
+            }))
+            .to_request();
+        let move_resp = test::call_service(&mut app, move_req).await;
+        assert!(move_resp.status().is_success(), "Move API call failed: {}", move_resp.status());
+
+        // 4. Verify the move (simple check: try to fetch from original folder - should fail or not be found)
+        // A more robust check would involve searching both folders or checking counts
+        let fetch_req_after_move = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{}/emails?uids={}", encoded_source_folder, uid_to_move))
+            .to_request();
+        let fetch_resp_after_move = test::call_service(&mut app, fetch_req_after_move).await;
+        // Depending on server behavior, this might be 404 or 200 with empty list
+        if fetch_resp_after_move.status().is_success() {
+            let emails_after_move: Vec<Email> = test::read_body_json(fetch_resp_after_move).await;
+            assert!(emails_after_move.is_empty(), "Email UID {} should not be found in {} after move", uid_to_move, source_folder);
+        } else {
+             println!("Fetch after move returned non-success (expected if UID gone): {}", fetch_resp_after_move.status());
+        }
+
+        // Optional: Verify email exists in destination folder (more complex search needed)
+
+        // 5. Cleanup destination folder
+        println!("Live Test: Cleaning up destination folder '{}'", dest_full_folder);
+        let _ = client.delete_folder(&dest_full_folder).await;
+    }
 }

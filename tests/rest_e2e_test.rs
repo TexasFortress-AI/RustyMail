@@ -214,25 +214,40 @@ async fn test_health_check(client: &Client) -> bool {
 #[tokio::test]
 async fn run_rest_e2e_tests() {
     println!("--- run_rest_e2e_tests function started ---");
-
-    println!("Attempting to start TestServer...");
-    let mut server = TestServer::start().await;
-    println!("TestServer::start() completed.");
-
-    println!("Creating HTTP client...");
+    let server = TestServer::start().await;
+    println!("TestServer started successfully.");
     let client = Client::new();
-    println!("HTTP client created.");
+    println!("Reqwest client created.");
 
-    // Health check is now done during server start
-
-    println!("Running folder list test...");
+    println!("--- Running E2E: List Folders ---");
     test_e2e_list_folders(&client).await;
-    println!("Folder list test completed.");
+    println!("--- Completed E2E: List Folders ---");
 
-    println!("Shutting down server...");
-    server.shutdown().await;
-    println!("Server shutdown complete.");
+    println!("--- Running E2E: Create/Delete Folder ---");
+    test_e2e_create_delete_folder(&client).await;
+    println!("--- Completed E2E: Create/Delete Folder ---");
 
+    println!("--- Running E2E: Rename Folder ---");
+    test_e2e_rename_folder(&client).await;
+    println!("--- Completed E2E: Rename Folder ---");
+
+    println!("--- Running E2E: Select Folder ---");
+    test_e2e_select_folder(&client).await;
+    println!("--- Completed E2E: Select Folder ---");
+
+    println!("--- Running E2E: Search Emails ---");
+    test_e2e_search_emails(&client).await;
+    println!("--- Completed E2E: Search Emails ---");
+
+    println!("--- Running E2E: Fetch Emails ---");
+    test_e2e_fetch_emails(&client).await;
+    println!("--- Completed E2E: Fetch Emails ---");
+
+    println!("--- Running E2E: Move Email ---");
+    test_e2e_move_email(&client).await;
+    println!("--- Completed E2E: Move Email ---");
+
+    // Server is shut down automatically when `server` goes out of scope due to Drop trait
     println!("--- run_rest_e2e_tests function finished ---");
 }
 
