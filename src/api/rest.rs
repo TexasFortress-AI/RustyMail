@@ -132,8 +132,21 @@ async fn create_folder(
     if name.is_empty() {
         return Err(ApiError::BadRequest("Folder name cannot be empty".to_string()));
     }
-    state.imap_client.create_folder(name).await?;
-    Ok(HttpResponse::Created().json(json!({ "message": format!("Folder '{}' created", name) })))
+    
+    // Await the result first
+    let create_result = state.imap_client.create_folder(name).await;
+
+    // Log the result (success or error) AFTER awaiting
+    match create_result {
+        Ok(_) => {
+            log::info!("IMAP create_folder succeeded for '{}'", name);
+            Ok(HttpResponse::Created().json(json!({ "message": format!("Folder '{}' created", name) })))
+        }
+        Err(e) => {
+            log::error!("IMAP create_folder failed for '{}': {:?}", name, e);
+            Err(e.into()) // Convert to ApiError using the existing From trait
+        }
+    }
 }
 
 // DELETE /folders/{folder_name}

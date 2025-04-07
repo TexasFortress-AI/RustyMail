@@ -13,6 +13,7 @@ mod live_tests {
     use actix_web::dev::{Service, ServiceResponse};
     use actix_web::Error as ActixError;
     use actix_http::Request;
+    use env_logger; // Add import for env_logger
 
     // --- Test Setup Helper ---
 
@@ -27,6 +28,9 @@ mod live_tests {
 
      // Setup function - creates service and live client per test
      async fn setup_test_app_live() -> (impl Service<Request, Response = ServiceResponse, Error = ActixError>, Arc<ImapClient>) {
+        // Ensure logging is initialized for tests
+        let _ = env_logger::builder().is_test(true).try_init();
+
         let config = Settings::new(None).expect("Failed to load config");
         println!(
             "Connecting to live test IMAP server at {}:{} for test...",

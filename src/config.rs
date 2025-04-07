@@ -4,9 +4,11 @@ use serde::{Deserialize, Serialize};
 // Remove unused import
 // use std::path::Path;
 use thiserror::Error;
-use std::env; // Import env module
+// Remove unused env import if not needed elsewhere
+// use std::env; 
 use std::path::PathBuf; // Import PathBuf
-use dotenvy; // Import dotenvy crate
+// Remove dotenvy
+// use dotenvy; 
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -47,24 +49,13 @@ pub struct Settings {
 
 impl Settings {
     pub fn new(config_path: Option<&str>) -> Result<Self, config::ConfigError> {
-        // Construct path to .env relative to Cargo.toml
-        let dotenv_path = match std::env::var("CARGO_MANIFEST_DIR") {
-            Ok(manifest_dir) => {
-                let mut path = PathBuf::from(manifest_dir);
-                path.push(".env");
-                path
-            }
-            Err(_) => PathBuf::from(".env"), // Fallback if manifest dir not found (e.g., deployed)
-        };
-
-        // Load .env file from the explicit path. Ignore error if not found.
-        println!("Attempting to load .env from: {:?}", dotenv_path);
-        dotenvy::from_path(&dotenv_path).ok();
+        // Remove dotenvy loading
 
         // Determine the configuration file path (default.toml)
         let config_file_path = match config_path {
             Some(p) => PathBuf::from(p),
             None => {
+                // Use CARGO_MANIFEST_DIR, handle potential error
                 let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
                     .map_err(|e| config::ConfigError::Foreign(Box::new(e)))?; 
                 let mut default_path = PathBuf::from(manifest_dir);
@@ -80,18 +71,13 @@ impl Settings {
             // Add default values
             .set_default("interface", "rest")?
             .set_default("log.level", "info")?
-            // Remove placeholder IMAP defaults - rely on Env Vars
-            // .set_default("imap.host", "localhost")? 
-            // .set_default("imap.port", 993)?
-            // .set_default("imap.user", "user")?
-            // .set_default("imap.pass", "pass")?
-            // Load sources (File is optional, Env overrides defaults)
+            // Load config file source
             .add_source(File::from(config_file_path.clone()).required(true))
-            // Environment source expects flattened names like APP__IMAP__HOST
-            .add_source(Environment::with_prefix("APP").separator("__"))
-            // Add environment variable overrides (RUSTYMAIL prefix)
-            .add_source(Environment::with_prefix("RUSTYMAIL").separator("_"));
+            // Restore automatic environment source for APP__ prefix
+            .add_source(Environment::with_prefix("APP").separator("__"));
+            // Remove manual overrides
 
+        // Build and deserialize
         builder.build()?.try_deserialize()
     }
 }
