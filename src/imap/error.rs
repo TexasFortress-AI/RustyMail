@@ -42,26 +42,16 @@ pub enum ImapError {
     
     #[error("UTF-8 conversion error: {0}")]
     Utf8(#[from] std::string::FromUtf8Error),
-}
-
-impl From<std::io::Error> for ImapError {
-    fn from(err: std::io::Error) -> Self {
-        // Distinguish between general I/O and connection-specific I/O
-        ImapError::Connection(format!("Underlying I/O error: {}", err))
-    }
-}
-
-impl From<rustls::Error> for ImapError {
-    fn from(err: rustls::Error) -> Self {
-        ImapError::Connection(format!("Underlying TLS error: {}", err))
-    }
-}
-
-impl From<std::string::FromUtf8Error> for ImapError {
-    fn from(err: std::string::FromUtf8Error) -> Self {
-        // Correct conversion
-        ImapError::Utf8(err)
-    }
+    
+    // Add missing variants
+    #[error("Internal error: {0}")]
+    Internal(String),
+    
+    #[error("Invalid UID specified: {0}")]
+    InvalidUid(u32),
+    
+    #[error("Parse error: {0}")]
+    Parse(String),
 }
 
 // No longer need From<Infallible> or specific imap-next command errors

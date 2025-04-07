@@ -16,7 +16,7 @@ use imap_types::{
     core::{Atom},
     flag::Flag as ImapTypesFlag,
     sequence::SequenceSet,
-    fetch::FetchAttributes,
+    fetch::FetchAttribute,
     mailbox::Mailbox,
 };
 
@@ -208,8 +208,7 @@ impl ImapSession for AsyncImapSessionWrapper {
         let mut session_guard = self.session.lock().await;
         // Call select and return the resulting Mailbox directly (OwnedMailbox is an alias)
         let mailbox = session_guard.select(name).await?;
-        // Remove the struct construction logic
-        // Ok(OwnedMailbox { ... fields ... })
+        // REMOVE the struct construction logic again
         Ok(mailbox) // Return the Mailbox alias directly
     }
 
@@ -235,13 +234,21 @@ impl ImapSession for AsyncImapSessionWrapper {
         let messages: Vec<Fetch> = message_stream.try_collect().await?;
 
         Ok(messages.into_iter().map(|fetch| {
+            // Initialize all fields of the Email struct
             let mut email = Email {
                 uid: fetch.uid.unwrap_or(0),
                 flags: Vec::new(),
-                internal_date: None,
+                internal_date: None, // Placeholder
                 size: fetch.size,
                 envelope: None,
-                body_structure: None,
+                body_structure: None, // Placeholder
+                // Add None for the new fields from types.rs
+                from: None,
+                to: None,
+                cc: None,
+                bcc: None,
+                sender: None,
+                reply_to: None,
             };
 
             email.flags = fetch.flags().map(|f| convert_async_flag(&f)).collect();

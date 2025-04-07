@@ -1,6 +1,6 @@
 # RustyMail
 
-![RustyMail](docs/images/RustyMail.jpg)
+![RustyMail Architecture Diagram](docs/images/image%20(12).jpg)
 
 [![Rust](https://github.com/rangersdo/rustymail/actions/workflows/rust.yml/badge.svg)](https://github.com/rangersdo/rustymail/actions/workflows/rust.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
