@@ -205,19 +205,12 @@ impl ImapSession for AsyncImapSessionWrapper {
     }
 
     async fn select_folder(&self, name: &str) -> Result<OwnedMailbox, ImapError> {
-        let mut session = self.session.lock().await;
-        let mailbox = session.select(name).await?;
-        
-        Ok(OwnedMailbox {
-            name: name.to_string(), 
-            exists: mailbox.exists,
-            recent: mailbox.recent,
-            unseen: mailbox.unseen,
-            uid_next: mailbox.uid_next,
-            uid_validity: mailbox.uid_validity,
-            permanent_flags: mailbox.permanent_flags.iter().map(convert_async_flag).collect(),
-            flags: mailbox.flags.iter().map(convert_async_flag).collect(),
-        })
+        let mut session_guard = self.session.lock().await;
+        // Call select and return the resulting Mailbox directly (OwnedMailbox is an alias)
+        let mailbox = session_guard.select(name).await?;
+        // Remove the struct construction logic
+        // Ok(OwnedMailbox { ... fields ... })
+        Ok(mailbox) // Return the Mailbox alias directly
     }
 
     async fn search_emails(&self, criteria: SearchCriteria) -> Result<Vec<u32>, ImapError> {
