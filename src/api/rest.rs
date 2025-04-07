@@ -93,10 +93,16 @@ fn parse_uids(uids_str: &str) -> Result<Vec<u32>, ApiError> {
 // --- Configuration and State ---
 
 // Application state shared across handlers
-#[derive(Clone)] // AppState must be Clone to be used with web::Data
-struct AppState {
-    imap_client: Arc<ImapClient>, // Use Arc for shared ownership
-    // rest_config: RestConfig, // Keep or remove based on future needs
+#[derive(Clone)]
+pub struct AppState {
+    pub imap_client: Arc<ImapClient>,
+}
+
+// Initialize AppState
+impl AppState {
+    pub fn new(imap_client: Arc<ImapClient>) -> Self {
+        AppState { imap_client }
+    }
 }
 
 // --- Route Handlers ---

@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  mail_server:
+    image: greenmail/standalone:latest
+    container_name: rustymail_test_imap
+    environment:
+      # GreenMail specific environment variables
+      # Setup default user: testuser@test.com / password
+      GREENMAIL_USERS: testuser@test.com:password
+      # Enable IMAPS (port 3993) and IMAP (port 3143)
+      GREENMAIL_OPTS: '-Dgreenmail.setup.test.all -Dgreenmail.hostname=0.0.0.0 -Dgreenmail.auth.disabled=false'
+    ports:
+      - "3143:3143" # IMAP (optional, usually use IMAPS)
+      - "3993:3993" # IMAPS (SSL/TLS)
+      - "3025:3025" # SMTP (optional)
+      - "3110:3110" # POP3 (optional)
+      # - "8080:8080" # GreenMail API/UI (optional, can conflict) 

@@ -1,0 +1,15 @@
+[log]
+level = "debug"
+
+interface = "rest"
+
+[rest]
+enabled = true
+host = "127.0.0.1"
+port = 8080
+
+# IMAP settings will be primarily driven by RUSTYMAIL_ environment variables
+# imap_host = ""
+# imap_port = 0
+# imap_user = ""
+# imap_pass = ""

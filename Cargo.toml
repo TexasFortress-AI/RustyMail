@@ -12,7 +12,7 @@ authors = ["Your Name <your.email@example.com>"]
 # Use async-imap
 async-imap = "0.8.0"
 # Add imap-types
-imap-types = { version = "1.0.0", features = ["serde"] }
+imap-types = { version = "1.0", features = ["arbitrary", "serde"] }
 
 rustls = "0.23"
 # Add back rustls-pki-types, likely needed
@@ -71,11 +71,17 @@ reqwest = { version = "0.12", features = ["json"] }
 urlencoding = "2.1" # For URL encoding folder names in E2E tests
 # Add actix-web for REST E2E tests
 actix-web = "4"
+# Add once_cell for Lazy static in tests (though may remove Lazy)
+once_cell = "1.19"
+# Add actix-http for testing utilities like Request type
+actix-http = "3"
 
 [features]
 default = []
-# Feature flag for running integration tests that require network access and credentials
+# Feature flag for enabling mock integration tests (potentially remove if only live tests)
 integration_tests = []
+# Feature flag for enabling live integration tests
+live_tests = []
 
 [lib]
 name = "rustymail"
