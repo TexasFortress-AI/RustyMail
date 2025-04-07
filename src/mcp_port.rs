@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde_json::Value;
 use thiserror::Error;
+use crate::imap::error::ImapError;
 
 #[derive(Debug, Error)]
 pub enum McpPortError {
@@ -12,6 +13,8 @@ pub enum McpPortError {
     InvalidParams(String),
     #[error("Not implemented: {0}")]
     NotImplemented(String),
+    #[error("Internal error: {message}")]
+    InternalError { message: String },
 }
 
 /// Defines a capability or action that can be executed via MCP.
@@ -38,4 +41,16 @@ pub trait McpResource: Send + Sync {
 
     /// Reads the current state of the resource.
     async fn read(&self) -> Result<Value, McpPortError>;
+}
+
+// Implement From<ImapError> for McpPortError
+impl From<ImapError> for McpPortError {
+    fn from(err: ImapError) -> Self {
+        log::error!("IMAP operation failed: {:?}", err);
+        // Map ImapError to a generic McpPortError::InternalError
+        // You might refine this mapping later for more specific error codes if needed
+        McpPortError::InternalError { 
+            message: format!("Internal IMAP error: {}", err) 
+        }
+    }
 } 

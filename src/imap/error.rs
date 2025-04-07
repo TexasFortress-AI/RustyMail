@@ -32,6 +32,8 @@ pub enum ImapError {
     Io(String),
     #[error("Internal Error: {0}")]
     Internal(String),
+    #[error("Envelope Not Found")]
+    EnvelopeNotFound,
 
     // Add other specific errors as needed from async-imap or imap-types
 }

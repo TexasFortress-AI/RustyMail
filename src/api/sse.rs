@@ -6,7 +6,6 @@ use std::sync::Arc;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use log::{info, warn, error};
-use crate::config::RestConfig;
 use actix_web_lab::sse::{Sse, Data as SseData, Event as SseEvent};
 use futures_util::stream::{StreamExt, once, Stream};
 use tokio_stream::wrappers::ReceiverStream;
@@ -30,20 +29,12 @@ struct SseClient {
 }
 
 // Shared state for SSE adapter
-#[derive(Default)]
-struct SseState {
+pub struct SseState {
     clients: HashMap<usize, SseClient>,
     visitor_count: usize,
 }
 
 impl SseState {
-    fn new() -> Self {
-        SseState { 
-            clients: HashMap::new(),
-            visitor_count: 0,
-        }
-    }
-
     // Add a client
     fn add_client(&mut self, tx: mpsc::Sender<String>) -> usize {
         self.visitor_count += 1;
@@ -74,19 +65,24 @@ impl SseState {
     }
 }
 
+// SSE Adapter Structure
 pub struct SseAdapter {
-    // Might need IMAP client later
-    shared_state: Arc<TokioMutex<SseState>>,
-    // Use imported RestConfig
-    rest_config: RestConfig, 
+    // Removed unused fields
+    // shared_state: Arc<TokioMutex<SseState>>,
+    // rest_config: RestConfig, 
 }
 
+// SSE Adapter Implementation
 impl SseAdapter {
-    // Update signature to use imported RestConfig
-    pub fn new(rest_config: RestConfig) -> Self {
-        Self {
-            shared_state: Arc::new(TokioMutex::new(SseState::new())),
-            rest_config,
+    pub fn new(
+        // Removed unused parameters
+        // shared_state: Arc<TokioMutex<SseState>>,
+        // rest_config: RestConfig,
+    ) -> Self {
+        SseAdapter { 
+            // Removed unused fields
+            // shared_state,
+            // rest_config
         }
     }
 

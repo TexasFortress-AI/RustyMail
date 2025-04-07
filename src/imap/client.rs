@@ -1,5 +1,5 @@
 use crate::imap::error::ImapError;
-use crate::imap::session::{AsyncImapSessionWrapper, ImapSession};
+use crate::imap::session::{AsyncImapSessionWrapper, ImapSession, StoreOperation};
 use crate::imap::types::{Email, Folder, SearchCriteria, MailboxInfo, FlagOperation, Flags, AppendEmailPayload, ExpungeResponse};
 use async_imap::{Client as AsyncImapClient, Session as AsyncImapSession};
 use rustls::pki_types::ServerName as PkiServerName;
@@ -200,9 +200,6 @@ impl ImapClient {
     }
 
     pub async fn fetch_emails(&self, uids: Vec<u32>, fetch_body: bool) -> Result<Vec<Email>, ImapError> {
-        if uids.is_empty() {
-            return Ok(Vec::new());
-        }
         self.session.lock().await.fetch_emails(uids, fetch_body).await
     }
 
@@ -215,23 +212,27 @@ impl ImapClient {
 
     /// Modifies flags for specified emails.
     pub async fn store_flags(&self, uids: Vec<u32>, operation: FlagOperation, flags: Flags) -> Result<(), ImapError> {
-        if uids.is_empty() {
-            return Err(ImapError::Command("UID list cannot be empty".to_string()));
-        }
-        self.session.lock().await.store_flags(uids, operation, flags).await
+        let store_op = match operation {
+            FlagOperation::Add => StoreOperation::Add,
+            FlagOperation::Remove => StoreOperation::Remove,
+            FlagOperation::Set => StoreOperation::Set,
+        };
+        let flag_strings = flags.items.into_iter().map(|f| f.to_string()).collect();
+        self.session.lock().await.store_flags(uids, store_op, flag_strings).await
     }
 
     /// Appends an email to the specified folder.
     pub async fn append(&self, folder: &str, payload: AppendEmailPayload) -> Result<Option<u32>, ImapError> {
-        if folder.is_empty() {
-            return Err(ImapError::Command("Folder name cannot be empty for APPEND".to_string()));
-        }
-        self.session.lock().await.append(folder, payload).await
+        // Convert AppendEmailPayload to Vec<u8>
+        let bytes = payload.content.into_bytes();
+        self.session.lock().await.append(folder, bytes).await.map(|_| None)
     }
 
     /// Expunges emails marked for deletion in the currently selected folder.
     pub async fn expunge(&self) -> Result<ExpungeResponse, ImapError> {
-        self.session.lock().await.expunge().await
+        self.session.lock().await.expunge().await.map(|_| ExpungeResponse {
+            message: "Expunge operation completed successfully".to_string(),
+        })
     }
 
     /// Logs out from the IMAP server.

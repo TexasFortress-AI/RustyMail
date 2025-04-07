@@ -283,12 +283,12 @@ async fn fetch_emails(
     state: web::Data<AppState>,
     query: web::Query<EmailFetchQuery>,
 ) -> Result<impl Responder, ApiError> {
-    let fetch_body = query.body.as_deref().map_or(false, |v| v == "true");
-    log::info!("Handling GET /emails/fetch with uids: {}, fetch_body: {}", query.uids, fetch_body);
     let uids = parse_uids(&query.uids)?;
     if uids.is_empty() {
         return Err(ApiError::BadRequest("No valid UIDs provided in query string".to_string()));
     }
+    // Check the body query param
+    let fetch_body = query.body.as_deref().map_or(false, |b| b.eq_ignore_ascii_case("true"));
     let emails = state.imap_client.fetch_emails(uids, fetch_body).await?;
     Ok(HttpResponse::Ok().json(emails))
 }

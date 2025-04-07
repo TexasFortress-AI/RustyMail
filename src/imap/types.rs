@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use imap_types::envelope::Envelope;
+// Remove unused import
+// use imap_types::envelope::Envelope;
+use imap_types::core::NString;
 
 // Custom Email struct (ensure it's public)
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -7,9 +9,8 @@ pub struct Email {
     pub uid: u32,
     pub flags: Vec<String>,
     pub size: Option<u32>,
-    pub envelope: Option<Envelope<'static>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub body: Option<String>,
+    pub envelope: Option<ImapEnvelope>,
+    pub body: Option<Vec<u8>>,
 }
 
 // Custom Folder struct (ensure it's public)
@@ -94,4 +95,26 @@ pub struct AppendEmailPayload {
 pub struct ExpungeResponse {
     pub message: String,
     // Potentially add expunged UIDs if the command returns them
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ImapAddress {
+    pub name: NString<'static>,
+    pub adl: NString<'static>,
+    pub mailbox: NString<'static>,
+    pub host: NString<'static>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct ImapEnvelope {
+    pub date: NString<'static>,
+    pub subject: NString<'static>,
+    pub from: Vec<ImapAddress>,
+    pub sender: Vec<ImapAddress>,
+    pub reply_to: Vec<ImapAddress>,
+    pub to: Vec<ImapAddress>,
+    pub cc: Vec<ImapAddress>,
+    pub bcc: Vec<ImapAddress>,
+    pub in_reply_to: NString<'static>,
+    pub message_id: NString<'static>,
 }
