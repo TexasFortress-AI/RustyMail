@@ -443,5 +443,99 @@ mod tests {
         assert!(body["error"].as_str().unwrap().contains("UID list cannot be empty"));
     }
 
-    // TODO: Add more specific error case tests (e.g., rename conflicts, search parsing)
+    // --- Error Mapping Tests ---
+
+    // Helper to setup app with a specific IMAP error for list_folders
+    async fn setup_test_app_with_list_error(err: ImapError) 
+        -> impl actix_web::dev::Service<actix_http::Request, Response = actix_web::dev::ServiceResponse> 
+    {
+        let mock_session = MockImapSession::default_ok().set_list_folders_result(Err(err));
+        let mock_imap_client = Arc::new(ImapClient::new_with_session(Arc::new(Mutex::new(mock_session))));
+        let app_state = AppState { imap_client: mock_imap_client };
+        test::init_service(
+            App::new()
+                .app_data(web::Data::new(app_state.clone()))
+                .configure(configure_rest_service)
+        ).await
+    }
+
+    // Helper to setup app with a specific IMAP error for create_folder
+    async fn setup_test_app_with_create_error(err: ImapError) 
+        -> impl actix_web::dev::Service<actix_http::Request, Response = actix_web::dev::ServiceResponse> 
+    {
+        let mock_session = MockImapSession::default_ok().set_create_result(Err(err));
+        let mock_imap_client = Arc::new(ImapClient::new_with_session(Arc::new(Mutex::new(mock_session))));
+        let app_state = AppState { imap_client: mock_imap_client };
+        test::init_service(
+            App::new()
+                .app_data(web::Data::new(app_state.clone()))
+                .configure(configure_rest_service)
+        ).await
+    }
+
+    #[actix_web::test]
+    async fn test_error_mapping_mailbox_not_found() {
+        let mut app = setup_test_app_with_list_error(
+            ImapError::Mailbox("Folder X does not exist".to_string())
+        ).await;
+        let req = test::TestRequest::get().uri("/api/v1/folders").to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND); // Expect 404
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert!(body["error"].as_str().unwrap().contains("Folder X does not exist"));
+    }
+
+    #[actix_web::test]
+    async fn test_error_mapping_auth_failure() {
+        // Auth errors currently map to InternalError(500) in the From trait
+        let mut app = setup_test_app_with_list_error(
+            ImapError::Auth("Invalid credentials".to_string())
+        ).await;
+        let req = test::TestRequest::get().uri("/api/v1/folders").to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR); // Expect 500 based on current mapping
+         let body: serde_json::Value = test::read_body_json(resp).await;
+        assert!(body["error"].as_str().unwrap().contains("internal server error"));
+    }
+
+    #[actix_web::test]
+    async fn test_error_mapping_connection_error() {
+        // Connection errors map to InternalError(500)
+        let mut app = setup_test_app_with_list_error(
+            ImapError::Connection("Connection timed out".to_string())
+        ).await;
+        let req = test::TestRequest::get().uri("/api/v1/folders").to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR); // Expect 500
+    }
+    
+    #[actix_web::test]
+    async fn test_error_mapping_parse_error() {
+        // Parse errors map to BadRequest(400)
+        let mut app = setup_test_app_with_list_error(
+            ImapError::Parse("Invalid command syntax".to_string())
+        ).await;
+        let req = test::TestRequest::get().uri("/api/v1/folders").to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST); // Expect 400
+    }
+    
+    #[actix_web::test]
+    async fn test_error_mapping_operation_error() {
+        // Generic Operation errors currently map to ImapOperationFailed -> 500
+        let mut app = setup_test_app_with_create_error(
+            ImapError::Operation("Folder already exists".to_string()) // Example
+        ).await;
+        let req = test::TestRequest::post()
+            .uri("/api/v1/folders")
+            .set_json(&json!({ "name": "Exists" }))
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR); // Expect 500 (default mapping)
+        // TODO: Consider mapping "already exists" to 409 Conflict instead.
+    }
+
+    // Add more tests for other specific ImapError variants (No, Bad, etc.)
+    // and how they map through ApiError::ImapOperationFailed status codes.
+
 } 
