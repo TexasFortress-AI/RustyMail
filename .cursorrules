@@ -70,3 +70,4 @@ END SPECIFICATION
 
 Use terminal tool for rust cargo commands.
 
+Tests: Integration tests should never use mocks

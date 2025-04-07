@@ -4,6 +4,7 @@ mod tests {
     use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
     use tokio::sync::Mutex;
     use serde_json::json;
+    use urlencoding;
 
     use crate::api::rest::{configure_rest_service, AppState};
     use crate::imap::client::ImapClient;
@@ -71,7 +72,34 @@ mod tests {
             self.list_folders_result = res;
             self
         }
-        // Add setters for other results as needed
+        fn set_create_result(mut self, res: Result<(), ImapError>) -> Self {
+            self.create_result = res;
+            self
+        }
+        fn set_delete_result(mut self, res: Result<(), ImapError>) -> Self {
+            self.delete_result = res;
+            self
+        }
+        fn set_rename_result(mut self, res: Result<(), ImapError>) -> Self {
+            self.rename_result = res;
+            self
+        }
+        fn set_search_emails_result(mut self, res: Result<Vec<u32>, ImapError>) -> Self {
+            self.search_emails_result = res;
+            self
+        }
+        fn set_fetch_emails_result(mut self, res: Result<Vec<Email>, ImapError>) -> Self {
+            self.fetch_emails_result = res;
+            self
+        }
+        fn set_move_result(mut self, res: Result<(), ImapError>) -> Self {
+            self.move_result = res;
+            self
+        }
+        fn set_logout_result(mut self, res: Result<(), ImapError>) -> Self {
+            self.logout_result = res;
+            self
+        }
     }
 
     #[async_trait]
@@ -194,6 +222,135 @@ mod tests {
         assert_eq!(mailbox_info.uid_validity, Some(12345));
     }
 
-    // TODO: Add tests for delete, rename, search, fetch, move
-    // TODO: Add tests for error cases (e.g., folder not found, invalid input)
+    #[actix_web::test]
+    async fn test_delete_folder_route() {
+        let (mut app, tracker) = setup_test_app().await;
+        let folder_name = "ToDelete";
+        let encoded_name = urlencoding::encode(folder_name);
+        let req = test::TestRequest::delete()
+            .uri(&format!("/api/v1/folders/{}", encoded_name))
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(tracker.delete_folder_called.load(Ordering::SeqCst));
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert!(body["message"].as_str().unwrap().contains(folder_name));
+    }
+
+    #[actix_web::test]
+    async fn test_rename_folder_route() {
+        let (mut app, tracker) = setup_test_app().await;
+        let from_name = "OldName";
+        let encoded_from = urlencoding::encode(from_name);
+        let to_name = "New Name";
+        let req = test::TestRequest::put()
+            .uri(&format!("/api/v1/folders/{}", encoded_from))
+            .set_json(&json!({ "to_name": to_name }))
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(tracker.rename_folder_called.load(Ordering::SeqCst));
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert!(body["message"].as_str().unwrap().contains(from_name));
+        assert!(body["message"].as_str().unwrap().contains(to_name));
+    }
+
+    #[actix_web::test]
+    async fn test_search_emails_route() {
+        let (mut app, tracker) = setup_test_app().await;
+        // Example: Search for subject "Test"
+        let req = test::TestRequest::get()
+            .uri("/api/v1/emails/search?subject=Test") // Assumes folder already selected
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(tracker.search_emails_called.load(Ordering::SeqCst));
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert_eq!(body["uids"].as_array().unwrap(), &vec![json!(1), json!(2), json!(3)]);
+    }
+
+    #[actix_web::test]
+    async fn test_fetch_emails_route() {
+        let (mut app, tracker) = setup_test_app().await;
+        let uids = "1,5,10";
+        let req = test::TestRequest::get()
+            .uri(&format!("/api/v1/emails/fetch?uids={}", uids))
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(tracker.fetch_emails_called.load(Ordering::SeqCst));
+        let emails: Vec<Email> = test::read_body_json(resp).await;
+        // Assert based on MockImapSession::default_ok fetch_emails_result
+        assert_eq!(emails.len(), 1);
+        assert_eq!(emails[0].uid, 1);
+    }
+
+    #[actix_web::test]
+    async fn test_move_emails_route() {
+        let (mut app, tracker) = setup_test_app().await;
+        let uids = vec![1, 2];
+        let dest_folder = "Archive";
+        let req = test::TestRequest::post()
+            .uri("/api/v1/emails/move")
+            .set_json(&json!({ "uids": uids, "destination_folder": dest_folder }))
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::OK);
+        assert!(tracker.move_email_called.load(Ordering::SeqCst));
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert!(body["message"].as_str().unwrap().contains(dest_folder));
+    }
+
+    #[actix_web::test]
+    async fn test_delete_folder_not_found() {
+        // Setup mock to return an error simulating "not found"
+        let mock_session = MockImapSession::default_ok()
+            .set_delete_result(Err(ImapError::Operation("Folder does not exist".to_string())));
+        let tracker = mock_session.tracker.clone();
+        let mock_imap_client = Arc::new(ImapClient::new_with_session(Arc::new(Mutex::new(mock_session))));
+        let app_state = AppState { imap_client: mock_imap_client };
+        let mut app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(app_state.clone()))
+                .configure(configure_rest_service)
+        ).await;
+
+        let folder_name = "NonExistent";
+        let encoded_name = urlencoding::encode(folder_name);
+        let req = test::TestRequest::delete()
+            .uri(&format!("/api/v1/folders/{}", encoded_name))
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+
+        // Check that the ApiError::ImapOperationFailed maps to 404 Not Found
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert!(tracker.delete_folder_called.load(Ordering::SeqCst));
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert!(body["error"].as_str().unwrap().contains("IMAP operation failed"));
+        // Note: The exact error message might differ based on the From<ImapError> impl
+    }
+
+    #[actix_web::test]
+    async fn test_create_folder_bad_request() {
+        let (mut app, tracker) = setup_test_app().await;
+        // Send empty name
+        let req = test::TestRequest::post()
+            .uri("/api/v1/folders")
+            .set_json(&json!({ "name": "  " })) // Empty/whitespace name
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        // Ensure the mock was *not* called for a bad request handled early
+        assert!(!tracker.create_folder_called.load(Ordering::SeqCst));
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert!(body["error"].as_str().unwrap().contains("cannot be empty"));
+    }
+
+    // TODO: Add more error case tests (e.g., invalid UIDs for fetch/move, rename conflicts)
 } 
