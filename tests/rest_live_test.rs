@@ -325,4 +325,65 @@ mod live_tests {
         println!("Live Test: Cleaning up destination folder '{}'", dest_full_folder);
         let _ = client.delete_folder(&dest_full_folder).await;
     }
+
+    #[actix_web::test]
+    async fn test_live_flags_operations() {
+        let (mut app, _client) = setup_test_app_live().await;
+        let folder_name = "INBOX";
+        let encoded_folder = urlencoding::encode(folder_name);
+
+        // Search for some emails
+        let search_req = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{}/emails/search?query=ALL", encoded_folder))
+            .to_request();
+        let search_resp = test::call_service(&mut app, search_req).await;
+        assert!(search_resp.status().is_success(), "Search failed");
+        let uids: Vec<u32> = test::read_body_json(search_resp).await;
+        assert!(!uids.is_empty(), "No emails found to test flags");
+        let uid = uids[0];
+
+        // Add \Flagged flag
+        let add_req = test::TestRequest::post()
+            .uri(&format!("/api/v1/folders/{}/emails/flags", encoded_folder))
+            .set_json(&serde_json::json!({
+                "uids": [uid],
+                "operation": "Add",
+                "flags": ["\\Flagged"]
+            }))
+            .to_request();
+        let add_resp = test::call_service(&mut app, add_req).await;
+        assert!(add_resp.status().is_success(), "Add flag failed");
+
+        // Fetch email and verify flag present
+        let fetch_req = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{}/emails?uids={}", encoded_folder, uid))
+            .to_request();
+        let fetch_resp = test::call_service(&mut app, fetch_req).await;
+        assert!(fetch_resp.status().is_success(), "Fetch after add failed");
+        let emails: Vec<Email> = test::read_body_json(fetch_resp).await;
+        assert_eq!(emails.len(), 1);
+        assert!(emails[0].flags.contains(&"\\Flagged".to_string()), "Flag not added");
+
+        // Remove \Flagged flag
+        let remove_req = test::TestRequest::post()
+            .uri(&format!("/api/v1/folders/{}/emails/flags", encoded_folder))
+            .set_json(&serde_json::json!({
+                "uids": [uid],
+                "operation": "Remove",
+                "flags": ["\\Flagged"]
+            }))
+            .to_request();
+        let remove_resp = test::call_service(&mut app, remove_req).await;
+        assert!(remove_resp.status().is_success(), "Remove flag failed");
+
+        // Fetch email and verify flag removed
+        let fetch_req2 = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{}/emails?uids={}", encoded_folder, uid))
+            .to_request();
+        let fetch_resp2 = test::call_service(&mut app, fetch_req2).await;
+        assert!(fetch_resp2.status().is_success(), "Fetch after remove failed");
+        let emails2: Vec<Email> = test::read_body_json(fetch_resp2).await;
+        assert_eq!(emails2.len(), 1);
+        assert!(!emails2[0].flags.contains(&"\\Flagged".to_string()), "Flag not removed");
+    }
 }
