@@ -176,6 +176,7 @@ pub trait ImapSession: Send + Sync {
     async fn search_emails(&self, criteria: SearchCriteria) -> Result<Vec<u32>, ImapError>;
     async fn fetch_emails(&self, uids: Vec<u32>, fetch_body: bool) -> Result<Vec<Email>, ImapError>;
 
+
     async fn move_email(&self, uids: Vec<u32>, destination_folder: &str) -> Result<(), ImapError>;
     async fn store_flags(&self, uids: Vec<u32>, operation: StoreOperation, flags: Vec<String>) -> Result<(), ImapError>;
     async fn append(&self, folder: &str, payload: Vec<u8>) -> Result<(), ImapError>;
