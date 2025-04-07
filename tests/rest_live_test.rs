@@ -386,4 +386,48 @@ mod live_tests {
         assert_eq!(emails2.len(), 1);
         assert!(!emails2[0].flags.contains(&"\\Flagged".to_string()), "Flag not removed");
     }
+
+    #[actix_web::test]
+    async fn test_live_append_email() {
+        let (mut app, _client) = setup_test_app_live().await;
+        let folder_name = "INBOX";
+        let encoded_folder = urlencoding::encode(folder_name);
+
+        // Compose unique subject
+        let unique_subject = format!("LiveTestAppend_{}", chrono::Utc::now().timestamp());
+
+        // Append email
+        let append_req = test::TestRequest::post()
+            .uri(&format!("/api/v1/folders/{}/emails/append", encoded_folder))
+            .set_json(&serde_json::json!({
+                "subject": unique_subject,
+                "body": "This is a test email body.",
+                "from": "test@example.com",
+                "to": ["test@example.com"]
+            }))
+            .to_request();
+        let append_resp = test::call_service(&mut app, append_req).await;
+        assert!(append_resp.status().is_success(), "Append email failed");
+
+        // Search for the appended email by subject
+        let encoded_query = urlencoding::encode(&format!("SUBJECT \"{}\"", unique_subject));
+        let search_req = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{}/emails/search?query={}", encoded_folder, encoded_query))
+            .to_request();
+        let search_resp = test::call_service(&mut app, search_req).await;
+        assert!(search_resp.status().is_success(), "Search after append failed");
+        let uids: Vec<u32> = test::read_body_json(search_resp).await;
+        assert!(!uids.is_empty(), "Appended email not found in search");
+
+        // Fetch the appended email
+        let uids_param = uids.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",");
+        let fetch_req = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{}/emails?uids={}&fetchBody=true", encoded_folder, uids_param))
+            .to_request();
+        let fetch_resp = test::call_service(&mut app, fetch_req).await;
+        assert!(fetch_resp.status().is_success(), "Fetch appended email failed");
+        let emails: Vec<Email> = test::read_body_json(fetch_resp).await;
+        assert!(!emails.is_empty(), "No emails fetched after append");
+        assert!(emails.iter().any(|e| e.body.as_deref() == Some("This is a test email body.")), "Appended email body mismatch");
+    }
 }
