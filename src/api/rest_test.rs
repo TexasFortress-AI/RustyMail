@@ -352,5 +352,96 @@ mod tests {
         assert!(body["error"].as_str().unwrap().contains("cannot be empty"));
     }
 
-    // TODO: Add more error case tests (e.g., invalid UIDs for fetch/move, rename conflicts)
+    #[actix_web::test]
+    async fn test_rename_folder_empty_to_name() {
+        let (mut app, tracker) = setup_test_app().await;
+        let req = test::TestRequest::put()
+            .uri("/api/v1/folders/SomeName")
+            .set_json(&json!({ "to_name": "  " })) // Empty to_name
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert!(!tracker.rename_folder_called.load(Ordering::SeqCst)); // Mock should not be called
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert!(body["error"].as_str().unwrap().contains("cannot be empty"));
+    }
+
+    #[actix_web::test]
+    async fn test_select_folder_not_found() {
+        let mock_session = MockImapSession::default_ok()
+            .set_select_result(Err(ImapError::Mailbox("Folder does not exist".to_string())));
+        let tracker = mock_session.tracker.clone();
+        let mock_imap_client = Arc::new(ImapClient::new_with_session(Arc::new(Mutex::new(mock_session))));
+        let app_state = AppState { imap_client: mock_imap_client };
+        let mut app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(app_state.clone()))
+                .configure(configure_rest_service)
+        ).await;
+
+        let req = test::TestRequest::post().uri("/api/v1/folders/NonExistent/select").to_request();
+        let resp = test::call_service(&mut app, req).await;
+
+        // Check that ImapError::Mailbox maps to 404 Not Found via ApiError::from
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+        assert!(tracker.select_folder_called.load(Ordering::SeqCst));
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert!(body["error"].as_str().unwrap().contains("Folder does not exist"));
+    }
+
+    #[actix_web::test]
+    async fn test_fetch_emails_invalid_uids() {
+        let (mut app, tracker) = setup_test_app().await;
+        let req = test::TestRequest::get()
+            .uri("/api/v1/emails/fetch?uids=1,abc,3") // Invalid UID "abc"
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert!(!tracker.fetch_emails_called.load(Ordering::SeqCst)); // Mock should not be called
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert!(body["error"].as_str().unwrap().contains("Invalid UID format"));
+    }
+
+    #[actix_web::test]
+    async fn test_fetch_emails_imap_error() {
+         let mock_session = MockImapSession::default_ok()
+            .set_fetch_emails_result(Err(ImapError::Operation("Fetch failed".to_string())));
+        let tracker = mock_session.tracker.clone();
+        let mock_imap_client = Arc::new(ImapClient::new_with_session(Arc::new(Mutex::new(mock_session))));
+        let app_state = AppState { imap_client: mock_imap_client };
+        let mut app = test::init_service(
+            App::new()
+                .app_data(web::Data::new(app_state.clone()))
+                .configure(configure_rest_service)
+        ).await;
+
+        let req = test::TestRequest::get().uri("/api/v1/emails/fetch?uids=1").to_request();
+        let resp = test::call_service(&mut app, req).await;
+
+        // Check that ImapError::Operation maps to 500 Internal Server Error
+        assert_eq!(resp.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(tracker.fetch_emails_called.load(Ordering::SeqCst));
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        // Check for the generic internal error message, not the specific IMAP error
+        assert!(body["error"].as_str().unwrap().contains("internal server error occurred"));
+    }
+
+     #[actix_web::test]
+    async fn test_move_emails_empty_uids_body() {
+        let (mut app, tracker) = setup_test_app().await;
+        let req = test::TestRequest::post()
+            .uri("/api/v1/emails/move")
+            .set_json(&json!({ "uids": [], "destination_folder": "Archive" })) // Empty UID list
+            .to_request();
+        let resp = test::call_service(&mut app, req).await;
+
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        assert!(!tracker.move_email_called.load(Ordering::SeqCst));
+        let body: serde_json::Value = test::read_body_json(resp).await;
+        assert!(body["error"].as_str().unwrap().contains("UID list cannot be empty"));
+    }
+
+    // TODO: Add more specific error case tests (e.g., rename conflicts, search parsing)
 } 
