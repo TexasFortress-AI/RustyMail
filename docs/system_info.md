@@ -2,297 +2,231 @@
 
 ## Project Overview
 
-RustyMail is a high-performance IMAP API server written in Rust that provides multiple interface options:
-- REST API (implemented)
+RustyMail is a high-performance IMAP API server written in Rust that implements a hexagonal architecture (ports and adapters) pattern to provide multiple interface options:
+- REST API (to be reimplemented)
 - MCP stdio server (planned)
 - MCP SSE server (planned)
+
+## Architecture Overview
+
+The project follows a hexagonal architecture pattern with three main layers:
+
+1. Core Domain (IMAP client and business logic)
+2. Ports (interface contracts)
+3. Adapters (interface implementations)
+
+```mermaid
+flowchart TD
+    subgraph Core[Core Domain]
+        C1[ImapClient]
+        C2[Business Logic]
+        C3[Data Models]
+    end
+
+    subgraph Ports[Port Layer]
+        P1[Transport Trait]
+        P2[McpTool Trait]
+        P3[McpResource Trait]
+    end
+
+    subgraph Adapters[Interface Adapters]
+        A1[REST API]
+        A2[MCP Stdio]
+        A3[MCP SSE]
+    end
+
+    Core --> Ports
+    Ports --> Adapters
+```
 
 ## Directory Structure
 
 ```
 rustymail/
-├── core/                     # Core IMAP and business logic
-│   ├── src/
-│   │   ├── imap/           # IMAP client implementation
-│   │   ├── models/         # Shared data models
-│   │   ├── utils/          # Helper functions
-│   │   ├── lib.rs          # Core library entry point
-│   │   └── error.rs        # Error definitions
-│   └── Cargo.toml          # Core dependencies
-├── imap-api-rust/           # REST API implementation
-│   ├── src/
-│   │   ├── api/            # REST API endpoints
-│   │   ├── models/         # API-specific models
-│   │   └── main.rs         # REST server entry point
-│   ├── tests/
-│   │   ├── integration/    # Integration tests
-│   │   ├── unit_tests/     # Unit tests
-│   │   ├── mcp_stdio.rs    # MCP stdio tests (planned)
-│   │   └── mcp_sse.rs      # MCP SSE tests (planned)
-│   ├── benches/            # Performance benchmarks
-│   └── Cargo.toml          # API dependencies
-├── docs/                    # Documentation
-├── config/                  # Configuration files
-└── templates/               # HTML templates
+├── src/
+│   ├── api/                # Interface Adapters
+│   │   ├── rest.rs        # REST API adapter
+│   │   ├── rest_test.rs   # REST tests
+│   │   ├── mcp.rs         # MCP adapter
+│   │   ├── mcp_test.rs    # MCP tests
+│   │   ├── sse.rs         # SSE adapter
+│   │   └── sse_test.rs    # SSE tests
+│   ├── imap/              # Core Domain
+│   │   ├── client.rs      # IMAP client implementation
+│   │   ├── client_test.rs # IMAP client tests
+│   │   └── mod.rs         # Domain module definitions
+│   ├── transport.rs       # Port definitions
+│   ├── transport_test.rs  # Port tests
+│   └── lib.rs             # Library exports
+├── docs/                  # Documentation
+└── backup/               # Legacy code backup
+```
 
 ## Key Components
 
-### 1. Core Library (`core/`)
+### 1. Transport Port (`src/transport.rs`)
 
-#### IMAP Client (`core/src/imap/`)
-- Implements IMAP protocol interactions
-- Provides async trait-based interface
-- Handles connection pooling and reconnection
-- Supports TLS for secure communication
+The primary port defining how adapters communicate with the core domain:
 
-Key traits and types:
 ```rust
 #[async_trait]
-pub trait ImapSessionTrait: Send + Sync {
-    async fn list(&self) -> Result<ZeroCopy<Vec<String>>, ImapClientError>;
-    async fn create(&self, name: &str) -> Result<(), ImapClientError>;
-    async fn delete(&self, name: &str) -> Result<(), ImapClientError>;
-    // ... other IMAP operations
+pub trait Transport: Send + Sync {
+    async fn send(&self, message: Message) -> Result<(), TransportError>;
+    async fn receive(&self) -> Result<Message, TransportError>;
+    async fn close(&self) -> Result<(), TransportError>;
+    async fn is_connected(&self) -> bool;
 }
 
-pub struct ImapClient<S: ImapSessionTrait> {
-    session: S,
+pub struct Message {
+    pub id: Option<String>,
+    pub kind: MessageKind,
+    pub payload: serde_json::Value,
 }
-```
 
-#### Models (`core/src/models/`)
-- Configuration structures
-- Shared data types
-- Error definitions
-
-### 2. REST API (`imap-api-rust/`)
-
-#### API Endpoints (`imap-api-rust/src/api/`)
-- Folder management (list, create, delete, rename)
-- Email operations (list, fetch, search, move)
-- Statistics and monitoring
-- Documentation endpoints
-
-#### Server Configuration
-```rust
-#[derive(Debug, Deserialize, Clone)]
-pub struct AppConfig {
-    pub imap: ImapConfig,
-    pub server: ServerConfig,
-    pub log_level: String,
+pub enum MessageKind {
+    Request,
+    Response,
+    Notification,
+    Error,
 }
 ```
 
-### 3. MCP Server (Planned)
+### 2. Core Domain (Under Development)
 
-#### Stdio Transport
-- JSON-RPC 2.0 over stdin/stdout
-- Local CLI integration
-- Synchronous command execution
+#### IMAP Client (`src/imap/`)
+- Implements IMAP protocol interactions
+- Provides async interface
+- Handles connection management
+- Supports secure communication
 
-#### SSE Transport
-- HTTP POST for client requests
+### 3. Adapters (Planned)
+
+#### REST API (`src/api/rest.rs`)
+- RESTful HTTP interface
+- JSON response format
+- Swagger/OpenAPI documentation
+- Authentication support
+
+#### MCP Stdio (`src/api/mcp.rs`)
+- JSON-RPC 2.0 protocol
+- Standard input/output transport
+- Command-line integration
+- Synchronous operation support
+
+#### SSE Transport (`src/api/sse.rs`)
+- HTTP POST for commands
 - Server-Sent Events for responses
-- Streaming capabilities
+- Real-time updates
+- Connection management
 
-## Key Dependencies
+## Dependencies
 
-### Core Dependencies
-- `imap`: IMAP protocol implementation (v2.4.1)
-- `native-tls`: TLS support (v0.2.11)
-- `tokio`: Async runtime (v1.28.2)
-- `serde`: Serialization (v1.0.164)
-- `async-trait`: Async trait support (v0.1.77)
-
-### API Dependencies
-- `actix-web`: Web framework (v4.3.1)
-- `mail-parser`: Email parsing (v0.9.1)
-- `lettre`: Email handling (v0.10.4)
-- `tracing`: Logging (v0.1.37)
-- `tera`: HTML templating (v1.19.0)
-
-## Testing Infrastructure
-
-### Unit Tests
-- Mock implementations for IMAP client
-- Isolated component testing
-- Error handling verification
-
-### Integration Tests
-- Real IMAP server testing
-- End-to-end API testing
-- Performance benchmarks
-
-### Benchmark Results
-```
-folder_operations/list_folders    time: [472.50 ms 554.99 ms 663.12 ms]
-folder_operations/folder_stats    time: [511.27 ms 686.22 ms 894.69 ms]
-email_operations/list_emails     time: [496.81 ms 675.59 ms 861.86 ms]
-```
-
-## Configuration
-
-### Environment Variables
-```env
-IMAP_HOST=imap.example.com
-IMAP_PORT=993
-IMAP_USERNAME=your_username
-IMAP_PASSWORD=your_password
-SERVER_HOST=0.0.0.0
-SERVER_PORT=8080
-LOG_LEVEL=info
-```
-
-### Configuration File (TOML)
 ```toml
-[imap]
-host = "imap.example.com"
-port = 993
-username = "your_username"
-password = "your_password"
+[dependencies]
+tokio = { version = "1.28", features = ["full"] }
+async-trait = "0.1"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+futures = "0.3"
 
-[server]
-host = "0.0.0.0"
-port = 8080
-
-log_level = "info"
+[dev-dependencies]
+tokio-test = "0.4"
 ```
+
+## Testing Strategy
+
+### 1. Unit Tests
+- Co-located with implementation files
+- Mock implementations provided
+- Comprehensive error testing
+- Async operation testing
+
+### 2. Integration Tests
+- Cross-adapter functionality
+- End-to-end workflows
+- Error scenarios
+- Performance benchmarks
 
 ## Error Handling
 
-Comprehensive error types for different failure scenarios:
 ```rust
-#[derive(Debug, Error, Clone)]
-pub enum ImapClientError {
-    #[error("IMAP error: {0}")]
-    ImapError(String),
+#[derive(Debug, Error)]
+pub enum TransportError {
+    #[error("Send error: {0}")]
+    SendError(String),
+    #[error("Receive error: {0}")]
+    ReceiveError(String),
     #[error("Connection error: {0}")]
     ConnectionError(String),
-    #[error("TLS error: {0}")]
-    TlsError(String),
-    // ... other error types
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
 }
 ```
 
 ## Implementation Status
 
 ### Completed
-- ✅ Core IMAP functionality
-- ✅ REST API implementation
-- ✅ Configuration management
-- ✅ Error handling
-- ✅ Testing framework
-- ✅ Performance benchmarks
+- ✅ Project restructure to hexagonal architecture
+- ✅ Transport port definition
+- ✅ Basic message types
+- ✅ Error handling framework
+- ✅ Testing infrastructure
 
 ### In Progress
-- 🟡 Documentation
-- 🟡 CI/CD pipeline
+- 🟡 IMAP client core domain
+- 🟡 REST adapter implementation
+- 🟡 Documentation updates
 
 ### Planned
-- ⏳ MCP stdio server
-- ⏳ MCP SSE server
-- ⏳ Additional security features
-
-## Architecture Diagram
-
-```mermaid
-flowchart TD
-    subgraph Core
-        C1[ImapClient<S>]
-        C2[Business Logic]
-        C3[Data Models + Errors]
-    end
-
-    subgraph REST_API
-        R1[Actix-web HTTP Server]
-        R1 --> R2[REST Handlers]
-        R2 --> C1
-    end
-
-    subgraph MCP_Server
-        M1[MCP Protocol Layer]
-        M1 --> M2[Stdio Transport]
-        M1 --> M3[SSE Transport]
-        M1 --> C1
-    end
-```
-
-## Performance Considerations
-
-1. Connection Pooling
-   - Reuse IMAP connections
-   - Handle reconnection gracefully
-   - Manage concurrent access
-
-2. Async Operations
-   - Non-blocking I/O
-   - Tokio runtime for async execution
-   - Efficient resource utilization
-
-3. Memory Management
-   - Zero-copy where possible
-   - Efficient buffer management
-   - Smart pointer usage (Arc, Mutex)
-
-## Security Features
-
-1. TLS Support
-   - Secure IMAP connections
-   - Certificate validation
-   - Modern cipher suites
-
-2. Authentication
-   - IMAP authentication
-   - API authentication (if configured)
-   - Secure credential handling
-
-3. Error Handling
-   - Safe error propagation
-   - No sensitive information leakage
-   - Proper error logging
+- ⏳ MCP stdio adapter
+- ⏳ MCP SSE adapter
+- ⏳ Configuration management
+- ⏳ Monitoring and metrics
 
 ## Development Guidelines
 
-1. Code Style
-   - Follow Rust idioms
-   - Use type safety features
-   - Implement proper error handling
-   - Document public interfaces
+1. Architecture
+   - Follow hexagonal architecture principles
+   - Keep core domain pure
+   - Use ports for interface definitions
+   - Implement adapters for specific protocols
 
 2. Testing
-   - Write unit tests for new features
-   - Add integration tests for endpoints
-   - Include performance benchmarks
-   - Test error conditions
+   - Co-locate tests with implementation
+   - Provide mock implementations
+   - Test error scenarios
+   - Include performance tests
 
-3. Documentation
-   - Update API documentation
-   - Document configuration changes
-   - Keep README current
-   - Add code comments for complex logic
+3. Code Style
+   - Follow Rust idioms
+   - Document public interfaces
+   - Use type safety
+   - Handle errors properly
 
 ## Future Enhancements
 
-1. MCP Implementation
-   - Complete stdio transport
-   - Implement SSE transport
-   - Add streaming capabilities
-   - Support all IMAP operations
+1. Core Functionality
+   - Enhanced IMAP operations
+   - Connection pooling
+   - Caching layer
+   - Advanced search capabilities
 
-2. Security
-   - Add rate limiting
-   - Implement request validation
-   - Add audit logging
-   - Support custom authentication
+2. Adapters
+   - GraphQL interface
+   - WebSocket support
+   - gRPC implementation
+   - Custom protocols
 
-3. Performance
-   - Optimize connection pooling
-   - Add caching layer
-   - Improve error handling
-   - Enhance monitoring
+3. Security
+   - OAuth2 integration
+   - Rate limiting
+   - Audit logging
+   - Enhanced encryption
 
-4. Features
-   - Email composition
-   - Attachment handling
-   - Search optimization
-   - Folder synchronization 
+4. Monitoring
+   - Prometheus metrics
+   - Tracing integration
+   - Health checks
+   - Performance monitoring 

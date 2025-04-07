@@ -1,0 +1,64 @@
+# interface-implementations
+
+### Interface Selection Layer
+- MUST: Use enum-based interface selection in `src/bin/rustymail.rs`:
+  ```rust
+  enum Interface {
+    Rest,
+    Stdio,
+    Sse
+  }
+  ```
+- AVOID: Global flags or runtime switching between interfaces
+- WHY: Ensures single interface mode at runtime
+- EXAMPLE: See `src/bin/rustymail.rs:init_interface()`
+
+### REST Interface Implementation
+- MUST: Implement in `src/api/rest.rs` using actix-web
+- MUST: Use JSON for all request/response bodies
+- AVOID: Mixing protocol-specific code with business logic
+- WHY: Maintains clean separation between transport and domain logic
+- EXAMPLE: `src/api/rest.rs:handle_list_folders()`
+
+### SSE Interface Implementation 
+- MUST: Implement in `src/api/sse.rs` using actix-web EventStream
+- MUST: Send heartbeats every 10 seconds
+- MUST: Use unique client IDs for connection tracking
+- AVOID: Long-lived IMAP connections in event handlers
+- WHY: Ensures proper connection management and client tracking
+- EXAMPLE: `src/api/sse.rs:handle_client_connect()`
+
+### MCP Stdio Implementation
+- MUST: Implement in `src/api/mcp.rs` using JSON-RPC 2.0
+- MUST: Handle line-buffered input/output
+- MUST: Use proper JSON-RPC error codes:
+  - -32000: IMAP connection errors
+  - -32001: Authentication failures  
+  - -32002: Folder errors
+- AVOID: Blocking operations in message handling
+- WHY: Ensures proper protocol compliance
+- EXAMPLE: `src/api/mcp.rs:process_command()`
+
+### State Management
+- MUST: Use Arc<Mutex<Session>> for shared IMAP state
+- MUST: Implement connection pooling in `src/imap/session.rs`
+- AVOID: Global state or singletons
+- WHY: Thread-safe state management across interfaces
+- EXAMPLE: `src/imap/session.rs:ImapSession`
+
+### Error Handling
+- MUST: Map interface-specific errors to domain errors in `src/api/error.rs`
+- MUST: Use custom error types for each interface
+- AVOID: Generic error types or string errors
+- WHY: Proper error context preservation
+- EXAMPLE: `src/api/error.rs:RestError`
+
+### Testing Requirements
+- MUST: Test each interface independently
+- MUST: Include connection failure scenarios
+- MUST: Verify protocol compliance
+- MUST: Test concurrent access patterns
+- WHY: Ensures interface reliability
+- EXAMPLE: `src/api/rest_test.rs`, `src/api/sse_test.rs`
+
+$END$

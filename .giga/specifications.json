@@ -1,0 +1,22 @@
+[
+  {
+    "fileName": "main-overview.mdc",
+    "description": "Complete system overview explaining the RustyMail architecture, key components, and high-level data flows between IMAP client, MCP protocol layer, and multiple interface options (REST, SSE, stdio)"
+  },
+  {
+    "fileName": "imap-data-models.mdc",
+    "description": "Detailed documentation of core IMAP data models including Email, Folder, Envelope, Address structures and their relationships, focusing on the custom implementations in src/imap/types.rs"
+  },
+  {
+    "fileName": "mcp-protocol.mdc",
+    "description": "Comprehensive documentation of the Model Context Protocol (MCP) implementation including message formats, error codes, supported methods, and state management across different transport types"
+  },
+  {
+    "fileName": "email-operations.mdc",
+    "description": "Detailed documentation of core email operation algorithms including atomic move operations, folder synchronization, search implementations, and session state management from src/imap/session.rs"
+  },
+  {
+    "fileName": "interface-implementations.mdc",
+    "description": "Documentation of the three interface implementations (REST, SSE, stdio) focusing on their unique handling of email operations, state management, and client communication patterns"
+  }
+]

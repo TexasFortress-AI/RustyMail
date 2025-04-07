@@ -1,0 +1,55 @@
+# email-operations
+
+### Session State Management
+- MUST: Implement IMAP sessions using `Arc<Mutex<ImapSession>>` in `src/imap/session.rs`
+- MUST: Track folder selection state via `selected_folder` field
+- AVOID: Global session state or raw connection sharing
+- WHY: Ensures thread-safe concurrent access to IMAP sessions
+- EXAMPLE: `src/imap/session.rs` implements `ImapSession` struct
+
+### Atomic Email Operations
+- MUST: Use three-phase move implementation in `src/imap/session.rs`:
+  1. Copy messages to destination
+  2. Mark source messages as deleted 
+  3. Expunge source folder
+- AVOID: Direct message deletion without copy verification
+- WHY: Prevents data loss during move operations
+- EXAMPLE: `moveEmail` method in `src/imap/session.rs`
+
+### Folder Synchronization
+- MUST: Handle INBOX vs custom folders separately in `src/imap/session.rs`
+- MUST: Verify folder existence before operations
+- MUST: Lock folder state during sync using session mutex
+- AVOID: Recursive folder operations without state checks
+- WHY: Maintains folder hierarchy consistency
+- EXAMPLE: `syncFolder` method in `src/imap/session.rs`
+
+### Search Implementation 
+- MUST: Implement search criteria via enum in `src/imap/types.rs`:
+  - Subject search
+  - From address search
+  - Unseen filtering
+  - Global search
+- MUST: Validate criteria before execution
+- AVOID: Raw string searches without criteria validation
+- WHY: Ensures consistent search behavior
+- EXAMPLE: `SearchCriteria` enum in `src/imap/types.rs`
+
+### Email Movement Validation
+- MUST: Check source/destination folders exist
+- MUST: Verify message existence by UID
+- MUST: Handle bulk moves atomically
+- AVOID: Partial moves that leave inconsistent state
+- WHY: Maintains email data integrity
+- EXAMPLE: `src/imap/client.rs` move operation implementation
+
+### Status Code Processing
+- MUST: Map IMAP response codes to domain errors in `src/imap/error.rs`:
+  - Alert conditions (-32000)
+  - Authentication failures (-32001) 
+  - Resource errors (-32002)
+- AVOID: Generic error mapping without context
+- WHY: Provides meaningful error handling
+- EXAMPLE: Error mapping in `src/imap/error.rs`
+
+$END$

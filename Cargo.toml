@@ -1,5 +1,78 @@
-[workspace]
-members = [
-    "core",
-    "imap-api-rust"
-]
+[package]
+name = "rustymail"
+version = "0.1.0"
+edition = "2021"
+description = "A modern IMAP client with multiple interface options"
+authors = ["Your Name <your.email@example.com>"]
+
+[dependencies]
+# Core IMAP
+# Use imap-next from Git main branch. It brings its own imap-types.
+# imap-next = { git = "https://github.com/duesee/imap-next.git", branch = "main", features = ["stream"] }
+# Remove direct dependency - use the one from imap-next
+# imap-types = "1.0.0"
+rustls = "0.23"
+rustls-pki-types = "0.2"
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
+
+# Web Framework (Actix)
+actix-web = "4"
+actix-rt = "2"
+
+# Serialization/Deserialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Configuration
+dotenvy = "0.15"
+config = { version = "0.13", features = ["yaml", "json", "toml", "ini", "ron", "json5"] }
+log = "0.4"
+env_logger = "0.10"
+
+# Command Line Arguments
+clap = { version = "4", features = ["derive", "env"] }
+
+# Futures utility
+futures-util = { version = "0.3", features = ["compat"] }
+
+# Error Handling
+thiserror = "1.0"
+
+# Chrono for date/time
+chrono = { version = "0.4", features = ["serde"] }
+
+# Add async-imap crate with tokio and rustls features
+# async-imap = { version = "0.10.2", features = ["tokio", "rustls-tls"] } 
+async-imap = { version = "0.10.3" } # Use latest patch, remove features - check docs if 'tokio' needs enabling
+# Change imap-types to the specific alpha version suggested
+imap-types = "2.0.0-alpha.4" 
+
+# Ensure Tokio and Rustls crates for establishing the connection are present
+tokio-rustls = "0.24" # Keep this one
+
+# Add tokio-util dependency with the compat feature
+tokio-util = { version = "0.7", features = ["compat"] }
+# REMOVE webpki-roots = "0.25"
+rustls-native-certs = "0.7"
+
+# Add imap-codec dependency
+# imap-codec = "1.0.0-alpha.5" # Needed for manual command encoding
+
+[dev-dependencies]
+# Add reqwest for E2E HTTP tests
+reqwest = { version = "0.12", features = ["json", "native-tls"] } 
+urlencoding = "2.1" # For URL encoding folder names in E2E tests
+
+[features]
+default = []
+# Feature flag for running integration tests that require network access and credentials
+integration_tests = []
+
+[lib]
+name = "rustymail"
+path = "src/lib.rs"
+
+# [[bin]]
+# name = "rustymail-server"
+# path = "src/main.rs"

@@ -1,0 +1,69 @@
+
+START SPECIFICATION:
+# main-overview
+
+## Development Guidelines
+
+- Only modify code directly relevant to the specific request. Avoid changing unrelated functionality.
+- Never replace code with placeholders like `# ... rest of the processing ...`. Always include complete code.
+- Break problems into smaller steps. Think through each step separately before implementing.
+- Always provide a complete PLAN with REASONING based on evidence from code and logs before making changes.
+- Explain your OBSERVATIONS clearly, then provide REASONING to identify the exact issue. Add console logs when needed to gather more information.
+
+
+RustyMail implements a high-performance IMAP API server providing REST, MCP Stdio, and MCP SSE interfaces for email access.
+
+Core Business Components:
+
+1. IMAP Session Management (`src/imap/session.rs`)
+- Stateful session handling with concurrent access control 
+- Domain-specific command execution workflows
+- Mailbox synchronization logic with IMAP protocol states
+- Custom error mapping between IMAP and business domains
+
+2. Email Operations (`src/imap/client.rs`, `src/api/rest.rs`)
+- Atomic email movement with 3-phase commit
+- Folder hierarchy management with domain rules
+- Search functionality via rich criteria system
+- Real-time email state monitoring
+
+3. Message Control Protocol (`src/api/mcp.rs`)
+- JSON-RPC command interface for email operations
+- Custom error codes mapped to business scenarios
+- Session state persistence across commands
+- Tool/resource capability model
+
+4. Event Streaming (`src/api/sse.rs`) 
+- Real-time email updates via server-sent events
+- Client connection lifecycle management
+- Broadcast patterns for email notifications
+- Heartbeat-based connection monitoring
+
+Code Conventions:
+
+### Email Operations
+- MUST: Implement atomic moves using copy+delete+expunge pattern
+- AVOID: Direct deletion without verifying copy success
+- WHY: Maintains email integrity during failures
+- EXAMPLE: `src/imap/session.rs:move_email()`
+
+### Folder Management  
+- MUST: Validate folder existence before operations
+- AVOID: Deleting non-empty folders
+- WHY: Prevents data loss and maintains hierarchy
+- EXAMPLE: `src/api/rest.rs:delete_folder()`
+
+### Search Implementation
+- MUST: Use SearchCriteria enum for all searches
+- AVOID: Direct string-based search queries
+- WHY: Type-safe search operations
+- EXAMPLE: `src/imap/types.rs:SearchCriteria`
+
+### Protocol Handling
+- MUST: Map IMAP errors to domain-specific codes
+- AVOID: Exposing raw IMAP errors to clients
+- WHY: Provides consistent error handling
+- EXAMPLE: `src/api/mcp.rs:error_mapping`
+
+$END$
+END SPECIFICATION

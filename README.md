@@ -7,184 +7,266 @@
 [![Crates.io](https://img.shields.io/crates/v/rustymail)](https://crates.io/crates/rustymail)
 [![Documentation](https://docs.rs/rustymail/badge.svg)](https://docs.rs/rustymail)
 
-A high-performance, type-safe IMAP API server written in Rust. RustyMail provides multiple interfaces to IMAP servers:
+A high-performance, type-safe IMAP API server written in Rust, supporting REST, MCP Stdio, and MCP SSE interfaces.
 
-1. **REST API** (✅ Implemented)
-   - RESTful HTTP endpoints
-   - JSON request/response
-   - Traditional web API interface
-   - Ideal for web applications
-
-2. **MCP Stdio Server** (⏳ Coming Soon)
-   - JSON-RPC 2.0 over stdin/stdout
-   - Local CLI integration
-   - Synchronous command execution
-   - Perfect for IDE extensions and local tools
-
-3. **MCP SSE Server** (⏳ Coming Soon)
-   - HTTP POST for client requests
-   - Server-Sent Events for responses
-   - Real-time streaming capabilities
-   - Great for real-time applications
+---
 
 ## Features
 
-- 🚀 **High Performance**: Built with Rust for maximum speed and efficiency
-- 🔒 **Type Safety**: Leverages Rust's type system for reliable code
-- 📧 **Full IMAP Support**: Access all your email folders and messages
-- 🔄 **Multiple Interfaces**: REST API, MCP stdio, and MCP SSE
-- 🔐 **Secure**: TLS support and proper authentication
-- 📊 **Monitoring**: Built-in metrics and logging
+- 🚀 **High Performance**: Built with Rust for speed and efficiency
+- 🔒 **Type Safety**: Leverages Rust's type system for reliability
+- 📧 **Full IMAP Support**: Access all folders and messages
+- 🔄 **Multiple Interfaces**: REST API, MCP stdio, MCP SSE
+- 🔐 **Secure**: TLS support and authentication
+- 📊 **Monitoring**: Metrics and logging
 - 🧪 **Comprehensive Testing**: Unit, integration, and performance tests
-- 📚 **Well Documented**: Detailed API documentation and examples
+- 🧩 **Extensible**: Easily add new MCP tools
+- ⚡ **Real-time Streaming**: Via SSE interface
+- 🛠️ **MCP Protocol**: Full JSON-RPC 2.0 support over multiple transports
+
+---
 
 ## Quick Start
 
 ### Prerequisites
 
-- Rust 1.70 or later
-- OpenSSL or equivalent SSL library
-- An IMAP server to connect to
+- Rust 1.70+
+- OpenSSL or compatible SSL library
+- An IMAP server account
 
 ### Installation
 
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/rangersdo/rustymail.git
-   cd rustymail
-   ```
+```bash
+git clone https://github.com/rangersdo/rustymail.git
+cd rustymail
+cp .env.example .env
+# Edit .env with your IMAP server details
+cargo build --release
+```
 
-2. Copy the environment file and configure it:
-   ```bash
-   cp .env.example .env
-   # Edit .env with your IMAP server details
-   ```
+### Running
 
-3. Build and run:
-   ```bash
-   cargo build --release
-   cargo run --release
-   ```
+- **REST API (default)**:
+  ```bash
+  cargo run --release
+  ```
+- **MCP Stdio**:
+  ```bash
+  cargo run --release -- --mcp-stdio
+  ```
+- **MCP SSE**:
+  ```bash
+  cargo run --release -- --mcp-sse
+  ```
+
+---
 
 ## Interface Usage
 
-### 1. REST API
+### REST API
 
-The REST API server starts on `http://localhost:8080` by default.
+Server runs at `http://localhost:8080`
+
+Example requests:
 
 ```bash
 # List folders
-curl -X GET http://localhost:8080/folders \
-  -H "Authorization: Basic $(echo -n 'username:password' | base64)"
+curl -X GET http://localhost:8080/folders -H "Authorization: Basic $(echo -n 'user:pass' | base64)"
 
 # List emails in INBOX
-curl -X GET http://localhost:8080/emails/INBOX \
-  -H "Authorization: Basic $(echo -n 'username:password' | base64)"
+curl -X GET http://localhost:8080/emails/INBOX -H "Authorization: Basic $(echo -n 'user:pass' | base64)"
 ```
 
-### 2. MCP Stdio Server
-
-Use the `--mcp-stdio` flag to start in stdio mode:
+### MCP Stdio
 
 ```bash
-# Start in MCP stdio mode
 cargo run --release -- --mcp-stdio
-
-# Example JSON-RPC request (via stdin)
-{"jsonrpc": "2.0", "method": "list_folders", "params": {}, "id": 1}
 ```
 
-### 3. MCP SSE Server
+Send JSON-RPC requests via stdin:
 
-Use the `--mcp-sse` flag to start in SSE mode:
+```json
+{"jsonrpc":"2.0","id":1,"method":"imap/listFolders","params":{}}
+```
+
+### MCP SSE
+
+Start server:
 
 ```bash
-# Start in MCP SSE mode
 cargo run --release -- --mcp-sse
-
-# Connect and receive events
-curl -N http://localhost:8081/events
-
-# Send commands (in another terminal)
-curl -X POST http://localhost:8081/command \
-  -H "Content-Type: application/json" \
-  -d '{"method": "list_folders", "params": {}}'
 ```
+
+Connect:
+
+```bash
+curl -N http://localhost:8081/api/v1/sse/connect
+```
+
+Send commands:
+
+```bash
+curl -X POST http://localhost:8081/api/v1/sse/command \
+  -H "Content-Type: application/json" \
+  -d '{"command":"imap/listFolders","params":{}}'
+```
+
+---
+
+## MCP Protocol Specification
+
+RustyMail implements the Model Context Protocol (MCP) over stdio and SSE.
+
+### JSON-RPC 2.0 Format
+
+**Request:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "unique-id",
+  "method": "imap/listFolders",
+  "params": {}
+}
+```
+
+**Success Response:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "unique-id",
+  "result": { "folders": ["INBOX", "Sent"] }
+}
+```
+
+**Error Response:**
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "unique-id",
+  "error": { "code": -32001, "message": "IMAP authentication failed" }
+}
+```
+
+### Error Codes
+
+- `-32700` Parse error
+- `-32600` Invalid request
+- `-32601` Method not found
+- `-32602` Invalid params
+- `-32603` Internal error
+- `-32000` IMAP connection error
+- `-32001` Authentication failure
+- `-32002` Folder not found
+- `-32003` Folder already exists
+- `-32004` Email not found
+- `-32010` IMAP operation failed
+
+### Supported Methods
+
+- `imap/listFolders`
+- `imap/createFolder`
+- `imap/deleteFolder`
+- `imap/renameFolder`
+- `imap/searchEmails`
+- `imap/fetchEmails`
+- `imap/moveEmail`
+
+### SSE Example (JavaScript)
+
+```js
+const es = new EventSource('http://localhost:8081/api/v1/sse/connect');
+es.onmessage = e => console.log('Received:', JSON.parse(e.data));
+
+fetch('http://localhost:8081/api/v1/sse/command', {
+  method: 'POST',
+  headers: {'Content-Type': 'application/json'},
+  body: JSON.stringify({ command: 'imap/listFolders', params: {} })
+});
+```
+
+---
 
 ## Configuration
 
-Create a `.env` file in the project root:
+Edit `.env` file:
 
 ```env
-# IMAP Settings
+# IMAP
 IMAP_HOST=imap.example.com
 IMAP_PORT=993
 IMAP_USERNAME=your_username
 IMAP_PASSWORD=your_password
 
-# REST API Settings
+# REST API
 REST_HOST=0.0.0.0
 REST_PORT=8080
 
-# MCP SSE Settings
+# MCP SSE
 SSE_HOST=0.0.0.0
 SSE_PORT=8081
 
-# General Settings
+# General
 LOG_LEVEL=info
-INTERFACE=rest  # Options: rest, stdio, sse
+INTERFACE=rest  # rest, stdio, sse
 ```
 
-See `.env.example` for all available configuration options.
+---
 
 ## Documentation
 
-- [API Reference](docs/API.md) - REST API documentation
-- [MCP Protocol](docs/MCP.md) - MCP protocol specification
-- [Error Codes](docs/ERRORS.md) - Error code reference
-- [Usage Examples](docs/EXAMPLES.md) - Code examples for all interfaces
-- [Deployment Guide](docs/DEPLOYMENT.md) - Deployment instructions
+- [REST API Reference](docs/REST-API.md)
+- [System Info](docs/system_info.md)
+- [Python Example](docs/python_test_example.py)
+- [Additional Examples](docs/REST-EXAMPLES.md)
+
+---
 
 ## Development
 
-### Running Tests
+### Run Tests
 
 ```bash
-# Run all tests
 cargo test
+```
 
-# Test specific interface
-cargo test --test rest_api_tests
-cargo test --test mcp_stdio_tests
-cargo test --test mcp_sse_tests
+### Run Benchmarks
 
-# Run benchmarks
+```bash
 cargo bench
 ```
 
+### Lint
+
+```bash
+cargo clippy
+```
+
+---
+
 ## Contributing
 
-Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+Contributions welcome! Please see `CONTRIBUTING.md`.
+
+---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License. See `LICENSE`.
 
-## Support
-
-If you encounter any issues or have questions, please:
-
-1. Check the [documentation](docs/)
-2. Search for existing issues
-3. Create a new issue if needed
+---
 
 ## Authors
 
-- Steve Olson - Initial work - [Steve's GitHub](https://github.com/rangersdo)
+- Steve Olson - [GitHub](https://github.com/rangersdo)
 - Contact: [steve@texasfortress.ai](mailto:steve@texasfortress.ai)
+
+---
 
 ## Sponsors
 
 Sponsored by Texas Fortress AI.
 
-[Become a sponsor](https://github.com/sponsors/rangersdo) 
+[Become a sponsor](https://github.com/sponsors/rangersdo)
