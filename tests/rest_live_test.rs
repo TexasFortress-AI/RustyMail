@@ -417,7 +417,7 @@ mod live_tests {
         let search_resp = test::call_service(&mut app, search_req).await;
         assert!(search_resp.status().is_success(), "Search after append failed");
         let uids: Vec<u32> = test::read_body_json(search_resp).await;
-        assert!(!uids.is_empty(), "Appended email not found in search");
+        assert!(!uids.is_empty(), "Appended email not found");
 
         // Fetch the appended email
         let uids_param = uids.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",");
@@ -429,5 +429,51 @@ mod live_tests {
         let emails: Vec<Email> = test::read_body_json(fetch_resp).await;
         assert!(!emails.is_empty(), "No emails fetched after append");
         assert!(emails.iter().any(|e| e.body.as_deref() == Some("This is a test email body.")), "Appended email body mismatch");
+    }
+
+    #[actix_web::test]
+    async fn test_live_fetch_raw_email() {
+        let (mut app, _client) = setup_test_app_live().await;
+        let folder_name = "INBOX";
+        let encoded_folder = urlencoding::encode(folder_name);
+
+        // Compose unique subject
+        let unique_subject = format!("LiveTestRaw_{}", chrono::Utc::now().timestamp());
+
+        // Append email
+        let append_req = test::TestRequest::post()
+            .uri(&format!("/api/v1/folders/{}/emails/append", encoded_folder))
+            .set_json(&serde_json::json!({
+                "subject": unique_subject,
+                "body": "This is a raw fetch test body.",
+                "from": "test@example.com",
+                "to": ["test@example.com"]
+            }))
+            .to_request();
+        let append_resp = test::call_service(&mut app, append_req).await;
+        assert!(append_resp.status().is_success(), "Append email failed");
+
+        // Search for the appended email by subject
+        let encoded_query = urlencoding::encode(&format!("SUBJECT \"{}\"", unique_subject));
+        let search_req = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{}/emails/search?query={}", encoded_folder, encoded_query))
+            .to_request();
+        let search_resp = test::call_service(&mut app, search_req).await;
+        assert!(search_resp.status().is_success(), "Search after append failed");
+        let uids: Vec<u32> = test::read_body_json(search_resp).await;
+        assert!(!uids.is_empty(), "Appended email not found");
+        let uid = uids[0];
+
+        // Fetch raw message
+        let raw_req = test::TestRequest::get()
+            .uri(&format!("/api/v1/folders/{}/emails/{}/raw", encoded_folder, uid))
+            .to_request();
+        let raw_resp = test::call_service(&mut app, raw_req).await;
+        assert!(raw_resp.status().is_success(), "Fetch raw email failed");
+        let raw_bytes = test::read_body(raw_resp).await;
+        let raw_str = String::from_utf8_lossy(&raw_bytes);
+
+        assert!(raw_str.contains(&unique_subject), "Raw message missing subject");
+        assert!(raw_str.contains("This is a raw fetch test body."), "Raw message missing body");
     }
 }
