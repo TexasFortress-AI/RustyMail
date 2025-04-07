@@ -28,6 +28,28 @@ pub enum ApiError {
     ImapOperationFailed(#[source] InternalImapError),
 }
 
+pub async fn get_raw_email(
+    state: web::Data<AppState>,
+    path: web::Path<(String, u32)>,
+) -> Result<HttpResponse, ApiError> {
+    let (encoded_folder, uid) = path.into_inner();
+    let folder_name = urlencoding::decode(&encoded_folder)
+        .map_err(|e| ApiError::BadRequest(format!("Invalid folder name encoding: {}", e)))?
+        .into_owned();
+
+    log::info!("Fetching raw email UID {} from folder '{}'", uid, folder_name);
+
+    // Select the folder
+    state.imap_client.select_folder(&folder_name).await?;
+
+    // Fetch raw RFC822 message
+    let raw_message = state.imap_client.fetch_raw_message(uid).await?;
+
+    Ok(HttpResponse::Ok()
+        .content_type("message/rfc822")
+        .body(raw_message))
+}
+
 // Manual implementation to avoid issues with #[from] on non-Clone InternalImapError if it were not Clone
 // Also allows for more specific mapping logic.
 impl From<InternalImapError> for ApiError {

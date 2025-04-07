@@ -165,6 +165,8 @@ fn convert_async_flag_to_string(flag: &AsyncImapFlag) -> String {
 #[async_trait]
 pub trait ImapSession: Send + Sync {
     async fn list_folders(&self) -> Result<Vec<Folder>, ImapError>;
+
+    async fn fetch_raw_message(&mut self, uid: u32) -> Result<Vec<u8>, ImapError>;
     async fn create_folder(&self, name: &str) -> Result<(), ImapError>;
     async fn delete_folder(&self, name: &str) -> Result<(), ImapError>;
     async fn rename_folder(&self, from: &str, to: &str) -> Result<(), ImapError>;
@@ -173,6 +175,24 @@ pub trait ImapSession: Send + Sync {
     async fn select_folder(&self, name: &str) -> Result<MailboxInfo, ImapError>;
     async fn search_emails(&self, criteria: SearchCriteria) -> Result<Vec<u32>, ImapError>;
     async fn fetch_emails(&self, uids: Vec<u32>, fetch_body: bool) -> Result<Vec<Email>, ImapError>;
+
+    async fn fetch_raw_message(&mut self, uid: u32) -> Result<Vec<u8>, ImapError> {
+        let seq_set = uid.to_string();
+        let query = "BODY.PEEK[]".to_string();
+
+        let fetches = {
+            let mut session = self.session.lock().await;
+            session.fetch(seq_set, query).await?
+        };
+
+        if let Some(fetch) = fetches.into_iter().next() {
+            if let Some(body) = fetch.body() {
+                return Ok(body.to_vec());
+            }
+        }
+
+        Err(ImapError::NotFound(format!("Raw message for UID {} not found", uid)))
+    }
     async fn move_email(&self, uids: Vec<u32>, destination_folder: &str) -> Result<(), ImapError>;
     async fn store_flags(&self, uids: Vec<u32>, operation: StoreOperation, flags: Vec<String>) -> Result<(), ImapError>;
     async fn append(&self, folder: &str, payload: Vec<u8>) -> Result<(), ImapError>;
@@ -694,4 +714,4 @@ mod tests {
     }
      
     // TODO: Add similar tests for rename_folder, logout
-} 
+}

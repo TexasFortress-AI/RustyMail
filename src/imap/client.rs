@@ -234,8 +234,13 @@ impl ImapClient {
     /// Expunges emails marked for deletion in the currently selected folder.
     pub async fn expunge(&self) -> Result<ExpungeResponse, ImapError> {
         self.session.lock().await.expunge().await.map(|_| ExpungeResponse {
-            message: "Expunge operation completed successfully".to_string(),
+            // ...
         })
+    }
+
+    pub async fn fetch_raw_message(&self, uid: u32) -> Result<Vec<u8>, ImapError> {
+        let mut session = self.session.lock().await;
+        session.fetch_raw_message(uid).await
     }
 
     /// Logs out from the IMAP server.
@@ -246,4 +251,3 @@ impl ImapClient {
         session_guard.logout().await
     }
 }
-
