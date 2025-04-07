@@ -25,6 +25,9 @@ mod tests {
         fetch_emails_called: AtomicBool,
         move_email_called: AtomicBool,
         logout_called: AtomicBool,
+        store_flags_called: AtomicBool,
+        append_called: AtomicBool,
+        expunge_called: AtomicBool,
     }
 
     // The Mock Session implementation
@@ -40,6 +43,9 @@ mod tests {
         rename_result: Result<(), ImapError>,
         move_result: Result<(), ImapError>,
         logout_result: Result<(), ImapError>,
+        store_flags_result: Result<(), ImapError>,
+        append_result: Result<(), ImapError>,
+        expunge_result: Result<(), ImapError>,
     }
 
     impl MockImapSession {
@@ -72,12 +78,16 @@ mod tests {
                     flags: vec![],
                     size: Some(100),
                     envelope: None,
+                    body: None,
                 }]),
                 create_result: Ok(()),
                 delete_result: Ok(()),
                 rename_result: Ok(()),
                 move_result: Ok(()),
                 logout_result: Ok(()),
+                store_flags_result: Ok(()),
+                append_result: Ok(()),
+                expunge_result: Ok(()),
             }
         }
 
@@ -96,6 +106,16 @@ mod tests {
                  "logout" => self.logout_result = Err(err),
                  _ => panic!("Unknown method to fail: {}", method),
              }
+             self
+        }
+
+        fn set_fetch_emails(mut self, result: Result<Vec<Email>, ImapError>) -> Self {
+            self.fetch_emails_result = result;
+            self
+        }
+
+        fn set_expunge(mut self, result: Result<(), ImapError>) -> Self {
+             self.expunge_result = result;
              self
         }
     }
@@ -144,12 +164,13 @@ mod tests {
             self.search_emails_result.clone()
         }
 
-        async fn fetch_emails(&self, _uids: Vec<u32>) -> Result<Vec<Email>, ImapError> {
+        async fn fetch_emails(&self, _uids: Vec<u32>, _fetch_body: bool) -> Result<Vec<Email>, ImapError> {
             self.tracker
                 .fetch_emails_called
                 .store(true, Ordering::SeqCst);
-             // Handle empty UID case as client does
-            if _uids.is_empty() { return Ok(Vec::new()); }
+            if _uids.is_empty() { 
+                return Ok(Vec::new()); 
+            }
             self.fetch_emails_result.clone()
         }
 
@@ -164,7 +185,23 @@ mod tests {
             self.move_result.clone()
         }
 
-        // Logout takes &self now
+        async fn store_flags(&self, _uids: Vec<u32>, _operation: crate::imap::session::StoreOperation, _flags: Vec<String>) -> Result<(), ImapError> {
+            self.tracker.store_flags_called.store(true, Ordering::SeqCst);
+            // Handle empty UID case if necessary
+            if _uids.is_empty() { return Ok(()); }
+            self.store_flags_result.clone()
+        }
+
+        async fn append(&self, _folder: &str, _payload: Vec<u8>) -> Result<(), ImapError> {
+            self.tracker.append_called.store(true, Ordering::SeqCst);
+            self.append_result.clone()
+        }
+
+        async fn expunge(&self) -> Result<(), ImapError> {
+            self.tracker.expunge_called.store(true, Ordering::SeqCst);
+            self.expunge_result.clone()
+        }
+
         async fn logout(&self) -> Result<(), ImapError> {
             self.tracker.logout_called.store(true, Ordering::SeqCst);
             self.logout_result.clone()
@@ -262,7 +299,7 @@ mod tests {
         let tracker = mock_session.tracker.clone();
         let client = ImapClient::new_with_session(Arc::new(Mutex::new(mock_session)));
 
-        let result = client.fetch_emails(vec![1]).await;
+        let result = client.fetch_emails(vec![1], true).await;
         assert!(result.is_ok());
         let emails = result.unwrap();
         assert_eq!(emails.len(), 1);
@@ -276,10 +313,9 @@ mod tests {
         let tracker = mock_session.tracker.clone();
         let client = ImapClient::new_with_session(Arc::new(Mutex::new(mock_session)));
 
-        let result = client.fetch_emails(vec![]).await;
+        let result = client.fetch_emails(vec![], true).await;
         assert!(result.is_ok());
         assert!(result.unwrap().is_empty());
-        // Ensure the mock fetch was NOT called because client handles empty case
         assert!(!tracker.fetch_emails_called.load(Ordering::SeqCst));
     }
 
@@ -327,5 +363,36 @@ mod tests {
         let result = client.logout().await;
         assert!(result.is_err());
         assert!(tracker.logout_called.load(Ordering::SeqCst));
+    }
+
+    #[tokio::test]
+    async fn test_client_fetch_emails_success() {
+        let mock_session = MockImapSession::default_ok()
+            .set_fetch_emails(Ok(vec![Email { uid: 1, flags: vec!["\\Seen".into()], size: Some(100), envelope: None, body: Some(b"body".to_vec()) }]));
+        let client = ImapClient::new_with_session(Arc::new(Mutex::new(mock_session)));
+        let result = client.fetch_emails(vec![1], true).await;
+        assert!(result.is_ok());
+        let emails = result.unwrap();
+        assert_eq!(emails.len(), 1);
+        assert_eq!(emails[0].uid, 1);
+        assert_eq!(emails[0].body, Some(b"body".to_vec()));
+    }
+
+    #[tokio::test]
+    async fn test_client_fetch_emails_error() {
+        let mock_session = MockImapSession::default_ok()
+            .set_fetch_emails(Err(ImapError::Command("Failed fetch".to_string())));
+        let client = ImapClient::new_with_session(Arc::new(Mutex::new(mock_session)));
+        let result = client.fetch_emails(vec![1], true).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_client_fetch_emails_empty_input() {
+        let mock_session = MockImapSession::default_ok();
+        let client = ImapClient::new_with_session(Arc::new(Mutex::new(mock_session)));
+        let result = client.fetch_emails(vec![], true).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
     }
 } 

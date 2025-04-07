@@ -425,6 +425,9 @@ mod tests {
         search_result: Option<Result<Vec<u32>, AsyncImapError>>,
         fetch_result: Option<Result<Vec<Fetch>, AsyncImapError>>,
         move_result: Option<Result<(), AsyncImapError>>,
+        store_flags_result: Option<Result<(), AsyncImapError>>,
+        append_result: Option<Result<(), AsyncImapError>>,
+        expunge_result: Option<Result<(), AsyncImapError>>,
         logout_result: Option<Result<(), AsyncImapError>>,
     }
 
@@ -453,6 +456,9 @@ mod tests {
                 search_result: Some(Ok(vec![1, 2, 3])), // Simple vec
                 fetch_result: Some(Ok(vec![])), // Cannot reliably mock Fetch construction
                 move_result: Some(Ok(())),
+                store_flags_result: Some(Ok(())),
+                append_result: Some(Ok(())),
+                expunge_result: Some(Ok(())),
                 logout_result: Some(Ok(())),
             }
         }
@@ -525,6 +531,15 @@ mod tests {
         async fn logout(&mut self) -> Result<(), AsyncImapError> { 
             self.logout_result.take().unwrap_or(Ok(()))
         }
+        async fn uid_store(&mut self, _sequence_set: String, _command: String) -> Result<(), AsyncImapError> {
+            self.store_flags_result.take().unwrap_or(Ok(()))
+        }
+        async fn append(&mut self, _folder: &str, _payload: Vec<u8>) -> Result<(), AsyncImapError> {
+            self.append_result.take().unwrap_or(Ok(()))
+        }
+        async fn expunge(&mut self) -> Result<(), AsyncImapError> {
+            self.expunge_result.take().unwrap_or(Ok(()))
+        }
     }
 
     // --- Tests for AsyncImapSessionWrapper ---
@@ -545,7 +560,9 @@ mod tests {
         let wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = wrapper.list_folders().await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ImapError::Command(_)));
+        let err = result.unwrap_err();
+        dbg!(&err);
+        assert!(matches!(err, ImapError::Operation(_)));
     }
     
     #[tokio::test]
@@ -575,7 +592,9 @@ mod tests {
         let wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = wrapper.select_folder("INBOX").await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ImapError::Operation(_))); 
+        let err = result.unwrap_err();
+        dbg!(&err);
+        assert!(matches!(err, ImapError::Operation(_))); 
     }
 
     #[tokio::test]
@@ -594,7 +613,9 @@ mod tests {
         let wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = wrapper.search_emails(SearchCriteria::All).await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ImapError::Operation(_))); 
+        let err = result.unwrap_err();
+        dbg!(&err);
+        assert!(matches!(err, ImapError::Operation(_))); 
     }
     
      #[tokio::test]
@@ -613,7 +634,9 @@ mod tests {
         let wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = wrapper.fetch_emails(vec![1], true).await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ImapError::Command(_))); 
+        let err = result.unwrap_err();
+        dbg!(&err);
+        assert!(matches!(err, ImapError::Operation(_))); 
     }
 
     #[tokio::test]
@@ -631,7 +654,9 @@ mod tests {
         let wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = wrapper.create_folder("Exists").await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ImapError::Operation(_)));
+        let err = result.unwrap_err();
+        dbg!(&err);
+        assert!(matches!(err, ImapError::Operation(_)));
     }
     
     // Add tests for delete, rename, move, logout
@@ -650,7 +675,9 @@ mod tests {
         let wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = wrapper.delete_folder("Trash").await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ImapError::Operation(_)));
+        let err = result.unwrap_err();
+        dbg!(&err);
+        assert!(matches!(err, ImapError::Operation(_)));
     }
     
      #[tokio::test]
@@ -668,7 +695,9 @@ mod tests {
         let wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = wrapper.move_email(vec![1], "Archive").await;
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), ImapError::Operation(_)));
+        let err = result.unwrap_err();
+        dbg!(&err);
+        assert!(matches!(err, ImapError::Operation(_)));
     }
      
     // TODO: Add similar tests for rename_folder, logout

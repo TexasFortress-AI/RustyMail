@@ -200,6 +200,9 @@ impl ImapClient {
     }
 
     pub async fn fetch_emails(&self, uids: Vec<u32>, fetch_body: bool) -> Result<Vec<Email>, ImapError> {
+        if uids.is_empty() {
+            return Ok(Vec::new()); // Handle empty UIDs directly
+        }
         self.session.lock().await.fetch_emails(uids, fetch_body).await
     }
 
