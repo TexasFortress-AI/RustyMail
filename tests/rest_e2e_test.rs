@@ -14,6 +14,9 @@ mod e2e_tests {
     use rustymail::config::Settings;
     use dotenvy::dotenv;
     use urlencoding::encode; // For URL encoding folder names
+    use rustymail::imap::ImapClient; // Assuming ImapClient might be needed later
+    use actix_web::{test, App};
+    use tokio;
 
     const BASE_URL: &str = "http://127.0.0.1:8080"; // Default REST API address
     const STARTUP_DELAY_MS: u64 = 3000; // Allow time for server to start
@@ -54,8 +57,12 @@ mod e2e_tests {
             dotenv().ok(); 
             // Get REST host/port from config to ensure we connect correctly
             // Although we default to 8080, reading config is safer
-            let settings = Settings::new().expect("Failed to load settings for test server start");
-            let listen_addr = format!("{}:{}", settings.rest_host, settings.rest_port);
+            let settings = Settings::new(None).expect("Failed to load settings for test server start");
+            let rest_config = settings.rest.as_ref().expect("REST config section missing or disabled");
+            if !rest_config.enabled {
+                panic!("REST interface must be enabled for this test");
+            }
+            let listen_addr = format!("{}:{}", rest_config.host, rest_config.port);
             let base_url_from_config = format!("http://{}", listen_addr);
             // Note: We are still using BASE_URL constant, but this shows how to get it if needed.
             assert_eq!(BASE_URL, base_url_from_config, "Configured REST address differs from test constant!");
@@ -109,38 +116,34 @@ mod e2e_tests {
     // Using a framework like serial_test or explicit locking would be needed for parallel execution.
 
     #[test]
-    fn run_rest_e2e_tests() {
+    async fn run_rest_e2e_tests() {
         let rt = Runtime::new().expect("Failed to create Tokio runtime");
         let _server = TestServer::start(); // Start server, will be killed on drop
         let client = Client::new();
 
-        // Run async tests within the sync test function using the runtime
-        rt.block_on(async {
-            // Basic checks
-            test_e2e_list_folders(&client).await;
-            test_e2e_get_emails_in_folder(&client, TEST_FOLDER_A).await;
-            
-            // Folder Management
-            let created_folder_name = test_e2e_create_folder(&client).await;
-            test_e2e_rename_folder(&client, &created_folder_name).await;
-            // test_e2e_delete_folder is implicitly tested by create/rename cleanup
-            
-            // Email operations
-            let unique_subj = unique_id("move_test");
-            let appended_uid = test_e2e_append_email(&client, TEST_FOLDER_A, &unique_subj).await;
-            test_e2e_search_email(&client, TEST_FOLDER_A, &unique_subj, appended_uid).await;
-            test_e2e_move_email(&client, TEST_FOLDER_A, TEST_FOLDER_B, appended_uid, &unique_subj).await;
-            test_e2e_fetch_single_email(&client, TEST_FOLDER_B, appended_uid, &unique_subj).await;
-            
-            // Error conditions
-            test_e2e_fetch_non_existent_folder(&client).await;
-            test_e2e_fetch_non_existent_uid(&client).await;
-            test_e2e_move_invalid_uid(&client).await;
-            test_e2e_move_invalid_source(&client).await;
-        });
+        // Run async tests within the async test function
+        test_e2e_list_folders(&client).await;
+        test_e2e_get_emails_in_folder(&client, TEST_FOLDER_A).await;
+        
+        // Folder Management
+        let created_folder_name = test_e2e_create_folder(&client).await;
+        test_e2e_rename_folder(&client, &created_folder_name).await;
+        // test_e2e_delete_folder is implicitly tested by create/rename cleanup
+        
+        // Email operations
+        let unique_subj = unique_id("move_test");
+        let appended_uid = test_e2e_append_email(&client, TEST_FOLDER_A, &unique_subj).await;
+        test_e2e_search_email(&client, TEST_FOLDER_A, &unique_subj, appended_uid).await;
+        test_e2e_move_email(&client, TEST_FOLDER_A, TEST_FOLDER_B, appended_uid, &unique_subj).await;
+        test_e2e_fetch_single_email(&client, TEST_FOLDER_B, appended_uid, &unique_subj).await;
+        
+        // Error conditions
+        test_e2e_fetch_non_existent_folder(&client).await;
+        test_e2e_fetch_non_existent_uid(&client).await;
+        test_e2e_move_invalid_uid(&client).await;
+        test_e2e_move_invalid_source(&client).await;
 
         println!("E2E tests completed. Server will be stopped.");
-        // Server is stopped automatically when _server goes out of scope (Drop implementation)
     }
 
     async fn test_e2e_list_folders(client: &Client) {

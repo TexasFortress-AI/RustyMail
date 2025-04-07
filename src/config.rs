@@ -1,6 +1,8 @@
-use serde::{Deserialize, Serialize};
+// use config::ConfigError;
 use config::{Environment, File};
-use std::path::Path;
+use serde::{Deserialize, Serialize};
+// Remove unused import
+// use std::path::Path;
 use thiserror::Error;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

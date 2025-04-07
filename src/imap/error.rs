@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 /// Error type for IMAP operations
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum ImapError {
     #[error("Connection error: {0}")]
     Connection(String),

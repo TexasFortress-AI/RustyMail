@@ -13,18 +13,19 @@ use async_imap::{
 };
 
 use imap_types::{
-    core::{Atom},
+    // command::Command,
+    // command::CommandBody,
+    // core::{Atom, Text},
     flag::Flag as ImapTypesFlag,
-    sequence::SequenceSet,
-    fetch::FetchAttribute,
-    mailbox::Mailbox,
+    // sequence::SequenceSet, // Unused
+    // mailbox::Mailbox, // Unused
+    core::Atom, // Import Atom
+    // Import the ToStatic trait
+    ToStatic,
 };
 
 use crate::imap::error::ImapError;
 use crate::imap::types::{Email, OwnedMailbox, Folder, SearchCriteria, Envelope, Address};
-
-// Type alias for the stream compatible with futures_util::io traits
-type CompatStream = Compat<tokio_rustls::client::TlsStream<tokio::net::TcpStream>>;
 
 // Update the main session type alias to use the compatible stream
 // Make it pub(crate) so client.rs can use it
@@ -91,23 +92,40 @@ fn format_uid_vec_to_imap_string(uids: &Vec<u32>) -> Result<String, ImapError> {
     Ok(parts.join(","))
 }
 
-// Helper to convert our SearchCriteria into the format needed by async-imap
+// Helper function to convert SearchCriteria into IMAP query string
 fn convert_search_criteria(criteria: SearchCriteria) -> Result<String, ImapError> {
     Ok(match criteria {
-        SearchCriteria::All => "ALL".to_string(),
+        SearchCriteria::Subject(s) => format!("SUBJECT \"{}\"", s),
+        SearchCriteria::From(s) => format!("FROM \"{}\"", s),
+        SearchCriteria::To(s) => format!("TO \"{}\"", s),
+        SearchCriteria::Body(s) => format!("BODY \"{}\"", s),
         SearchCriteria::Unseen => "UNSEEN".to_string(),
-        SearchCriteria::From(s) => format!("FROM \"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
-        SearchCriteria::Subject(s) => format!("SUBJECT \"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
-        SearchCriteria::Body(s) => format!("BODY \"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
-        SearchCriteria::To(s) => format!("TO \"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
-        SearchCriteria::Uid(uids) => {
-            format!("UID {}", format_uid_vec_to_imap_string(&uids)?)
-        }
+        SearchCriteria::All => "ALL".to_string(),
         SearchCriteria::Since(date_str) => {
-            let date = chrono::NaiveDate::parse_from_str(&date_str, "%d-%b-%Y")
-                .map_err(|e| ImapError::Parse(format!("Invalid SINCE date format (expected DD-Mon-YYYY): {}", e)))?;
-            format!("SINCE {}", date.format("%d-%b-%Y"))
-        }
+            // Basic validation - expects "DD-Mon-YYYY"
+            if chrono::NaiveDate::parse_from_str(&date_str, "%d-%b-%Y").is_err() {
+                return Err(ImapError::Parse(format!("Invalid SINCE date format (expected DD-Mon-YYYY): {}", date_str)));
+            }
+            format!("SINCE {}", date_str)
+        },
+        SearchCriteria::Uid(uids) => {
+            if uids.is_empty() {
+                // Maybe return ALL or an error? Returning error for now.
+                return Err(ImapError::Command("UID search requires at least one UID".to_string()));
+            }
+            let uid_str = uids.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",");
+            format!("UID {}", uid_str)
+        },
+        // Add arms for complex criteria
+        SearchCriteria::And(_) => {
+            return Err(ImapError::Command("Complex search criteria (And) not yet supported".to_string()))
+        },
+        SearchCriteria::Or(_) => {
+            return Err(ImapError::Command("Complex search criteria (Or) not yet supported".to_string()))
+        },
+        SearchCriteria::Not(_) => {
+            return Err(ImapError::Command("Complex search criteria (Not) not yet supported".to_string()))
+        },
     })
 }
 
@@ -154,7 +172,7 @@ pub trait ImapSession: Send + Sync {
     async fn create_folder(&self, name: &str) -> Result<(), ImapError>;
     async fn delete_folder(&self, name: &str) -> Result<(), ImapError>;
     async fn rename_folder(&self, from: &str, to: &str) -> Result<(), ImapError>;
-    async fn select_folder(&self, name: &str) -> Result<OwnedMailbox, ImapError>;
+    async fn select_folder(&self, name: &str) -> Result<OwnedMailbox<'static>, ImapError>;
     async fn search_emails(&self, criteria: SearchCriteria) -> Result<Vec<u32>, ImapError>;
     async fn fetch_emails(&self, uids: Vec<u32>) -> Result<Vec<Email>, ImapError>;
     async fn move_email(&self, uids: Vec<u32>, destination_folder: &str) -> Result<(), ImapError>;
@@ -204,12 +222,15 @@ impl ImapSession for AsyncImapSessionWrapper {
         Ok(())
     }
 
-    async fn select_folder(&self, name: &str) -> Result<OwnedMailbox, ImapError> {
+    async fn select_folder(&self, name: &str) -> Result<OwnedMailbox<'static>, ImapError> {
         let mut session_guard = self.session.lock().await;
-        // Call select and return the resulting Mailbox directly (OwnedMailbox is an alias)
-        let mailbox = session_guard.select(name).await?;
-        // REMOVE the struct construction logic again
-        Ok(mailbox) // Return the Mailbox alias directly
+        let _async_imap_mailbox = session_guard.select(name).await?;
+        
+        let target_mailbox = imap_types::mailbox::Mailbox::try_from(name)
+             .map_err(|e| ImapError::Command(format!("Invalid mailbox name '{}': {}", name, e)))?;
+
+        // Convert to static lifetime before returning (trait is now in scope)
+        Ok(target_mailbox.to_static())
     }
 
     async fn search_emails(&self, criteria: SearchCriteria) -> Result<Vec<u32>, ImapError> {

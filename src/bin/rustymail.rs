@@ -1,15 +1,13 @@
-use rustymail::config::{Settings, ImapConnectConfig, InterfaceType};
-use rustymail::imap::{ImapClient, ImapSession, TlsImapSession}; // Add ImapSession trait
-use rustymail::error::ImapError;
+use rustymail::config::{Settings, ImapConnectConfig};
+use rustymail::imap::{ImapClient, ImapSession, ImapError};
 // Remove API imports for now
 // use rustymail::api::rest::run_server as run_rest_server;
 // use rustymail::api::mcp::McpStdioAdapter;
 // Remove native_tls
 // use native_tls::TlsConnector;
-use log::{info, error, debug, LevelFilter}; // Add missing log items
+use log::{info, error, debug, LevelFilter};
 use std::sync::Arc;
-use std::time::Duration; // Add Duration
-use tokio::runtime::Runtime;
+use std::time::Duration;
 
 // Simplified helper to directly return the session Arc
 async fn connect_to_imap(config: &ImapConnectConfig) -> Result<Arc<dyn ImapSession>, ImapError> {
@@ -46,11 +44,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> { // Correct async typ
     let imap_session = match connect_to_imap(&settings.imap).await {
         Ok(session) => {
             info!("IMAP connection successful.");
-            session // Assign the Arc<dyn ImapSession>
+            session
         }
         Err(e) => {
             error!("Failed to connect to IMAP: {}", e);
-            return Err(Box::new(e));
+            // Keep the explicit cast
+            return Err(Box::new(e) as Box<dyn std::error::Error>);
         }
     };
 
@@ -111,15 +110,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> { // Correct async typ
 
     // Explicitly logout
     info!("Logging out...");
-    if let Err(e) = Arc::try_unwrap(imap_session)
-        .map_err(|_| "Session Arc still has multiple owners".to_string()) // Handle Arc error
-        .and_then(|session_trait_object| session_trait_object.logout().await.map_err(|e| e.to_string()))
-    {
-        error!("Logout failed: {}", e);
-    } else {
-        info!("Logout successful.");
+    // Call logout directly on the Arc<dyn ImapSession>
+    match imap_session.logout().await {
+        Ok(_) => info!("Logout successful."),
+        Err(e) => error!("Logout failed: {}", e),
     }
-
 
     Ok(())
 } 

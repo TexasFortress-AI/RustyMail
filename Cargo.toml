@@ -63,6 +63,8 @@ rustls-native-certs = "0.7"
 # Add reqwest for E2E HTTP tests
 reqwest = { version = "0.12", features = ["json", "native-tls"] } 
 urlencoding = "2.1" # For URL encoding folder names in E2E tests
+# Add actix-web for REST E2E tests
+actix-web = "4"
 
 [features]
 default = []

@@ -4,11 +4,11 @@
 
 #[cfg(all(test, feature = "integration_tests"))]
 mod tests {
-    use rustymail::imap::{ImapClient, ImapError, SearchCriteria};
-    use rustymail::config::Settings; // To load .env
+    use crate::imap::{ImapClient, ImapError, SearchCriteria};
+    use crate::config::Settings; // To load .env
     use std::time::{SystemTime, UNIX_EPOCH};
     use dotenvy::dotenv;
-    use imap::types::Flag; // Needed for append
+    use imap_types::flag::Flag; // Needed for append
     use std::panic; // To catch panics for cleanup
 
     // Helper to create a unique folder name for testing
