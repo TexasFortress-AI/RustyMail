@@ -14,6 +14,7 @@ mod live_tests {
     use actix_web::Error as ActixError;
     use actix_http::Request;
     use env_logger; // Add import for env_logger
+    use dotenv; // Add import for dotenv
 
     // --- Test Setup Helper ---
 
@@ -31,13 +32,22 @@ mod live_tests {
         // Ensure logging is initialized for tests
         let _ = env_logger::builder().is_test(true).try_init();
 
-        let config = Settings::new(None).expect("Failed to load config");
+        // Load .env file into the environment for this test process
+        dotenv::dotenv().ok(); // Use dotenv crate
+
+        // Read IMAP connection details directly from environment variables
+        let imap_host = std::env::var("IMAP_HOST").expect("Missing IMAP_HOST env var");
+        let imap_port_str = std::env::var("IMAP_PORT").expect("Missing IMAP_PORT env var");
+        let imap_port: u16 = imap_port_str.parse().expect("Invalid IMAP_PORT format");
+        let imap_user = std::env::var("IMAP_USER").expect("Missing IMAP_USER env var");
+        let imap_pass = std::env::var("IMAP_PASS").expect("Missing IMAP_PASS env var");
+
         println!(
             "Connecting to live test IMAP server at {}:{} for test...",
-            config.imap_host, config.imap_port
+            imap_host, imap_port
         );
         let imap_client = ImapClient::connect(
-                &config.imap_host, config.imap_port, &config.imap_user, &config.imap_pass
+                &imap_host, imap_port, &imap_user, &imap_pass
             ).await.expect("Failed to connect");
         let shared_client = Arc::new(imap_client);
         let app_state = AppState { imap_client: shared_client.clone() };
@@ -122,8 +132,51 @@ mod live_tests {
 
     #[actix_web::test]
     async fn test_live_rename_folder() {
-        let (_app, _client) = setup_test_app_live().await; // Use per-test setup
-    // TODO: Add live tests for rename, select, search, fetch, move, including setup/teardown
+        let (mut app, client) = setup_test_app_live().await;
+        let old_base_name = "LiveTestRenameFrom";
+        let new_base_name = "LiveTestRenameTo";
+        let old_full_name = format!("INBOX.{}", old_base_name);
+        let new_full_name = format!("INBOX.{}", new_base_name);
+        let encoded_old_name = urlencoding::encode(old_base_name);
+
+        // Cleanup: Ensure folders don't exist from previous runs
+        let _ = client.delete_folder(&old_full_name).await;
+        let _ = client.delete_folder(&new_full_name).await;
+
+        // 1. Create the initial folder via API
+        let create_req = test::TestRequest::post()
+            .uri("/api/v1/folders")
+            .set_json(&serde_json::json!({ "name": old_base_name }))
+            .to_request();
+        let create_resp = test::call_service(&mut app, create_req).await;
+        assert_eq!(create_resp.status(), StatusCode::CREATED, "Failed to create initial folder {}", old_base_name);
+
+        // Verify initial creation
+        let list_resp_before = test::TestRequest::get().uri("/api/v1/folders").send_request(&mut app).await;
+        assert_eq!(list_resp_before.status(), StatusCode::OK);
+        let folders_before: Vec<Folder> = test::read_body_json(list_resp_before).await;
+        assert!(folders_before.iter().any(|f| f.name == old_full_name), "Folder '{}' should exist before rename", old_full_name);
+        assert!(!folders_before.iter().any(|f| f.name == new_full_name), "Folder '{}' should not exist before rename", new_full_name);
+
+        // 2. Rename the folder via API
+        let rename_req = test::TestRequest::put()
+            .uri(&format!("/api/v1/folders/{}", encoded_old_name))
+            .set_json(&serde_json::json!({ "to_name": new_base_name }))
+            .to_request();
+        let rename_resp = test::call_service(&mut app, rename_req).await;
+        assert_eq!(rename_resp.status(), StatusCode::OK, "Rename API call failed");
+
+        // 3. Verify the rename (using list folders API call)
+        let list_req_after = test::TestRequest::get().uri("/api/v1/folders").to_request();
+        let list_resp_after = test::call_service(&mut app, list_req_after).await;
+        assert_eq!(list_resp_after.status(), StatusCode::OK);
+        let folders_after: Vec<Folder> = test::read_body_json(list_resp_after).await;
+
+        assert!(!folders_after.iter().any(|f| f.name == old_full_name), "Old folder name '{}' should not exist after rename", old_full_name);
+        assert!(folders_after.iter().any(|f| f.name == new_full_name), "New folder name '{}' should exist after rename", new_full_name);
+
+        // 4. Cleanup: Delete the renamed folder
+        let _ = client.delete_folder(&new_full_name).await;
     }
 
 }
