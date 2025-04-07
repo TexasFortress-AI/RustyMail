@@ -176,23 +176,6 @@ pub trait ImapSession: Send + Sync {
     async fn search_emails(&self, criteria: SearchCriteria) -> Result<Vec<u32>, ImapError>;
     async fn fetch_emails(&self, uids: Vec<u32>, fetch_body: bool) -> Result<Vec<Email>, ImapError>;
 
-    async fn fetch_raw_message(&mut self, uid: u32) -> Result<Vec<u8>, ImapError> {
-        let seq_set = uid.to_string();
-        let query = "BODY.PEEK[]".to_string();
-
-        let fetches = {
-            let mut session = self.session.lock().await;
-            session.fetch(seq_set, query).await?
-        };
-
-        if let Some(fetch) = fetches.into_iter().next() {
-            if let Some(body) = fetch.body() {
-                return Ok(body.to_vec());
-            }
-        }
-
-        Err(ImapError::NotFound(format!("Raw message for UID {} not found", uid)))
-    }
     async fn move_email(&self, uids: Vec<u32>, destination_folder: &str) -> Result<(), ImapError>;
     async fn store_flags(&self, uids: Vec<u32>, operation: StoreOperation, flags: Vec<String>) -> Result<(), ImapError>;
     async fn append(&self, folder: &str, payload: Vec<u8>) -> Result<(), ImapError>;
