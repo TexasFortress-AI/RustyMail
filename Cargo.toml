@@ -7,18 +7,24 @@ authors = ["Your Name <your.email@example.com>"]
 
 [dependencies]
 # Core IMAP
-# Use imap-next from Git main branch. It brings its own imap-types.
-# imap-next = { git = "https://github.com/duesee/imap-next.git", branch = "main", features = ["stream"] }
-# Remove direct dependency - use the one from imap-next
-# imap-types = "1.0.0"
+# Remove imap-next
+# imap-next = { git = "https://github.com/duesee/imap-next.git", branch = "main", package = "imap-next", features = ["runtime-tokio", "tls-rustls"] }
+# Use async-imap
+async-imap = "0.8.0"
+# Add imap-types
+imap-types = { version = "1.0.0", features = ["serde"] }
+
 rustls = "0.23"
-rustls-pki-types = "0.2"
+# Add back rustls-pki-types, likely needed
+rustls-pki-types = "1.1"
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 
 # Web Framework (Actix)
 actix-web = "4"
 actix-rt = "2"
+# Add actix-web-lab for SSE
+actix-web-lab = "0.20" 
 
 # Serialization/Deserialization
 serde = { version = "1.0", features = ["derive"] }
@@ -34,7 +40,7 @@ env_logger = "0.10"
 clap = { version = "4", features = ["derive", "env"] }
 
 # Futures utility
-futures-util = { version = "0.3", features = ["compat"] }
+futures-util = { version = "0.3", features = ["compat", "sink", "io"] } 
 
 # Error Handling
 thiserror = "1.0"
@@ -42,20 +48,10 @@ thiserror = "1.0"
 # Chrono for date/time
 chrono = { version = "0.4", features = ["serde"] }
 
-# Revert async-imap to a released version
-# async-imap = { version = "4.0.0-alpha.1", features = ["runtime-tokio", "tls-rustls"] }
-async-imap = "0.10.3" # Use latest stable release
-# Revert imap-types to a compatible version
-# imap-types = "4.0.0-alpha.1" 
-imap-types = { version = "1.0", features = ["serde"] } # Enable serde feature
-
-# Ensure Tokio and Rustls crates for establishing the connection are present
+# TLS support for async-imap
 tokio-rustls = "0.26"
-
-# Add tokio-util dependency with the compat feature
 tokio-util = { version = "0.7", features = ["compat"] }
-# REMOVE webpki-roots = "0.25"
-rustls-native-certs = "0.7"
+rustls-native-certs = "0.7" # Fix typo
 
 # Add imap-codec dependency
 # imap-codec = "1.0.0-alpha.5" # Needed for manual command encoding
@@ -66,9 +62,12 @@ futures = "0.3" # Or futures-util? Let's try futures first.
 async-stream = "0.3"
 tokio-stream = "0.1" # Needed for ReceiverStream
 
+# URL Encoding for folder names
+urlencoding = "2.1"
+
 [dev-dependencies]
-# Add reqwest for E2E HTTP tests
-reqwest = { version = "0.12", features = ["json", "native-tls"] } 
+# Remove reqwest native-tls feature if not needed
+reqwest = { version = "0.12", features = ["json"] } 
 urlencoding = "2.1" # For URL encoding folder names in E2E tests
 # Add actix-web for REST E2E tests
 actix-web = "4"

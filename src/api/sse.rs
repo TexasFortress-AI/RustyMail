@@ -1,14 +1,17 @@
-use actix_web::{web, Responder, HttpResponse, Error};
+use actix_web::{web, Responder, HttpResponse, Error, HttpRequest};
 use actix_web::rt::time::interval;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{mpsc, Mutex as TokioMutex};
 use tokio::time::Duration;
 use std::sync::Arc;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use log::{info, warn, error};
 use crate::config::RestConfig;
-use futures::stream::StreamExt;
-use async_stream::stream;
+use actix_web_lab::sse::{Sse, Data as SseData, Event as SseEvent};
+use futures_util::stream::{StreamExt, once, Stream};
+use tokio_stream::wrappers::ReceiverStream;
+use std::convert::Infallible;
+use std::pin::Pin;
 
 #[derive(Deserialize, Serialize, Debug)]
 struct SseCommandPayload {
@@ -73,7 +76,7 @@ impl SseState {
 
 pub struct SseAdapter {
     // Might need IMAP client later
-    shared_state: Arc<Mutex<SseState>>,
+    shared_state: Arc<TokioMutex<SseState>>,
     // Use imported RestConfig
     rest_config: RestConfig, 
 }
@@ -82,13 +85,13 @@ impl SseAdapter {
     // Update signature to use imported RestConfig
     pub fn new(rest_config: RestConfig) -> Self {
         Self {
-            shared_state: Arc::new(Mutex::new(SseState::new())),
+            shared_state: Arc::new(TokioMutex::new(SseState::new())),
             rest_config,
         }
     }
 
     // Handler for establishing SSE connection
-    async fn sse_connect_handler(state: web::Data<Arc<Mutex<SseState>>>) -> impl Responder {
+    async fn sse_connect_handler(state: web::Data<Arc<TokioMutex<SseState>>>) -> impl Responder {
         let (tx, rx) = mpsc::channel::<String>(10);
         
         let client_id = state.lock().await.add_client(tx.clone());
@@ -138,7 +141,7 @@ impl SseAdapter {
 
      // Handler for receiving commands via POST
     async fn sse_command_handler(
-        state: web::Data<Arc<Mutex<SseState>>>, 
+        state: web::Data<Arc<TokioMutex<SseState>>>, 
         payload: web::Json<SseCommandPayload>
     ) -> impl Responder 
     {
@@ -161,7 +164,7 @@ impl SseAdapter {
     }
 
     // Function to configure SSE routes within an Actix App
-    pub fn configure_sse_service(cfg: &mut web::ServiceConfig, state: Arc<Mutex<SseState>>) {
+    pub fn configure_sse_service(cfg: &mut web::ServiceConfig, state: Arc<TokioMutex<SseState>>) {
          let app_state = web::Data::new(state);
          cfg.app_data(app_state.clone()); 
          cfg.service(
@@ -173,4 +176,83 @@ impl SseAdapter {
 
     // Standalone server function (if SSE runs on its own port)
     // pub async fn run_sse_server(...) -> std::io::Result<()> { ... }
+}
+
+// Type alias for the boxed stream
+type SseStream = Pin<Box<dyn Stream<Item = Result<SseEvent, Infallible>> + Send>>;
+
+#[derive(Clone)]
+pub struct SseManager {
+    sessions: Arc<TokioMutex<HashMap<String, mpsc::Sender<SseEvent>>>>,
+}
+
+impl SseManager {
+    pub fn new() -> Self {
+        Self { sessions: Arc::new(TokioMutex::new(HashMap::new())) }
+    }
+    // Example method signature 
+    // pub async fn send_to_session(&self, session_id: &str, message: SseEvent) { ... }
+}
+
+/// SSE endpoint handler - now returns concrete Sse<SseStream> type
+pub async fn sse_handler(manager: web::Data<SseManager>, req: HttpRequest) -> Sse<SseStream> { // Explicit return type
+    let session_id = match req.match_info().get("session_id") {
+        Some(id) => id.to_string(),
+        None => {
+            error!("Missing session_id in SSE request path");
+            let error_event = SseEvent::Data(SseData::new("Error: Missing session_id").event("error"));
+            // Box the error stream
+            let stream: SseStream = Box::pin(once(async { Ok::<_, Infallible>(error_event) }));
+            return Sse::from_stream(stream);
+        }
+    };
+
+    // Create a tokio mpsc channel for SseEvent
+    let (tx, rx) = mpsc::channel::<SseEvent>(10);
+
+    // Register client
+    {
+        let mut sessions = manager.sessions.lock().await; 
+        if sessions.contains_key(&session_id) {
+            error!("SSE session ID already exists: {}", session_id);
+            let error_event = SseEvent::Data(SseData::new("Error: Session ID exists").event("error"));
+            // Box the error stream
+            let stream: SseStream = Box::pin(once(async { Ok::<_, Infallible>(error_event) }));
+            return Sse::from_stream(stream);
+        }
+        sessions.insert(session_id.clone(), tx.clone());
+        info!("SSE client connected: Session ID {}", session_id);
+    }
+
+    // Spawn background task for heartbeats and cleanup
+    let manager_clone = manager.clone();
+    actix_web::rt::spawn(async move {
+        let heartbeat_interval = Duration::from_secs(15);
+        let mut interval_timer = interval(heartbeat_interval);
+        interval_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+        loop {
+             tokio::select! {
+                _ = interval_timer.tick() => {
+                    if tx.send(SseEvent::Comment("heartbeat".into())).await.is_err() {
+                        warn!("SSE Client disconnected (heartbeat send failed). Session ID: {}", session_id);
+                        break; 
+                    }
+                }
+            }
+        }
+        // Cleanup session map on disconnect
+        info!("SSE connection closing for Session ID: {}", session_id);
+        let mut sessions = manager_clone.sessions.lock().await;
+        sessions.remove(&session_id);
+    });
+
+    // Return the SSE stream on success, boxing it
+    let receiver_stream = ReceiverStream::new(rx)
+        .map(|event| Ok::<_, Infallible>(event)); // Map to Result<SseEvent, Infallible>
+    
+    let stream: SseStream = Box::pin(receiver_stream); // Box the success stream
+
+    Sse::from_stream(stream)
+        .with_keep_alive(Duration::from_secs(15))
 } 

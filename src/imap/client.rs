@@ -1,191 +1,231 @@
 use crate::imap::error::ImapError;
 use crate::imap::session::{AsyncImapSessionWrapper, ImapSession};
 use crate::imap::types::{Email, Folder, SearchCriteria};
-use async_imap::Client as AsyncImapClientProto;
-use tokio_util::compat::TokioAsyncReadCompatExt;
-use tokio::net::TcpStream as TokioTcpStream;
-use tokio_rustls::TlsConnector;
-use rustls::pki_types::{IpAddr as PkiIpAddr, ServerName as PkiServerName, CertificateDer};
+use async_imap::{Client as AsyncImapClient, Session as AsyncImapSession};
+use async_imap::types::Mailbox as AsyncMailbox;
+use rustls::pki_types::ServerName as PkiServerName;
 use rustls::{ClientConfig, RootCertStore};
-use rustls_native_certs;
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::net::TcpStream as TokioTcpStream;
+use tokio::sync::Mutex;
+use tokio::time::timeout;
+use tokio_rustls::{client::TlsStream as TokioTlsStreamClient, TlsConnector};
+use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
-/// High-level asynchronous IMAP client.
-/// Wraps an ImapSession to provide a simpler interface.
-/// Note: ImapSession implementation will change significantly.
-#[derive(Clone)]
+// --- Type Aliases ---
+
+// Concrete Tokio types
+type BaseTcpStream = TokioTcpStream;
+type BaseTlsStream = TokioTlsStreamClient<BaseTcpStream>;
+
+// Compatibility wrapper for async_imap
+type CompatStream = Compat<BaseTlsStream>;
+
+// The actual session type returned by async_imap::login
+type UnderlyingImapSession = AsyncImapSession<CompatStream>;
+
+/// High-level asynchronous IMAP client providing a simplified interface.
+///
+/// This client handles the connection, TLS setup, login, and delegates
+/// operations to an underlying `ImapSession`.
 pub struct ImapClient {
-    // Use the ImapSession trait object - implementation will use async-imap
-    session: Arc<dyn ImapSession>,
+    session: Arc<Mutex<dyn ImapSession>>,
 }
 
-// Helper function for the actual connection and login logic with timeout
-async fn connect_and_login(
-    server: &str,
+// --- Internal Connection Logic ---
+
+/// Establishes TCP connection, performs TLS handshake, and configures the stream.
+async fn setup_tls_stream(
+    host: &str,
+    port: u16,
+    tls_connector: TlsConnector,
+    server_name_for_tls: PkiServerName<'static>, // Ensure lifetime matches connector
+) -> Result<BaseTlsStream, ImapError> {
+    log::debug!("Attempting TCP connection to {}:{}...", host, port);
+    let tcp_stream = BaseTcpStream::connect((host, port))
+        .await
+        .map_err(|e| ImapError::Connection(format!("TCP connection failed: {}", e)))?;
+    log::debug!("TCP connected. Performing TLS handshake...");
+
+    let tls_stream = tls_connector
+        .connect(server_name_for_tls, tcp_stream)
+        .await
+        .map_err(|e| ImapError::Tls(format!("TLS handshake failed: {}", e)))?;
+    log::debug!("TLS handshake successful.");
+    Ok(tls_stream)
+}
+
+/// Performs IMAP login using the compatible stream.
+async fn perform_imap_login(
+    compat_stream: CompatStream,
+    username: &str,
+    password: &str,
+    timeout_duration: Duration,
+) -> Result<UnderlyingImapSession, ImapError> {
+    let client = AsyncImapClient::new(compat_stream);
+    log::debug!("IMAP client created. Attempting login for user '{}'...", username);
+
+    match timeout(timeout_duration, client.login(username, password)).await {
+        Ok(Ok(session)) => {
+            log::info!("IMAP login successful for user: {}", username);
+            Ok(session)
+        }
+        Ok(Err((e, _client))) => {
+            log::error!("IMAP login failed for user {}: {:?}", username, e);
+            Err(ImapError::from(e)) // Map async_imap::Error
+        }
+        Err(_) => {
+            // Timeout occurred
+            log::error!("IMAP login timed out for user {} after {:?}.", username, timeout_duration);
+            Err(ImapError::Connection("Login timed out".to_string()))
+        }
+    }
+}
+
+/// Internal helper to connect, setup TLS, and login, returning the raw session.
+async fn connect_and_login_internal(
+    host: &str,
     port: u16,
     username: &str,
     password: &str,
-    connect_timeout: Duration,
-) -> Result<AsyncImapSessionWrapper, ImapError> { // Changed return type
-    log::info!("Connecting to IMAP server: {}:{}", server, port);
-    
-    // --- TLS Setup --- 
-    let server_owned = server.to_string();
-    let pki_server_name = PkiServerName::try_from(server_owned)
-        .map_err(|_| ImapError::Connection(format!("Invalid server name format: {}", server)))?;
-    let rustls_server_name = match pki_server_name {
-        PkiServerName::DnsName(dns) => rustls::pki_types::ServerName::try_from(dns.as_ref().to_string())
-            .map_err(|e| ImapError::Connection(format!("Failed to convert DNS name: {}", e)))?,
-        PkiServerName::IpAddress(pki_ip) => {
-            let std_ip = match pki_ip {
-                PkiIpAddr::V4(pki_v4_addr) => std::net::IpAddr::V4(std::net::Ipv4Addr::from(pki_v4_addr)),
-                PkiIpAddr::V6(pki_v6_addr) => std::net::IpAddr::V6(std::net::Ipv6Addr::from(pki_v6_addr)),
-            };
-            // Convert std::net::IpAddr to rustls::pki_types::IpAddr
-            rustls::pki_types::ServerName::IpAddress(std_ip.into())
-        }
-        _ => return Err(ImapError::Connection("Server name must be a DNS name or IP address".into())),
-    };
-    
-    let mut root_store = RootCertStore::empty();
+    timeout_duration: Duration,
+) -> Result<UnderlyingImapSession, ImapError> {
+    log::info!("Starting internal connection process for {}:{}", host, port);
+
+    // --- Server Name Setup ---
+    let host_owned = host.to_string();
+    // Needs 'static lifetime for TlsConnector::connect
+    let server_name_static: PkiServerName<'static> = PkiServerName::try_from(host_owned)
+        .map_err(|_| ImapError::Connection(format!("Invalid server name format: {}", host)))?
+        .to_owned(); // Convert to owned ServerName
+
+    // --- TLS Configuration ---
+    let mut root_cert_store = RootCertStore::empty();
     match rustls_native_certs::load_native_certs() {
         Ok(certs) => {
-            for cert in certs {
-                if root_store.add(CertificateDer::from(cert.clone().to_vec())).is_err() {
-                    log::warn!("Failed to add native certificate to root store");
-                }
-            }
+            let (added, ignored) = root_cert_store.add_parsable_certificates(certs);
+             log::debug!("Loaded {} native certs, ignored {}.", added, ignored);
+             if added == 0 && !ignored ==0 {
+                 log::warn!("No valid native certs found, TLS connection might fail.");
+                 // Depending on policy, might return Err here.
+                 // return Err(ImapError::Tls("No valid native root certificates found.".into()));
+             }
         }
         Err(e) => {
-            log::error!("Could not load native certificates: {}", e);
-            return Err(ImapError::Connection("Failed to load native root certificates".to_string()));
+            log::error!("Could not load native certs: {}", e);
+            return Err(ImapError::Tls(format!(
+                "Could not load native certificates: {}",
+                e
+            )));
         }
     }
+     if root_cert_store.is_empty() {
+         log::warn!("Root certificate store is empty after loading native certs.");
+         // Consider adding logic here if needed, e.g., error or allow insecure
+     }
 
-    if root_store.is_empty() {
-        log::warn!("No native root certificates loaded, TLS connection might fail verification");
-    }
-
-    // Fix builder chain order
     let config = ClientConfig::builder()
-        .with_root_certificates(root_store)
+        .with_root_certificates(root_cert_store)
         .with_no_client_auth();
-    let connector = TlsConnector::from(Arc::new(config));
-    let addr = format!("{}:{}", server, port);
+    let tls_connector = TlsConnector::from(Arc::new(config));
 
-    // --- TCP Connect with Timeout --- 
-    log::debug!("Attempting TCP connection to {}...", addr);
-    let tcp_stream = tokio::time::timeout(connect_timeout, TokioTcpStream::connect(&addr))
-        .await
-        .map_err(|_| ImapError::Connection(format!("TCP connection timeout ({:?}) to {}", connect_timeout, addr)))?
-        .map_err(|e| ImapError::Connection(format!("TCP connect error to {}: {}", addr, e)))?;
-    log::debug!("TCP connection successful.");
+    // --- Connect, TLS Handshake ---
+    let tls_stream = setup_tls_stream(host, port, tls_connector, server_name_static).await?;
 
-    // --- TLS Handshake with Timeout --- 
-    log::debug!("Performing TLS handshake with {}...", server);
-    let tls_stream = tokio::time::timeout(connect_timeout, connector.connect(rustls_server_name.clone(), tcp_stream))
-        .await
-        .map_err(|_| ImapError::Connection(format!("TLS handshake timeout ({:?}) with {}", connect_timeout, addr)))?
-        .map_err(|e| ImapError::Connection(format!("TLS handshake error with {}: {}", addr, e)))?;
-    log::debug!("TLS handshake successful.");
-
-    // --- IMAP Client Creation and Login --- 
-    let compat_tls_stream = tls_stream.compat();
-    log::debug!("Creating IMAP client...");
-    let client = AsyncImapClientProto::new(compat_tls_stream);
-    log::info!("Logging in as user: {}", username);
-    let login_result = client.login(username, password).await;
-
-    // Handle the login result explicitly
-    match login_result {
-        Ok(session) => {
-            log::info!("Login successful");
-            // Create the wrapper here
-            let wrapper = AsyncImapSessionWrapper::new(session);
-            Ok(wrapper) // Return the wrapper directly
-        }
-        Err((e, _client)) => {
-            log::error!("Login failed: {}", e);
-            Err(ImapError::Auth(format!("Login failed: {}", e)))
-        }
-    }
+    // --- Login ---
+    let compat_stream = tls_stream.compat(); // Wrap for async_imap
+    perform_imap_login(compat_stream, username, password, timeout_duration).await
 }
 
-impl ImapClient {
-    /// Creates a new ImapClient with a provided session implementation.
-    /// The signature might change depending on the final session implementation.
-    pub fn new(session: Arc<dyn ImapSession>) -> Self {
-        ImapClient { session }
-    }
+// --- Public ImapClient Implementation ---
 
-    /// Establishes a connection to the IMAP server and logs in.
-    /// Returns an Arc<dyn ImapSession> which needs to be used to create ImapClient.
-    /// This decouples connection/login from the client struct itself.
+impl ImapClient {
+    /// Establishes a connection to the IMAP server, logs in, and returns a new `ImapClient`.
+    ///
+    /// This is the primary way to create an `ImapClient`.
     pub async fn connect(
-        server: &str,
+        host: &str,
         port: u16,
         username: &str,
         password: &str,
-        timeout: Option<Duration>,
-    ) -> Result<Arc<dyn ImapSession>, ImapError> {
-        let connect_timeout = timeout.unwrap_or_else(|| Duration::from_secs(10));
-        
-        // connect_and_login now returns the wrapper
-        let session_wrapper = connect_and_login(server, port, username, password, connect_timeout).await?;
-        
-        // Wrap in Arc for the trait object
-        let session_arc: Arc<dyn ImapSession> = Arc::new(session_wrapper);
-        Ok(session_arc)
+    ) -> Result<Self, ImapError> {
+        log::info!("Public connect called for user '{}' at {}:{}", username, host, port);
+        let login_timeout = Duration::from_secs(30); // Example timeout
+
+        // Call internal logic to get the raw underlying session
+        let underlying_session =
+            connect_and_login_internal(host, port, username, password, login_timeout).await?;
+
+        // Wrap the raw session with our domain-specific logic/trait implementation
+        let wrapped_session = AsyncImapSessionWrapper::new(underlying_session);
+
+        // Prepare the trait object for the client struct
+        let session_arc_mutex: Arc<Mutex<dyn ImapSession>> = Arc::new(Mutex::new(wrapped_session));
+
+        Ok(Self {
+            session: session_arc_mutex,
+        })
     }
 
-    // Pass-through methods to the ImapSession trait object
+    /// Creates a new `ImapClient` instance directly from a pre-existing session trait object.
+    /// Useful for testing or scenarios where the session is managed externally.
+    pub fn new_with_session(session: Arc<Mutex<dyn ImapSession>>) -> Self {
+        Self { session }
+    }
+
+    // --- Delegated IMAP Operations ---
+
     pub async fn list_folders(&self) -> Result<Vec<Folder>, ImapError> {
-        self.session.list_folders().await
+        self.session.lock().await.list_folders().await
     }
 
     pub async fn create_folder(&self, name: &str) -> Result<(), ImapError> {
-        self.session.create_folder(name).await
+        self.session.lock().await.create_folder(name).await
     }
 
     pub async fn delete_folder(&self, name: &str) -> Result<(), ImapError> {
-        self.session.delete_folder(name).await
+        self.session.lock().await.delete_folder(name).await
     }
 
     pub async fn rename_folder(&self, from: &str, to: &str) -> Result<(), ImapError> {
-        self.session.rename_folder(from, to).await
+        self.session.lock().await.rename_folder(from, to).await
     }
 
-    pub async fn select_folder(&self, name: &str) -> Result<async_imap::types::Mailbox, ImapError> {
-        self.session.select_folder(name).await
+    pub async fn select_folder(&self, name: &str) -> Result<AsyncMailbox, ImapError> {
+        self.session.lock().await.select_folder(name).await
     }
 
     pub async fn search_emails(&self, criteria: SearchCriteria) -> Result<Vec<u32>, ImapError> {
-        self.session.search_emails(criteria).await
+        self.session.lock().await.search_emails(criteria).await
     }
 
     pub async fn fetch_emails(&self, uids: Vec<u32>) -> Result<Vec<Email>, ImapError> {
-        self.session.fetch_emails(uids).await
+        // Consider adding UID validation or chunking here if needed
+        if uids.is_empty() {
+            return Ok(Vec::new());
+        }
+        self.session.lock().await.fetch_emails(uids).await
     }
 
-    pub async fn move_email(&self, uids: Vec<u32>, destination_folder: &str) -> Result<(), ImapError> {
-        self.session.move_email(uids, destination_folder).await
+    pub async fn move_email(&self, uids: Vec<u32>, destination: &str) -> Result<(), ImapError> {
+        // Consider adding UID validation or chunking here if needed
+        if uids.is_empty() {
+            return Ok(());
+        }
+        self.session.lock().await.move_email(uids, destination).await
     }
 
-    /* // TODO: Fix append implementation in ImapSession trait first
-    pub async fn append(&self, folder: &str, body: &[u8], flags: Option<Vec<&str>>) -> Result<(), ImapError> {
-        self.session.append(folder, body, flags).await
-    }
-    */
-
+    /// Logs out from the IMAP server.
+    /// Note: This consumes the client to prevent further operations after logout.
+    /// The underlying session's logout implementation should handle cleanup.
     pub async fn logout(self) -> Result<(), ImapError> {
-        log::info!("Logging out...");
-        // Clone the Arc before moving it into logout
-        let session_arc = self.session.clone(); 
-        session_arc.logout().await?; // Call logout on the Arc<dyn ImapSession>
-        Ok(())
+        // Lock once and move out of Arc if possible, or just call logout
+        // Assuming ImapSession::logout takes &self or similar
+        // If it takes Arc<Mutex<...>> itself, adapt accordingly.
+         let session_guard = self.session.lock().await;
+         session_guard.logout().await
+        // Session Arc/Mutex is dropped here when `self` goes out of scope.
     }
 }
 
-// Remove old map_address function, it will be handled within session.rs refactoring
-// Remove old certificate verification mod, imap crate handles this via rustls config

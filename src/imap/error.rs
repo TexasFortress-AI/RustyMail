@@ -4,7 +4,7 @@ use thiserror::Error;
 // Remove unused Infallible
 // use std::convert::Infallible;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, Clone)]
 pub enum ImapError {
     #[error("Connection Error: {0}")]
     Connection(String),
@@ -29,31 +29,30 @@ pub enum ImapError {
     #[error("Configuration Error: {0}")]
     Config(String),
     #[error("IO Error: {0}")]
-    Io(#[from] std::io::Error),
+    Io(String),
+    #[error("Internal Error: {0}")]
+    Internal(String),
 
     // Add other specific errors as needed from async-imap or imap-types
 }
 
-// Optional: Add From implementations if needed for converting errors
-// from underlying libraries like tokio_rustls::rustls::Error
+// Simplify the From<async_imap::error::Error> implementation
 impl From<async_imap::error::Error> for ImapError {
     fn from(err: async_imap::error::Error) -> Self {
-        // Map specific async_imap errors to our variants
-        // Keep only variants that exist based on previous check errors
+        log::warn!("Converting async_imap::Error to generic ImapError: {:?}", err);
         match err {
-            // Remove Connection, Tls, BadResponse as they caused errors
-            // async_imap::error::Error::Connection(e) => ImapError::Connection(e.to_string()),
-            // async_imap::error::Error::Tls(e) => ImapError::Tls(e.to_string()),
-            async_imap::error::Error::Parse(e) => ImapError::Parse(e.to_string()),
-            // async_imap::error::Error::BadResponse(resp) => ImapError::BadResponse(String::from_utf8_lossy(&resp).into_owned()),
-            async_imap::error::Error::Append => ImapError::Append("Failed to append message".to_string()),
-            // Add mappings for Auth, etc. if async_imap provides them, otherwise use Operation
-            // For example (check async-imap docs for actual variants):
-            // async_imap::error::Error::Auth(e) => ImapError::Auth(e.to_string()),
-            other => ImapError::Operation(other.to_string()), // Default catch-all
+            // Convert io_err to String for the Io variant
+            async_imap::error::Error::Io(io_err) => ImapError::Io(io_err.to_string()),
+            _ => ImapError::Operation(err.to_string()),
         }
     }
 }
+
+// Remove the manual From<std::io::Error> as #[from] handles it.
+// impl From<std::io::Error> for ImapError { ... }
+
+// Remove From<rustls::Error> for now, can be added later if required.
+// impl From<tokio_rustls::rustls::Error> for ImapError { ... }
 
 // Remove From implementation for FlagError
 // impl From<FlagError<'_, Infallible>> for ImapError {

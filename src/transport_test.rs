@@ -2,7 +2,7 @@
 mod tests {
     use crate::transport::*;
     use async_trait::async_trait;
-    use serde_json::{json, Value};
+    use serde_json::{json};
     use std::sync::Arc;
     use tokio::sync::Mutex;
     // Import necessary traits for the dummy error
