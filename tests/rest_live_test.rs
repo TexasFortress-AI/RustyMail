@@ -79,30 +79,32 @@ mod live_tests {
      #[actix_web::test]
     async fn test_live_create_and_delete_folder() {
         let (mut app, client) = setup_test_app_live().await; // Use per-test setup
-        let folder_name = "LiveTestDeleteMe";
-        let encoded_name = urlencoding::encode(folder_name);
+        let base_folder_name = "LiveTestDeleteMe";
+        // We expect the API to handle prefixing, but the actual name includes it
+        let full_folder_name = format!("INBOX.{}", base_folder_name);
+        let encoded_name = urlencoding::encode(base_folder_name); // API uses base name
 
-        // Ensure folder doesn't exist initially (using the live client)
-        let _ = client.delete_folder(folder_name).await;
+        // Ensure folder doesn't exist initially (using the live client with full name)
+        // We need to delete INBOX.LiveTestDeleteMe
+        let _ = client.delete_folder(&full_folder_name).await;
 
-        // 1. Create Folder via API
+        // 1. Create Folder via API (using base name)
         let create_req = test::TestRequest::post()
             .uri("/api/v1/folders")
-            .set_json(&serde_json::json!({ "name": folder_name }))
+            .set_json(&serde_json::json!({ "name": base_folder_name }))
             .to_request();
         let create_resp = test::call_service(&mut app, create_req).await;
         assert_eq!(create_resp.status(), StatusCode::CREATED);
 
         // 2. Verify folder exists (using list folders API call)
          let list_req = test::TestRequest::get().uri("/api/v1/folders").to_request();
-         // Create a new service instance for the verification call if necessary, or reuse app
-         // Reusing app might be fine if state isn't mutated in problematic ways by list
          let list_resp = test::call_service(&mut app, list_req).await;
          assert_eq!(list_resp.status(), StatusCode::OK);
          let folders: Vec<Folder> = test::read_body_json(list_resp).await;
-         assert!(folders.iter().any(|f| f.name == folder_name), "Folder '{}' was not created", folder_name);
+         // Assert that the FULL name exists in the list
+         assert!(folders.iter().any(|f| f.name == full_folder_name), "Folder '{}' was not created", full_folder_name);
 
-        // 3. Delete Folder via API
+        // 3. Delete Folder via API (using base name in URL)
         let delete_req = test::TestRequest::delete()
             .uri(&format!("/api/v1/folders/{}", encoded_name))
             .to_request();
@@ -114,7 +116,8 @@ mod live_tests {
          let list_resp_after = test::call_service(&mut app, list_req_after).await;
          assert_eq!(list_resp_after.status(), StatusCode::OK);
          let folders_after: Vec<Folder> = test::read_body_json(list_resp_after).await;
-         assert!(!folders_after.iter().any(|f| f.name == folder_name), "Folder '{}' was not deleted", folder_name);
+         // Assert that the FULL name is no longer in the list
+         assert!(!folders_after.iter().any(|f| f.name == full_folder_name), "Folder '{}' was not deleted", full_folder_name);
     }
 
     // TODO: Add live tests for rename, select, search, fetch, move, including setup/teardown

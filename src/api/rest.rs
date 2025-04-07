@@ -127,23 +127,28 @@ async fn create_folder(
     state: web::Data<AppState>,
     payload: web::Json<FolderCreatePayload>,
 ) -> Result<impl Responder, ApiError> {
-    let name = payload.name.trim();
-    log::info!("Handling POST /folders with name: {}", name);
-    if name.is_empty() {
+    let raw_name = payload.name.trim();
+    log::info!("Handling POST /folders with raw name: {}", raw_name);
+    if raw_name.is_empty() {
         return Err(ApiError::BadRequest("Folder name cannot be empty".to_string()));
     }
+
+    // Prepend INBOX. prefix for compatibility with servers like GoDaddy
+    let full_name = format!("INBOX.{}", raw_name);
+    log::info!("Attempting to create IMAP folder: {}", full_name);
     
     // Await the result first
-    let create_result = state.imap_client.create_folder(name).await;
+    let create_result = state.imap_client.create_folder(&full_name).await;
 
     // Log the result (success or error) AFTER awaiting
     match create_result {
         Ok(_) => {
-            log::info!("IMAP create_folder succeeded for '{}'", name);
-            Ok(HttpResponse::Created().json(json!({ "message": format!("Folder '{}' created", name) })))
+            log::info!("IMAP create_folder succeeded for '{}'", full_name);
+            // Return the original requested name in the success message
+            Ok(HttpResponse::Created().json(json!({ "message": format!("Folder '{}' created", raw_name) })))
         }
         Err(e) => {
-            log::error!("IMAP create_folder failed for '{}': {:?}", name, e);
+            log::error!("IMAP create_folder failed for '{}': {:?}", full_name, e);
             Err(e.into()) // Convert to ApiError using the existing From trait
         }
     }
@@ -155,15 +160,30 @@ async fn delete_folder(
     path: web::Path<String>,
 ) -> Result<impl Responder, ApiError> {
     let encoded_name = path.into_inner();
-    let name = urlencoding::decode(&encoded_name)
+    let base_name = urlencoding::decode(&encoded_name)
         .map_err(|e| ApiError::BadRequest(format!("Invalid folder name encoding: {}", e)))?
         .into_owned();
-    log::info!("Handling DELETE /folders/{} (decoded: {})", encoded_name, name);
-    if name.is_empty() {
+    log::info!("Handling DELETE /folders/{} (decoded: {})", encoded_name, base_name);
+    if base_name.is_empty() {
          return Err(ApiError::BadRequest("Folder name cannot be empty after decoding".to_string()));
     }
-    state.imap_client.delete_folder(&name).await?;
-    Ok(HttpResponse::Ok().json(json!({ "message": format!("Folder '{}' deleted", name) })))
+
+    // Prepend INBOX. prefix
+    let full_name = format!("INBOX.{}", base_name);
+    log::info!("Attempting to delete IMAP folder: {}", full_name);
+
+    // Add logging similar to create_folder
+    match state.imap_client.delete_folder(&full_name).await {
+        Ok(_) => {
+            log::info!("IMAP delete_folder succeeded for '{}'", full_name);
+            // Return the original requested name in the success message
+            Ok(HttpResponse::Ok().json(json!({ "message": format!("Folder '{}' deleted", base_name) })))
+        }
+        Err(e) => {
+            log::error!("IMAP delete_folder failed for '{}': {:?}", full_name, e);
+            Err(e.into())
+        }
+    }
 }
 
 // PUT /folders/{from_name} { "to_name": "new_name" }
