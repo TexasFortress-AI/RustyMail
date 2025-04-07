@@ -45,7 +45,6 @@ mod tests {
         logout_result: Result<(), ImapError>,
         store_flags_result: Result<(), ImapError>,
         append_result: Result<(), ImapError>,
-        expunge_result: Result<(), ImapError>,
     }
 
     impl MockImapSession {
@@ -87,7 +86,6 @@ mod tests {
                 logout_result: Ok(()),
                 store_flags_result: Ok(()),
                 append_result: Ok(()),
-                expunge_result: Ok(()),
             }
         }
 
@@ -112,11 +110,6 @@ mod tests {
         fn set_fetch_emails(mut self, result: Result<Vec<Email>, ImapError>) -> Self {
             self.fetch_emails_result = result;
             self
-        }
-
-        fn set_expunge(mut self, result: Result<(), ImapError>) -> Self {
-             self.expunge_result = result;
-             self
         }
     }
 
@@ -199,7 +192,7 @@ mod tests {
 
         async fn expunge(&self) -> Result<(), ImapError> {
             self.tracker.expunge_called.store(true, Ordering::SeqCst);
-            self.expunge_result.clone()
+            Ok(()) // Always return Ok since the result field is removed
         }
 
         async fn logout(&self) -> Result<(), ImapError> {

@@ -4,7 +4,6 @@ mod live_tests {
     use actix_web::{test, web, App, http::StatusCode};
     use rustymail::{
         api::rest::{configure_rest_service, AppState},
-        config::Settings,
         imap::{client::ImapClient, types::Folder},
     };
     use std::sync::Arc;

@@ -428,7 +428,6 @@ mod tests {
         store_flags_result: Option<Result<(), AsyncImapError>>,
         append_result: Option<Result<(), AsyncImapError>>,
         expunge_result: Option<Result<(), AsyncImapError>>,
-        logout_result: Option<Result<(), AsyncImapError>>,
     }
 
     // Remove complex/broken mock data helpers
@@ -459,7 +458,6 @@ mod tests {
                 store_flags_result: Some(Ok(())),
                 append_result: Some(Ok(())),
                 expunge_result: Some(Ok(())),
-                logout_result: Some(Ok(())),
             }
         }
         // Simplified setters
@@ -491,11 +489,6 @@ mod tests {
             self.move_result = Some(res);
             self
         }
-         fn set_logout(mut self, res: Result<(), AsyncImapError>) -> Self { // Added setter
-            self.logout_result = Some(res);
-            self
-        }
-        // ... add other setters if needed ...
     }
 
     #[async_trait]
@@ -528,8 +521,8 @@ mod tests {
         async fn uid_mv(&mut self, _sequence_set: String, _mailbox: &str) -> Result<(), AsyncImapError> {
             self.move_result.take().unwrap_or(Ok(()))
         }
-        async fn logout(&mut self) -> Result<(), AsyncImapError> { 
-            self.logout_result.take().unwrap_or(Ok(()))
+        async fn logout(&mut self) -> Result<(), AsyncImapError> {
+            Ok(()) // Always return Ok since the result field is removed
         }
         async fn uid_store(&mut self, _sequence_set: String, _command: String) -> Result<(), AsyncImapError> {
             self.store_flags_result.take().unwrap_or(Ok(()))

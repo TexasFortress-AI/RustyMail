@@ -153,23 +153,15 @@ impl TestServer {
         let client = Client::new();
         let start_time = std::time::Instant::now();
         let timeout = Duration::from_secs(30);
-        let health_url = format!("{}/health", BASE_URL);
+        // let health_url = format!("{}/health", BASE_URL); // No longer needed
         
         while start_time.elapsed() < timeout {
-            println!("Attempting health check at {}", health_url);
-            match client.get(&health_url)
-                .timeout(Duration::from_secs(1))
-                .send()
-                .await
-            {
-                Ok(response) => {
-                    if response.status().is_success() {
-                        println!("Server is ready! Health check passed.");
-                        return server;
-                    }
-                    println!("Health check returned status: {}", response.status());
-                },
-                Err(e) => println!("Health check failed: {}", e),
+            println!("Attempting health check via helper function...");
+            if test_health_check(&client).await {
+                println!("Server is ready! Health check passed.");
+                return server;
+            } else {
+                 println!("Health check failed or server not ready yet.");
             }
             println!("Waiting 500ms before next health check attempt...");
             tokio::time::sleep(Duration::from_millis(500)).await;
