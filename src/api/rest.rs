@@ -410,6 +410,7 @@ pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
                     // Add append and expunge routes under specific folder
                     .route("/{folder_name}/append", web::post().to(append_email))
                     .route("/{folder_name}/expunge", web::post().to(expunge_folder))
+                    .route("/{folder_name}/emails/{uid}/raw", web::get().to(get_raw_email))
             )
             .service(
                 web::scope("/emails")
@@ -446,4 +447,4 @@ pub async fn run_server(
     .bind(&bind_address)?
     .run()
     .await
-} 
+}
