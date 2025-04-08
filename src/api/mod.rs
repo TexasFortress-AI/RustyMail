@@ -1,6 +1,6 @@
 pub mod rest;
-pub mod mcp;
-pub mod sse;
+pub mod mcp_stdio;
+pub mod mcp_sse;
 
 // Comment out test modules as files were deleted
 // pub mod rest_test;
