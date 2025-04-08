@@ -15,7 +15,7 @@ mod tests {
     use async_trait::async_trait;
     use std::sync::{ atomic::{AtomicBool, Ordering}, Arc };
 
-    // --- Mock IMAP Session --- 
+    // --- Mock IMAP Session ---
     #[derive(Debug, Default)]
     struct MockCallTracker {
         // Restore tracker fields
@@ -54,8 +54,8 @@ mod tests {
     impl Default for MockImapSession {
         fn default() -> Self {
             // Ensure initialization uses correct types and values
-            Self { 
-                tracker: Arc::new(MockCallTracker::default()), 
+            Self {
+                tracker: Arc::new(MockCallTracker::default()),
                 list_folders_result: Ok(vec![ Folder { name: "INBOX".to_string(), delimiter: Some("/".to_string()) }, Folder { name: "Sent".to_string(), delimiter: Some("/".to_string()) }, ]),
                 select_folder_result: Ok(MailboxInfo { flags: vec!["\\Seen".to_string()], exists: 10, recent: 1, unseen: Some(5), permanent_flags: vec!["\\".to_string()], uid_next: Some(101), uid_validity: Some(12345), }),
                 search_emails_result: Ok(vec![1, 2, 3]),
@@ -93,7 +93,7 @@ mod tests {
                 Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
             }
         }
-        async fn delete_folder(&self, _name: &str) -> Result<(), ImapError> { 
+        async fn delete_folder(&self, _name: &str) -> Result<(), ImapError> {
              self.tracker.delete_folder_called.store(true, Ordering::SeqCst);
              match &self.delete_result {
                 Ok(_) => Ok(()),
@@ -149,7 +149,7 @@ mod tests {
             }
         }
         async fn append(&self, _folder: &str, _payload: Vec<u8>) -> Result<(), ImapError> {
-             self.tracker.append_called.store(true, Ordering::SeqCst);
+            self.tracker.append_called.store(true, Ordering::SeqCst);
              match &self.append_result {
                 Ok(_) => Ok(()),
                 Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
@@ -263,4 +263,4 @@ impl ImapClientTrait for MockImapClient {
         if self.should_fail("logout") { Err(self.mock_error("logout")) }
         else { Ok(()) }
     }
-}
+} 

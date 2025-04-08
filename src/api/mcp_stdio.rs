@@ -383,7 +383,7 @@ mod tests {
         assert_eq!(response["error"]["code"], error_codes::PARSE_ERROR);
         assert_eq!(response["error"]["message"], "Parse error");
     }
-
+    
     #[tokio::test]
     async fn test_invalid_params_error() {
         let mock_client = Arc::new(MockImapClient::default());
@@ -434,10 +434,10 @@ mod tests {
         assert_eq!(error.code, error_codes::INVALID_PARAMS); // Use error_codes constant
         assert!(error.message.contains("Invalid parameters: unknown field `unexpected_field`"), "Error message was: {}", error.message);
     }
-
+    
     #[tokio::test]
     async fn test_invalid_jsonrpc_version() {
-        let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)];
+         let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)];
         let request = json!({ "jsonrpc": "1.0", "id": 6, "method": "test/success" }); // Invalid version
         let response_str = run_single_request(tools, &request.to_string()).await.unwrap();
         let response: Value = serde_json::from_str(&response_str).unwrap();
@@ -450,7 +450,7 @@ mod tests {
     
     #[tokio::test]
     async fn test_request_without_id() {
-         let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)];
+        let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)];
          // Notification (no ID)
          let request = json!({ "jsonrpc": "2.0", "method": "test/success", "params": [1, 2] }); 
          let response_str = run_single_request(tools, &request.to_string()).await.unwrap();

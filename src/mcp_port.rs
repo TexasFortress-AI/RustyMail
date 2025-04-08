@@ -265,7 +265,7 @@ pub enum McpPortError {
     #[error("Internal error: {message}")]
     InternalError { message: String },
 
-    // --- IMAP Specific Errors --- 
+    // --- IMAP Specific Errors ---
     #[error("IMAP Connection Error: {0}")]
     ImapConnectionError(String),
     #[error("IMAP Authentication Error: {0}")]
@@ -385,4 +385,4 @@ impl From<ImapError> for McpPortError {
             }
         }
     }
-}
+} 

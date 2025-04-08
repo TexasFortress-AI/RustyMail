@@ -375,7 +375,7 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
     async fn move_email(&self, source_folder: &str, uids: Vec<u32>, destination_folder: &str) -> Result<(), ImapError> {
         let uid_set = uids.iter().map(ToString::to_string).collect::<Vec<_>>().join(",");
         let mut session = self.session.lock().await;
-        
+
         // 1. Select Source Folder
         session.select(source_folder).await.map_err(ImapError::from)?;
 
