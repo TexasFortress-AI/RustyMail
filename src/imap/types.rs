@@ -51,6 +51,7 @@ pub enum SearchCriteria {
     Since(String), // Keep as string, parse later if needed
     Uid(String), // Comma-separated UIDs as string
     Unseen,
+    Flagged,
     And(Vec<SearchCriteria>),
     Or(Vec<SearchCriteria>),
     Not(Box<SearchCriteria>),

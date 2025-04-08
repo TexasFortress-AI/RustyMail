@@ -1,0 +1,384 @@
+# Cline Rules (Auto-Generated from Cursor Rules)
+# Generated on Mon Apr  7 18:48:30 CDT 2025
+
+## Root Cursor Rules (.cursorrules)
+
+
+Use terminal tool for rust cargo commands.
+
+Tests: Integration tests should never use mocks
+
+START SPECIFICATION:
+# main-overview
+
+## Development Guidelines
+
+- Only modify code directly relevant to the specific request. Avoid changing unrelated functionality.
+- Never replace code with placeholders like `# ... rest of the processing ...`. Always include complete code.
+- Break problems into smaller steps. Think through each step separately before implementing.
+- Always provide a complete PLAN with REASONING based on evidence from code and logs before making changes.
+- Explain your OBSERVATIONS clearly, then provide REASONING to identify the exact issue. Add console logs when needed to gather more information.
+
+
+RustyMail is a high-performance IMAP API server implementing the following core business capabilities:
+
+### Core Email Management
+- Multiple interface support: REST API, MCP Stdio, MCP SSE
+- Full IMAP folder and message operations 
+- Email search with complex criteria
+- Flag management and email movement between folders
+- Real-time updates via Server-Sent Events (SSE)
+
+### Key Components:
+
+1. IMAP Session Management (`src/imap/session.rs`)
+- Session abstraction for IMAP operations
+- Custom search criteria transformation
+- Email metadata and content fetching
+- Flag and folder operation handling
+
+2. MCP Protocol Implementation (`src/api/mcp.rs`) 
+- JSON-RPC 2.0 compliant interface
+- Custom IMAP operation tools
+- Support for stdio and SSE transports
+- Error mapping between IMAP and JSON-RPC
+
+3. SSE Real-time Updates (`src/api/sse.rs`)
+- Client registration and tracking
+- Message broadcasting system
+- Heartbeat mechanism
+- Session cleanup handling
+
+4. REST API Interface (`src/api/rest.rs`)
+- IMAP operation endpoints
+- Folder prefix handling
+- Email body conditional fetching
+- Custom error mapping
+
+### Code Conventions
+
+#### IMAP Operations
+- MUST: Use `async-imap` for all IMAP interactions
+- AVOID: Direct socket connections or custom IMAP implementations
+- WHY: Ensures protocol compliance and security
+- EXAMPLE: `src/imap/client.rs`
+
+#### Error Handling
+- MUST: Map domain errors to appropriate HTTP/JSON-RPC codes
+- AVOID: Generic error responses without context
+- WHY: Provides clear error feedback to clients
+- EXAMPLE: `src/api/rest.rs` error mapping
+
+#### Message Processing
+- MUST: Handle both text and HTML email bodies
+- AVOID: Assuming single content type
+- WHY: Supports all email formats
+- EXAMPLE: `src/imap/types.rs`
+
+#### Real-time Updates
+- MUST: Use SSE for live notifications
+- AVOID: Polling or websockets
+- WHY: Efficient server-push updates
+- EXAMPLE: `src/api/sse.rs`
+
+$END$
+END SPECIFICATION
+## Rules from .cursor/rules/*.mdc
+
+### email-operations.mdc
+# email-operations
+
+### Email Movement Operations
+- MUST: Use atomic move operations between folders via AsyncImapSession
+- AVOID: Moving emails without checking folder existence first
+- WHY: Maintains data integrity during email transfers 
+- EXAMPLE: `src/imap/session.rs`
+```rust
+pub async fn move_email(&mut self, uids: &[u32], from: &str, to: &str) -> Result<()> {
+    self.select_folder(from).await?;
+    self.copy_messages(uids, to).await?;
+    self.delete_messages(uids).await?;
+    self.expunge().await?;
+}
+```
+
+### Folder Synchronization
+- MUST: Implement folder status checks before operations
+- AVOID: Direct folder manipulation without status verification
+- WHY: Prevents data corruption from race conditions
+- EXAMPLE: `src/imap/session.rs::select_folder()`
+
+### Search Implementation
+- MUST: Use async-imap's native search capabilities with transformed criteria
+- AVOID: Client-side email filtering
+- WHY: Leverages server-side optimizations
+- EXAMPLE: `src/imap/session.rs::format_search_criteria()`
+
+### Session State Management
+- MUST: Track folder selection state via ImapSession wrapper
+- AVOID: Global session state or unmanaged connections
+- WHY: Ensures consistent session handling
+- EXAMPLE: `src/imap/session.rs::AsyncImapSessionWrapper`
+
+### Atomic Flag Operations
+- MUST: Implement store_flags using STORE command
+- AVOID: Multiple separate flag operations
+- WHY: Maintains atomic guarantees for flag updates
+- EXAMPLE: `src/imap/session.rs::store_flags()`
+
+Testing Requirements:
+1. Unit tests for each atomic operation
+2. Integration tests for multi-step workflows
+3. Error handling tests for connection failures
+4. Concurrent operation tests
+5. Session state verification tests
+
+Importance Scores:
+- Email Movement: 95 (core business operation)
+- Folder Sync: 90 (data integrity critical)
+- Search: 85 (key business functionality)
+- Session State: 90 (operational integrity)
+- Flag Operations: 85 (core metadata management)
+
+
+### imap-data-models.mdc
+# imap-data-models
+
+### Email Model Structure
+- MUST: Define Email struct with fields:
+  ```rust
+  struct Email {
+    uid: u32,
+    flags: Vec<String>,
+    envelope: ImapEnvelope,
+    body: Option<String>, 
+    size: u32
+  }
+  ```
+- AVOID: Storing raw IMAP message data directly
+- WHY: Provides clean domain model for email manipulation
+- EXAMPLE: `src/imap/types.rs`
+
+### Envelope Data Model 
+- MUST: Implement ImapEnvelope with:
+  - From/To/CC addresses as ImapAddress vectors
+  - Subject and date as Strings
+  - Message-ID and In-Reply-To for threading
+- AVOID: Custom string parsing of envelope data
+- WHY: Standardizes email metadata handling
+- EXAMPLE: `src/imap/types.rs`
+
+### Address Structure
+- MUST: Model ImapAddress with:
+  ```rust
+  struct ImapAddress {
+    name: Option<String>,
+    mailbox: String,
+    host: String
+  }
+  ```
+- AVOID: Free-form address strings
+- WHY: Enables proper email address validation and formatting
+- EXAMPLE: `src/imap/types.rs`
+
+### Folder Model
+- MUST: Implement Folder with:
+  - Name as String
+  - Delimiter as char
+  - Metadata via MailboxInfo struct
+- AVOID: Nested folder hierarchies in memory
+- WHY: Maps to IMAP folder structure
+- EXAMPLE: `src/imap/types.rs`
+
+### Search Criteria Model
+- MUST: Define SearchCriteria enum with:
+  - Basic criteria (Subject, From, Body etc)
+  - Compound criteria (And, Or, Not)
+  - Date-based criteria
+- AVOID: Raw IMAP search strings
+- WHY: Type-safe search query construction
+- EXAMPLE: `src/imap/types.rs`
+
+### Flag Operations
+- MUST: Model flag changes via:
+  ```rust
+  enum FlagOperation {
+    Add(Vec<String>),
+    Remove(Vec<String>),
+    Set(Vec<String>)
+  }
+  ```
+- AVOID: Direct flag string manipulation
+- WHY: Safe flag state transitions
+- EXAMPLE: `src/imap/types.rs`
+
+### Testing Requirements
+- MUST: Test all model serialization/deserialization
+- MUST: Validate all field constraints
+- MUST: Test flag operation combinations
+- MUST: Verify search criteria composition
+- AVOID: Testing raw IMAP protocol details
+- EXAMPLE: `src/imap/types_test.rs`
+
+
+### imap_rfc.mdc
+
+### interface-implementations.mdc
+# interface-implementations
+
+### REST API Interface
+- MUST: Implement REST endpoints using actix-web for IMAP operations
+- AVOID: Mixing HTTP method semantics (e.g. using POST for read operations)
+- WHY: Ensures consistent and RESTful access to IMAP functionality
+- EXAMPLE: `src/api/rest.rs`
+
+```rust
+// Endpoint for folder operations
+async fn create_folder(
+    folder_name: String,
+    imap_client: Arc<ImapClient>
+) -> Result<HttpResponse, ApiError> {
+    // Domain-specific folder name validation
+    validate_folder_name(&folder_name)?;
+    imap_client.create_folder(&folder_name).await?;
+    Ok(HttpResponse::Created().finish())
+}
+```
+
+### MCP Stdio Interface
+- MUST: Use JSON-RPC 2.0 protocol for all MCP stdio communication
+- AVOID: Custom message formats or raw stdin/stdout handling
+- WHY: Provides standardized request/response pattern for mail operations
+- EXAMPLE: `src/api/mcp.rs`
+
+```rust
+// MCP tool implementation
+impl McpTool for McpListFoldersTool {
+    fn execute(&self, _params: Value) -> Result<Value, McpPortError> {
+        let folders = self.imap_client.list_folders()?;
+        Ok(json!({"folders": folders}))
+    }
+}
+```
+
+### Server-Sent Events Interface
+- MUST: Implement SSE using actix-web-lab for real-time updates
+- AVOID: Long-polling or WebSocket for one-way notifications
+- WHY: Efficient server-to-client push for mailbox changes
+- EXAMPLE: `src/api/sse.rs`
+
+```rust
+// SSE connection handler
+async fn sse_connect_handler(
+    state: Data<SseState>,
+) -> Sse<SseStream> {
+    let (tx, rx) = mpsc::channel(100);
+    state.clients.lock().await.insert(tx);
+    
+    Sse::new(SseStream::new(rx))
+        .keep_alive(Duration::from_secs(15))
+}
+```
+
+### Interface State Management
+- MUST: Use atomic reference counting (Arc) for shared IMAP client state
+- AVOID: Global mutable state or unsafe static variables
+- WHY: Thread-safe access to IMAP client across interfaces
+- EXAMPLE: `src/bin/rustymail.rs`
+
+```rust
+let imap_client = Arc::new(ImapClient::connect(config).await?);
+```
+
+### Interface Error Handling
+- MUST: Map domain errors to interface-specific error types
+- AVOID: Generic error messages or exposing internal errors
+- WHY: Consistent error handling across interfaces
+- EXAMPLE: `src/api/rest.rs`
+
+```rust
+impl From<ImapError> for ApiError {
+    fn from(err: ImapError) -> Self {
+        match err {
+            ImapError::Auth(_) => ApiError::Unauthorized,
+            ImapError::Mailbox(_) => ApiError::NotFound,
+            _ => ApiError::InternalError
+        }
+    }
+}
+```
+
+
+### mcp-protocol.mdc
+# mcp-protocol
+
+### Protocol Message Format
+- MUST: Use JSON-RPC 2.0 format for all MCP messages
+- AVOID: Custom message formats or non-standard JSON-RPC extensions 
+- WHY: Ensures compatibility and standard error handling
+- EXAMPLE: (`src/api/mcp.rs`)
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "unique-id",
+  "method": "imap/listFolders",
+  "params": {}
+}
+```
+
+### Transport Layer
+- MUST: Implement both stdio and SSE transports using `Transport` trait
+- AVOID: Direct socket/stream handling without transport abstraction
+- WHY: Enables consistent protocol handling across transport types
+- EXAMPLE: (`src/transport.rs`)
+
+### Error Handling
+- MUST: Map domain errors to standard JSON-RPC error codes:
+  - -32700: Parse error
+  - -32600: Invalid request
+  - -32601: Method not found 
+  - -32000 to -32099: IMAP-specific errors
+- AVOID: Custom error codes outside JSON-RPC spec
+- WHY: Maintains protocol compliance and error handling consistency
+- EXAMPLE: (`src/api/mcp.rs`)
+
+### Method Implementation
+- MUST: Implement methods as `McpTool` trait objects
+- AVOID: Direct IMAP calls without MCP abstraction
+- WHY: Provides uniform interface for all MCP operations
+- EXAMPLE: (`src/api/mcp.rs`)
+```rust
+#[derive(Debug)]
+struct McpListFoldersTool {
+    name: &'static str,
+    desc: &'static str,
+}
+```
+
+### State Management 
+- MUST: Track client state using `SseState` for SSE transport
+- AVOID: Global state or direct connection tracking
+- WHY: Enables proper client lifecycle management
+- EXAMPLE: (`src/api/sse.rs`)
+
+### Testing Requirements
+- MUST: Test all message formats and error cases
+- MUST: Verify transport independence of protocol
+- MUST: Include transport-specific edge cases
+- EXAMPLE: (`src/transport_test.rs`)
+
+### Response Formatting
+- MUST: Return all results in standardized JSON-RPC response format
+- AVOID: Custom response structures
+- WHY: Maintains protocol consistency
+- EXAMPLE: (`src/api/mcp.rs`)
+```json
+{
+  "jsonrpc": "2.0", 
+  "id": "unique-id",
+  "result": { "folders": ["INBOX", "Sent"] }
+}
+```
+
+
+# End of auto-generated rules

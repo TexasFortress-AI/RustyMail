@@ -167,6 +167,11 @@ mod tests {
             self.fetch_emails_result.clone()
         }
 
+        async fn fetch_raw_message(&mut self, _uid: u32) -> Result<Vec<u8>, ImapError> {
+            // Basic mock implementation
+            Ok(Vec::new()) 
+        }
+
         async fn move_email(
             &self,
             _uids: Vec<u32>,

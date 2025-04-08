@@ -49,6 +49,10 @@ pub trait AsyncImapOps: Send + Sync {
 
     async fn logout(&mut self) -> Result<(), async_imap::error::Error>;
 
+    // Added uid_fetch signature
+    async fn uid_fetch(&mut self, uid_set: String, query: String)
+        -> Result<Vec<Fetch>, async_imap::error::Error>;
+
     // Add other methods as needed, e.g., uid_store for setting flags
     // async fn uid_store(&mut self, sequence_set: String, command: &str, flags: String) -> Result<(), async_imap::error::Error>;
 }
@@ -112,6 +116,13 @@ impl AsyncImapOps for TlsImapSession {
         stream.try_collect::<Vec<_>>().await?;
         Ok(())
     }
+
+    // Added uid_fetch implementation
+    async fn uid_fetch(&mut self, uid_set: String, query: String)
+        -> Result<Vec<Fetch>, async_imap::error::Error> {
+        let stream = self.uid_fetch(uid_set, query).await?;
+        stream.try_collect().await
+    }
 }
 
 // 3. Make AsyncImapSessionWrapper generic
@@ -145,6 +156,7 @@ fn format_search_criteria(criteria: &SearchCriteria) -> Result<String, ImapError
         SearchCriteria::And(_) => Err(ImapError::Command("Complex search criteria (And) not yet supported".to_string())),
         SearchCriteria::Or(_) => Err(ImapError::Command("Complex search criteria (Or) not yet supported".to_string())),
         SearchCriteria::Not(_) => Err(ImapError::Command("Complex search criteria (Not) not yet supported".to_string())),
+        SearchCriteria::Flagged => Ok("FLAGGED".to_string()),
     }
 }
 
@@ -269,19 +281,29 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
             .collect::<Vec<_>>()
             .join(",");
 
+        // Always fetch ALL details for simplicity and potential server compatibility
+        let query = "(ALL)".to_string();
+        /*
         // Conditionally include BODY[] in the fetch query
         let query = if fetch_body {
             "(UID FLAGS ENVELOPE BODY[] RFC822.SIZE)".to_string()
         } else {
             "(UID FLAGS ENVELOPE RFC822.SIZE)".to_string()
         };
+        */
 
-        let fetches = session.fetch(sequence_set, query).await?;
+        // Use uid_fetch when using UIDs
+        let fetches = session.uid_fetch(sequence_set, query).await?; 
 
         let mut messages = Vec::new();
         for fetch in fetches {
             let uid = fetch.uid.unwrap_or(0);
-            let flags = fetch.flags().collect::<Vec<_>>();
+            let raw_flags = fetch.flags().collect::<Vec<_>>(); // Collect raw flags
+            log::debug!("FETCH UID {}: Raw flags received: {:?}", uid, raw_flags);
+            
+            let flags = raw_flags.iter().map(convert_async_flag_to_string).collect::<Vec<String>>();
+            log::debug!("FETCH UID {}: Converted flags: {:?}", uid, flags);
+
             let envelope = fetch.envelope().ok_or(ImapError::EnvelopeNotFound)?;
             // Only extract body if fetch_body was true and body is present
             let body = if fetch_body {
@@ -293,7 +315,7 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
 
             let email = Email {
                 uid,
-                flags: flags.iter().map(convert_async_flag_to_string).collect(),
+                flags, // Use the converted flags variable
                 envelope: Some(make_envelope(envelope)?),
                 body,
                 size,
@@ -302,6 +324,29 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
         }
 
         Ok(messages)
+    }
+
+    async fn fetch_raw_message(&mut self, uid: u32) -> Result<Vec<u8>, ImapError> {
+        let mut session = self.session.lock().await;
+        // The `async-imap` library doesn't have a direct `fetch_raw_message`.
+        // We typically fetch the full body (`BODY[]`) for the raw content.
+        let sequence_set = uid.to_string();
+        let query = "BODY[]";
+        let fetches = session.fetch(sequence_set, query.to_string()).await?;
+
+        // Assume only one message is fetched for the given UID.
+        if let Some(fetch) = fetches.iter().next() {
+            // Get the body content.
+            if let Some(body_bytes) = fetch.body() {
+                Ok(body_bytes.to_vec())
+            } else {
+                // Handle case where body is unexpectedly None
+                Err(ImapError::Fetch("Body not found for UID".to_string()))
+            }
+        } else {
+            // Handle case where no message was fetched for the UID
+            Err(ImapError::Fetch(format!("Message with UID {} not found", uid)))
+        }
     }
 
     async fn move_email(&self, uids: Vec<u32>, destination_folder: &str) -> Result<(), ImapError> {
@@ -333,9 +378,19 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
             StoreOperation::Set => format!("FLAGS ({})", flags_list),
         };
 
+        // Log the command being sent
+        log::debug!("IMAP STORE: sequence_set='{}', command='{}'", sequence_set, command);
+
         let mut session = self.session.lock().await;
-        session.uid_store(sequence_set, command).await?;
-        Ok(())
+        let result = session.uid_store(sequence_set, command).await;
+
+        // Log the result
+        match &result {
+            Ok(_) => log::debug!("IMAP STORE successful."),
+            Err(e) => log::error!("IMAP STORE failed: {:?}", e),
+        }
+        // Map the error type before returning
+        result.map_err(ImapError::from)
     }
 
     async fn append(&self, folder: &str, payload: Vec<u8>) -> Result<(), ImapError> {
@@ -428,6 +483,7 @@ mod tests {
         select_result: Option<Result<AsyncMailbox, AsyncImapError>>,
         search_result: Option<Result<Vec<u32>, AsyncImapError>>,
         fetch_result: Option<Result<Vec<Fetch>, AsyncImapError>>,
+        uid_fetch_result: Option<Result<Vec<Fetch>, AsyncImapError>>,
         move_result: Option<Result<(), AsyncImapError>>,
         store_flags_result: Option<Result<(), AsyncImapError>>,
         append_result: Option<Result<(), AsyncImapError>>,
@@ -458,6 +514,7 @@ mod tests {
                 })),
                 search_result: Some(Ok(vec![1, 2, 3])), // Simple vec
                 fetch_result: Some(Ok(vec![])), // Cannot reliably mock Fetch construction
+                uid_fetch_result: Some(Ok(vec![])),
                 move_result: Some(Ok(())),
                 store_flags_result: Some(Ok(())),
                 append_result: Some(Ok(())),
@@ -491,6 +548,10 @@ mod tests {
         }
          fn set_move(mut self, res: Result<(), AsyncImapError>) -> Self { // Added setter
             self.move_result = Some(res);
+            self
+        }
+        fn set_uid_fetch(mut self, res: Result<Vec<Fetch>, AsyncImapError>) -> Self {
+            self.uid_fetch_result = Some(res);
             self
         }
     }
@@ -536,6 +597,9 @@ mod tests {
         }
         async fn expunge(&mut self) -> Result<(), AsyncImapError> {
             self.expunge_result.take().unwrap_or(Ok(()))
+        }
+        async fn uid_fetch(&mut self, _uid_set: String, _query: String) -> Result<Vec<Fetch>, AsyncImapError> {
+            self.uid_fetch_result.take().unwrap_or(Ok(vec![]))
         }
     }
 

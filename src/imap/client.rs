@@ -234,7 +234,7 @@ impl ImapClient {
     /// Expunges emails marked for deletion in the currently selected folder.
     pub async fn expunge(&self) -> Result<ExpungeResponse, ImapError> {
         self.session.lock().await.expunge().await.map(|_| ExpungeResponse {
-            // ...
+            message: "Expunge successful.".to_string(),
         })
     }
 

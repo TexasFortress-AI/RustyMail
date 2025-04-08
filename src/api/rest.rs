@@ -284,6 +284,7 @@ struct EmailSearchQuery {
     since: Option<String>, // Added SINCE
     uid: Option<String>,   // Added UID set
     unseen: Option<String>,
+    flagged: Option<String>, // Added FLAGGED search
     // Add other criteria as needed, potentially moving to POST with JSON body for complex AND/OR/NOT
 }
 
@@ -302,6 +303,7 @@ async fn search_emails(
     if let Some(s) = &query.since { criteria_list.push(SearchCriteria::Since(s.clone())); }
     if let Some(s) = &query.uid { criteria_list.push(SearchCriteria::Uid(s.clone())); }
     if query.unseen.is_some() { criteria_list.push(SearchCriteria::Unseen); }
+    if query.flagged.is_some() { criteria_list.push(SearchCriteria::Flagged); } // Handle flagged
     
     // Combine criteria using AND if multiple are provided, else use single or ALL
     let final_criteria = match criteria_list.len() {
@@ -361,20 +363,6 @@ async fn move_emails(
         .json(json!({ "message": format!("Emails moved to '{}'", dest_folder) })))
 }
 
-// POST /emails/flags { "uids": [...], "operation": "Add|Remove|Set", "flags": { "items": ["\\Seen"] } }
-async fn modify_email_flags(
-    state: web::Data<AppState>,
-    payload: web::Json<ModifyFlagsPayload>,
-) -> Result<impl Responder, ApiError> {
-    log::info!("Handling POST /emails/flags with payload: {:?}", payload);
-    if payload.uids.is_empty() {
-        return Err(ApiError::BadRequest("UID list cannot be empty".to_string()));
-    }
-    // Note: Assumes folder is already selected.
-    state.imap_client.store_flags(payload.uids.clone(), payload.operation.clone(), payload.flags.clone()).await?;
-    Ok(HttpResponse::Ok().json(json!({ "message": "Flags updated successfully" })))
-}
-
 // POST /folders/{folder_name}/append { "content": "...", "flags": { "items": [...] } }
 async fn append_email(
     state: web::Data<AppState>,
@@ -385,7 +373,7 @@ async fn append_email(
      let folder_name = urlencoding::decode(&encoded_folder_name)
         .map_err(|e| ApiError::BadRequest(format!("Invalid folder name encoding: {}", e)))?
         .into_owned();
-    log::info!("Handling POST /folders/{}/append (decoded: {})", encoded_folder_name, folder_name);
+    log::info!("Handling POST /folders/{}/emails/append (decoded: {})", encoded_folder_name, folder_name);
     if folder_name.is_empty() {
         return Err(ApiError::BadRequest("Folder name cannot be empty".to_string()));
     }
@@ -415,6 +403,173 @@ async fn expunge_folder(
     Ok(HttpResponse::Ok().json(response))
 }
 
+// Handler for searching within a specific folder
+async fn search_emails_in_folder(
+    state: web::Data<AppState>,
+    path: web::Path<String>, // Contains the URL-encoded folder name
+    query: web::Query<EmailSearchQuery>, // Reuse the same query structure
+) -> Result<impl Responder, ApiError> {
+    let encoded_folder_name = path.into_inner();
+    let folder_name_base = urlencoding::decode(&encoded_folder_name)
+        .map_err(|e| ApiError::BadRequest(format!("Invalid folder name encoding: {}", e)))?
+        .into_owned();
+
+    log::info!(
+        "Handling GET /folders/{}/emails/search (decoded: {}) with query: {:?}",
+        encoded_folder_name,
+        folder_name_base,
+        query
+    );
+
+    if folder_name_base.is_empty() {
+        return Err(ApiError::BadRequest("Folder name cannot be empty after decoding".to_string()));
+    }
+
+    // Prepend INBOX. prefix only if the base name is not INBOX
+    let full_folder_name = if folder_name_base.eq_ignore_ascii_case("INBOX") {
+        folder_name_base // Use "INBOX" directly
+    } else {
+        format!("INBOX.{}", folder_name_base)
+    };
+
+    // --- Select the folder first --- 
+    log::debug!("Selecting folder '{}' before searching...", full_folder_name);
+    match state.imap_client.select_folder(&full_folder_name).await {
+        Ok(_) => log::debug!("Folder '{}' selected successfully.", full_folder_name),
+        Err(e) => {
+            log::error!("Failed to select folder '{}' for search: {:?}", full_folder_name, e);
+            // Convert IMAP error to API error. Could be NotFound if folder doesn't exist.
+            return Err(e.into()); 
+        }
+    }
+
+    // --- Build Search Criteria (same logic as global search) ---
+    let mut criteria_list = Vec::new();
+    if let Some(s) = &query.subject { criteria_list.push(SearchCriteria::Subject(s.clone())); }
+    if let Some(s) = &query.from { criteria_list.push(SearchCriteria::From(s.clone())); }
+    if let Some(s) = &query.to { criteria_list.push(SearchCriteria::To(s.clone())); }
+    if let Some(s) = &query.body { criteria_list.push(SearchCriteria::Body(s.clone())); }
+    if let Some(s) = &query.since { criteria_list.push(SearchCriteria::Since(s.clone())); }
+    if let Some(s) = &query.uid { criteria_list.push(SearchCriteria::Uid(s.clone())); }
+    if query.unseen.is_some() { criteria_list.push(SearchCriteria::Unseen); }
+    if query.flagged.is_some() { criteria_list.push(SearchCriteria::Flagged); } // Handle flagged
+    
+    let final_criteria = match criteria_list.len() {
+        0 => SearchCriteria::All, // Default to ALL if no specific query params
+        1 => criteria_list.remove(0),
+        _ => SearchCriteria::And(criteria_list), // AND multiple criteria
+    };
+
+    // --- Perform the search --- 
+    log::debug!("Performing search in folder '{}' with criteria: {:?}", full_folder_name, final_criteria);
+    match state.imap_client.search_emails(final_criteria).await {
+        Ok(uids) => {
+            log::info!("Search in '{}' successful, found {} UIDs.", full_folder_name, uids.len());
+            // Return the Vec<u32> directly as the JSON body
+            Ok(HttpResponse::Ok().json(uids))
+        }
+        Err(e) => {
+            log::error!("IMAP search failed in folder '{}': {:?}", full_folder_name, e);
+            Err(e.into())
+        }
+    }
+}
+
+// POST /folders/{folder_name}/emails/flags { "uids": [...], "operation": "Add|Remove|Set", "flags": { "items": ["\\Seen"] } }
+async fn modify_email_flags(
+    state: web::Data<AppState>,
+    path: web::Path<String>, // Added path parameter for folder name
+    payload: web::Json<ModifyFlagsPayload>,
+) -> Result<impl Responder, ApiError> {
+    let encoded_folder_name = path.into_inner();
+    let folder_name_base = urlencoding::decode(&encoded_folder_name)
+        .map_err(|e| ApiError::BadRequest(format!("Invalid folder name encoding: {}", e)))?
+        .into_owned();
+
+    log::info!(
+        "Handling POST /folders/{}/emails/flags (decoded: {}) with payload: {:?}",
+        encoded_folder_name,
+        folder_name_base,
+        payload
+    );
+
+    if folder_name_base.is_empty() {
+        return Err(ApiError::BadRequest("Folder name cannot be empty after decoding".to_string()));
+    }
+    if payload.uids.is_empty() {
+        return Err(ApiError::BadRequest("UID list cannot be empty".to_string()));
+    }
+
+    // Determine full folder name (handle INBOX case)
+    let full_folder_name = if folder_name_base.eq_ignore_ascii_case("INBOX") {
+        folder_name_base
+    } else {
+        format!("INBOX.{}", folder_name_base)
+    };
+
+    // Select the folder before modifying flags
+    log::debug!("Selecting folder '{}' before modifying flags...", full_folder_name);
+    state.imap_client.select_folder(&full_folder_name).await.map_err(|e| {
+        log::error!("Failed to select folder '{}' for flag modification: {:?}", full_folder_name, e);
+        e // Convert error
+    })?;
+    log::debug!("Folder '{}' selected successfully.", full_folder_name);
+
+    // Perform the store operation
+    state.imap_client.store_flags(payload.uids.clone(), payload.operation.clone(), payload.flags.clone()).await?;
+    Ok(HttpResponse::Ok().json(json!({ "message": "Flags updated successfully" })))
+}
+
+// Handler for fetching emails within a specific folder
+async fn fetch_emails_in_folder(
+    state: web::Data<AppState>,
+    path: web::Path<String>, // Contains the URL-encoded folder name
+    query: web::Query<EmailFetchQuery>, // Reuse the same query structure
+) -> Result<impl Responder, ApiError> {
+    let encoded_folder_name = path.into_inner();
+    let folder_name_base = urlencoding::decode(&encoded_folder_name)
+        .map_err(|e| ApiError::BadRequest(format!("Invalid folder name encoding: {}", e)))?
+        .into_owned();
+
+    log::info!(
+        "Handling GET /folders/{}/emails/fetch (decoded: {}) with query: {:?}",
+        encoded_folder_name,
+        folder_name_base,
+        query
+    );
+
+    if folder_name_base.is_empty() {
+        return Err(ApiError::BadRequest("Folder name cannot be empty after decoding".to_string()));
+    }
+
+    // Parse UIDs
+    let uids = parse_uids(&query.uids)?;
+    if uids.is_empty() {
+        return Err(ApiError::BadRequest("No valid UIDs provided in query string".to_string()));
+    }
+    // Check the body query param
+    let fetch_body = query.body.as_deref().map_or(false, |b| b.eq_ignore_ascii_case("true"));
+
+    // Determine full folder name (handle INBOX case)
+    let full_folder_name = if folder_name_base.eq_ignore_ascii_case("INBOX") {
+        folder_name_base
+    } else {
+        format!("INBOX.{}", folder_name_base)
+    };
+
+    // Select the folder before fetching
+    log::debug!("Selecting folder '{}' before fetching emails...", full_folder_name);
+    state.imap_client.select_folder(&full_folder_name).await.map_err(|e| {
+        log::error!("Failed to select folder '{}' for fetch: {:?}", full_folder_name, e);
+        e // Convert error
+    })?;
+    log::debug!("Folder '{}' selected successfully.", full_folder_name);
+
+    // Perform the fetch operation
+    let emails = state.imap_client.fetch_emails(uids, fetch_body).await?;
+    Ok(HttpResponse::Ok().json(emails))
+}
+
 // --- Service Configuration (Updated) ---
 
 pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
@@ -430,17 +585,21 @@ pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
                     .route("/{folder_name}", web::put().to(rename_folder))
                     .route("/{folder_name}/select", web::post().to(select_folder))
                     // Add append and expunge routes under specific folder
-                    .route("/{folder_name}/append", web::post().to(append_email))
+                    .route("/{folder_name}/emails/append", web::post().to(append_email))
                     .route("/{folder_name}/expunge", web::post().to(expunge_folder))
+                    .route("/{folder_name}/emails/search", web::get().to(search_emails_in_folder))
                     .route("/{folder_name}/emails/{uid}/raw", web::get().to(get_raw_email))
+                    // Add route for modifying flags within a folder
+                    .route("/{folder_name}/emails/flags", web::post().to(modify_email_flags))
+                    // Add route for fetching emails within a folder
+                    .route("/{folder_name}/emails/fetch", web::get().to(fetch_emails_in_folder))
             )
             .service(
                 web::scope("/emails")
                     .route("/search", web::get().to(search_emails))
-                    .route("/fetch", web::get().to(fetch_emails))
+                    // Keep global fetch? Maybe remove if folder-specific is always preferred?
+                    .route("/fetch", web::get().to(fetch_emails)) 
                     .route("/move", web::post().to(move_emails))
-                    // Add route for modifying flags
-                    .route("/flags", web::post().to(modify_email_flags))
             )
     );
 }
