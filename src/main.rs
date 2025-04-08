@@ -5,6 +5,11 @@ use rustymail::api::rest::{AppState, configure_rest_service};
 use std::sync::Arc;
 use dotenvy::dotenv;
 use log::{info, debug, error};
+use rustymail::mcp_port::create_mcp_tool_registry;
+use rustymail::api::mcp_sse::SseAdapter;
+use rustymail::api::mcp_sse::SseState;
+use tokio::sync::Mutex as TokioMutex;
+use env_logger;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -24,34 +29,81 @@ async fn main() -> std::io::Result<()> {
             panic!("Configuration loading failed: {:?}", e);
         }
     };
-    let rest_config = settings.rest.as_ref().expect("REST config section missing or disabled");
+    // Determine active interface from settings
+    let active_interface = settings.interface.clone();
+
+    // --- Handle Stdio Interface ---
+    if active_interface == rustymail::config::InterfaceType::McpStdio {
+        info!("Starting in MCP Stdio mode...");
+        
+        // Create IMAP client for stdio mode
+        info!("Connecting to IMAP server (for Stdio mode)...");
+        let imap_client_stdio = Arc::new(ImapClient::connect(
+            &settings.imap_host,
+            settings.imap_port,
+            &settings.imap_user,
+            &settings.imap_pass,
+        ).await.expect("Failed to create IMAP client for Stdio"));
+        info!("IMAP connection established successfully (for Stdio mode).");
+
+        // Create tool registry for stdio mode
+        let tool_registry_stdio = create_mcp_tool_registry(imap_client_stdio.clone());
+
+        // Create and run the stdio adapter
+        let stdio_adapter = rustymail::api::mcp_stdio::McpStdioAdapter::new(tool_registry_stdio);
+        
+        // Run the adapter and handle potential IO errors
+        if let Err(e) = stdio_adapter.run().await {
+             error!("MCP Stdio Adapter failed: {}", e);
+             return Err(e);
+        } else {
+            info!("MCP Stdio Adapter finished cleanly.");
+            return Ok(()); // Exit cleanly after stdio finishes
+        }
+    }
+
+    // --- Handle REST/SSE Interface (if not Stdio) ---
+    info!("Starting in REST/SSE mode...");
+    let rest_config = settings.rest.as_ref().expect("REST config section must be present if not in Stdio mode");
     if !rest_config.enabled {
-        panic!("REST interface must be enabled");
+        panic!("REST interface must be enabled if not in Stdio mode");
     }
     debug!("REST config: host={}, port={}", rest_config.host, rest_config.port);
     debug!("IMAP config: host={}, port={}, user={}", settings.imap_host, settings.imap_port, settings.imap_user);
 
-    // Create IMAP client
-    info!("Connecting to IMAP server...");
-    let imap_client = Arc::new(ImapClient::connect(
+    // Create IMAP client for REST/SSE mode
+    info!("Connecting to IMAP server (for REST/SSE mode)...");
+    let imap_client_rest = Arc::new(ImapClient::connect(
         &settings.imap_host,
         settings.imap_port,
         &settings.imap_user,
         &settings.imap_pass,
-    ).await.expect("Failed to create IMAP client"));
-    info!("IMAP connection established successfully.");
+    ).await.expect("Failed to create IMAP client for REST/SSE"));
+    info!("IMAP connection established successfully (for REST/SSE mode).");
 
-    let app_state = AppState::new(imap_client);
+    // Create the shared tool registry
+    let tool_registry_rest = create_mcp_tool_registry(imap_client_rest.clone());
+    info!("MCP Tool Registry created.");
+
+    // Create shared SSE state using the new constructor
+    let sse_state = Arc::new(TokioMutex::new(SseState::new()));
+    info!("SSE shared state initialized.");
+
+    // Create the application state containing client and registry
+    let app_state = AppState::new(imap_client_rest.clone(), tool_registry_rest.clone());
     info!("Application state initialized.");
 
     // Configure and start HTTP server
     let listen_addr = format!("{}:{}", rest_config.host, rest_config.port);
-    info!("Starting REST server on {}", listen_addr);
+    info!("Starting HTTP server (REST & SSE) on {}", listen_addr);
 
     HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(app_state.clone()))
-            .configure(configure_rest_service)
+            .app_data(web::Data::new(app_state.clone())) // Share AppState (client + registry)
+            .app_data(web::Data::new(sse_state.clone())) // Share SSE state separately
+            .wrap(actix_web::middleware::Logger::default()) // Add logger middleware
+            .configure(configure_rest_service) // Configure REST routes
+            .configure(SseAdapter::configure_sse_service) // Configure SSE routes
     })
     .bind(&listen_addr)
     .map_err(|e| {

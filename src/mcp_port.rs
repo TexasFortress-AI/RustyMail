@@ -108,30 +108,46 @@ pub fn create_mcp_tool_registry(imap_client: Arc<ImapClient>) -> Arc<HashMap<Str
 // Implement From<ImapError> for McpPortError
 impl From<ImapError> for McpPortError {
     fn from(err: ImapError) -> Self {
-        // Log the original IMAP error for debugging
-        log::debug!("Converting ImapError to McpPortError: {:?}", err);
-
+        log::warn!("Converting IMAP Error to MCP Port Error: {:?}", err);
         match err {
             ImapError::Connection(m) => McpPortError::ImapConnectionError(m),
-            ImapError::Tls(m) => McpPortError::ImapConnectionError(format!("TLS Error: {}", m)), // Map TLS to Connection for now
+            ImapError::Tls(m) => McpPortError::ImapConnectionError(m), // Map TLS also to ConnectionError for MCP
             ImapError::Auth(m) => McpPortError::ImapAuthenticationError(m),
-            ImapError::Parse(m) => McpPortError::InternalError { message: format!("IMAP Parse Error: {}", m) }, // Treat parse as Internal
-            ImapError::BadResponse(m) => McpPortError::InternalError { message: format!("IMAP Bad Response: {}", m) }, // Treat bad response as Internal
-            ImapError::Mailbox(m) => McpPortError::ImapOperationFailed(format!("Mailbox Error: {}", m)), // Generic operation failure
-            ImapError::Fetch(m) => McpPortError::ImapOperationFailed(format!("Fetch Error: {}", m)), // Generic operation failure
-            ImapError::Append(m) => McpPortError::ImapOperationFailed(format!("Append Error: {}", m)), // Generic operation failure
+            ImapError::Parse(m) => McpPortError::ToolError(format!("IMAP Parse Error: {}", m)), // Maybe map to InvalidParams? Or ToolError?
+            ImapError::BadResponse(m) => McpPortError::ToolError(format!("IMAP Bad Response: {}", m)),
+            ImapError::Mailbox(m) => McpPortError::ImapFolderNotFound(m), // Assuming mailbox errors usually mean not found
+            ImapError::Fetch(m) => McpPortError::ImapEmailNotFound(m), // Assuming fetch errors often relate to not found UIDs
+            ImapError::Append(m) => McpPortError::ImapOperationFailed(m),
             ImapError::Operation(m) => McpPortError::ImapOperationFailed(m),
-            ImapError::Command(m) => McpPortError::ImapOperationFailed(format!("Command Error: {}", m)), // Generic operation failure
-            ImapError::Config(m) => McpPortError::InternalError { message: format!("IMAP Config Error: {}", m) }, // Treat config as Internal
-            ImapError::Io(m) => McpPortError::ImapConnectionError(format!("IO Error: {}", m)), // Map IO to Connection
-            ImapError::Internal(m) => McpPortError::InternalError { message: m },
-            ImapError::EnvelopeNotFound => McpPortError::ImapEmailNotFound("Envelope not found".to_string()),
+            ImapError::Command(m) => McpPortError::InvalidParams(m), // Command errors often due to bad params
+            ImapError::Config(m) => McpPortError::InternalError { message: format!("IMAP Config Error: {}", m) },
+            ImapError::Io(m) => McpPortError::ImapConnectionError(format!("IMAP IO Error: {}", m)),
+            ImapError::Internal(m) => McpPortError::InternalError { message: format!("IMAP Internal Error: {}", m) },
+            ImapError::EnvelopeNotFound => McpPortError::ImapEmailNotFound("Envelope data missing in fetch response".to_string()),
+            
+            // Add mappings for the new variants
             ImapError::FolderNotFound(m) => McpPortError::ImapFolderNotFound(m),
             ImapError::FolderExists(m) => McpPortError::ImapFolderExists(m),
             ImapError::RequiresFolderSelection(m) => McpPortError::ImapRequiresFolderSelection(m),
-            // Add specific cases for other ImapError variants if they exist and need distinct McpPortError types
-            // Example: If ImapError had a variant like `InvalidSearch`, map it:
-            // ImapError::InvalidSearch(m) => McpPortError::ImapInvalidCriteria(m),
+            ImapError::ConnectionError(m) => McpPortError::ImapConnectionError(m),
+            ImapError::AuthenticationError(m) => McpPortError::ImapAuthenticationError(m),
+            ImapError::EmailNotFound(uids) => McpPortError::ImapEmailNotFound(format!("UID(s) {:?} not found", uids)),
+            ImapError::OperationFailed(m) => McpPortError::ImapOperationFailed(m),
+            ImapError::InvalidCriteria(c) => McpPortError::ImapInvalidCriteria(format!("Invalid search criteria: {:?}", c)),
+            ImapError::FolderNotSelected => McpPortError::ImapRequiresFolderSelection("Operation requires folder selection".to_string()),
+            ImapError::ParseError(m) => McpPortError::ToolError(format!("IMAP Parse Error: {}", m)),
+            // SessionError needs careful handling. Extract underlying info if possible.
+            ImapError::SessionError(e) => {
+                // Try to provide a more specific error based on the underlying async_imap::error::Error
+                match e {
+                    async_imap::error::Error::ConnectionLost => McpPortError::ImapConnectionError("Connection Lost".to_string()),
+                    async_imap::error::Error::Parse(p_err) => McpPortError::ToolError(format!("IMAP Parse Error: {}", p_err)),
+                    async_imap::error::Error::No(s) | async_imap::error::Error::Bad(s) => McpPortError::ImapOperationFailed(s),
+                    async_imap::error::Error::Io(io_err) => McpPortError::ImapConnectionError(format!("IO Error: {}", io_err)),
+                    // Handle other async_imap errors as specifically as possible, or fallback
+                    _ => McpPortError::ImapOperationFailed(format!("Underlying IMAP Session Error: {}", e))
+                }
+            }
         }
     }
 } 

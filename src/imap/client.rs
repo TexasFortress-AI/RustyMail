@@ -1,7 +1,10 @@
+// use crate::config::Settings;
 use crate::imap::error::ImapError;
 use crate::imap::session::{AsyncImapSessionWrapper, ImapSession, StoreOperation};
 use crate::imap::types::{Email, Folder, SearchCriteria, MailboxInfo, FlagOperation, Flags, AppendEmailPayload, ExpungeResponse};
 use async_imap::{Client as AsyncImapClient, Session as AsyncImapSession};
+use async_trait::async_trait;
+use log;
 use rustls::pki_types::ServerName as PkiServerName;
 use rustls::{ClientConfig, RootCertStore};
 use std::sync::Arc;
@@ -32,6 +35,22 @@ pub struct ImapClient {
     session: Arc<Mutex<dyn ImapSession>>,
 }
 
+#[async_trait]
+pub trait ImapClientTrait: Send + Sync {
+    async fn list_folders(&self) -> Result<Vec<Folder>, ImapError>;
+    async fn create_folder(&self, name: &str) -> Result<(), ImapError>;
+    async fn delete_folder(&self, name: &str) -> Result<(), ImapError>;
+    async fn rename_folder(&self, from: &str, to: &str) -> Result<(), ImapError>;
+    async fn select_folder(&self, name: &str) -> Result<MailboxInfo, ImapError>;
+    async fn search_emails(&self, criteria: SearchCriteria) -> Result<Vec<u32>, ImapError>;
+    async fn fetch_emails(&self, uids: Vec<u32>, fetch_body: bool) -> Result<Vec<Email>, ImapError>;
+    async fn move_email(&self, source_folder: &str, uids: Vec<u32>, destination_folder: &str) -> Result<(), ImapError>;
+    async fn store_flags(&self, uids: Vec<u32>, operation: StoreOperation, flags: Vec<String>) -> Result<(), ImapError>;
+    async fn append(&self, folder: &str, payload: Vec<u8>) -> Result<(), ImapError>;
+    async fn expunge(&self) -> Result<(), ImapError>;
+    async fn logout(&self) -> Result<(), ImapError>;
+}
+
 // --- Internal Connection Logic ---
 
 /// Establishes TCP connection, performs TLS handshake, and configures the stream.
@@ -39,18 +58,13 @@ async fn setup_tls_stream(
     host: &str,
     port: u16,
     tls_connector: TlsConnector,
-    server_name_for_tls: PkiServerName<'static>, // Ensure lifetime matches connector
+    server_name_for_tls: PkiServerName<'static>,
 ) -> Result<BaseTlsStream, ImapError> {
     log::debug!("Attempting TCP connection to {}:{}...", host, port);
-    let tcp_stream = BaseTcpStream::connect((host, port))
-        .await
-        .map_err(|e| ImapError::Connection(format!("TCP connection failed: {}", e)))?;
+    let tcp_stream = BaseTcpStream::connect((host, port)).await?;
     log::debug!("TCP connected. Performing TLS handshake...");
 
-    let tls_stream = tls_connector
-        .connect(server_name_for_tls, tcp_stream)
-        .await
-        .map_err(|e| ImapError::Tls(format!("TLS handshake failed: {}", e)))?;
+    let tls_stream = tls_connector.connect(server_name_for_tls, tcp_stream).await?;
     log::debug!("TLS handshake successful.");
     Ok(tls_stream)
 }
@@ -72,12 +86,11 @@ async fn perform_imap_login(
         }
         Ok(Err((e, _client))) => {
             log::error!("IMAP login failed for user {}: {:?}", username, e);
-            Err(ImapError::from(e)) // Map async_imap::Error
+            Err(ImapError::from(e))
         }
-        Err(_) => {
-            // Timeout occurred
-            log::error!("IMAP login timed out for user {} after {:?}.", username, timeout_duration);
-            Err(ImapError::Connection("Login timed out".to_string()))
+        Err(elapsed_err) => {
+            log::error!("IMAP login timed out for user {} after {:?}. Error: {}", username, timeout_duration, elapsed_err);
+            Err(ImapError::ConnectionError("Login timed out".to_string()))
         }
     }
 }
@@ -94,35 +107,20 @@ async fn connect_and_login_internal(
 
     // --- Server Name Setup ---
     let host_owned = host.to_string();
-    // Needs 'static lifetime for TlsConnector::connect
     let server_name_static: PkiServerName<'static> = PkiServerName::try_from(host_owned)
-        .map_err(|_| ImapError::Connection(format!("Invalid server name format: {}", host)))?
-        .to_owned(); // Convert to owned ServerName
+        .map_err(|_| ImapError::ConnectionError(format!("Invalid server name format: {}", host)))?;
 
     // --- TLS Configuration ---
     let mut root_cert_store = RootCertStore::empty();
-    match rustls_native_certs::load_native_certs() {
-        Ok(certs) => {
-            let (added, ignored) = root_cert_store.add_parsable_certificates(certs);
-             log::debug!("Loaded {} native certs, ignored {}.", added, ignored);
-             if added == 0 && !ignored ==0 {
-                 log::warn!("No valid native certs found, TLS connection might fail.");
-                 // Depending on policy, might return Err here.
-                 // return Err(ImapError::Tls("No valid native root certificates found.".into()));
-             }
-        }
-        Err(e) => {
-            log::error!("Could not load native certs: {}", e);
-            return Err(ImapError::Tls(format!(
-                "Could not load native certificates: {}",
-                e
-            )));
-        }
+    let certs = rustls_native_certs::load_native_certs()?;
+    let (added, ignored) = root_cert_store.add_parsable_certificates(certs);
+    log::debug!("Loaded {} native certs, ignored {}.", added, ignored);
+    if added == 0 && ignored > 0 {
+        log::warn!("No valid native certs found, TLS connection might fail.");
     }
-     if root_cert_store.is_empty() {
-         log::warn!("Root certificate store is empty after loading native certs.");
-         // Consider adding logic here if needed, e.g., error or allow insecure
-     }
+    if root_cert_store.is_empty() {
+        log::warn!("Root certificate store is empty after loading native certs.");
+    }
 
     let config = ClientConfig::builder()
         .with_root_certificates(root_cert_store)
@@ -133,7 +131,7 @@ async fn connect_and_login_internal(
     let tls_stream = setup_tls_stream(host, port, tls_connector, server_name_static).await?;
 
     // --- Login ---
-    let compat_stream = tls_stream.compat(); // Wrap for async_imap
+    let compat_stream = tls_stream.compat();
     perform_imap_login(compat_stream, username, password, timeout_duration).await
 }
 
@@ -206,11 +204,11 @@ impl ImapClient {
         self.session.lock().await.fetch_emails(uids, fetch_body).await
     }
 
-    pub async fn move_email(&self, uids: Vec<u32>, destination: &str) -> Result<(), ImapError> {
+    pub async fn move_email(&self, source_folder: &str, uids: Vec<u32>, destination_folder: &str) -> Result<(), ImapError> {
         if uids.is_empty() {
             return Ok(());
         }
-        self.session.lock().await.move_email(uids, destination).await
+        self.session.lock().await.move_email(source_folder, uids, destination_folder).await
     }
 
     /// Modifies flags for specified emails.
@@ -220,7 +218,7 @@ impl ImapClient {
             FlagOperation::Remove => StoreOperation::Remove,
             FlagOperation::Set => StoreOperation::Set,
         };
-        let flag_strings = flags.items.into_iter().map(|f| f.to_string()).collect();
+        let flag_strings = flags.items;
         self.session.lock().await.store_flags(uids, store_op, flag_strings).await
     }
 
@@ -249,5 +247,56 @@ impl ImapClient {
     pub async fn logout(self) -> Result<(), ImapError> {
         let session_guard = self.session.lock().await;
         session_guard.logout().await
+    }
+}
+
+#[async_trait]
+impl ImapClientTrait for ImapClient {
+    async fn list_folders(&self) -> Result<Vec<Folder>, ImapError> {
+        self.session.lock().await.list_folders().await
+    }
+
+    async fn create_folder(&self, name: &str) -> Result<(), ImapError> {
+        self.session.lock().await.create_folder(name).await
+    }
+
+    async fn delete_folder(&self, name: &str) -> Result<(), ImapError> {
+        self.session.lock().await.delete_folder(name).await
+    }
+
+    async fn rename_folder(&self, from: &str, to: &str) -> Result<(), ImapError> {
+        self.session.lock().await.rename_folder(from, to).await
+    }
+
+    async fn select_folder(&self, name: &str) -> Result<MailboxInfo, ImapError> {
+        self.session.lock().await.select_folder(name).await
+    }
+
+    async fn search_emails(&self, criteria: SearchCriteria) -> Result<Vec<u32>, ImapError> {
+        self.session.lock().await.search_emails(criteria).await
+    }
+
+    async fn fetch_emails(&self, uids: Vec<u32>, fetch_body: bool) -> Result<Vec<Email>, ImapError> {
+        self.session.lock().await.fetch_emails(uids, fetch_body).await
+    }
+
+    async fn move_email(&self, source_folder: &str, uids: Vec<u32>, destination_folder: &str) -> Result<(), ImapError> {
+        self.session.lock().await.move_email(source_folder, uids, destination_folder).await
+    }
+
+    async fn store_flags(&self, uids: Vec<u32>, operation: StoreOperation, flags: Vec<String>) -> Result<(), ImapError> {
+        self.session.lock().await.store_flags(uids, operation, flags).await
+    }
+
+    async fn append(&self, folder: &str, payload: Vec<u8>) -> Result<(), ImapError> {
+        self.session.lock().await.append(folder, payload).await
+    }
+
+    async fn expunge(&self) -> Result<(), ImapError> {
+        self.session.lock().await.expunge().await
+    }
+
+    async fn logout(&self) -> Result<(), ImapError> {
+        self.session.lock().await.logout().await
     }
 }

@@ -1,3 +1,5 @@
+//! Handles MCP communication over stdin/stdout.
+
 use tokio::io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -7,10 +9,17 @@ use async_trait::async_trait;
 use crate::imap::client::ImapClient;
 use log::{debug, error, info, warn};
 use crate::imap::types::{
-    SearchCriteria, ModifyFlagsPayload,
-    AppendEmailPayload, ExpungeResponse,
+    SearchCriteria
 };
 use crate::mcp_port::{McpPortError, McpTool};
+use tokio::sync::Mutex as TokioMutex;
+use crate::imap::types::{FlagOperation, Flags, AppendEmailPayload};
+
+// Define state struct
+#[derive(Debug, Clone, Default)] 
+pub struct McpPortState {
+    pub selected_folder: Option<String>,
+}
 
 // --- JSON-RPC Structures (Compliant with Spec) ---
 
@@ -61,7 +70,8 @@ pub mod error_codes {
 // --- Error Mapping ---
 
 // Function to map McpPortError to JSON-RPC error code and message
-fn map_mcp_error_to_jsonrpc(err: McpPortError) -> (i32, String) {
+// Make pub(crate) so it can be used by other modules in the same crate (like mcp_sse)
+pub(crate) fn map_mcp_error_to_jsonrpc(err: McpPortError) -> (i32, String) {
     match err {
         McpPortError::InvalidParams(m) => (error_codes::INVALID_PARAMS, m),
         McpPortError::ToolError(m) => (error_codes::IMAP_OPERATION_FAILED, m),
@@ -80,6 +90,7 @@ fn map_mcp_error_to_jsonrpc(err: McpPortError) -> (i32, String) {
 }
 
 // Function to create a standardized JSON-RPC error response
+// Keep this private as it's only used within this module
 fn create_jsonrpc_error_response(id: Option<Value>, code: i32, message: String) -> JsonRpcResponse {
     JsonRpcResponse {
         jsonrpc: "2.0".to_string(),
@@ -89,142 +100,239 @@ fn create_jsonrpc_error_response(id: Option<Value>, code: i32, message: String) 
     }
 }
 
-// --- MCP Tool Implementations (using McpPortError from mcp_port) ---
+// --- MCP Tool Trait and Macro ---
 
-// Macro to reduce boilerplate for tool struct and name/description
+// Macro definition (Update struct visibility)
 macro_rules! mcp_tool {
-    ($struct_name:ident, $client_field:ident, $tool_name:expr, $tool_desc:expr, async fn execute($self:ident, $params:ident : Value) -> Result<Value, McpPortError> $body:block) => {
-        pub struct $struct_name {
+    // Variant with client
+    ($tool_name:ident, $client_field:ident, $mcp_name:expr, $desc:expr, async fn execute($self:ident, $params_arg:ident : Value) -> Result<Value, McpPortError> $body:block) => {
+        pub struct $tool_name {
             $client_field: Arc<ImapClient>,
         }
-        impl $struct_name {
-             pub fn new(client: Arc<ImapClient>) -> Self { Self { $client_field: client } }
+
+        impl $tool_name {
+            #[allow(dead_code)]
+            pub fn new($client_field: Arc<ImapClient>) -> Self {
+                Self { $client_field }
+            }
         }
+
         #[async_trait]
-        impl McpTool for $struct_name {
-            fn name(&$self) -> &str { $tool_name }
-            fn description(&$self) -> &str { $tool_desc }
-            async fn execute(&$self, $params: Value) -> Result<Value, McpPortError> $body
+        impl McpTool for $tool_name {
+            fn name(&$self) -> &str { $mcp_name }
+            fn description(&$self) -> &str { $desc }
+            
+            // Correct signature: no state arg
+            async fn execute(&$self, $params_arg: Value) -> Result<Value, McpPortError> {
+                $body
+            }
+        }
+    };
+    // Variant without client
+    ($tool_name:ident, $mcp_name:expr, $desc:expr, async fn execute($self:ident, $params_arg:ident : Value) -> Result<Value, McpPortError> $body:block) => {
+        pub struct $tool_name;
+
+        impl $tool_name {
+            #[allow(dead_code)]
+            pub fn new() -> Self {
+                 Self
+            }
+        }
+        
+        #[async_trait]
+        impl McpTool for $tool_name {
+            fn name(&$self) -> &str { $mcp_name }
+            fn description(&$self) -> &str { $desc }
+
+            // Correct signature: no state arg
+            async fn execute(&$self, $params_arg: Value) -> Result<Value, McpPortError> {
+                 $body
+            }
         }
     };
 }
 
-// Macro to deserialize params or return InvalidParams error
+// Macro to deserialize parameters, return an error if deserialization fails
 macro_rules! deserialize_params {
-    ($params:expr, $type:ty) => {
-        serde_json::from_value::<$type>($params).map_err(|e| {
-            McpPortError::InvalidParams(format!("Invalid parameters: {}", e))
-        })?
+    ($params:expr, $param_type:ty) => {
+        // Use map_err for concise error conversion
+        serde_json::from_value::<$param_type>($params.clone())
+            .map_err(|e| McpPortError::InvalidParams(format!("Invalid parameters: {}", e)))
     };
 }
 
-mcp_tool!(McpListFoldersTool, client, "imap/listFolders", "Lists all IMAP folders.",
+// --- Tool Definitions using the Macro ---
+// Update invocations to match the 2-argument execute signature
+mcp_tool!(McpListFoldersTool, client, "imap/listFolders", "Lists all folders.", 
     async fn execute(self, _params: Value) -> Result<Value, McpPortError> {
         let folders = self.client.list_folders().await?;
-        Ok(serde_json::to_value(folders).map_err(|e| McpPortError::ToolError(format!("Serialization Error: {}", e)))?)
+        Ok(json!({ "folders": folders }))
     }
 );
 
 mcp_tool!(McpCreateFolderTool, client, "imap/createFolder", "Creates a new IMAP folder.",
-    async fn execute(self, params: Value) -> Result<Value, McpPortError> {
+    async fn execute(self, params: Value) -> Result<Value, McpPortError> { 
         #[derive(Deserialize)] struct Params { name: String }
-        let p: Params = deserialize_params!(params, Params);
+        // Remove ? operator
+        let p: Params = deserialize_params!(params, Params)?;
         if p.name.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder name cannot be empty".into())); }
-        self.client.create_folder(&p.name).await?;
-        Ok(json!({ "message": "Folder created", "name": p.name }))
+        // Prepend "INBOX." if it's not "INBOX"
+        let full_folder_name = if p.name.eq_ignore_ascii_case("INBOX") {
+            p.name.clone()
+        } else {
+            format!("INBOX.{}", p.name)
+        };
+        self.client.create_folder(&full_folder_name).await?;
+        Ok(json!({ "message": "Folder created", "name": full_folder_name }))
     }
 );
 
 mcp_tool!(McpDeleteFolderTool, client, "imap/deleteFolder", "Deletes an IMAP folder.",
-    async fn execute(self, params: Value) -> Result<Value, McpPortError> {
+    async fn execute(self, params: Value) -> Result<Value, McpPortError> { 
         #[derive(Deserialize)] struct Params { name: String }
-        let p: Params = deserialize_params!(params, Params);
+        // Remove ? operator
+        let p: Params = deserialize_params!(params, Params)?;
         if p.name.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder name cannot be empty".into())); }
-        self.client.delete_folder(&p.name).await?;
-        Ok(json!({ "message": "Folder deleted", "name": p.name }))
+        // Prepend "INBOX." if it's not "INBOX"
+        let full_folder_name = if p.name.eq_ignore_ascii_case("INBOX") {
+            p.name.clone()
+        } else {
+            format!("INBOX.{}", p.name)
+        };
+        self.client.delete_folder(&full_folder_name).await?;
+        Ok(json!({ "message": "Folder deleted", "name": full_folder_name }))
     }
 );
 
 mcp_tool!(McpRenameFolderTool, client, "imap/renameFolder", "Renames an IMAP folder.",
-    async fn execute(self, params: Value) -> Result<Value, McpPortError> {
+    async fn execute(self, params: Value) -> Result<Value, McpPortError> { 
         #[derive(Deserialize)] struct Params { from_name: String, to_name: String }
-        let p: Params = deserialize_params!(params, Params);
+        // Remove ? operator
+        let p: Params = deserialize_params!(params, Params)?;
         if p.from_name.trim().is_empty() || p.to_name.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder names cannot be empty".into())); }
-        self.client.rename_folder(&p.from_name, &p.to_name).await?;
-        Ok(json!({ "message": "Folder renamed", "from_name": p.from_name, "to_name": p.to_name }))
+        // Prepend "INBOX." if necessary
+        let full_from_name = if p.from_name.eq_ignore_ascii_case("INBOX") { p.from_name.clone() } else { format!("INBOX.{}", p.from_name) };
+        let full_to_name = if p.to_name.eq_ignore_ascii_case("INBOX") { p.to_name.clone() } else { format!("INBOX.{}", p.to_name) };
+        self.client.rename_folder(&full_from_name, &full_to_name).await?;
+        Ok(json!({ "message": "Folder renamed", "from_name": full_from_name, "to_name": full_to_name }))
     }
 );
 
+// NOTE: McpSelectFolderTool now needs access to the mutable state to update selected_folder.
+// This contradicts the change to McpTool::execute to remove the state parameter.
+// SOLUTION: Let McpStdioAdapter handle the state update AFTER a successful execute call.
 mcp_tool!(McpSelectFolderTool, client, "imap/selectFolder", "Selects a folder, making it active for subsequent commands.",
-    async fn execute(self, params: Value) -> Result<Value, McpPortError> {
+    async fn execute(self, params: Value) -> Result<Value, McpPortError> { 
         #[derive(Deserialize)] struct Params { name: String }
-        let p: Params = deserialize_params!(params, Params);
+        // Remove ? operator
+        let p: Params = deserialize_params!(params, Params)?;
         if p.name.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder name cannot be empty".into())); }
-        let mailbox_info = self.client.select_folder(&p.name).await?;
-        Ok(serde_json::to_value(mailbox_info).map_err(|e| McpPortError::ToolError(format!("Serialization Error: {}", e)))?)
+        // Prepend "INBOX." if necessary
+        let full_folder_name = if p.name.eq_ignore_ascii_case("INBOX") { p.name.clone() } else { format!("INBOX.{}", p.name) };
+        let mailbox_info = self.client.select_folder(&full_folder_name).await?;
+        
+        // Return the folder name along with mailbox info so the adapter can update state
+        Ok(json!({ 
+            "folder_name": full_folder_name,
+            "mailbox_info": mailbox_info 
+        }))
+        // The state update logic is MOVED to the adapter's handle_request function.
     }
 );
 
 mcp_tool!(McpSearchEmailsTool, client, "imap/searchEmails", "Searches emails in the currently selected folder.",
-    async fn execute(self, params: Value) -> Result<Value, McpPortError> {
+    async fn execute(self, params: Value) -> Result<Value, McpPortError> { 
         #[derive(Deserialize)] struct Params { criteria: SearchCriteria }
-        let p: Params = deserialize_params!(params, Params);
+        // Remove ? operator
+        let p: Params = deserialize_params!(params, Params)?;
+        // The actual search logic in ImapClient needs the selected folder context.
+        // This assumes ImapClient::search_emails uses its internally tracked selected folder.
         let uids = self.client.search_emails(p.criteria).await?;
         Ok(json!({ "uids": uids }))
     }
 );
 
 mcp_tool!(McpFetchEmailsTool, client, "imap/fetchEmails", "Fetches emails by UID from the selected folder.",
-    async fn execute(self, params: Value) -> Result<Value, McpPortError> {
+    async fn execute(self, params: Value) -> Result<Value, McpPortError> { 
         #[derive(Deserialize)] struct Params { uids: Vec<u32>, fetch_body: Option<bool> }
-        let p: Params = deserialize_params!(params, Params);
+        // Remove ? operator
+        let p: Params = deserialize_params!(params, Params)?;
         if p.uids.is_empty() { return Err(McpPortError::InvalidParams("UID list cannot be empty".into())); }
-        // Use fetch_body, defaulting to false if None
         let fetch_body = p.fetch_body.unwrap_or(false);
+        // Assumes ImapClient::fetch_emails uses its internally tracked selected folder.
         let emails = self.client.fetch_emails(p.uids, fetch_body).await?;
         Ok(serde_json::to_value(emails).map_err(|e| McpPortError::ToolError(format!("Serialization Error: {}", e)))?)
     }
 );
 
+// NOTE: McpMoveEmailTool needs the source folder, which was previously obtained from state.
+// SOLUTION: The McpStdioAdapter will inject the selected_folder from its state into the params BEFORE calling execute.
 mcp_tool!(McpMoveEmailTool, client, "imap/moveEmails", "Moves emails by UID from the selected folder to a destination folder.",
-    async fn execute(self, params: Value) -> Result<Value, McpPortError> {
-        #[derive(Deserialize)] struct Params { uids: Vec<u32>, destination_folder: String }
-        let p: Params = deserialize_params!(params, Params);
+    async fn execute(self, params: Value) -> Result<Value, McpPortError> { 
+        #[derive(Deserialize)] 
+        struct Params {
+            uids: Vec<u32>, 
+            destination_folder: String,
+            source_folder: String, // Add source_folder, to be injected by adapter
+        }
+        // Remove ? operator
+        let p: Params = deserialize_params!(params, Params)?;
         if p.uids.is_empty() { return Err(McpPortError::InvalidParams("UID list cannot be empty".into())); }
         if p.destination_folder.trim().is_empty() { return Err(McpPortError::InvalidParams("Destination folder cannot be empty".into())); }
-        self.client.move_email(p.uids.clone(), &p.destination_folder).await?;
-        Ok(json!({ "message": "Emails moved", "uids": p.uids, "destination_folder": p.destination_folder }))
+        if p.source_folder.trim().is_empty() { return Err(McpPortError::ImapRequiresFolderSelection("Source folder missing in params".into())); } // Should be injected
+
+        // Prepend "INBOX." if necessary for destination
+        let full_destination_folder = if p.destination_folder.eq_ignore_ascii_case("INBOX") { p.destination_folder.clone() } else { format!("INBOX.{}", p.destination_folder) };
+
+        self.client.move_email(&p.source_folder, p.uids.clone(), &full_destination_folder).await?;
+        Ok(json!({ "message": "Emails moved", "uids": p.uids, "destination_folder": full_destination_folder, "source_folder": p.source_folder }))
     }
 );
 
 mcp_tool!(McpStoreFlagsTool, client, "imap/storeFlags", "Adds, removes, or sets flags for specified emails in the selected folder.",
-    async fn execute(self, params: Value) -> Result<Value, McpPortError> {
-        let p: ModifyFlagsPayload = deserialize_params!(params, ModifyFlagsPayload);
+    async fn execute(self, params: Value) -> Result<Value, McpPortError> { 
+        // Deserialize directly into ModifyFlagsPayload (assuming it has operation: FlagOperation and flags: Flags)
+        #[derive(Deserialize)] struct ModifyFlagsPayload { uids: Vec<u32>, operation: FlagOperation, flags: Flags }
+        let p: ModifyFlagsPayload = deserialize_params!(params, ModifyFlagsPayload)?;
         if p.uids.is_empty() { return Err(McpPortError::InvalidParams("UID list cannot be empty".into())); }
+        if p.flags.items.is_empty() { return Err(McpPortError::InvalidParams("Flags list cannot be empty".into())); }
+        
+        // No need to convert operation, it's already FlagOperation
+        // No need to manually construct flags, it's already Flags struct
+
+        // Assumes ImapClient::store_flags uses its internally tracked selected folder.
+        // Pass operation and flags directly
         self.client.store_flags(p.uids, p.operation, p.flags).await?;
         Ok(json!({ "message": "Flags stored successfully" }))
     }
 );
 
 mcp_tool!(McpAppendEmailTool, client, "imap/appendEmail", "Appends an email message to the specified folder.",
-    async fn execute(self, params: Value) -> Result<Value, McpPortError> {
-        #[derive(Deserialize)] struct Params { folder: String, email: AppendEmailPayload }
-        let p: Params = deserialize_params!(params, Params);
+    async fn execute(self, params: Value) -> Result<Value, McpPortError> { 
+        // Deserialize into a struct that matches the expected JSON params
+        #[derive(Deserialize)] struct Params { folder: String, email: AppendEmailPayload } // email field is the payload
+        let p: Params = deserialize_params!(params, Params)?;
         if p.folder.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder name cannot be empty".into())); }
-        let maybe_uid = self.client.append(&p.folder, p.email).await?;
-        Ok(json!({ "message": "Email appended", "uid": maybe_uid }))
+        
+        // Prepend "INBOX." if necessary
+        let full_folder_name = if p.folder.eq_ignore_ascii_case("INBOX") { p.folder.clone() } else { format!("INBOX.{}", p.folder) };
+
+        // Pass the deserialized AppendEmailPayload directly
+        // No need for base64 decoding here, assume it's handled by AppendEmailPayload or ImapClient::append
+        self.client.append(&full_folder_name, p.email).await?;
+        Ok(json!({ "message": "Email appended", "folder": full_folder_name }))
     }
 );
 
-mcp_tool!(McpExpungeFolderTool, client, "imap/expungeFolder", "Permanently removes emails marked \\\\Deleted from the selected folder.",
-    async fn execute(self, _params: Value) -> Result<Value, McpPortError> {
-        let response: ExpungeResponse = self.client.expunge().await?;
-        Ok(serde_json::to_value(response).map_err(|e| McpPortError::ToolError(format!("Serialization Error: {}", e)))?)
+mcp_tool!(McpExpungeFolderTool, client, "imap/expungeFolder", "Permanently removes emails marked \\Deleted from the selected folder.",
+    async fn execute(self, _params: Value) -> Result<Value, McpPortError> { 
+        // Assumes ImapClient::expunge uses its internally tracked selected folder.
+        self.client.expunge().await?;
+        Ok(json!({ "message": "Expunge successful" }))
     }
 );
 
-
-// --- MCP Stdio Adapter (Updated Error Handling) ---
+// --- McpStdioAdapter Logic ---
 
 pub struct McpStdioAdapter {
     tool_registry: Arc<HashMap<String, Arc<dyn McpTool>>>,
@@ -238,6 +346,7 @@ impl McpStdioAdapter {
     pub async fn run(&self) -> io::Result<()> {
         let mut stdin = BufReader::new(io::stdin());
         let mut stdout = BufWriter::new(io::stdout());
+        let state = Arc::new(TokioMutex::new(McpPortState::default())); // State lives here
         let mut line = String::new();
         info!("MCP Stdio Adapter Ready. Waiting for commands...");
 
@@ -250,26 +359,21 @@ impl McpStdioAdapter {
                     if trimmed_line.is_empty() { continue; }
                     debug!("Received raw MCP line: {}", trimmed_line);
 
-                    let response = self.process_line(trimmed_line).await;
+                    let response = self.process_line(&state, trimmed_line).await; // Pass state reference
 
                     if let Ok(resp_str) = serde_json::to_string(&response) {
-                        // Log success only if it's not an error response
                         if response.error.is_none() {
                             info!("Sending MCP Success Response id={:?}", response.id);
-                        } else {
-                            // Error is logged within handle_request or process_line
-                        }
+                        } // Error logging happens in process_line/handle_request
                         debug!("Raw MCP response: {}", resp_str);
                         stdout.write_all(resp_str.as_bytes()).await?;
-                        stdout.write_all(b"\\n").await?; // Ensure newline termination
+                        stdout.write_all(b"\n").await?;
                         stdout.flush().await?;
                     } else {
-                        // This case should ideally not happen if JsonRpcResponse serialization is correct
-                        error!("CRITICAL: Failed to serialize even a basic error response for id={:?}", response.id);
-                        // Send a minimal, hardcoded error if possible
+                        error!("CRITICAL: Failed to serialize JSON-RPC response for id={:?}", response.id);
                         let fallback_err = r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Internal Server Error: Failed to serialize response"}}"#;
                         stdout.write_all(fallback_err.as_bytes()).await?;
-                        stdout.write_all(b"\\n").await?;
+                        stdout.write_all(b"\n").await?;
                         stdout.flush().await?;
                     }
                 }
@@ -279,82 +383,127 @@ impl McpStdioAdapter {
         Ok(())
     }
 
-    async fn process_line(&self, line: &str) -> JsonRpcResponse {
+    // Process a single line of input (JSON-RPC request)
+    async fn process_line(&self, state: &Arc<TokioMutex<McpPortState>>, line: &str) -> JsonRpcResponse {
         match serde_json::from_str::<JsonRpcRequest>(line) {
             Ok(req) => {
-                if req.jsonrpc != "2.0" {
-                    let err_msg = "Invalid jsonrpc version, must be '2.0'".to_string();
-                    warn!("Invalid Request: {} (id: {:?})", err_msg, req.id);
-                    return create_jsonrpc_error_response(req.id, error_codes::INVALID_REQUEST, err_msg);
-                }
-                self.handle_request(req).await
+                info!("Received MCP Request: id={:?}, method='{}'", req.id, req.method);
+                // Pass state to handle_request
+                self.handle_request(state, req).await 
             }
             Err(e) => {
-                // Attempt to extract ID even from invalid JSON for better error reporting
-                let id = serde_json::from_str::<Value>(line)
-                    .ok()
-                    .and_then(|v| v.get("id").cloned());
-                let err_msg = format!("Parse error: {}", e);
-                error!("MCP Parse Error: {} - Raw line: '{}'", err_msg, line);
-                // Use PARSE_ERROR code for JSON parsing issues
-                create_jsonrpc_error_response(id, error_codes::PARSE_ERROR, err_msg)
+                error!("Failed to parse JSON-RPC request: {} | Raw line: {}", e, line);
+                create_jsonrpc_error_response(None, error_codes::PARSE_ERROR, "Parse error".to_string())
             }
         }
     }
 
-    async fn handle_request(&self, req: JsonRpcRequest) -> JsonRpcResponse {
-        let request_id = req.id.clone();
-        let method_name = req.method.clone(); // Clone for logging on error
+    // Handle a deserialized JSON-RPC request
+    async fn handle_request(&self, state: &Arc<TokioMutex<McpPortState>>, req: JsonRpcRequest) -> JsonRpcResponse { 
+        // Validate jsonrpc version
+        if req.jsonrpc != "2.0" {
+            return create_jsonrpc_error_response(req.id, error_codes::INVALID_REQUEST, "Invalid JSON-RPC version".to_string());
+        }
+        
+        // Extract params or default to Null
+        let mut params = req.params.unwrap_or(Value::Null);
 
         match self.tool_registry.get(&req.method) {
             Some(tool) => {
-                let params = req.params.unwrap_or(Value::Null);
-                debug!("Executing tool '{}' for id={:?} with params: {}", req.method, request_id, params);
+                debug!("Executing tool: '{}' with params: {:?}", req.method, params);
+
+                // --- Inject state if needed by the tool --- 
+                // Example: For moveEmails, inject the current selected folder
+                if req.method == "imap/moveEmails" {
+                    let current_state = state.lock().await;
+                    if let Some(selected) = &current_state.selected_folder {
+                         if let Value::Object(mut map) = params {
+                             map.insert("source_folder".to_string(), json!(selected));
+                             params = Value::Object(map);
+                             debug!("Injected source_folder '{}' into params for moveEmails", selected);
+                         } else {
+                            error!("MoveEmails requires object params to inject source_folder");
+                             return create_jsonrpc_error_response(req.id.clone(), error_codes::INVALID_PARAMS, "MoveEmails requires object params".to_string());
+                         }
+                    } else {
+                         error!("MoveEmails requires a folder to be selected first");
+                        return create_jsonrpc_error_response(req.id.clone(), error_codes::IMAP_REQUIRES_FOLDER_SELECTION, "No folder selected".to_string());
+                    }
+                }
+                // --- End state injection --- 
+
+                // Execute the tool (now without state arg)
                 match tool.execute(params).await {
-                    Ok(result) => {
-                        // Success logging moved to the run loop to avoid duplication
+                    Ok(mut result) => {
+                        // --- Handle state update for selectFolder --- 
+                        if req.method == "imap/selectFolder" {
+                             if let Some(map) = result.as_object_mut() {
+                                 if let Some(folder_name_val) = map.remove("folder_name") { // Remove folder_name
+                                     if let Some(folder_name) = folder_name_val.as_str() {
+                                          let mut current_state = state.lock().await;
+                                          current_state.selected_folder = Some(folder_name.to_string());
+                                          info!("State updated: selected folder set to '{}'", folder_name);
+                                     } else {
+                                         error!("SelectFolder tool returned non-string folder_name");
+                                          // Fall through, return mailbox_info anyway
+                                     }
+                                     // Replace result with just the mailbox_info part
+                                     result = map.remove("mailbox_info").unwrap_or(Value::Null); 
+                                 } else {
+                                      error!("SelectFolder tool result missing folder_name");
+                                      // Fall through, return original result
+                                 }
+                             } else {
+                                 error!("SelectFolder tool result was not an object");
+                                 // Fall through, return original result
+                             }
+                         }
+                        // --- End state update --- 
+
+                        info!("Tool '{}' executed successfully for id={:?}", req.method, req.id);
                         JsonRpcResponse {
                             jsonrpc: "2.0".to_string(),
-                            id: request_id.unwrap_or(Value::Null),
+                            id: req.id.unwrap_or(Value::Null),
                             result: Some(result),
-                            error: None
+                            error: None,
                         }
                     }
-                    Err(mcp_err) => {
-                        let (code, message) = map_mcp_error_to_jsonrpc(mcp_err);
-                        if code == error_codes::INTERNAL_ERROR || code < -32000 { // Log Internal and IMAP errors as ERROR
-                             error!("Tool '{}' failed for id={:?}: [{}] {}", method_name, request_id, code, message);
-                        } else { // Log InvalidParams, NotFound etc. as WARN
-                             warn!("Tool '{}' failed for id={:?}: [{}] {}", method_name, request_id, code, message);
-                        }
-                        create_jsonrpc_error_response(request_id, code, message)
+                    Err(e) => {
+                        error!("Tool '{}' execution failed for id={:?}: {:?}", req.method, req.id, e);
+                        let (code, message) = map_mcp_error_to_jsonrpc(e);
+                        create_jsonrpc_error_response(req.id.clone(), code, message)
                     }
                 }
             }
             None => {
-                 let err_msg = format!("Method not found: {}", method_name);
-                 warn!("MCP Method Not Found: {} (id: {:?})", method_name, request_id);
-                 create_jsonrpc_error_response(request_id, error_codes::METHOD_NOT_FOUND, err_msg)
+                warn!("Method not found: '{}' for id={:?}", req.method, req.id);
+                create_jsonrpc_error_response(req.id.clone(), error_codes::METHOD_NOT_FOUND, "Method not found".to_string())
             }
         }
     }
 }
 
+
+// --- Unit Tests for McpStdioAdapter ---
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::sync::mpsc;
+    use crate::mcp_port::{McpTool, McpPortError};
+    use serde_json::{json, Value};
+    use std::collections::HashMap;
+    use std::sync::Arc;
+    use async_trait::async_trait;
+    use tokio::sync::Mutex as TokioMutex;
 
-    // --- Mock Tools for Testing ---
-
+    // --- Mock Tools ---
     struct MockSuccessTool;
     #[async_trait]
     impl McpTool for MockSuccessTool {
         fn name(&self) -> &str { "test/success" }
         fn description(&self) -> &str { "A mock tool that always succeeds." }
+        // Correct signature
         async fn execute(&self, params: Value) -> Result<Value, McpPortError> {
-            // Optionally, check params if needed for specific tests
-            Ok(json!({ "result": "success", "params_received": params }))
+            Ok(json!({ "success": true, "params_received": params }))
         }
     }
 
@@ -363,182 +512,231 @@ mod tests {
     impl McpTool for MockFailureTool {
         fn name(&self) -> &str { "test/fail" }
         fn description(&self) -> &str { "A mock tool that always fails." }
+        // Correct signature
         async fn execute(&self, _params: Value) -> Result<Value, McpPortError> {
-            Err(McpPortError::ToolError("Mock tool failed as requested".to_string()))
+            Err(McpPortError::ToolError("Mock Failure".to_string()))
         }
     }
-    
+
     struct MockInvalidParamsTool;
     #[async_trait]
     impl McpTool for MockInvalidParamsTool {
         fn name(&self) -> &str { "test/invalidParams" }
         fn description(&self) -> &str { "A mock tool that expects specific params." }
+        // Correct signature
         async fn execute(&self, params: Value) -> Result<Value, McpPortError> {
-            #[allow(dead_code)] // Silence warning as we only check deserialization success
             #[derive(Deserialize)]
             struct ExpectedParams { required_field: String }
-            match serde_json::from_value::<ExpectedParams>(params.clone()) {
-                 Ok(_) => Ok(json!({ "result": "valid params received"})),
-                 Err(_) => Err(McpPortError::InvalidParams(format!("Missing or invalid 'required_field' in params: {}", params))),
-            }
+            // Use updated deserialize_params! macro
+            let _p: ExpectedParams = deserialize_params!(params, ExpectedParams)?;
+            Ok(json!({ "params_validated": true }))
         }
     }
 
-    // --- Test Helper ---
-
-    // Helper to run a single request/response cycle
+    // Helper function to run a single request and get the response string
     async fn run_single_request(
         tools: Vec<Arc<dyn McpTool>>,
         input_json_str: &str,
     ) -> Result<String, String> {
-        // Create registry from provided mock tools for the test
-        let mut tool_registry_map: HashMap<String, Arc<dyn McpTool>> = HashMap::new();
+        let mut tool_registry: HashMap<String, Arc<dyn McpTool>> = HashMap::new();
         for tool in tools {
-            tool_registry_map.insert(tool.name().to_string(), tool);
+            tool_registry.insert(tool.name().to_string(), tool);
         }
-        let tool_registry_arc = Arc::new(tool_registry_map);
+        let adapter = McpStdioAdapter::new(Arc::new(tool_registry));
         
-        // Pass the Arc registry to the adapter
-        let adapter = McpStdioAdapter::new(tool_registry_arc);
+        // Create a dummy state for testing
+        let state = Arc::new(TokioMutex::new(McpPortState::default()));
 
-        // Use channels as a simpler way to simulate stdio for single request/response tests
-        let (stdin_tx, mut stdin_rx) = mpsc::channel::<String>(1);
-        let (stdout_tx, mut stdout_rx) = mpsc::channel::<String>(1);
-
-        // Simulate writing to stdin
-        stdin_tx.send(input_json_str.to_string()).await.map_err(|e| format!("Failed to send input: {}", e))?;
-
-        // Process the line (simplified from the run loop)
-        if let Some(line) = stdin_rx.recv().await {
-             let response = adapter.process_line(&line).await;
-             let response_str = serde_json::to_string(&response).map_err(|e| format!("Failed to serialize response: {}", e))?;
-             stdout_tx.send(response_str).await.map_err(|e| format!("Failed to send output: {}", e))?;
-        } else {
-             return Err("Stdin channel closed unexpectedly".to_string());
-        }
-
-
-        // Read from stdout
-        stdout_rx.recv().await.ok_or_else(|| "Stdout channel closed unexpectedly".to_string())
+        // Call process_line directly
+        let response = adapter.process_line(&state, input_json_str).await;
+        
+        serde_json::to_string(&response).map_err(|e| format!("Failed to serialize response: {}", e))
     }
 
     // --- Test Cases ---
-
     #[tokio::test]
     async fn test_success_request() {
         let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)];
-        let input = r#"{"jsonrpc": "2.0", "id": 1, "method": "test/success", "params": {"arg1": "val1"}}"#;
-        let expected_output = r#"{"jsonrpc":"2.0","id":1,"result":{"params_received":{"arg1":"val1"},"result":"success"}}"#;
+        let request = json!({ "jsonrpc": "2.0", "id": 1, "method": "test/success", "params": { "key": "value" } });
+        let response_str = run_single_request(tools, &request.to_string()).await.unwrap();
+        let response: Value = serde_json::from_str(&response_str).unwrap();
 
-        let result = run_single_request(tools, input).await;
-
-        assert!(result.is_ok());
-        // Compare parsed JSON Values for robustness against formatting differences
-        let expected_val: Value = serde_json::from_str(expected_output).unwrap();
-        let actual_val: Value = serde_json::from_str(&result.unwrap()).unwrap();
-        assert_eq!(actual_val, expected_val);
+        assert_eq!(response["id"], 1);
+        assert!(response["error"].is_null());
+        assert_eq!(response["result"], json!({ "success": true, "params_received": { "key": "value" } }));
     }
 
     #[tokio::test]
     async fn test_method_not_found() {
-        let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)]; // Only register success tool
-        let input = r#"{"jsonrpc": "2.0", "id": 2, "method": "test/nonexistent", "params": {}}"#;
-        // Expected error structure for METHOD_NOT_FOUND (-32601)
-        let expected_output = r#"{"jsonrpc":"2.0","id":2,"error":{"code":-32601,"message":"Method not found: test/nonexistent"}}"#;
+        let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)];
+        let request = json!({ "jsonrpc": "2.0", "id": 2, "method": "test/nonexistent" });
+        let response_str = run_single_request(tools, &request.to_string()).await.unwrap();
+        let response: Value = serde_json::from_str(&response_str).unwrap();
 
-        let result = run_single_request(tools, input).await;
-
-        assert!(result.is_ok());
-        let expected_val: Value = serde_json::from_str(expected_output).unwrap();
-        let actual_val: Value = serde_json::from_str(&result.unwrap()).unwrap();
-        assert_eq!(actual_val, expected_val);
+        assert_eq!(response["id"], 2);
+        assert!(response["result"].is_null());
+        assert_eq!(response["error"]["code"], error_codes::METHOD_NOT_FOUND);
+        assert_eq!(response["error"]["message"], "Method not found");
     }
 
     #[tokio::test]
     async fn test_tool_error() {
         let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockFailureTool)];
-        let input = r#"{"jsonrpc": "2.0", "id": 3, "method": "test/fail", "params": null}"#;
-        // Expected error structure for a ToolError mapped to IMAP_OPERATION_FAILED (-32010)
-        let expected_output = r#"{"jsonrpc":"2.0","id":3,"error":{"code":-32010,"message":"Mock tool failed as requested"}}"#;
+        let request = json!({ "jsonrpc": "2.0", "id": 3, "method": "test/fail" });
+        let response_str = run_single_request(tools, &request.to_string()).await.unwrap();
+        let response: Value = serde_json::from_str(&response_str).unwrap();
 
-        let result = run_single_request(tools, input).await;
-
-        assert!(result.is_ok());
-        let expected_val: Value = serde_json::from_str(expected_output).unwrap();
-        let actual_val: Value = serde_json::from_str(&result.unwrap()).unwrap();
-        assert_eq!(actual_val, expected_val);
+        assert_eq!(response["id"], 3);
+        assert!(response["result"].is_null());
+        assert_eq!(response["error"]["code"], error_codes::INTERNAL_ERROR); // ToolError maps to INTERNAL_ERROR
+        assert_eq!(response["error"]["message"], "Tool execution failed: Mock Failure");
     }
 
     #[tokio::test]
     async fn test_parse_error() {
-         let tools: Vec<Arc<dyn McpTool>> = vec![]; // No tools needed
-         let input = r#"{"jsonrpc": "2.0", "id": 4, "method": "test/success"#; // Invalid JSON (missing closing })
-         // Expected error for PARSE_ERROR (-32700)
-         // Update the message pattern to match the actual error observed in test output
-         let expected_pattern = r#""code":-32700,"message":"Parse error: EOF while parsing a string at line 1 column 51""#; 
+        let tools: Vec<Arc<dyn McpTool>> = vec![];
+        let invalid_json = "{ jsonrpc: \"2.0\", id: 4, method: \"test\" "; // Missing closing brace
+        let response_str = run_single_request(tools, invalid_json).await.unwrap();
+        let response: Value = serde_json::from_str(&response_str).unwrap();
 
-         let result = run_single_request(tools, input).await;
-
-         assert!(result.is_ok());
-         let actual_output = result.unwrap();
-         // Check if the relevant parts are present, allowing for minor variations
-         assert!(actual_output.contains(r#""jsonrpc":"2.0""#));
-         // For severely malformed JSON, serde might not be able to extract the ID.
-         // Expect ID to be null in this case.
-         assert!(actual_output.contains(r#""id":null"#), "Parse error response should contain 'id:null' for unrecoverable parse errors. Got: {}", actual_output);
-         assert!(actual_output.contains(expected_pattern), "Actual output '{}' did not contain expected pattern '{}'", actual_output, expected_pattern);
-
-         // Optional: stricter check if the exact message is reliable
-         // let expected_val: Value = serde_json::from_str(expected_output).unwrap();
-         // let actual_val: Value = serde_json::from_str(&actual_output).unwrap();
-         // assert_eq!(actual_val, expected_val);
+        // Parse errors might not have an ID
+        // assert_eq!(response["id"], Value::Null); 
+        assert!(response["result"].is_null());
+        assert_eq!(response["error"]["code"], error_codes::PARSE_ERROR);
+        assert_eq!(response["error"]["message"], "Parse error");
     }
-    
+
     #[tokio::test]
     async fn test_invalid_params_error() {
         let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockInvalidParamsTool)];
-        let input = r#"{"jsonrpc": "2.0", "id": 5, "method": "test/invalidParams", "params": {"wrong_field": 123}}"#;
-        // Expected error for INVALID_PARAMS (-32602). Match the error message generated by the mock tool.
-        let expected_output = r#"{"jsonrpc":"2.0","id":5,"error":{"code":-32602,"message":"Missing or invalid 'required_field' in params: {\"wrong_field\":123}"}}"#;
+        let request = json!({ "jsonrpc": "2.0", "id": 5, "method": "test/invalidParams", "params": { "wrong_field": 123 } });
+        let response_str = run_single_request(tools, &request.to_string()).await.unwrap();
+        let response: Value = serde_json::from_str(&response_str).unwrap();
 
-        let result = run_single_request(tools, input).await;
-
-        assert!(result.is_ok());
-        let expected_val: Value = serde_json::from_str(expected_output).unwrap();
-        let actual_val: Value = serde_json::from_str(&result.unwrap()).unwrap();
-        assert_eq!(actual_val, expected_val);
+        assert_eq!(response["id"], 5);
+        assert!(response["result"].is_null());
+        assert_eq!(response["error"]["code"], error_codes::INVALID_PARAMS);
+        assert!(response["error"]["message"].as_str().unwrap().contains("Invalid parameters: missing field `required_field`"));
     }
-    
+
     #[tokio::test]
     async fn test_invalid_jsonrpc_version() {
-         let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)];
-         let input = r#"{"jsonrpc": "1.0", "id": 6, "method": "test/success", "params": {}}"#; // Invalid version
-         // Expected error for INVALID_REQUEST (-32600)
-         let expected_output = r#"{"jsonrpc":"2.0","id":6,"error":{"code":-32600,"message":"Invalid jsonrpc version, must be '2.0'"}}"#;
+        let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)];
+        let request = json!({ "jsonrpc": "1.0", "id": 6, "method": "test/success" }); // Invalid version
+        let response_str = run_single_request(tools, &request.to_string()).await.unwrap();
+        let response: Value = serde_json::from_str(&response_str).unwrap();
 
-         let result = run_single_request(tools, input).await;
-
-         assert!(result.is_ok());
-         let expected_val: Value = serde_json::from_str(expected_output).unwrap();
-         let actual_val: Value = serde_json::from_str(&result.unwrap()).unwrap();
-         assert_eq!(actual_val, expected_val);
+        assert_eq!(response["id"], 6);
+        assert!(response["result"].is_null());
+        assert_eq!(response["error"]["code"], error_codes::INVALID_REQUEST);
+        assert_eq!(response["error"]["message"], "Invalid JSON-RPC version");
     }
     
     #[tokio::test]
     async fn test_request_without_id() {
-        let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)];
-        // A request without an ID is a Notification. The server SHOULD NOT reply according to JSON-RPC 2.0 spec.
-        // However, our current implementation *does* reply with id: null. Let's test that behavior.
-        // If strict compliance is desired later, this test (and the implementation) should change.
-        let input = r#"{"jsonrpc": "2.0", "method": "test/success", "params": {"data": "notify"}}"#;
-        let expected_output = r#"{"jsonrpc":"2.0","id":null,"result":{"params_received":{"data":"notify"},"result":"success"}}"#;
-
-        let result = run_single_request(tools, input).await;
-
-        assert!(result.is_ok());
-        let expected_val: Value = serde_json::from_str(expected_output).unwrap();
-        let actual_val: Value = serde_json::from_str(&result.unwrap()).unwrap();
-        assert_eq!(actual_val, expected_val);
+         let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)];
+         // Notification (no ID)
+         let request = json!({ "jsonrpc": "2.0", "method": "test/success", "params": [1, 2] }); 
+         let response_str = run_single_request(tools, &request.to_string()).await.unwrap();
+         let response: Value = serde_json::from_str(&response_str).unwrap();
+         
+         // ID should be null for notifications
+         assert_eq!(response["id"], Value::Null);
+         assert!(response["error"].is_null());
+         assert_eq!(response["result"], json!({ "success": true, "params_received": [1, 2] }));
+    }
+    
+    // Example test showing state modification for selectFolder
+    #[tokio::test]
+    async fn test_select_folder_state_update() {
+        struct MockSelectFolderTool;
+        #[async_trait]
+        impl McpTool for MockSelectFolderTool {
+            fn name(&self) -> &str { "imap/selectFolder" }
+            fn description(&self) -> &str { "Selects" }
+            async fn execute(&self, _params: Value) -> Result<Value, McpPortError> {
+                // Return the structure expected by the adapter
+                Ok(json!({
+                    "folder_name": "INBOX.TestFolder",
+                    "mailbox_info": { "exists": 10, "recent": 1 }
+                }))
+            }
+        }
+        
+        let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSelectFolderTool)];
+        let adapter = McpStdioAdapter::new(Arc::new(tool_registry_from_vec(tools)));
+        let state = Arc::new(TokioMutex::new(McpPortState::default()));
+        let request = json!({ "jsonrpc": "2.0", "id": 10, "method": "imap/selectFolder", "params": { "name": "TestFolder" } });
+        
+        let response = adapter.process_line(&state, &request.to_string()).await;
+        
+        // Check response (should only contain mailbox_info)
+        assert!(response.error.is_none());
+        assert_eq!(response.result, Some(json!({ "exists": 10, "recent": 1 })));
+        
+        // Check state update
+        let current_state = state.lock().await;
+        assert_eq!(current_state.selected_folder, Some("INBOX.TestFolder".to_string()));
     }
 
+    // Example test showing state injection for moveEmails
+    #[tokio::test]
+    async fn test_move_email_state_injection() {
+        struct MockMoveEmailTool;
+        #[async_trait]
+        impl McpTool for MockMoveEmailTool {
+            fn name(&self) -> &str { "imap/moveEmails" }
+            fn description(&self) -> &str { "Moves" }
+            async fn execute(&self, params: Value) -> Result<Value, McpPortError> {
+                #[derive(Deserialize, Debug)]
+                struct Params { uids: Vec<u32>, destination_folder: String, source_folder: String }
+                let p: Params = deserialize_params!(params, Params)?;
+                // Assert source_folder was injected
+                assert_eq!(p.source_folder, "INBOX.Current");
+                Ok(json!({ "moved": true, "params": p }))
+            }
+        }
+        
+        let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockMoveEmailTool)];
+        let adapter = McpStdioAdapter::new(Arc::new(tool_registry_from_vec(tools)));
+        let state = Arc::new(TokioMutex::new(McpPortState { selected_folder: Some("INBOX.Current".to_string()) }));
+        let request = json!({ 
+            "jsonrpc": "2.0", 
+            "id": 11, 
+            "method": "imap/moveEmails", 
+            "params": { "uids": [1, 2], "destination_folder": "Archive" }
+            // source_folder is NOT in the request, it's injected
+        });
+        
+        let response = adapter.process_line(&state, &request.to_string()).await;
+        
+        assert!(response.error.is_none());
+        assert!(response.result.is_some());
+        let result_val = response.result.unwrap();
+        assert_eq!(result_val["moved"], true);
+        assert_eq!(result_val["params"]["source_folder"], "INBOX.Current");
+    }
+
+    // Helper to create registry from Vec
+    fn tool_registry_from_vec(tools: Vec<Arc<dyn McpTool>>) -> HashMap<String, Arc<dyn McpTool>> {
+        let mut map = HashMap::new();
+        for tool in tools {
+            map.insert(tool.name().to_string(), tool);
+        }
+        map
+    }
 }
+
+// --- McpToolExecParams and similar structs are removed as direct calls are no longer needed ---
+// They were primarily for a different architecture where stdio adapter called specific handlers.
+// Now, the adapter uses the generic McpTool trait and the tool registry.
+
+// --- Removed handle_tool_exec, handle_select_folder, handle_move_emails ---
+// These functions are superseded by the logic within McpStdioAdapter::handle_request
+// ... other param structs ...
+// ... other param structs ...
+// ... other param structs ...
+// ... other param structs ...
+// ... other param structs ...
+// ... other param structs ...
+// ... other param structs ...

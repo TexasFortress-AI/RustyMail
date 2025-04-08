@@ -11,6 +11,12 @@ use log::{info, error};
 use std::process::exit;
 // Remove unused imports
 // use actix_web::{web, App, HttpServer, Responder, HttpResponse};
+// --- Add imports for registry ---
+use rustymail::mcp_port::create_mcp_tool_registry;
+// Remove unused McpStdioAdapter import
+// use rustymail::api::mcp_stdio::McpStdioAdapter;
+use rustymail::api::mcp_sse::SseState;
+use tokio::sync::Mutex as TokioMutex;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -19,6 +25,10 @@ async fn main() -> std::io::Result<()> {
         eprintln!("Failed to load configuration: {}", err);
         exit(1);
     });
+
+    // --- Determine Interface (though this binary seems REST-focused) ---
+    // We might want to refine this binary's purpose or add logic similar to main.rs
+    // For now, assume it always runs REST if configured.
 
     info!("Attempting initial IMAP connection...");
     let host = &config.imap_host;
@@ -32,7 +42,6 @@ async fn main() -> std::io::Result<()> {
     let imap_client = match imap_client_result {
         Ok(client) => {
             info!("IMAP connection and client creation successful.");
-            // Wrap the successfully created client in Arc for sharing
             Arc::new(client)
         },
         Err(e) => {
@@ -41,11 +50,23 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
+    // --- Create Tool Registry ---
+    let tool_registry = create_mcp_tool_registry(imap_client.clone());
+    info!("MCP Tool Registry created (for rustymail binary).");
+
+    // --- Initialize SSE State --- 
+    let sse_state = Arc::new(TokioMutex::new(SseState::new()));
+    info!("SSE State initialized.");
+
     // --- Start REST Server Directly (if configured) ---
     if let Some(rest_config) = config.rest {
+        if !rest_config.enabled { 
+             error!("REST server is configured but not enabled in rustymail binary. Exiting.");
+             exit(1);
+        }
         info!("Starting REST server directly on {}:{}...", rest_config.host, rest_config.port);
-        // Pass the Arc<ImapClient> clone
-        match run_rest_server(rest_config.clone(), imap_client.clone()).await {
+        // Pass the Arc<ImapClient> clone AND the tool_registry clone AND sse_state clone
+        match run_rest_server(rest_config.clone(), imap_client.clone(), tool_registry.clone(), sse_state.clone()).await {
             Ok(_) => info!("REST server finished."),
             Err(e) => error!("REST server failed: {}", e),
         }

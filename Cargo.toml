@@ -65,6 +65,9 @@ tokio-stream = "0.1" # Needed for ReceiverStream
 # URL Encoding for folder names
 urlencoding = "2.1"
 
+# Added base64 dependency
+base64 = "0.21"
+
 [dev-dependencies]
 # Remove reqwest native-tls feature if not needed
 reqwest = { version = "0.12", features = ["json"] } 
@@ -79,6 +82,8 @@ uuid = { version = "1", features = ["v4"] }
 scopeguard = "1.2"
 dotenv = "0.15.0"
 serial_test = "3.1.1"
+rand = "0.8" # Add rand dependency
+itertools = "0.12" # Add itertools dependency
 
 [features]
 default = []

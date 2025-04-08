@@ -174,6 +174,7 @@ mod tests {
 
         async fn move_email(
             &self,
+            _source_folder: &str,
             _uids: Vec<u32>,
             _destination_folder: &str,
         ) -> Result<(), ImapError> {
@@ -323,7 +324,7 @@ mod tests {
         let tracker = mock_session.tracker.clone();
         let client = ImapClient::new_with_session(Arc::new(Mutex::new(mock_session)));
 
-        let result = client.move_email(vec![1, 2], "Archive").await;
+        let result = client.move_email("INBOX", vec![1, 2], "Archive").await;
         assert!(result.is_ok());
         assert!(tracker.move_email_called.load(Ordering::SeqCst));
     }
@@ -334,7 +335,7 @@ mod tests {
         let tracker = mock_session.tracker.clone();
         let client = ImapClient::new_with_session(Arc::new(Mutex::new(mock_session)));
 
-        let result = client.move_email(vec![], "Archive").await;
+        let result = client.move_email("INBOX", vec![], "Archive").await;
         assert!(result.is_ok());
          // Ensure the mock move was NOT called
         assert!(!tracker.move_email_called.load(Ordering::SeqCst));

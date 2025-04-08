@@ -3,8 +3,9 @@ use thiserror::Error;
 // use imap_types::flag::FlagError;
 // Remove unused Infallible
 // use std::convert::Infallible;
+use crate::imap::types::SearchCriteria;
 
-#[derive(Error, Debug, Clone)]
+#[derive(Error, Debug)]
 pub enum ImapError {
     #[error("Connection Error: {0}")]
     Connection(String),
@@ -44,17 +45,27 @@ pub enum ImapError {
     RequiresFolderSelection(String),
 
     // Add other specific errors as needed from async-imap or imap-types
+    #[error("IMAP connection failed: {0}")]
+    ConnectionError(String),
+    #[error("IMAP authentication failed: {0}")]
+    AuthenticationError(String),
+    #[error("IMAP email not found for UIDs: {0:?}")]
+    EmailNotFound(Vec<u32>),
+    #[error("IMAP operation failed: {0}")]
+    OperationFailed(String),
+    #[error("Invalid search criteria provided: {0:?}")]
+    InvalidCriteria(SearchCriteria),
+    #[error("Operation requires a folder to be selected.")]
+    FolderNotSelected,
+    #[error("Failed to parse IMAP response: {0}")]
+    ParseError(String),
+    #[error("IMAP session error: {0}")]
+    SessionError(#[from] async_imap::error::Error),
 }
 
-// Simplify the From<async_imap::error::Error> implementation
-impl From<async_imap::error::Error> for ImapError {
-    fn from(err: async_imap::error::Error) -> Self {
-        log::warn!("Converting async_imap::Error to generic ImapError: {:?}", err);
-        match err {
-            // Convert io_err to String for the Io variant
-            async_imap::error::Error::Io(io_err) => ImapError::Io(io_err.to_string()),
-            _ => ImapError::Operation(err.to_string()),
-        }
+impl From<std::io::Error> for ImapError {
+    fn from(err: std::io::Error) -> Self {
+        ImapError::ConnectionError(format!("IO Error: {}", err))
     }
 }
 
