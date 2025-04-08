@@ -263,6 +263,8 @@ mod tests {
         test_e2e_search_emails(&client).await;
         test_e2e_fetch_emails(&client).await;
         test_e2e_move_email(&client).await;
+        test_e2e_flags_operations(&client).await;
+        test_e2e_append_email(&client).await;
 
         server.shutdown().await;
         println!("--- run_rest_e2e_tests function finished ---");
@@ -302,88 +304,123 @@ async fn test_e2e_list_folders(client: &Client) {
     println!("--- Completed E2E: List Folders ---");
 }
 
-#[allow(dead_code)]
 async fn test_e2e_flags_operations(client: &Client) {
     println!("--- Running E2E: Flags Operations ---");
-    println!("Starting E2E Flags Operations test...");
-    let folder = "INBOX";
-    let encoded_folder = urlencoding::encode(folder);
-    let _search_url_base = format!("{}/folders/{}/emails/search", BASE_URL, encoded_folder);
+    let folder_name = "INBOX";
+    let encoded_folder = urlencoding::encode(folder_name);
+
+    // 1. Select INBOX
+    println!("Selecting folder: {}", folder_name);
+    let select_url = format!("{}/folders/{}/select", BASE_URL, encoded_folder);
+    let select_resp = client.post(&select_url).send().await.expect("Select folder request failed");
+    assert_eq!(select_resp.status(), StatusCode::OK, "Failed to select folder '{}'", folder_name);
+
+    // 2. Search for an email to modify
+    println!("Searching for an email in {}...", folder_name);
+    let search_url = format!("{}/folders/{}/emails/search?criteria=All", BASE_URL, encoded_folder);
+    let search_resp = client.get(&search_url).send().await.expect("Search ALL request failed");
+    assert_eq!(search_resp.status(), StatusCode::OK, "Search ALL failed");
+    let uids: Vec<u32> = search_resp.json().await.expect("Failed to parse search response");
+    assert!(!uids.is_empty(), "INBOX should contain emails for flags test");
+    let test_uid = *uids.first().unwrap();
+    println!("Found UID {} to test flags operations.", test_uid);
+
+    // 3. Add \Flagged flag
+    println!("Adding \\Flagged flag to UID {}...", test_uid);
     let flags_url = format!("{}/folders/{}/emails/flags", BASE_URL, encoded_folder);
-
-    let initial_search_url = format!("{}/folders/{}/emails/search", BASE_URL, encoded_folder);
-    let initial_search_resp = client.get(&initial_search_url).send().await.expect("Initial search failed");
-    assert!(initial_search_resp.status().is_success(), "Initial search failed");
-    let initial_search_bytes = initial_search_resp.bytes().await.expect("Failed to read initial search bytes");
-    let uids: Vec<u32> = match serde_json::from_slice::<Vec<u32>>(&initial_search_bytes) {
-        Ok(uids_val) => uids_val,
-        Err(e) => {
-            let body_text = String::from_utf8_lossy(&initial_search_bytes);
-            println!("Failed to parse initial search response JSON: {:?}. Body: {}", e, body_text);
-            panic!("Invalid initial search response JSON");
-        }
-    };
-    assert!(!uids.is_empty(), "No emails found in INBOX to test flags");
-    let test_uid = uids[uids.len() / 2];
-
-    println!("Adding \\Flagged to UID {}", test_uid);
     let add_payload = json!({ "uids": [test_uid], "operation": "Add", "flags": { "items": ["\\Flagged"] } });
     let add_resp = client.post(&flags_url).json(&add_payload).send().await.expect("Add flag request failed");
-    assert!(add_resp.status().is_success(), "Add flag API call failed: {}", add_resp.text().await.unwrap_or_default());
+    let add_status = add_resp.status();
+    let add_body = add_resp.text().await.unwrap_or_default();
+    assert_eq!(add_status, StatusCode::OK, "Add flag failed. Status: {}, Body: {}", add_status, add_body);
     println!("Add flag API call successful.");
 
-    println!("Removing \\Flagged from UID {}", test_uid);
+    // Give server a moment
+    tokio::time::sleep(Duration::from_secs(1)).await;
+
+    // 4. Remove \Flagged flag
+    println!("Removing \\Flagged flag from UID {}...", test_uid);
     let remove_payload = json!({ "uids": [test_uid], "operation": "Remove", "flags": { "items": ["\\Flagged"] } });
     let remove_resp = client.post(&flags_url).json(&remove_payload).send().await.expect("Remove flag request failed");
-    assert!(remove_resp.status().is_success(), "Remove flag API call failed: {}", remove_resp.text().await.unwrap_or_default());
+    let remove_status = remove_resp.status();
+    let remove_body = remove_resp.text().await.unwrap_or_default();
+    assert_eq!(remove_status, StatusCode::OK, "Remove flag failed. Status: {}, Body: {}", remove_status, remove_body);
     println!("Remove flag API call successful.");
 
-    println!("E2E Flags Operations test completed successfully (verification via API success).");
-     println!("--- Completed E2E: Flags Operations ---");
+    // Note: Verification of flag state via fetch is omitted due to potential server inconsistencies.
+    println!("--- Completed E2E: Flags Operations --- (Verified API Success)");
 }
 
-#[allow(dead_code)]
 async fn test_e2e_append_email(client: &Client) {
     println!("--- Running E2E: Append Email ---");
-    println!("Starting E2E Append Email test...");
+    let folder_name = "INBOX";
+    let encoded_folder = urlencoding::encode(folder_name);
+    let unique_subject = format!("RustyMail_E2E_Append_{}", chrono::Utc::now().timestamp_millis());
+    let from_email = "e2e-test@rustymail.app";
+    let to_email = "recipient@rustymail.app";
+    let email_body = "This is the body of the appended E2E test email.";
 
-    let folder = "INBOX";
-    let encoded_folder = urlencoding::encode(folder);
-    let unique_subject = format!("E2ETestAppend_{}", chrono::Utc::now().timestamp());
-    let from_email = "test@example.com";
-    let to_email = "test@example.com";
-    let email_body = "This is an E2E test email body.";
-    let raw_email_content = format!("From: {}\r\nTo: {}\r\nSubject: {}\r\n\r\n{}", from_email, to_email, unique_subject, email_body);
+    // Construct minimal raw email
+    let raw_email_content = format!(
+        "From: {}\r\nTo: {}\r\nSubject: {}\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{}",
+        from_email, to_email, unique_subject, email_body
+    );
+
+    // 1. Append the email
+    println!("Appending email with subject: {}", unique_subject);
     let append_url = format!("{}/folders/{}/emails/append", BASE_URL, encoded_folder);
-    let append_payload = json!({ "content": raw_email_content, "flags": { "items": [] } });
+    let append_payload = json!({ "content": raw_email_content, "flags": { "items": [] } }); // No initial flags
 
-    let append_resp = client.post(&append_url).json(&append_payload).send().await.expect("Append request failed");
-    let status = append_resp.status();
-    let body_text = append_resp.text().await.unwrap_or_else(|_| "Failed to read response body".to_string());
-    println!("Append Response Status: {}", status);
-    println!("Append Response Body: {}", body_text);
-    assert!(status.is_success(), "Append email failed");
+    let append_resp = client.post(&append_url)
+        .json(&append_payload)
+        .send()
+        .await
+        .expect("Append request failed");
 
-    let search_url = format!("{}/folders/{}/emails/search?subject={}", BASE_URL, encoded_folder, urlencoding::encode(&unique_subject));
-    println!("Searching using URL: {}", search_url);
-    let search_resp = client.get(&search_url).send().await.expect("Search after append failed");
-    assert!(search_resp.status().is_success(), "Search after append failed");
+    let append_status = append_resp.status();
+    let append_body = append_resp.text().await.unwrap_or_default();
+    println!("Append Response Status: {}", append_status);
+    println!("Append Response Body: {}", append_body);
+    // Accept OK or Created, as server behavior might vary slightly
+    assert!(append_status == StatusCode::OK || append_status == StatusCode::CREATED, "Append email failed. Status: {}, Body: {}", append_status, append_body);
+    println!("Append API call successful.");
 
-    let search_bytes = search_resp.bytes().await.expect("Failed to read search response bytes");
-    let uids: Vec<u32> = match serde_json::from_slice::<Vec<u32>>(&search_bytes) {
-        Ok(uids_val) => uids_val,
-        Err(e) => {
-            let body_text = String::from_utf8_lossy(&search_bytes);
-            println!("Failed to parse search response JSON: {:?}. Body: {}", e, body_text);
-            panic!("Invalid search response JSON");
-        }
-    };
-    assert!(!uids.is_empty(), "Appended email not found by subject search");
+    // Give server time to process the append
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    // 2. Select INBOX (necessary before searching)
+    println!("Selecting folder: {}", folder_name);
+    let select_url = format!("{}/folders/{}/select", BASE_URL, encoded_folder);
+    let select_resp = client.post(&select_url).send().await.expect("Select folder request failed");
+    assert_eq!(select_resp.status(), StatusCode::OK, "Failed to select folder '{}' after append", folder_name);
+
+    // 3. Search for the appended email by subject
+    println!("Searching for appended email by subject: {}", unique_subject);
+    let search_subject = urlencoding::encode(&unique_subject);
+    let search_url = format!("{}/folders/{}/emails/search?subject={}", BASE_URL, encoded_folder, search_subject);
+    println!("Search URL: {}", search_url);
+
+    let search_resp = client.get(&search_url)
+        .send()
+        .await
+        .expect("Search by subject request failed");
+
+    let search_status = search_resp.status();
+    let search_body_bytes = search_resp.bytes().await.expect("Failed to read search response body");
+    let search_body_text = String::from_utf8_lossy(&search_body_bytes);
+
+    println!("Search Response Status: {}", search_status);
+    println!("Search Response Body: {}", search_body_text);
+    assert_eq!(search_status, StatusCode::OK, "Search by subject failed. Status: {}, Body: {}", search_status, search_body_text);
+
+    let uids_res = serde_json::from_slice::<Vec<u32>>(&search_body_bytes);
+    assert!(uids_res.is_ok(), "Failed to parse UIDs from search response: {:?}\nBody: {}", uids_res.err(), search_body_text);
+    let uids = uids_res.unwrap();
+
+    assert!(!uids.is_empty(), "Search by subject '{}' returned empty results. Append might have failed silently or search is not working.", unique_subject);
     println!("Found appended email with UID(s): {:?}", uids);
 
-    println!("Skipping immediate fetch after append.");
-    println!("E2E Append Email test completed successfully (verified append and search).");
-    println!("--- Completed E2E: Append Email ---");
+    println!("--- Completed E2E: Append Email --- (Verified Append API Success and Search)");
 }
 
 async fn test_e2e_create_delete_folder(client: &Client) {
@@ -735,7 +772,15 @@ async fn test_e2e_move_email(client: &Client) {
     println!("Target folder selection successful.");
 
     // --- Cleanup ---
-    // 7. Delete target folder - Also need to use the INBOX. prefix for deletion
+    // 7. Select INBOX *before* deleting the temporary folder to avoid session disconnect
+    println!("Selecting INBOX before cleanup delete...");
+    let inbox_encoded = urlencoding::encode("INBOX");
+    let select_inbox_url = format!("{}/folders/{}/select", BASE_URL, inbox_encoded);
+    let select_inbox_resp = client.post(&select_inbox_url).send().await.expect("Select INBOX before cleanup failed");
+    assert_eq!(select_inbox_resp.status(), StatusCode::OK, "Failed to select INBOX before cleanup delete");
+    println!("INBOX selected.");
+
+    // 8. Delete target folder
     println!("Cleaning up: Deleting target folder '{}'...", target_folder_name);
     let delete_url = format!("{}/folders/{}", BASE_URL, encoded_target_folder); // Keep using the original name, as the API handles the prefix
     let delete_resp = client.delete(&delete_url)
