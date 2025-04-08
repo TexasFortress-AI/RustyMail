@@ -35,6 +35,14 @@ pub enum ImapError {
     #[error("Envelope Not Found")]
     EnvelopeNotFound,
 
+    // --- Add missing specific variants ---
+    #[error("Folder Not Found: {0}")]
+    FolderNotFound(String),
+    #[error("Folder Already Exists: {0}")]
+    FolderExists(String),
+    #[error("Requires Folder Selection: {0}")]
+    RequiresFolderSelection(String),
+
     // Add other specific errors as needed from async-imap or imap-types
 }
 

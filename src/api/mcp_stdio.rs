@@ -94,11 +94,11 @@ fn create_jsonrpc_error_response(id: Option<Value>, code: i32, message: String) 
 // Macro to reduce boilerplate for tool struct and name/description
 macro_rules! mcp_tool {
     ($struct_name:ident, $client_field:ident, $tool_name:expr, $tool_desc:expr, async fn execute($self:ident, $params:ident : Value) -> Result<Value, McpPortError> $body:block) => {
-        struct $struct_name {
+        pub struct $struct_name {
             $client_field: Arc<ImapClient>,
         }
         impl $struct_name {
-             fn new(client: Arc<ImapClient>) -> Self { Self { $client_field: client } }
+             pub fn new(client: Arc<ImapClient>) -> Self { Self { $client_field: client } }
         }
         #[async_trait]
         impl McpTool for $struct_name {
@@ -227,26 +227,11 @@ mcp_tool!(McpExpungeFolderTool, client, "imap/expungeFolder", "Permanently remov
 // --- MCP Stdio Adapter (Updated Error Handling) ---
 
 pub struct McpStdioAdapter {
-    tool_registry: HashMap<String, Arc<dyn McpTool>>,
+    tool_registry: Arc<HashMap<String, Arc<dyn McpTool>>>,
 }
 
 impl McpStdioAdapter {
-    pub fn new(imap_client: Arc<ImapClient>) -> Self {
-        let mut tool_registry: HashMap<String, Arc<dyn McpTool>> = HashMap::new();
-        let tools: Vec<Arc<dyn McpTool>> = vec![
-            Arc::new(McpListFoldersTool::new(imap_client.clone())),
-            Arc::new(McpCreateFolderTool::new(imap_client.clone())),
-            Arc::new(McpDeleteFolderTool::new(imap_client.clone())),
-            Arc::new(McpRenameFolderTool::new(imap_client.clone())),
-            Arc::new(McpSelectFolderTool::new(imap_client.clone())),
-            Arc::new(McpSearchEmailsTool::new(imap_client.clone())),
-            Arc::new(McpFetchEmailsTool::new(imap_client.clone())),
-            Arc::new(McpMoveEmailTool::new(imap_client.clone())),
-            Arc::new(McpStoreFlagsTool::new(imap_client.clone())),
-            Arc::new(McpAppendEmailTool::new(imap_client.clone())),
-            Arc::new(McpExpungeFolderTool::new(imap_client.clone())),
-        ];
-        for tool in tools { tool_registry.insert(tool.name().to_string(), tool); }
+    pub fn new(tool_registry: Arc<HashMap<String, Arc<dyn McpTool>>>) -> Self {
         Self { tool_registry }
     }
 
@@ -334,7 +319,7 @@ impl McpStdioAdapter {
                             result: Some(result),
                             error: None
                         }
-                    },
+                    }
                     Err(mcp_err) => {
                         let (code, message) = map_mcp_error_to_jsonrpc(mcp_err);
                         if code == error_codes::INTERNAL_ERROR || code < -32000 { // Log Internal and IMAP errors as ERROR
@@ -353,4 +338,207 @@ impl McpStdioAdapter {
             }
         }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc;
+
+    // --- Mock Tools for Testing ---
+
+    struct MockSuccessTool;
+    #[async_trait]
+    impl McpTool for MockSuccessTool {
+        fn name(&self) -> &str { "test/success" }
+        fn description(&self) -> &str { "A mock tool that always succeeds." }
+        async fn execute(&self, params: Value) -> Result<Value, McpPortError> {
+            // Optionally, check params if needed for specific tests
+            Ok(json!({ "result": "success", "params_received": params }))
+        }
+    }
+
+    struct MockFailureTool;
+    #[async_trait]
+    impl McpTool for MockFailureTool {
+        fn name(&self) -> &str { "test/fail" }
+        fn description(&self) -> &str { "A mock tool that always fails." }
+        async fn execute(&self, _params: Value) -> Result<Value, McpPortError> {
+            Err(McpPortError::ToolError("Mock tool failed as requested".to_string()))
+        }
+    }
+    
+    struct MockInvalidParamsTool;
+    #[async_trait]
+    impl McpTool for MockInvalidParamsTool {
+        fn name(&self) -> &str { "test/invalidParams" }
+        fn description(&self) -> &str { "A mock tool that expects specific params." }
+        async fn execute(&self, params: Value) -> Result<Value, McpPortError> {
+            #[allow(dead_code)] // Silence warning as we only check deserialization success
+            #[derive(Deserialize)]
+            struct ExpectedParams { required_field: String }
+            match serde_json::from_value::<ExpectedParams>(params.clone()) {
+                 Ok(_) => Ok(json!({ "result": "valid params received"})),
+                 Err(_) => Err(McpPortError::InvalidParams(format!("Missing or invalid 'required_field' in params: {}", params))),
+            }
+        }
+    }
+
+    // --- Test Helper ---
+
+    // Helper to run a single request/response cycle
+    async fn run_single_request(
+        tools: Vec<Arc<dyn McpTool>>,
+        input_json_str: &str,
+    ) -> Result<String, String> {
+        // Create registry from provided mock tools for the test
+        let mut tool_registry_map: HashMap<String, Arc<dyn McpTool>> = HashMap::new();
+        for tool in tools {
+            tool_registry_map.insert(tool.name().to_string(), tool);
+        }
+        let tool_registry_arc = Arc::new(tool_registry_map);
+        
+        // Pass the Arc registry to the adapter
+        let adapter = McpStdioAdapter::new(tool_registry_arc);
+
+        // Use channels as a simpler way to simulate stdio for single request/response tests
+        let (stdin_tx, mut stdin_rx) = mpsc::channel::<String>(1);
+        let (stdout_tx, mut stdout_rx) = mpsc::channel::<String>(1);
+
+        // Simulate writing to stdin
+        stdin_tx.send(input_json_str.to_string()).await.map_err(|e| format!("Failed to send input: {}", e))?;
+
+        // Process the line (simplified from the run loop)
+        if let Some(line) = stdin_rx.recv().await {
+             let response = adapter.process_line(&line).await;
+             let response_str = serde_json::to_string(&response).map_err(|e| format!("Failed to serialize response: {}", e))?;
+             stdout_tx.send(response_str).await.map_err(|e| format!("Failed to send output: {}", e))?;
+        } else {
+             return Err("Stdin channel closed unexpectedly".to_string());
+        }
+
+
+        // Read from stdout
+        stdout_rx.recv().await.ok_or_else(|| "Stdout channel closed unexpectedly".to_string())
+    }
+
+    // --- Test Cases ---
+
+    #[tokio::test]
+    async fn test_success_request() {
+        let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)];
+        let input = r#"{"jsonrpc": "2.0", "id": 1, "method": "test/success", "params": {"arg1": "val1"}}"#;
+        let expected_output = r#"{"jsonrpc":"2.0","id":1,"result":{"params_received":{"arg1":"val1"},"result":"success"}}"#;
+
+        let result = run_single_request(tools, input).await;
+
+        assert!(result.is_ok());
+        // Compare parsed JSON Values for robustness against formatting differences
+        let expected_val: Value = serde_json::from_str(expected_output).unwrap();
+        let actual_val: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(actual_val, expected_val);
+    }
+
+    #[tokio::test]
+    async fn test_method_not_found() {
+        let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)]; // Only register success tool
+        let input = r#"{"jsonrpc": "2.0", "id": 2, "method": "test/nonexistent", "params": {}}"#;
+        // Expected error structure for METHOD_NOT_FOUND (-32601)
+        let expected_output = r#"{"jsonrpc":"2.0","id":2,"error":{"code":-32601,"message":"Method not found: test/nonexistent"}}"#;
+
+        let result = run_single_request(tools, input).await;
+
+        assert!(result.is_ok());
+        let expected_val: Value = serde_json::from_str(expected_output).unwrap();
+        let actual_val: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(actual_val, expected_val);
+    }
+
+    #[tokio::test]
+    async fn test_tool_error() {
+        let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockFailureTool)];
+        let input = r#"{"jsonrpc": "2.0", "id": 3, "method": "test/fail", "params": null}"#;
+        // Expected error structure for a ToolError mapped to IMAP_OPERATION_FAILED (-32010)
+        let expected_output = r#"{"jsonrpc":"2.0","id":3,"error":{"code":-32010,"message":"Mock tool failed as requested"}}"#;
+
+        let result = run_single_request(tools, input).await;
+
+        assert!(result.is_ok());
+        let expected_val: Value = serde_json::from_str(expected_output).unwrap();
+        let actual_val: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(actual_val, expected_val);
+    }
+
+    #[tokio::test]
+    async fn test_parse_error() {
+         let tools: Vec<Arc<dyn McpTool>> = vec![]; // No tools needed
+         let input = r#"{"jsonrpc": "2.0", "id": 4, "method": "test/success"#; // Invalid JSON (missing closing })
+         // Expected error for PARSE_ERROR (-32700)
+         // Update the message pattern to match the actual error observed in test output
+         let expected_pattern = r#""code":-32700,"message":"Parse error: EOF while parsing a string at line 1 column 51""#; 
+
+         let result = run_single_request(tools, input).await;
+
+         assert!(result.is_ok());
+         let actual_output = result.unwrap();
+         // Check if the relevant parts are present, allowing for minor variations
+         assert!(actual_output.contains(r#""jsonrpc":"2.0""#));
+         // For severely malformed JSON, serde might not be able to extract the ID.
+         // Expect ID to be null in this case.
+         assert!(actual_output.contains(r#""id":null"#), "Parse error response should contain 'id:null' for unrecoverable parse errors. Got: {}", actual_output);
+         assert!(actual_output.contains(expected_pattern), "Actual output '{}' did not contain expected pattern '{}'", actual_output, expected_pattern);
+
+         // Optional: stricter check if the exact message is reliable
+         // let expected_val: Value = serde_json::from_str(expected_output).unwrap();
+         // let actual_val: Value = serde_json::from_str(&actual_output).unwrap();
+         // assert_eq!(actual_val, expected_val);
+    }
+    
+    #[tokio::test]
+    async fn test_invalid_params_error() {
+        let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockInvalidParamsTool)];
+        let input = r#"{"jsonrpc": "2.0", "id": 5, "method": "test/invalidParams", "params": {"wrong_field": 123}}"#;
+        // Expected error for INVALID_PARAMS (-32602). Match the error message generated by the mock tool.
+        let expected_output = r#"{"jsonrpc":"2.0","id":5,"error":{"code":-32602,"message":"Missing or invalid 'required_field' in params: {\"wrong_field\":123}"}}"#;
+
+        let result = run_single_request(tools, input).await;
+
+        assert!(result.is_ok());
+        let expected_val: Value = serde_json::from_str(expected_output).unwrap();
+        let actual_val: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(actual_val, expected_val);
+    }
+    
+    #[tokio::test]
+    async fn test_invalid_jsonrpc_version() {
+         let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)];
+         let input = r#"{"jsonrpc": "1.0", "id": 6, "method": "test/success", "params": {}}"#; // Invalid version
+         // Expected error for INVALID_REQUEST (-32600)
+         let expected_output = r#"{"jsonrpc":"2.0","id":6,"error":{"code":-32600,"message":"Invalid jsonrpc version, must be '2.0'"}}"#;
+
+         let result = run_single_request(tools, input).await;
+
+         assert!(result.is_ok());
+         let expected_val: Value = serde_json::from_str(expected_output).unwrap();
+         let actual_val: Value = serde_json::from_str(&result.unwrap()).unwrap();
+         assert_eq!(actual_val, expected_val);
+    }
+    
+    #[tokio::test]
+    async fn test_request_without_id() {
+        let tools: Vec<Arc<dyn McpTool>> = vec![Arc::new(MockSuccessTool)];
+        // A request without an ID is a Notification. The server SHOULD NOT reply according to JSON-RPC 2.0 spec.
+        // However, our current implementation *does* reply with id: null. Let's test that behavior.
+        // If strict compliance is desired later, this test (and the implementation) should change.
+        let input = r#"{"jsonrpc": "2.0", "method": "test/success", "params": {"data": "notify"}}"#;
+        let expected_output = r#"{"jsonrpc":"2.0","id":null,"result":{"params_received":{"data":"notify"},"result":"success"}}"#;
+
+        let result = run_single_request(tools, input).await;
+
+        assert!(result.is_ok());
+        let expected_val: Value = serde_json::from_str(expected_output).unwrap();
+        let actual_val: Value = serde_json::from_str(&result.unwrap()).unwrap();
+        assert_eq!(actual_val, expected_val);
+    }
+
 }

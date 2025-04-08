@@ -12,6 +12,10 @@ use crate::imap::client::ImapClient;
 use crate::imap::types::{MailboxInfo, SearchCriteria, ModifyFlagsPayload, AppendEmailPayload}; // Include SearchCriteria and new payload types
 use urlencoding;
 
+// --- Add imports for shared state ---
+use std::collections::HashMap;
+use crate::mcp_port::McpTool;
+
 // --- API Specific Error Handling ---
 
 #[derive(Debug, Error)]
@@ -118,12 +122,13 @@ fn parse_uids(uids_str: &str) -> Result<Vec<u32>, ApiError> {
 #[derive(Clone)]
 pub struct AppState {
     pub imap_client: Arc<ImapClient>,
+    pub tool_registry: Arc<HashMap<String, Arc<dyn McpTool>>>, // Add tool registry
 }
 
 // Initialize AppState
 impl AppState {
-    pub fn new(imap_client: Arc<ImapClient>) -> Self {
-        AppState { imap_client }
+    pub fn new(imap_client: Arc<ImapClient>, tool_registry: Arc<HashMap<String, Arc<dyn McpTool>>>) -> Self {
+        AppState { imap_client, tool_registry }
     }
 }
 
@@ -609,21 +614,21 @@ pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
 pub async fn run_server(
     config: RestConfig,
     imap_client: Arc<ImapClient>, // Pass the Arc<ImapClient>
+    tool_registry: Arc<HashMap<String, Arc<dyn McpTool>>>, // Pass the Arc registry
   ) -> std::io::Result<()> {
     let bind_address = format!("{}:{}", config.host, config.port);
     log::info!("Starting REST API server at {}", bind_address);
 
-    // Create the application state
-    let app_state = AppState {
-        imap_client, // Move the Arc into the state
-        // rest_config: config.clone(), // Clone config if needed by handlers
-    };
+    // Create the application state using the passed-in Arcs
+    let app_state = AppState::new(imap_client, tool_registry);
 
     HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(app_state.clone())) // Share state
+            .app_data(web::Data::new(app_state.clone())) // Share state (contains client and registry)
             .wrap(Logger::default()) // Basic request logging
             .configure(configure_rest_service) // Register routes
+            // --- TODO: Add SSE service configuration here, passing app_state ---
+            // .configure(|cfg| SseAdapter::configure_sse_service(cfg, app_state.clone()))
     })
     .bind(&bind_address)?
     .run()

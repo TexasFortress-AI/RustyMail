@@ -11,9 +11,12 @@ use futures_util::stream::{StreamExt, once, Stream};
 use tokio_stream::wrappers::ReceiverStream;
 use std::convert::Infallible;
 use std::pin::Pin;
+use crate::imap::client::ImapClient;
+use crate::mcp_port::{McpTool, McpPortError};
 
 #[derive(Deserialize, Serialize, Debug)]
 struct SseCommandPayload {
+    client_id: Option<usize>,
     command: String,
     params: serde_json::Value,
 }
@@ -137,13 +140,37 @@ impl SseAdapter {
 
      // Handler for receiving commands via POST
     async fn sse_command_handler(
-        state: web::Data<Arc<TokioMutex<SseState>>>, 
+        sse_state: web::Data<Arc<TokioMutex<SseState>>>,
+        // Placeholder: Assume Tool Registry is shared via web::Data
+        // tool_registry: web::Data<Arc<HashMap<String, Arc<dyn McpTool>>>>,
+        // Placeholder: Assume ImapClient is shared via web::Data (if tools need it)
+        // imap_client: web::Data<Arc<ImapClient>>,
         payload: web::Json<SseCommandPayload>
-    ) -> impl Responder 
+    ) -> impl Responder
     {
         info!("Received SSE command: {:?}", payload);
-        // 1. TODO: Process the command (e.g., call an McpTool/ImapClient method)
-        // 2. For now, just broadcast the received command back to all clients
+        
+        let client_id = match payload.client_id {
+            Some(id) => id,
+            None => {
+                warn!("SSE command received without client_id");
+                return HttpResponse::BadRequest().json(serde_json::json!({
+                    "error": "Missing client_id in command payload"
+                }));
+            }
+        };
+
+        // --- TODO: Implement Tool Execution Logic --- 
+        // 1. Get tool registry & imap client from web::Data
+        // 2. Lookup tool by payload.command
+        // 3. Execute tool with payload.params (handle errors)
+        // 4. Serialize result/error to JSON
+        // 5. Find client sender in sse_state using client_id
+        // 6. Format as SSE event (tool_result/tool_error)
+        // 7. Send targeted message
+        // --- End TODO ---
+
+        // --- Placeholder: Broadcast command back (to be replaced) ---
         let broadcast_message = match serde_json::to_string(&payload.into_inner()) {
             Ok(s) => s,
             Err(e) => {
@@ -151,10 +178,9 @@ impl SseAdapter {
                  return HttpResponse::InternalServerError().finish();
             }
         };
-
-        let state_guard = state.lock().await;
+        let state_guard = sse_state.lock().await;
         state_guard.broadcast(&broadcast_message).await;
-        drop(state_guard); // Release lock explicitly if needed elsewhere
+        // --- End Placeholder ---
 
         HttpResponse::Accepted().json(serde_json::json!({ "status": "Command received" }))
     }
@@ -174,6 +200,8 @@ impl SseAdapter {
     // pub async fn run_sse_server(...) -> std::io::Result<()> { ... }
 }
 
+// --- Remove the unused SseManager and sse_handler --- 
+/*
 // Type alias for the boxed stream
 type SseStream = Pin<Box<dyn Stream<Item = Result<SseEvent, Infallible>> + Send>>;
 
@@ -248,7 +276,5 @@ pub async fn sse_handler(manager: web::Data<SseManager>, req: HttpRequest) -> Ss
         .map(|event| Ok::<_, Infallible>(event)); // Map to Result<SseEvent, Infallible>
     
     let stream: SseStream = Box::pin(receiver_stream); // Box the success stream
-
-    Sse::from_stream(stream)
-        .with_keep_alive(Duration::from_secs(15))
-} 
+}
+*/ 
