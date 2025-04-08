@@ -29,28 +29,27 @@ The backend will be architected with the following components:
 
 ```
 src/
-├── api/
-│   ├── dashboard/
+├── dashboard/                 (consolidated root directory)
+│   ├── mod.rs                 (exports dashboard functionality)
+│   ├── api/                   
 │   │   ├── mod.rs
 │   │   ├── routes.rs
 │   │   ├── handlers.rs
 │   │   ├── models.rs
+│   │   ├── sse.rs             (dashboard SSE implementation)
 │   │   └── errors.rs
-│   ├── sse/
+│   ├── services/
 │   │   ├── mod.rs
-│   │   ├── events.rs
-│   │   └── manager.rs
-│   └── mcp/
-│       └── testing.rs
-├── services/
-│   ├── metrics.rs
-│   ├── clients.rs
-│   ├── config.rs
-│   └── ai.rs
-└── testing/
-    ├── mod.rs
-    └── dashboard.rs
+│   │   ├── metrics.rs
+│   │   ├── clients.rs
+│   │   ├── config.rs
+│   │   └── ai.rs
+│   └── testing/
+│       ├── mod.rs
+│       └── integration.rs
 ```
+
+This structure keeps all dashboard-related code in a single location, maintaining a clear separation from the existing codebase while making it easy to understand what components are part of the dashboard feature.
 
 ## API Endpoints Implementation
 
