@@ -19,7 +19,7 @@ pub mod prelude {
     pub use imap_types::envelope::Envelope;
     pub use imap_types::envelope::Address;
     pub use imap_types::core::NString;
-    pub use crate::api::mcp::error_codes;
+    pub use crate::api::mcp_stdio::error_codes as McpErrorCodes;
     pub use crate::mcp_port::McpPortError;
     pub use crate::mcp_port::McpTool;
 }
