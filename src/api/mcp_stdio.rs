@@ -58,19 +58,30 @@ pub mod error_codes {
     pub const IMAP_REQUIRES_FOLDER_SELECTION: i32 = -32012;
 }
 
-// --- Error Mapping (Updated to use McpPortError from mcp_port.rs) ---
+// --- Error Mapping ---
 
-// Create response for non-IMAP errors (like InvalidParams)
-fn create_mcp_error_response_direct(id: Option<Value>, err: McpPortError) -> JsonRpcResponse {
-     let (code, message) = match err {
+// Function to map McpPortError to JSON-RPC error code and message
+fn map_mcp_error_to_jsonrpc(err: McpPortError) -> (i32, String) {
+    match err {
         McpPortError::InvalidParams(m) => (error_codes::INVALID_PARAMS, m),
-        McpPortError::ToolError(m) => (error_codes::IMAP_OPERATION_FAILED, m), // Default code for ToolError
-        McpPortError::ResourceError(m) => (error_codes::INTERNAL_ERROR, m), // Map ResourceError if used
-        McpPortError::NotImplemented(m) => (error_codes::METHOD_NOT_FOUND, m), // Map NotImplemented if used
-        // Add the InternalError case
+        McpPortError::ToolError(m) => (error_codes::IMAP_OPERATION_FAILED, m),
+        McpPortError::ResourceError(m) => (error_codes::INTERNAL_ERROR, m),
+        McpPortError::NotImplemented(m) => (error_codes::METHOD_NOT_FOUND, m),
         McpPortError::InternalError { message } => (error_codes::INTERNAL_ERROR, message),
-     };
-      JsonRpcResponse {
+        McpPortError::ImapConnectionError(m) => (error_codes::IMAP_CONNECTION_ERROR, m),
+        McpPortError::ImapAuthenticationError(m) => (error_codes::IMAP_AUTH_ERROR, m),
+        McpPortError::ImapFolderNotFound(m) => (error_codes::IMAP_FOLDER_NOT_FOUND, m),
+        McpPortError::ImapFolderExists(m) => (error_codes::IMAP_FOLDER_EXISTS, m),
+        McpPortError::ImapEmailNotFound(m) => (error_codes::IMAP_EMAIL_NOT_FOUND, m),
+        McpPortError::ImapOperationFailed(m) => (error_codes::IMAP_OPERATION_FAILED, m),
+        McpPortError::ImapInvalidCriteria(m) => (error_codes::IMAP_INVALID_CRITERIA, m),
+        McpPortError::ImapRequiresFolderSelection(m) => (error_codes::IMAP_REQUIRES_FOLDER_SELECTION, m),
+    }
+}
+
+// Function to create a standardized JSON-RPC error response
+fn create_jsonrpc_error_response(id: Option<Value>, code: i32, message: String) -> JsonRpcResponse {
+    JsonRpcResponse {
         jsonrpc: "2.0".to_string(),
         id: id.unwrap_or(Value::Null),
         result: None,
@@ -205,7 +216,7 @@ mcp_tool!(McpAppendEmailTool, client, "imap/appendEmail", "Appends an email mess
     }
 );
 
-mcp_tool!(McpExpungeFolderTool, client, "imap/expungeFolder", "Permanently removes emails marked \\Deleted from the selected folder.",
+mcp_tool!(McpExpungeFolderTool, client, "imap/expungeFolder", "Permanently removes emails marked \\\\Deleted from the selected folder.",
     async fn execute(self, _params: Value) -> Result<Value, McpPortError> {
         let response: ExpungeResponse = self.client.expunge().await?;
         Ok(serde_json::to_value(response).map_err(|e| McpPortError::ToolError(format!("Serialization Error: {}", e)))?)
@@ -257,22 +268,24 @@ impl McpStdioAdapter {
                     let response = self.process_line(trimmed_line).await;
 
                     if let Ok(resp_str) = serde_json::to_string(&response) {
-                        info!("Sending MCP Response id={:?}", response.id);
+                        // Log success only if it's not an error response
+                        if response.error.is_none() {
+                            info!("Sending MCP Success Response id={:?}", response.id);
+                        } else {
+                            // Error is logged within handle_request or process_line
+                        }
                         debug!("Raw MCP response: {}", resp_str);
                         stdout.write_all(resp_str.as_bytes()).await?;
-                        stdout.write_all(b"\n").await?;
+                        stdout.write_all(b"\\n").await?; // Ensure newline termination
                         stdout.flush().await?;
                     } else {
-                        error!("Failed to serialize MCP response: {:?}", response);
-                        let err_resp = create_mcp_error_response_direct(
-                            Some(response.id), 
-                            McpPortError::ToolError("Failed to serialize response".to_string()),
-                        );
-                        if let Ok(err_resp_str) = serde_json::to_string(&err_resp) {
-                           stdout.write_all(err_resp_str.as_bytes()).await?;
-                           stdout.write_all(b"\n").await?;
-                           stdout.flush().await?;
-                        }
+                        // This case should ideally not happen if JsonRpcResponse serialization is correct
+                        error!("CRITICAL: Failed to serialize even a basic error response for id={:?}", response.id);
+                        // Send a minimal, hardcoded error if possible
+                        let fallback_err = r#"{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"Internal Server Error: Failed to serialize response"}}"#;
+                        stdout.write_all(fallback_err.as_bytes()).await?;
+                        stdout.write_all(b"\\n").await?;
+                        stdout.flush().await?;
                     }
                 }
                 Err(e) => { error!("Error reading stdin: {}", e); break; }
@@ -285,48 +298,59 @@ impl McpStdioAdapter {
         match serde_json::from_str::<JsonRpcRequest>(line) {
             Ok(req) => {
                 if req.jsonrpc != "2.0" {
-                    return create_mcp_error_response_direct(req.id, McpPortError::InvalidParams("Invalid jsonrpc version".to_string()));
-                } 
+                    let err_msg = "Invalid jsonrpc version, must be '2.0'".to_string();
+                    warn!("Invalid Request: {} (id: {:?})", err_msg, req.id);
+                    return create_jsonrpc_error_response(req.id, error_codes::INVALID_REQUEST, err_msg);
+                }
                 self.handle_request(req).await
             }
             Err(e) => {
-                 let id = serde_json::from_str::<Value>(line).ok().and_then(|v| v.get("id").cloned());
-                 error!("MCP Parse error: {}", e);
-                 create_mcp_error_response_direct(id, McpPortError::InvalidParams(format!("Parse error: {}", e)))
+                // Attempt to extract ID even from invalid JSON for better error reporting
+                let id = serde_json::from_str::<Value>(line)
+                    .ok()
+                    .and_then(|v| v.get("id").cloned());
+                let err_msg = format!("Parse error: {}", e);
+                error!("MCP Parse Error: {} - Raw line: '{}'", err_msg, line);
+                // Use PARSE_ERROR code for JSON parsing issues
+                create_jsonrpc_error_response(id, error_codes::PARSE_ERROR, err_msg)
             }
         }
     }
 
     async fn handle_request(&self, req: JsonRpcRequest) -> JsonRpcResponse {
         let request_id = req.id.clone();
+        let method_name = req.method.clone(); // Clone for logging on error
+
         match self.tool_registry.get(&req.method) {
             Some(tool) => {
                 let params = req.params.unwrap_or(Value::Null);
-                debug!("Executing tool '{}' with params: {}", req.method, params);
+                debug!("Executing tool '{}' for id={:?} with params: {}", req.method, request_id, params);
                 match tool.execute(params).await {
                     Ok(result) => {
-                        info!("Tool '{}' executed successfully for id={:?}", req.method, request_id);
-                        JsonRpcResponse { jsonrpc: "2.0".to_string(), id: request_id.unwrap_or(Value::Null),
-                                          result: Some(result), error: None }
+                        // Success logging moved to the run loop to avoid duplication
+                        JsonRpcResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id: request_id.unwrap_or(Value::Null),
+                            result: Some(result),
+                            error: None
+                        }
                     },
-                    Err(e @ McpPortError::InvalidParams(_)) => {
-                        warn!("Tool '{}' failed: {}", req.method, e);
-                        create_mcp_error_response_direct(request_id, e)
-                    }
-                     Err(e @ McpPortError::ToolError(_)) => { 
-                         warn!("Tool '{}' failed: {}", req.method, e);
-                         create_mcp_error_response_direct(request_id, e)
-                    }
-                    Err(e) => { 
-                        error!("Tool '{}' failed unexpectedly: {}", req.method, e);
-                        create_mcp_error_response_direct(request_id, e)
+                    Err(mcp_err) => {
+                        let (code, message) = map_mcp_error_to_jsonrpc(mcp_err);
+                        if code == error_codes::INTERNAL_ERROR || code < -32000 { // Log Internal and IMAP errors as ERROR
+                             error!("Tool '{}' failed for id={:?}: [{}] {}", method_name, request_id, code, message);
+                        } else { // Log InvalidParams, NotFound etc. as WARN
+                             warn!("Tool '{}' failed for id={:?}: [{}] {}", method_name, request_id, code, message);
+                        }
+                        create_jsonrpc_error_response(request_id, code, message)
                     }
                 }
             }
             None => {
-                 warn!("MCP Method not found: {}", req.method);
-                 create_mcp_error_response_direct(request_id, McpPortError::NotImplemented("Method not found".to_string()))
+                 let err_msg = format!("Method not found: {}", method_name);
+                 warn!("MCP Method Not Found: {} (id: {:?})", method_name, request_id);
+                 create_jsonrpc_error_response(request_id, error_codes::METHOD_NOT_FOUND, err_msg)
             }
         }
     }
-} 
+}
