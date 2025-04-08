@@ -12,6 +12,8 @@ use crate::api::mcp_stdio::error_codes;
 use crate::api::mcp_stdio::map_mcp_error_to_jsonrpc;
 use serde_json::json;
 use crate::prelude::McpPortError;
+use crate::mcp_port::McpTool;
+use async_trait::async_trait;
 
 #[derive(Deserialize, Serialize, Debug)]
 struct SseCommandPayload {
@@ -172,26 +174,34 @@ impl SseAdapter {
                 match serde_json::to_string(&result_value) {
                     Ok(result_json) => {
                         info!("Tool '{}' succeeded for SSE client {}. Sending result.", tool_name, client_id);
-                        sse_event_string = format!("event: tool_result\ndata: {}\n\n", result_json);
+                        sse_event_string = format!("event: tool_result\ndata: {}
+
+", result_json);
                     }
                     Err(e) => {
                         error!("Failed to serialize successful result for tool '{}', client {}: {}", tool_name, client_id, e);
-                        // Create a JSON-RPC Internal Error for serialization failure
-                        let err_json = json!({ "code": error_codes::INTERNAL_ERROR, "message": format!("Failed to serialize tool result: {}", e) });
-                        sse_event_string = format!("event: tool_error\ndata: {}\n\n", err_json.to_string());
+                        // Directly create an internal error string for serialization failure
+                        let err_msg = format!("Internal Server Error: Failed to serialize result: {}", e);
+                        let err_json_str = ::serde_json::json!({ "code": error_codes::INTERNAL_ERROR, "message": err_msg }).to_string();
+                        sse_event_string = format!("event: tool_error\ndata: {}
+
+", err_json_str);
                     }
                 }
             }
             Err(mcp_err) => {
+                // Handle McpPortError correctly
                 let (code, message) = map_mcp_error_to_jsonrpc(mcp_err);
                 if code == error_codes::INTERNAL_ERROR || code < -32000 { // Log Internal and IMAP errors as ERROR
                     error!("Tool '{}' failed for SSE client {}: [{}] {}", tool_name, client_id, code, message);
                 } else { // Log InvalidParams, NotFound etc. as WARN
                     warn!("Tool '{}' failed for SSE client {}: [{}] {}", tool_name, client_id, code, message);
                 }
-                 // Create JSON-RPC error object
-                let err_json = json!({ "code": code, "message": message });
-                sse_event_string = format!("event: tool_error\ndata: {}\n\n", err_json.to_string());
+                // Create JSON-RPC error object
+                 let err_json_str = ::serde_json::json!({ "code": code, "message": message }).to_string();
+                sse_event_string = format!("event: tool_error\ndata: {}
+
+", err_json_str);
             }
         }
 
@@ -239,25 +249,37 @@ mod tests {
     use tokio::sync::Mutex as TokioMutex;
     use crate::mcp_port::McpTool;
 
-    // --- Mock Tools (similar to mcp_stdio tests) ---
+    // --- Mock Tools for SSE --- 
     struct MockSseSuccessTool;
-    #[async_trait::async_trait]
+    #[async_trait]
     impl McpTool for MockSseSuccessTool {
-        fn name(&self) -> &str { "sse/success" }
-        fn description(&self) -> &str { "SSE success mock" }
+        fn name(&self) -> &'static str { "sse/success" }
+        fn description(&self) -> &'static str { "SSE success mock" }
+        fn input_schema(&self) -> &'static str { "{}" }
+        fn output_schema(&self) -> &'static str { "{}" }
         async fn execute(&self, params: Value) -> Result<Value, McpPortError> {
-            Ok(json!({ "sseResult": "ok", "params": params }))
+            Ok(json!({ "sse_ok": true, "params": params }))
         }
     }
 
     struct MockSseFailureTool;
-    #[async_trait::async_trait]
+    #[async_trait]
     impl McpTool for MockSseFailureTool {
-        fn name(&self) -> &str { "sse/fail" }
-        fn description(&self) -> &str { "SSE failure mock" }
+        fn name(&self) -> &'static str { "sse/fail" }
+        fn description(&self) -> &'static str { "SSE failure mock" }
+        fn input_schema(&self) -> &'static str { "{}" }
+        fn output_schema(&self) -> &'static str { "{}" }
         async fn execute(&self, _params: Value) -> Result<Value, McpPortError> {
             Err(McpPortError::ToolError("SSE mock tool failed".to_string()))
         }
+    }
+
+    // Helper to create a mock registry
+    fn create_sse_mock_registry() -> Arc<HashMap<String, Arc<dyn McpTool>>> {
+        let mut map: HashMap<String, Arc<dyn McpTool>> = HashMap::new();
+        map.insert("sse/success".to_string(), Arc::new(MockSseSuccessTool));
+        map.insert("sse/fail".to_string(), Arc::new(MockSseFailureTool));
+        Arc::new(map)
     }
 
     // --- Test Setup Helper ---

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 // Remove unused import
 // use imap_types::envelope::Envelope;
-use imap_types::core::NString;
+use imap_types::core::{NString};
 
 // Custom Email struct (ensure it's public)
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -92,7 +92,7 @@ pub struct AppendEmailPayload {
 }
 
 /// Response after expunging a folder.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ExpungeResponse {
     pub message: String,
     // Potentially add expunged UIDs if the command returns them

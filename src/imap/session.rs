@@ -508,7 +508,8 @@ mod tests {
     use async_imap::error::{Error as AsyncImapError, ValidateError};
     // Remove unused imports related to complex mocking
     // use async_imap::types::{NameAttribute, MailboxDatum as AsyncMailboxDatum};
-    use std::borrow::Cow;
+    // Remove unused Cow import
+    // use std::borrow::Cow;
     // Remove unused bytes import
     // use bytes::Bytes;
 
@@ -667,7 +668,7 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         dbg!(&err);
-        assert!(matches!(err, ImapError::Operation(_)));
+        assert!(matches!(err, ImapError::SessionError(_)));
     }
     
     #[tokio::test]
@@ -691,20 +692,16 @@ mod tests {
     
     #[tokio::test]
     async fn test_wrapper_select_folder_error() {
-        // Create a mock that returns an error for select
-        let mut mock_ops = MockAsyncImapOps::default_ok()
-            .add_select(Err(AsyncImapError::No(String::from("Select failed")))); // Chain instead of separate
-        // Make mock_ops mutable
-        //let mock_ops = mock_ops.add_select(Err(AsyncImapError::No(String::from("Select failed"))));
-         mock_ops.select_results.clear(); // Clear default OK results - Requires mutable mock_ops
-         mock_ops = mock_ops.add_select(Err(AsyncImapError::No(String::from("Select failed")))); // Re-add error result
+        let mut mock_ops = MockAsyncImapOps::default_ok();
+        mock_ops.select_results.clear();
+        mock_ops = mock_ops.add_select(Err(AsyncImapError::No(String::from("Select failed"))));
 
         let session_wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = session_wrapper.select_folder("NonExistent").await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         dbg!(&err);
-        assert!(matches!(err, ImapError::Operation(_)));
+        assert!(matches!(err, ImapError::SessionError(_)));
     }
 
     #[tokio::test]
@@ -725,7 +722,7 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         dbg!(&err);
-        assert!(matches!(err, ImapError::Operation(_))); 
+        assert!(matches!(err, ImapError::SessionError(_))); 
     }
     
      #[tokio::test]
@@ -739,15 +736,14 @@ mod tests {
     
      #[tokio::test]
     async fn test_wrapper_fetch_emails_error() {
-        // Explicitly set an error result for uid_fetch, as fetch_emails uses it
         let mock_ops = MockAsyncImapOps::default_ok()
-            .set_uid_fetch(Err(AsyncImapError::No("UID Fetch failed".to_string()))); 
+            .set_uid_fetch(Err(AsyncImapError::No(String::from("UID Fetch failed"))));
         let wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = wrapper.fetch_emails(vec![1], true).await;
-        assert!(result.is_err(), "Expected fetch_emails to return an error");
+        assert!(result.is_err());
         let err = result.unwrap_err();
         dbg!(&err);
-        assert!(matches!(err, ImapError::Operation(_)));
+        assert!(matches!(err, ImapError::SessionError(_)));
     }
 
     #[tokio::test]
@@ -761,13 +757,13 @@ mod tests {
     #[tokio::test]
     async fn test_wrapper_create_folder_error() {
         let mock_ops = MockAsyncImapOps::default_ok()
-            .set_create(Err(AsyncImapError::No("Exists".into())));
-        let wrapper = AsyncImapSessionWrapper::new(mock_ops);
-        let result = wrapper.create_folder("Exists").await;
+             .set_create(Err(AsyncImapError::No(String::from("Exists"))));
+        let session_wrapper = AsyncImapSessionWrapper::new(mock_ops);
+        let result = session_wrapper.create_folder("ExistsAlready").await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         dbg!(&err);
-        assert!(matches!(err, ImapError::Operation(_)));
+        assert!(matches!(err, ImapError::SessionError(_)));
     }
     
     // Add tests for delete, rename, move, logout
@@ -782,13 +778,13 @@ mod tests {
     #[tokio::test]
     async fn test_wrapper_delete_folder_error() {
         let mock_ops = MockAsyncImapOps::default_ok()
-            .set_delete(Err(AsyncImapError::No("No delete".into())));
-        let wrapper = AsyncImapSessionWrapper::new(mock_ops);
-        let result = wrapper.delete_folder("Trash").await;
+            .set_delete(Err(AsyncImapError::No(String::from("No delete"))));
+        let session_wrapper = AsyncImapSessionWrapper::new(mock_ops);
+        let result = session_wrapper.delete_folder("ToDelete").await;
         assert!(result.is_err());
         let err = result.unwrap_err();
         dbg!(&err);
-        assert!(matches!(err, ImapError::Operation(_)));
+        assert!(matches!(err, ImapError::SessionError(_)));
     }
     
      #[tokio::test]
@@ -802,7 +798,7 @@ mod tests {
     #[tokio::test]
     async fn test_wrapper_move_email_error_on_move() { // Test failure on initial MOVE
         let mock_ops = MockAsyncImapOps::default_ok()
-            .set_move(Err(AsyncImapError::No("No move".into()))); // Set MOVE to fail
+            .set_move(Err(AsyncImapError::No(String::from("No move")))); // Set MOVE to fail
         let wrapper = AsyncImapSessionWrapper::new(mock_ops);
         // Expecting Ok because fallback should succeed with default mocks
         let result = wrapper.move_email("INBOX", vec![1], "Archive").await;
@@ -810,16 +806,16 @@ mod tests {
     }
 
      #[tokio::test]
-    async fn test_wrapper_move_email_error_on_copy() { // Test failure on fallback COPY
+    async fn test_wrapper_move_email_error_on_copy() {
         let mock_ops = MockAsyncImapOps::default_ok()
-            .set_move(Err(AsyncImapError::No("No move".into()))) // MOVE fails
-            .set_copy(Err(AsyncImapError::No("No copy".into()))); // COPY fails
-        let wrapper = AsyncImapSessionWrapper::new(mock_ops);
-        let result = wrapper.move_email("INBOX", vec![1], "Archive").await;
-        assert!(result.is_err(), "Move should fail if fallback copy fails");
+            .set_move(Err(AsyncImapError::No(String::from("No move support"))))
+            .set_copy(Err(AsyncImapError::No(String::from("No copy"))));
+        let session_wrapper = AsyncImapSessionWrapper::new(mock_ops);
+        let result = session_wrapper.move_email("INBOX", vec![1], "Archive").await;
+        assert!(result.is_err());
         let err = result.unwrap_err();
         dbg!(&err);
-        assert!(matches!(err, ImapError::Operation(_)));
+        assert!(matches!(err, ImapError::SessionError(_)));
     }
 
     // TODO: Add test for failure during select destination

@@ -1,9 +1,11 @@
+#[macro_use] // Make macros available within this crate FIRST
+mod macros;
+
 pub mod config;
 pub mod imap;
 pub mod transport;
 pub mod mcp_port;
 pub mod api;
-
 // Remove error and types from here, they belong inside imap
 // pub mod error;
 // pub mod types; 
