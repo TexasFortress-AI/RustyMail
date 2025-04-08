@@ -5,15 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use std::collections::HashMap;
-use async_trait::async_trait;
-use crate::imap::client::{ImapClient, ImapClientTrait};
 use log::{debug, error, info, warn};
-use crate::imap::types::{
-    SearchCriteria
-};
-use crate::mcp_port::{McpPortError, McpTool, create_mcp_tool_registry};
+use crate::mcp_port::{McpPortError, McpTool};
 use tokio::sync::Mutex as TokioMutex;
-use crate::imap::types::{FlagOperation, Flags, AppendEmailPayload};
 
 // Define state struct
 #[derive(Debug, Clone, Default)] 
@@ -301,22 +295,7 @@ mod tests {
         fn input_schema(&self) -> &'static str { "{}" } // Add required method
         fn output_schema(&self) -> &'static str { "{}" } // Add required method
         async fn execute(&self, _params: Value) -> Result<Value, McpPortError> {
-            Err(McpPortError::ToolError("Mock Failure".to_string()))
-        }
-    }
-
-    struct MockInvalidParamsTool;
-    #[async_trait]
-    impl McpTool for MockInvalidParamsTool {
-        fn name(&self) -> &'static str { "test/invalidParams" } // Use &'static str
-        fn description(&self) -> &'static str { "A mock tool that expects specific params." } // Use &'static str
-        fn input_schema(&self) -> &'static str { "{}" } // Add required method
-        fn output_schema(&self) -> &'static str { "{}" } // Add required method
-        async fn execute(&self, params: Value) -> Result<Value, McpPortError> {
-            #[derive(Deserialize)]
-            struct ExpectedParams { /* required_field: String */ }
-            let _p: ExpectedParams = deserialize_params!(params, ExpectedParams)?; // Use local macro
-            Ok(json!({ "params_validated": true }))
+            Err(McpPortError::ToolError("Mock tool failed as configured".to_string()))
         }
     }
 
@@ -368,27 +347,27 @@ mod tests {
 
     #[tokio::test]
     async fn test_tool_error() {
-        let mock_client = Arc::new(MockImapClient::default().set_fail("list_folders"));
-        let tool_registry = create_mcp_tool_registry(mock_client);
-        let adapter = McpStdioAdapter::new(tool_registry);
-
-        let req = JsonRpcRequest {
-            jsonrpc: "2.0".to_string(),
-            id: Some(Value::from(4)),
-            method: "imap/listFolders".to_string(),
-            params: None,
-        };
-
-        // Use handle_request
         let state = Arc::new(TokioMutex::new(McpPortState::default()));
-        let response = adapter.handle_request(&state, req).await;
+        let mock_tool = Arc::new(MockFailureTool);
+        let mut tool_registry = HashMap::new();
+        tool_registry.insert("mock_fail".to_string(), mock_tool as Arc<dyn McpTool>);
+        let registry_arc = Arc::new(tool_registry);
+        let adapter = McpStdioAdapter::new(registry_arc);
 
-        assert_eq!(response.id, Value::from(4));
-        assert!(response.result.is_none());
-        assert!(response.error.is_some());
+        let request_str = r#"{"jsonrpc": "2.0", "method": "mock_fail", "id": 1}"#;
+
+        let response = adapter.process_line(&state, request_str).await;
+
+        assert_eq!(response.id, json!(1), "Response ID should match request ID");
+        assert!(response.result.is_none(), "Result should be None for an error");
+        assert!(response.error.is_some(), "Error field should be Some");
+
         let error = response.error.unwrap();
-        assert_eq!(error.code, error_codes::IMAP_OPERATION_FAILED); 
-        assert!(error.message.contains("Mock configured to return error"));
+        assert_eq!(error.code, error_codes::IMAP_OPERATION_FAILED, "Error code should be IMAP_OPERATION_FAILED");
+        assert!(
+            error.message.contains("Mock tool failed as configured"),
+            "Error message mismatch. Got: {}", error.message
+        );
     }
 
     #[tokio::test]
@@ -410,7 +389,10 @@ mod tests {
         let mock_client = Arc::new(MockImapClient::default());
         
         // Create the mock tool that causes the error
-        #[derive(Deserialize)] struct ExpectedParams { /* No fields expected */ }
+        // Add deny_unknown_fields to ensure failure
+        #[derive(Deserialize)] 
+        #[serde(deny_unknown_fields)]
+        struct ExpectedParams { /* No fields expected */ }
         struct MockRequiresParamsTool;
         #[async_trait]
         impl McpTool for MockRequiresParamsTool {
@@ -419,6 +401,7 @@ mod tests {
             fn input_schema(&self) -> &'static str { "{}" }
             fn output_schema(&self) -> &'static str { "{}" }
             async fn execute(&self, params: Value) -> Result<Value, McpPortError> {
+                // Use the local deserialize_params macro
                 let _p: ExpectedParams = deserialize_params!(params, ExpectedParams)?;
                 Ok(json!({ "ok": true }))
             }

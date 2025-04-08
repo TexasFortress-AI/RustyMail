@@ -5,9 +5,6 @@ use crate::imap::error::ImapError;
 use crate::imap::client::ImapClientTrait;
 use std::sync::Arc;
 use std::collections::HashMap;
-use crate::imap::types::{SearchCriteria, FlagOperation, Flags, AppendEmailPayload, MailboxInfo};
-use serde::Deserialize;
-use serde_json::json;
 
 // Macro for deserializing params within tool execute methods
 macro_rules! deserialize_params {
@@ -22,15 +19,50 @@ macro_rules! deserialize_params {
 
 // --- Tool Definitions using the Generic Macro Arm (Simplified Invocation) ---
 
-mcp_tool!(McpListFoldersTool<C>, "imap/listFolders", "Lists all folders.", "{}", "{}",
-    async fn execute(self, _params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> {
+mcp_tool!(McpListFoldersTool<C>, "imap/listFolders", "Lists all folders.", "{}", "{}");
+
+mcp_tool!(McpCreateFolderTool<C>, "imap/createFolder", "Creates a new IMAP folder.", "{}", "{}");
+
+mcp_tool!(McpDeleteFolderTool<C>, "imap/deleteFolder", "Deletes an IMAP folder.", "{}", "{}");
+
+mcp_tool!(McpRenameFolderTool<C>, "imap/renameFolder", "Renames an IMAP folder.", "{}", "{}");
+
+mcp_tool!(McpSelectFolderTool<C>, "imap/selectFolder", "Selects a folder.", "{}", "{}");
+
+mcp_tool!(McpSearchEmailsTool<C>, "imap/searchEmails", "Searches emails.", "{}", "{}");
+
+mcp_tool!(McpFetchEmailsTool<C>, "imap/fetchEmails", "Fetches emails by UID.", "{}", "{}");
+
+mcp_tool!(McpMoveEmailTool<C>, "imap/moveEmails", "Moves emails by UID.", "{}", "{}");
+
+mcp_tool!(McpStoreFlagsTool<C>, "imap/storeFlags", "Stores flags for emails.", "{}", "{}");
+
+mcp_tool!(McpAppendEmailTool<C>, "imap/appendEmail", "Appends an email.", "{}", "{}");
+
+mcp_tool!(McpExpungeFolderTool<C>, "imap/expungeFolder", "Expunges folder.", "{}", "{}");
+
+// --- Implement McpTool::execute for each struct --- 
+#[async_trait]
+impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpListFoldersTool<C> {
+    fn name(&self) -> &'static str { "imap/listFolders" } 
+    fn description(&self) -> &'static str { "Lists all folders." }
+    fn input_schema(&self) -> &'static str { "{}" } 
+    fn output_schema(&self) -> &'static str { "{}" }
+    
+    async fn execute(&self, _params: Value) -> Result<Value, McpPortError> {
         let folders = self.imap_client.list_folders().await?;
         Ok(::serde_json::json!({ "folders": folders }))
     }
-);
+}
 
-mcp_tool!(McpCreateFolderTool<C>, "imap/createFolder", "Creates a new IMAP folder.", "{}", "{}",
-    async fn execute(self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+#[async_trait]
+impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpCreateFolderTool<C> {
+    fn name(&self) -> &'static str { "imap/createFolder" }
+    fn description(&self) -> &'static str { "Creates a new IMAP folder." }
+    fn input_schema(&self) -> &'static str { "{}" }
+    fn output_schema(&self) -> &'static str { "{}" }
+
+    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
         #[derive(::serde::Deserialize)] struct CreateFolderParams { name: String }
         let p: CreateFolderParams = deserialize_params!(params, CreateFolderParams)?;
         if p.name.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder name cannot be empty".into())); }
@@ -38,10 +70,30 @@ mcp_tool!(McpCreateFolderTool<C>, "imap/createFolder", "Creates a new IMAP folde
         self.imap_client.create_folder(&full_folder_name).await?;
         Ok(::serde_json::json!({ "message": "Folder created", "name": full_folder_name }))
     }
-);
+}
 
-mcp_tool!(McpDeleteFolderTool<C>, "imap/deleteFolder", "Deletes an IMAP folder.", "{}", "{}",
-    async fn execute(self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+#[async_trait]
+impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpExpungeFolderTool<C> {
+    fn name(&self) -> &'static str { "imap/expungeFolder" }
+    fn description(&self) -> &'static str { "Expunges folder." }
+    fn input_schema(&self) -> &'static str { "{}" }
+    fn output_schema(&self) -> &'static str { "{}" }
+
+    async fn execute(&self, _params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+        self.imap_client.expunge().await?;
+        Ok(::serde_json::json!({ "message": "Expunge successful" }))
+    }
+}
+
+// --- Add missing impl blocks --- 
+#[async_trait]
+impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpDeleteFolderTool<C> {
+    fn name(&self) -> &'static str { "imap/deleteFolder" }
+    fn description(&self) -> &'static str { "Deletes an IMAP folder." }
+    fn input_schema(&self) -> &'static str { "{}" } 
+    fn output_schema(&self) -> &'static str { "{}" }
+
+    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
         #[derive(::serde::Deserialize)] struct DeleteFolderParams { name: String }
         let p: DeleteFolderParams = deserialize_params!(params, DeleteFolderParams)?;
         if p.name.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder name cannot be empty".into())); }
@@ -49,10 +101,16 @@ mcp_tool!(McpDeleteFolderTool<C>, "imap/deleteFolder", "Deletes an IMAP folder."
         self.imap_client.delete_folder(&full_folder_name).await?;
         Ok(::serde_json::json!({ "message": "Folder deleted", "name": full_folder_name }))
     }
-);
+}
 
-mcp_tool!(McpRenameFolderTool<C>, "imap/renameFolder", "Renames an IMAP folder.", "{}", "{}",
-    async fn execute(self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+#[async_trait]
+impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpRenameFolderTool<C> {
+    fn name(&self) -> &'static str { "imap/renameFolder" }
+    fn description(&self) -> &'static str { "Renames an IMAP folder." }
+    fn input_schema(&self) -> &'static str { "{}" }
+    fn output_schema(&self) -> &'static str { "{}" }
+
+    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
         #[derive(::serde::Deserialize)] struct RenameFolderParams { from_name: String, to_name: String }
         let p: RenameFolderParams = deserialize_params!(params, RenameFolderParams)?;
         if p.from_name.trim().is_empty() || p.to_name.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder names cannot be empty".into())); }
@@ -61,10 +119,16 @@ mcp_tool!(McpRenameFolderTool<C>, "imap/renameFolder", "Renames an IMAP folder."
         self.imap_client.rename_folder(&full_from_name, &full_to_name).await?;
         Ok(::serde_json::json!({ "message": "Folder renamed", "from_name": full_from_name, "to_name": full_to_name }))
     }
-);
+}
 
-mcp_tool!(McpSelectFolderTool<C>, "imap/selectFolder", "Selects a folder, making it active for subsequent commands.", "{}", "{}",
-    async fn execute(self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+#[async_trait]
+impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpSelectFolderTool<C> {
+    fn name(&self) -> &'static str { "imap/selectFolder" }
+    fn description(&self) -> &'static str { "Selects a folder." }
+    fn input_schema(&self) -> &'static str { "{}" }
+    fn output_schema(&self) -> &'static str { "{}" }
+
+    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
         #[derive(::serde::Deserialize)] struct SelectFolderParams { name: String }
         let p: SelectFolderParams = deserialize_params!(params, SelectFolderParams)?;
         if p.name.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder name cannot be empty".into())); }
@@ -72,22 +136,34 @@ mcp_tool!(McpSelectFolderTool<C>, "imap/selectFolder", "Selects a folder, making
         let mailbox_info = self.imap_client.select_folder(&full_folder_name).await?;
         Ok(::serde_json::json!({ 
             "folder_name": full_folder_name,
-            "mailbox_info": mailbox_info // Assumes MailboxInfo is Serializable
+            "mailbox_info": mailbox_info
         }))
     }
-);
+}
 
-mcp_tool!(McpSearchEmailsTool<C>, "imap/searchEmails", "Searches emails in the currently selected folder.", "{}", "{}",
-    async fn execute(self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+#[async_trait]
+impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpSearchEmailsTool<C> {
+    fn name(&self) -> &'static str { "imap/searchEmails" }
+    fn description(&self) -> &'static str { "Searches emails." }
+    fn input_schema(&self) -> &'static str { "{}" }
+    fn output_schema(&self) -> &'static str { "{}" }
+
+    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
         #[derive(::serde::Deserialize)] struct SearchEmailsParams { criteria: crate::imap::types::SearchCriteria }
         let p: SearchEmailsParams = deserialize_params!(params, SearchEmailsParams)?;
         let uids = self.imap_client.search_emails(p.criteria).await?;
         Ok(::serde_json::json!({ "uids": uids }))
     }
-);
+}
 
-mcp_tool!(McpFetchEmailsTool<C>, "imap/fetchEmails", "Fetches emails by UID from the selected folder.", "{}", "{}",
-    async fn execute(self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+#[async_trait]
+impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpFetchEmailsTool<C> {
+    fn name(&self) -> &'static str { "imap/fetchEmails" }
+    fn description(&self) -> &'static str { "Fetches emails by UID." }
+    fn input_schema(&self) -> &'static str { "{}" }
+    fn output_schema(&self) -> &'static str { "{}" }
+
+    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
         #[derive(::serde::Deserialize)] struct FetchEmailsParams { uids: Vec<u32>, fetch_body: Option<bool> }
         let p: FetchEmailsParams = deserialize_params!(params, FetchEmailsParams)?;
         if p.uids.is_empty() { return Err(McpPortError::InvalidParams("UID list cannot be empty".into())); }
@@ -95,10 +171,16 @@ mcp_tool!(McpFetchEmailsTool<C>, "imap/fetchEmails", "Fetches emails by UID from
         let emails = self.imap_client.fetch_emails(p.uids, fetch_body).await?;
         Ok(::serde_json::to_value(emails).map_err(|e| McpPortError::ToolError(format!("Serialization Error: {}", e)))?)
     }
-);
+}
 
-mcp_tool!(McpMoveEmailTool<C>, "imap/moveEmails", "Moves emails by UID from the selected folder to a destination folder.", "{}", "{}",
-    async fn execute(self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+#[async_trait]
+impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpMoveEmailTool<C> {
+    fn name(&self) -> &'static str { "imap/moveEmails" }
+    fn description(&self) -> &'static str { "Moves emails by UID." }
+    fn input_schema(&self) -> &'static str { "{}" }
+    fn output_schema(&self) -> &'static str { "{}" }
+
+    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
         #[derive(::serde::Deserialize)] 
         struct MoveEmailParams {
             uids: Vec<u32>, 
@@ -115,40 +197,59 @@ mcp_tool!(McpMoveEmailTool<C>, "imap/moveEmails", "Moves emails by UID from the 
         self.imap_client.move_email(&p.source_folder, p.uids.clone(), &full_destination_folder).await?;
         Ok(::serde_json::json!({ "message": "Emails moved", "uids": p.uids, "destination_folder": full_destination_folder, "source_folder": p.source_folder }))
     }
-);
+}
 
-mcp_tool!(McpStoreFlagsTool<C>, "imap/storeFlags", "Adds, removes, or sets flags for specified emails in the selected folder.", "{}", "{}",
-    async fn execute(self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+#[async_trait]
+impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpStoreFlagsTool<C> {
+    fn name(&self) -> &'static str { "imap/storeFlags" }
+    fn description(&self) -> &'static str { "Stores flags for emails." }
+    fn input_schema(&self) -> &'static str { "{}" }
+    fn output_schema(&self) -> &'static str { "{}" }
+
+    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
         #[derive(::serde::Deserialize)] struct StoreFlagsParams { uids: Vec<u32>, operation: crate::imap::types::FlagOperation, flags: crate::imap::types::Flags }
         let p: StoreFlagsParams = deserialize_params!(params, StoreFlagsParams)?;
         if p.uids.is_empty() { return Err(McpPortError::InvalidParams("UID list cannot be empty".into())); }
         if p.flags.items.is_empty() { return Err(McpPortError::InvalidParams("Flags list cannot be empty".into())); }
         
-        self.imap_client.store_flags(p.uids, p.operation, p.flags).await?;
+        // Convert FlagOperation to StoreOperation
+        let store_op = match p.operation {
+            crate::imap::types::FlagOperation::Add => crate::imap::session::StoreOperation::Add,
+            crate::imap::types::FlagOperation::Remove => crate::imap::session::StoreOperation::Remove,
+            crate::imap::types::FlagOperation::Set => crate::imap::session::StoreOperation::Set,
+        };
+        // Convert Flags struct to Vec<String>
+        let flags_vec: Vec<String> = p.flags.items.iter().map(|f| f.clone()).collect();
+
+        self.imap_client.store_flags(p.uids, store_op, flags_vec).await?;
         Ok(::serde_json::json!({ "message": "Flags stored successfully" }))
     }
-);
+}
 
-mcp_tool!(McpAppendEmailTool<C>, "imap/appendEmail", "Appends an email message to the specified folder.", "{}", "{}",
-    async fn execute(self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+#[async_trait]
+impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpAppendEmailTool<C> {
+    fn name(&self) -> &'static str { "imap/appendEmail" }
+    fn description(&self) -> &'static str { "Appends an email." }
+    fn input_schema(&self) -> &'static str { "{}" }
+    fn output_schema(&self) -> &'static str { "{}" }
+
+    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
         #[derive(::serde::Deserialize)] struct AppendEmailParams { folder: String, email: crate::imap::types::AppendEmailPayload }
         let p: AppendEmailParams = deserialize_params!(params, AppendEmailParams)?;
         if p.folder.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder name cannot be empty".into())); }
         
         let full_folder_name = if p.folder.eq_ignore_ascii_case("INBOX") { p.folder.clone() } else { format!("INBOX.{}", p.folder) };
 
-        self.imap_client.append(&full_folder_name, p.email).await?;
+        // Convert the email content string to bytes
+        let email_bytes: Vec<u8> = p.email.content.into_bytes();
+
+        // TODO: Consider how flags (p.email.flags) should be handled by the append command.
+        // The underlying async-imap `append` command might need flags separately.
+        // For now, just passing the email content bytes.
+        self.imap_client.append(&full_folder_name, email_bytes).await?;
         Ok(::serde_json::json!({ "message": "Email appended", "folder": full_folder_name }))
     }
-);
-
-mcp_tool!(McpExpungeFolderTool<C>, "imap/expungeFolder", "Permanently removes emails marked \\Deleted from the selected folder.", "{}", "{}",
-    async fn execute(self, _params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
-        self.imap_client.expunge().await?;
-        Ok(::serde_json::json!({ "message": "Expunge successful" }))
-    }
-);
-
+}
 
 // --- Restore McpPortError Enum Definition --- 
 #[derive(Debug, Error)]
@@ -198,7 +299,7 @@ pub trait McpTool: Send + Sync {
     /// Output schema description (e.g., JSON schema string)
     fn output_schema(&self) -> &'static str;
     
-    /// Executes the tool with the given parameters.
+    /// Execute the tool with the given parameters
     async fn execute(&self, params: Value) -> Result<Value, McpPortError>;
 }
 
@@ -284,4 +385,4 @@ impl From<ImapError> for McpPortError {
             }
         }
     }
-} 
+}

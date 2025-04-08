@@ -12,8 +12,6 @@ use crate::api::mcp_stdio::error_codes;
 use crate::api::mcp_stdio::map_mcp_error_to_jsonrpc;
 use serde_json::json;
 use crate::prelude::McpPortError;
-use crate::mcp_port::McpTool;
-use async_trait::async_trait;
 
 #[derive(Deserialize, Serialize, Debug)]
 struct SseCommandPayload {
@@ -247,11 +245,11 @@ mod tests {
     use serde_json::{json, Value};
     use crate::api::rest::AppState;
     use tokio::sync::Mutex as TokioMutex;
-    use crate::mcp_port::McpTool;
+    use crate::prelude::McpTool;
 
     // --- Mock Tools for SSE --- 
     struct MockSseSuccessTool;
-    #[async_trait]
+    #[async_trait::async_trait]
     impl McpTool for MockSseSuccessTool {
         fn name(&self) -> &'static str { "sse/success" }
         fn description(&self) -> &'static str { "SSE success mock" }
@@ -263,7 +261,7 @@ mod tests {
     }
 
     struct MockSseFailureTool;
-    #[async_trait]
+    #[async_trait::async_trait]
     impl McpTool for MockSseFailureTool {
         fn name(&self) -> &'static str { "sse/fail" }
         fn description(&self) -> &'static str { "SSE failure mock" }
@@ -272,14 +270,6 @@ mod tests {
         async fn execute(&self, _params: Value) -> Result<Value, McpPortError> {
             Err(McpPortError::ToolError("SSE mock tool failed".to_string()))
         }
-    }
-
-    // Helper to create a mock registry
-    fn create_sse_mock_registry() -> Arc<HashMap<String, Arc<dyn McpTool>>> {
-        let mut map: HashMap<String, Arc<dyn McpTool>> = HashMap::new();
-        map.insert("sse/success".to_string(), Arc::new(MockSseSuccessTool));
-        map.insert("sse/fail".to_string(), Arc::new(MockSseFailureTool));
-        Arc::new(map)
     }
 
     // --- Test Setup Helper ---

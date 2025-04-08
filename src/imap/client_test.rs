@@ -8,15 +8,12 @@ use crate::imap::session::StoreOperation;
 #[cfg(test)]
 mod tests {
     // Add all necessary type imports inside the test module
-    use crate::imap::types::{Folder, MailboxInfo, Email, SearchCriteria, ExpungeResponse, FlagOperation, Flags, AppendEmailPayload};
+    use crate::imap::types::{Folder, MailboxInfo, Email, SearchCriteria};
     use crate::imap::session::{ImapSession, StoreOperation};
     // Keep other existing imports within tests
-    use crate::imap::client::ImapClient;
     use crate::imap::error::ImapError;
     use async_trait::async_trait;
     use std::sync::{ atomic::{AtomicBool, Ordering}, Arc };
-    use tokio::sync::Mutex;
-    use super::MockImapClient;
 
     // --- Mock IMAP Session --- 
     #[derive(Debug, Default)]
@@ -78,85 +75,99 @@ mod tests {
     
     impl MockImapSession {
         // Restore helper methods
-        fn set_fail(mut self, method: &str) -> Self {
-            let err = ImapError::OperationFailed(format!("Mock {} failed", method));
-             match method {
-                 "list_folders" => self.list_folders_result = Err(err),
-                 "select_folder" => self.select_folder_result = Err(err),
-                 "search_emails" => self.search_emails_result = Err(err),
-                 "fetch_emails" => self.fetch_emails_result = Err(err),
-                 "create_folder" => self.create_result = Err(err),
-                 "delete_folder" => self.delete_result = Err(err),
-                 "rename_folder" => self.rename_result = Err(err),
-                 "move_email" => self.move_result = Err(err),
-                 "logout" => self.logout_result = Err(err),
-                 "store_flags" => self.store_flags_result = Err(err),
-                 "append" => self.append_result = Err(err),
-                 "expunge" => self.expunge_result = Err(err),
-                 _ => panic!("Unknown method to fail: {}", method),
-             }
-             self // Fix return
-        }
-
-        fn set_fetch_emails(mut self, result: Result<Vec<Email>, ImapError>) -> Self {
-            self.fetch_emails_result = result;
-            self // Fix return
-        }
     }
 
     #[async_trait]
     impl ImapSession for MockImapSession {
         async fn list_folders(&self) -> Result<Vec<Folder>, ImapError> {
             self.tracker.list_folders_called.store(true, Ordering::SeqCst);
-            self.list_folders_result.clone() // Fix return
+            match &self.list_folders_result {
+                Ok(v) => Ok(v.clone()),
+                Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
+            }
         }
         async fn create_folder(&self, _name: &str) -> Result<(), ImapError> {
             self.tracker.create_folder_called.store(true, Ordering::SeqCst);
-            self.create_result.clone() // Fix return
+            match &self.create_result {
+                Ok(_) => Ok(()),
+                Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
+            }
         }
         async fn delete_folder(&self, _name: &str) -> Result<(), ImapError> { 
              self.tracker.delete_folder_called.store(true, Ordering::SeqCst);
-             self.delete_result.clone()
+             match &self.delete_result {
+                Ok(_) => Ok(()),
+                Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
+            }
         }
         async fn rename_folder(&self, _from: &str, _to: &str) -> Result<(), ImapError> {
              self.tracker.rename_folder_called.store(true, Ordering::SeqCst);
-             self.rename_result.clone()
+             match &self.rename_result {
+                Ok(_) => Ok(()),
+                Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
+            }
         }
         async fn select_folder(&self, _name: &str) -> Result<MailboxInfo, ImapError> {
             self.tracker.select_folder_called.store(true, Ordering::SeqCst);
-            self.select_folder_result.clone()
+            match &self.select_folder_result {
+                Ok(v) => Ok(v.clone()),
+                Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
+            }
         }
         async fn search_emails(&self, _criteria: SearchCriteria) -> Result<Vec<u32>, ImapError> {
             self.tracker.search_emails_called.store(true, Ordering::SeqCst);
-            self.search_emails_result.clone()
+            match &self.search_emails_result {
+                Ok(v) => Ok(v.clone()),
+                Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
+            }
         }
         async fn fetch_emails(&self, _uids: Vec<u32>, _fetch_body: bool) -> Result<Vec<Email>, ImapError> {
             self.tracker.fetch_emails_called.store(true, Ordering::SeqCst);
-            self.fetch_emails_result.clone()
+            match &self.fetch_emails_result {
+                Ok(v) => Ok(v.clone()),
+                Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
+            }
         }
         async fn fetch_raw_message(&mut self, _uid: u32) -> Result<Vec<u8>, ImapError> {
-            // Assuming tracker not needed for raw fetch
-            self.fetch_raw_result.clone()
+            match &self.fetch_raw_result {
+                Ok(v) => Ok(v.clone()),
+                Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
+            }
         }
         async fn move_email( &self, _source_folder: &str, _uids: Vec<u32>, _destination_folder: &str, ) -> Result<(), ImapError> {
             self.tracker.move_email_called.store(true, Ordering::SeqCst);
-            self.move_result.clone()
+            match &self.move_result {
+                Ok(_) => Ok(()),
+                Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
+            }
         }
         async fn store_flags(&self, _uids: Vec<u32>, _operation: StoreOperation, _flags: Vec<String>) -> Result<(), ImapError> {
             self.tracker.store_flags_called.store(true, Ordering::SeqCst);
-            self.store_flags_result.clone()
+            match &self.store_flags_result {
+                Ok(_) => Ok(()),
+                Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
+            }
         }
         async fn append(&self, _folder: &str, _payload: Vec<u8>) -> Result<(), ImapError> {
              self.tracker.append_called.store(true, Ordering::SeqCst);
-             self.append_result.clone()
+             match &self.append_result {
+                Ok(_) => Ok(()),
+                Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
+            }
         }
         async fn expunge(&self) -> Result<(), ImapError> {
             self.tracker.expunge_called.store(true, Ordering::SeqCst);
-            self.expunge_result.clone()
+            match &self.expunge_result {
+                Ok(_) => Ok(()),
+                Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
+            }
         }
         async fn logout(&self) -> Result<(), ImapError> {
             self.tracker.logout_called.store(true, Ordering::SeqCst);
-            self.logout_result.clone()
+            match &self.logout_result {
+                Ok(_) => Ok(()),
+                Err(_) => Err(ImapError::OperationFailed("Mock configured to fail".to_string()))
+            }
         }
     }
 
