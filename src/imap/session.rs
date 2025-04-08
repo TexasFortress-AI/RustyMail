@@ -281,19 +281,17 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
             .collect::<Vec<_>>()
             .join(",");
 
-        // Always fetch ALL details for simplicity and potential server compatibility
-        let query = "(ALL)".to_string();
-        /*
-        // Conditionally include BODY[] in the fetch query
+        // Explicitly request UID, FLAGS, ENVELOPE, and BODY[] if needed
         let query = if fetch_body {
-            "(UID FLAGS ENVELOPE BODY[] RFC822.SIZE)".to_string()
+            "(UID FLAGS ENVELOPE BODY[])".to_string()
         } else {
-            "(UID FLAGS ENVELOPE RFC822.SIZE)".to_string()
+            "(UID FLAGS ENVELOPE)".to_string()
         };
-        */
+        log::debug!("Using IMAP FETCH query: {}", query);
 
         // Use uid_fetch when using UIDs
-        let fetches = session.uid_fetch(sequence_set, query).await?; 
+        let fetches = session.uid_fetch(sequence_set, query).await?;
+        log::debug!("Received {} fetch results from IMAP server.", fetches.len()); // Log fetch count
 
         let mut messages = Vec::new();
         for fetch in fetches {
