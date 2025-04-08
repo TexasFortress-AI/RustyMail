@@ -17,7 +17,13 @@ async fn main() -> std::io::Result<()> {
 
     // Load configuration
     info!("Loading configuration...");
-    let settings = Settings::new(None).expect("Failed to load settings");
+    let settings = match Settings::new(None) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("Failed to load application settings: {:?}", e);
+            panic!("Configuration loading failed: {:?}", e);
+        }
+    };
     let rest_config = settings.rest.as_ref().expect("REST config section missing or disabled");
     if !rest_config.enabled {
         panic!("REST interface must be enabled");
