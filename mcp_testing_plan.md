@@ -1,4 +1,4 @@
-# MCP End-to-End Testing Plan
+# MCP End-to-End Testing Plan v.2
 
 ## 1. Goal
 
@@ -7,19 +7,22 @@ Achieve comprehensive end-to-end (E2E) test coverage for RustyMail's primary int
 1.  **MCP APIs (Stdio & SSE):** Ensure programmatic interfaces function correctly against various IMAP backends.
 2.  **Interactive Diagnostic Console:** Ensure human-oriented console access functions correctly via its adapters (initially Stdio and SSE Dashboard) against various IMAP backends.
 3.  Implement and test the **SSE Diagnostic Web Dashboard**, which includes one adapter for the Interactive Diagnostic Console and uses a **specified modern frontend stack**.
+4.  **NEW: RIG-Powered AI Copilot:** Implement and test a natural language interface to RustyMail's MCP client using RIG for LLM integration.
 
 ## 2. Overall Strategy
 
 1.  **Ports and Adapters (Application Interaction):** Define core interaction ports and their adapters (`StdioMCPAdapter`, `SseMCPAdapter`, `StdioConsoleAdapter`, `SseDashboardConsoleAdapter`).
 2.  **Ports and Adapters (IMAP Backend):** Use an abstract `ImapBackendAdapter` (`MockImapAdapter`, `GoDaddyImapAdapter`, etc.), selected via configuration (`IMAP_ADAPTER` env var).
-3.  **Dedicated Test Suites:** Organize tests (`mcp_stdio_api_...`, `mcp_sse_api_...`, `diagnostic_console_...`, `dashboard_ui_...`).
-4.  **SSE Diagnostic Dashboard:** Integrated web UI hosted by the SSE server process.
+3.  **Dedicated Test Suites:** Organize tests (`mcp_stdio_api_...`, `mcp_sse_api_...`, `diagnostic_console_...`, `dashboard_ui_...`, **`copilot_e2e_...`**).
+4.  **NEW: MCP Library Refactor:** Migrate to the official Rust SDK from modelcontextprotocol/rust-sdk for standardized protocol implementation.
+5.  **NEW: RIG Integration:** Implement AI copilot using RIG for LLM inference with openrouter/deepseek-v3-free as the initial provider.
+6.  **SSE Diagnostic Dashboard:** Integrated web UI hosted by the SSE server process.
     *   Provides stats, client lists, and an interactive console.
     *   Includes UI elements to **display the active IMAP Backend Adapter** and potentially allow selection for console interaction context (with browser persistence).
-5.  **Application Subprocess:** Launch `rustymail`, configured for the mode being tested and the selected *IMAP Backend adapter*.
-6.  **Client Simulation:** Use appropriate clients (stdin/stdout, HTTP/SSE, browser automation) for each interface (MCP API, Console Adapters, Dashboard UI).
-7.  **Gherkin for Scenarios:** Define test cases covering programmatic API, console interactions, and dashboard UI validation.
-8.  **Test Runner:** Utilize `cucumber` (or similar).
+7.  **Application Subprocess:** Launch `rustymail`, configured for the mode being tested and the selected *IMAP Backend adapter*.
+8.  **Client Simulation:** Use appropriate clients (stdin/stdout, HTTP/SSE, browser automation) for each interface (MCP API, Console Adapters, Dashboard UI).
+9.  **Gherkin for Scenarios:** Define test cases covering programmatic API, console interactions, dashboard UI validation, and AI copilot interactions.
+10. **Test Runner:** Utilize `cucumber` (or similar).
 
 ## 3. IMAP Backend Adapters
 
@@ -152,7 +155,57 @@ Achieve comprehensive end-to-end (E2E) test coverage for RustyMail's primary int
     *   **SSE Events:** Push events for real-time updates (e.g., `stats_updated`, `clients_updated`).
     *   **Validation:** Use generated JSON Schemas with the `jsonschema` crate.
 
-## 6. Test Abstraction Layer (IMAP Backend)
+## 6. RIG-Powered AI Copilot
+
+### 6.1. Purpose
+
+Provide a natural language interface to RustyMail's MCP client, allowing users to perform email operations and retrieve information through conversational queries.
+
+### 6.2. Architecture
+
+* **LLM Integration:** Utilize RIG (Rust Inference Gateway) for seamless LLM integration
+* **Model Provider:** Initial implementation with openrouter/deepseek-v3-free (configurable via env)
+* **MCP Client:** Integrate modelcontextprotocol/rust-sdk for standardized MCP interactions
+* **Context Management:** Track conversation history and user preferences
+* **Tool Calling:** Define tools for email operations that the LLM can invoke
+
+### 6.3. Features
+
+* Natural language understanding of email-related queries
+* Email operations (list, search, read, compose) through conversational interface
+* Folder navigation and message filtering
+* Context-aware responses (remembers previous messages in conversation)
+* Integration with Dashboard for visual reference when needed
+
+### 6.4. Implementation Details
+
+* **RIG Configuration:**
+  * API key stored in .env file
+  * Configurable model parameters (temperature, max tokens)
+  * Tool definitions for email operations
+  
+* **MCP Client Integration:**
+  * Using rust-sdk from modelcontextprotocol
+  * Tool implementations that translate natural language queries to MCP commands
+  * Response formatting for conversational context
+
+* **Conversation Management:**
+  * History tracking with configurable length
+  * User preference persistence
+  * Session management
+
+* **Security:**
+  * Authentication requirements for sensitive operations
+  * No storage of email content beyond session context
+  * Configurable permission levels
+
+### 6.5. Deployment Options
+
+* Embedded within Dashboard UI
+* Standalone web interface
+* CLI interface for terminal access
+
+## 7. Test Abstraction Layer (IMAP Backend)
 
 *   Tests should interact with a trait or facade representing the `ImapBackendAdapter`.
 *   This facade will expose methods like:
@@ -162,19 +215,19 @@ Achieve comprehensive end-to-end (E2E) test coverage for RustyMail's primary int
     *   `verify_interaction(&ExpectedInteraction)` (e.g., query mock, potentially NOOP for live)
 *   The test runner or `World` struct in Cucumber will hold an instance of the selected adapter.
 
-## 7. E2E Test Suites & Scenarios
+## 8. E2E Test Suites & Scenarios
 
-### 7.1. `mcp_stdio_api_e2e_test.rs`
+### 8.1. `mcp_stdio_api_e2e_test.rs`
 
 *   **Focus:** Testing the `StdioMCPAdapter` for programmatic use.
 *   **Gherkin (`mcp_stdio_api.feature`):** Scenarios similar to the *original* Stdio examples (list, select, search, fetch, errors) focusing on structured request/response validation.
 
-### 7.2. `mcp_sse_api_e2e_test.rs`
+### 8.2. `mcp_sse_api_e2e_test.rs`
 
 *   **Focus:** Testing the `SseMCPAdapter` for programmatic use.
 *   **Gherkin (`mcp_sse_api.feature`):** Scenarios similar to the *original* SSE examples (connect, heartbeat, commands via POST, validating SSE `tool_result`/`tool_error` events).
 
-### 7.3. `diagnostic_console_e2e_test.rs`
+### 8.3. `diagnostic_console_e2e_test.rs`
 
 *   **Focus:** Testing the `Interactive Diagnostic Console Port` via its different adapters.
 *   **Gherkin (`diagnostic_console.feature`):**
@@ -215,7 +268,7 @@ Achieve comprehensive end-to-end (E2E) test coverage for RustyMail's primary int
         And the adapter specific verification confirms the failed SELECT interaction
     ```
 
-### 7.4. `dashboard_ui_e2e_test.rs`
+### 8.4. `dashboard_ui_e2e_test.rs`
 
 *   **Focus:** Testing UI elements and interactions of the SSE dashboard (requires browser automation).
 *   **Gherkin (`dashboard_ui.feature`):**
@@ -270,13 +323,70 @@ Achieve comprehensive end-to-end (E2E) test coverage for RustyMail's primary int
         Then the updated values should transition smoothly
     ```
 
-## 8. Gherkin Integration Options (Rust)
+### 8.5. `copilot_e2e_test.rs`
+
+*   **Focus:** Testing the RIG-powered AI copilot's natural language interface to MCP client.
+*   **Gherkin (`copilot_e2e.feature`):**
+
+    ```gherkin
+    Feature: RIG-Powered AI Copilot E2E Tests
+
+      Background:
+        Given the selected IMAP backend adapter is configured with test emails
+        And the RustyMail process is started with the AI copilot enabled
+        And the copilot is configured to use the mock OpenRouter endpoint
+
+      Scenario: Copilot responds to basic greeting
+        When the user sends the message "Hello"
+        Then the copilot should respond with a greeting
+        And the response should mention email capabilities
+
+      Scenario: Copilot returns inbox message count
+        When the user sends the message "How many messages are in my inbox?"
+        Then the copilot should invoke the MCP client to check the inbox
+        And the response should include the correct number of messages
+        And the adapter specific verification confirms the SELECT and STATUS interaction
+
+      Scenario: Copilot lists recent emails
+        When the user sends the message "Show me my 5 most recent emails"
+        Then the copilot should invoke the MCP client to list recent emails
+        And the response should include a formatted list of 5 emails
+        And each email should show sender, subject, and date
+        And the adapter specific verification confirms the SELECT and FETCH interaction
+
+      Scenario: Copilot searches for specific emails
+        When the user sends the message "Find emails from example@email.com"
+        Then the copilot should invoke the MCP client with appropriate search criteria
+        And the response should include emails from "example@email.com"
+        And the adapter specific verification confirms the SEARCH interaction
+
+      Scenario: Copilot summarizes email content
+        When the user sends the message "Summarize the email with subject 'Test Subject'"
+        Then the copilot should invoke the MCP client to find and fetch that email
+        And the copilot should process the email content with the LLM
+        And the response should contain a summary of the email content
+        And the adapter specific verification confirms the proper interactions
+
+      Scenario: Copilot maintains conversation context
+        Given the user has previously asked about emails from "example@email.com"
+        When the user sends the message "Which one is the most recent?"
+        Then the copilot should understand the context refers to emails from "example@email.com"
+        And the response should identify the most recent email from that sender
+
+      Scenario: Copilot handles authentication requirements
+        Given the copilot requires authentication for sensitive operations
+        When the user sends the message "Delete all emails from example@email.com"
+        Then the copilot should request authentication before proceeding
+        And no emails should be deleted until authentication is provided
+    ```
+
+## 9. Gherkin Integration Options (Rust)
 
 *   **Primary Option:** [`cucumber`](https://crates.io/crates/cucumber)
     *   The `World` struct will hold the adapter, subprocess handles, HTTP/SSE clients, and potentially a browser driver (`fantoccini::Client` or similar).
     *   Requires adding browser automation crates (`fantoccini`, `webdriver`) and managing WebDriver instances (e.g., geckodriver, chromedriver) if testing UI interactions.
 
-## 9. Implementation Checklist (Revised)
+## 10. Implementation Checklist (Revised)
 
 **Phase 1: Foundation & Abstraction**
 
@@ -285,6 +395,7 @@ Achieve comprehensive end-to-end (E2E) test coverage for RustyMail's primary int
 *   [ ] Refactor `main.rs`/`cli.rs` (for config flexibility, add `--console` mode flag).
 *   [ ] Implement IMAP Adapter Selection Logic.
 *   [ ] **Define & Implement Core Diagnostic Console Logic:** Component that takes command string -> executes -> returns response string.
+*   [ ] **NEW:** Integrate modelcontextprotocol/rust-sdk for standardized MCP implementation.
 *   [ ] Add Test Utilities Crate (Optional).
 
 **Phase 2: Stdio Adapters**
@@ -309,9 +420,20 @@ Achieve comprehensive end-to-end (E2E) test coverage for RustyMail's primary int
     *   [ ] Implement IMAP Adapter display/selector with persistence (`localStorage`).
     *   [ ] Build with Vite for optimized static assets.
 
-**Phase 4: E2E Tests (Mock Adapter)**
+**Phase 4: RIG-Powered AI Copilot**
 
-*   [ ] Setup Test Files (`mcp_stdio_api_...`, `mcp_sse_api_...`, `diagnostic_console_...`, `dashboard_ui_...`).
+*   [ ] **Set up RIG integration for LLM inference**
+*   [ ] **Configure openrouter/deepseek-v3-free as initial provider**
+*   [ ] **Implement environment-based configuration (API keys in .env)**
+*   [ ] **Define MCP tool schema for LLM tool calling**
+*   [ ] **Implement conversation tracking and context management**
+*   [ ] **Create natural language processing pipeline**
+*   [ ] **Develop security and permission system**
+*   [ ] **Integrate with existing MCP client architecture**
+
+**Phase 5: E2E Tests (Mock Adapter)**
+
+*   [ ] Setup Test Files (including new `copilot_e2e_test.rs`).
 *   [ ] Add Dependencies (`reqwest`, SSE client, browser automation).
 *   [ ] **Implement Stdio API Tests:** (`mcp_stdio_api_e2e_test.rs`)
 *   [ ] **Implement SSE API Tests:** (`mcp_sse_api_e2e_test.rs`)
@@ -321,33 +443,39 @@ Achieve comprehensive end-to-end (E2E) test coverage for RustyMail's primary int
     *   [ ] Add tests for IMAP adapter display and persistence.
     *   [ ] Add tests for stats/client list display.
     *   [ ] Add tests for console UI interaction (if needed beyond console logic tests).
+*   [ ] **NEW: Implement Copilot E2E Tests:**
+    *   [ ] Add tests for basic greeting and information requests.
+    *   [ ] Add tests for email operations through natural language.
+    *   [ ] Add tests for conversation context maintenance.
+    *   [ ] Add tests for security and permissions handling.
 
-**Phase 5: `GoDaddyImapAdapter` Implementation**
+**Phase 6: `GoDaddyImapAdapter` Implementation**
 
 *   [ ] Implement `GoDaddyImapAdapter` struct.
 *   [ ] Configuration Loading.
 *   [ ] State Management.
-*   [ ] **Run E2E Tests** (API & Console suites) with GoDaddy Adapter.
+*   [ ] **Run E2E Tests** (API, Console, UI, Copilot suites) with GoDaddy Adapter.
 *   [ ] Refine Tests/Assertions.
 
-**Phase 6: Gherkin Integration (Optional but Recommended)**
+**Phase 7: Gherkin Integration (Optional but Recommended)**
 
 *   [ ] Add `cucumber` Dependency (+ browser automation).
 *   [ ] Create/Update Feature Files.
 *   [ ] Implement `World` Struct.
-*   [ ] Implement Step Definitions (API, Console, UI steps).
+*   [ ] Implement Step Definitions (API, Console, UI, Copilot steps).
 *   [ ] Configure Test Execution.
 *   [ ] Refactor/Expand Scenarios.
 
-**Phase 7: (Future) Add More Adapters (Gmail, Outlook, REST Console)**
+**Phase 8: (Future) Add More Adapters & Features**
 
 *   [ ] Implement new adapter structs (`GmailImapAdapter`, etc.).
 *   [ ] Handle specific authentication (OAuth) and state management for each provider.
 *   [ ] Run test suites against the new adapters.
+*   [ ] Expand copilot capabilities with advanced AI features.
 
-## 9. SSE Diagnostic Web Dashboard Specification
+## 11. SSE Diagnostic Web Dashboard Specification
 
-### 9.1. Core Concepts
+### 11.1. Core Concepts
 
 The SSE Diagnostic Web Dashboard provides a real-time UI for monitoring and interacting with the RustyMail SSE server. Key concepts include:
 
@@ -357,11 +485,11 @@ The SSE Diagnostic Web Dashboard provides a real-time UI for monitoring and inte
 * **Non-intrusive**: Dashboard is optional and does not impact core SSE functionality
 * **Validation Bridge**: Frontend and backend share compatible validation through Zod and JSON Schema
 
-### 9.2. Hosting
+### 11.2. Hosting
 
 The dashboard is served by the RustyMail SSE server itself at the `/dashboard` endpoint when the `--dashboard` flag is enabled. No separate deployment process is needed.
 
-### 9.3. Features
+### 11.3. Features
 
 * **Connection Stats**: Display of active connection counts, message rates, and performance metrics
 * **Client Inspector**: Detailed view of connected clients with filtering capabilities
@@ -369,71 +497,19 @@ The dashboard is served by the RustyMail SSE server itself at the `/dashboard` e
 * **Adapter Selector**: UI to switch between configured IMAP adapters for testing
 * **Event Stream**: Real-time display of server events with filtering options
 * **Notification System**: Alerts for important server state changes
+* **NEW: Copilot Access**: Interface to interact with the AI copilot from the dashboard
 
-### 9.4. Internal Communication
+### 11.4. Internal Communication
 
 * Dashboard receives updates through an internal SSE connection to the server
 * Commands from the console are sent via HTTP requests to the JSON-RPC endpoint
 * State persistence uses localStorage, with no server-side state maintained for UI
+* Copilot interactions use a dedicated API endpoint with proper authentication
 
-### 9.5. Frontend-Backend Integration
+### 11.5. Frontend-Backend Integration
 
 * **Schema Definition**: Backend exposes JSON Schema for all commands via endpoint
 * **TypeScript Types**: Frontend generates TypeScript interfaces from JSON Schema
 * **Validation Bridge**: Frontend uses Zod schemas derived from TypeScript interfaces
 * **OpenAPI**: API contract defined in OpenAPI spec accessible at `/api-docs`
-* **Error Handling**: Consistent error format between frontend and backend
-
-### 9.6. Technology Stack
-
-#### Frontend
-* **Framework**: React 18+ with Vite (not Next.js)
-* **UI Components**: shadcn/ui with Tailwind CSS
-* **State Management**: React Query for server state, Zustand for local state
-* **Form Handling**: React Hook Form with Zod validation
-* **HTTP Client**: Axios with interceptors for error handling
-* **Code Editor**: Monaco Editor for JSON-RPC console
-* **Data Visualization**: Recharts for metrics display
-* **Animations**: Framer Motion for smooth transitions
-
-#### Backend Integration
-* **SSE Client**: EventSource for real-time updates
-* **OpenAPI**: OpenAPI specification for API documentation
-* **Type Generation**: json-schema-to-ts for schema conversion
-* **Validation**: Zod for frontend validation, JSON Schema for backend
-
-### 9.7. UI Specification
-
-The dashboard UI follows these design principles inspired by Steve Jobs' UX philosophy:
-
-* **Minimalist**: Clean, uncluttered interface with ample white space
-* **Intuitive**: Self-explanatory UI elements that require minimal documentation
-* **Focused**: Each view serves a distinct purpose without overwhelming features
-* **Typography**: Clear hierarchical typography with sans-serif fonts
-* **Color**: Restrained color palette with accent colors only for important information
-* **Animation**: Subtle animations that enhance understanding of state changes
-* **Consistency**: UI patterns repeated throughout the application
-
-The layout consists of:
-1. Top navigation bar with title and adapter selector
-2. Stats summary cards with key metrics
-3. Main content area with tabs for different features
-4. Bottom status bar with connection information
-5. Right sidebar with context-sensitive help (collapsible)
-
-### 9.8. Implementation Details
-
-#### Frontend Implementation
-* Component structure follows atomic design principles
-* Strict TypeScript with proper typing of all API responses
-* Custom hooks for SSE connection and command execution
-* Error boundaries for fault isolation
-* Responsive design supporting desktop and tablet viewports
-* Accessible components with ARIA attributes and keyboard navigation
-
-#### Backend Support
-* Static file serving for dashboard assets
-* SSE endpoint with filtered events for UI consumption
-* JSON Schema endpoint for automatic type generation
-* CORS configuration to support development mode
-* OpenAPI documentation generation 
+* **Error Handling**: Consistent error format between frontend and backend 
