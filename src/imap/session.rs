@@ -264,9 +264,44 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
     }
 
     async fn search_emails(&self, criteria: SearchCriteria) -> Result<Vec<u32>, ImapError> {
-        let search_string = format_search_criteria(&criteria)?;
+        let mut search_string = format_search_criteria(&criteria)?;
+        
+        // Apply special case fix for UID search - convert "UID 9" to "UID 9:9" for single UIDs
+        if let SearchCriteria::Uid(uid_str) = &criteria {
+            // Check if this is a single UID (no commas)
+            if !uid_str.contains(',') {
+                if let Ok(single_uid) = uid_str.parse::<u32>() {
+                    // It's a single UID, use range notation
+                    search_string = format!("UID {}:{}", single_uid, single_uid);
+                    log::debug!("Converted single UID search to range notation: {}", search_string);
+                }
+            }
+        }
+        
         let mut session = self.session.lock().await;
+        log::debug!("Executing IMAP SEARCH: {}", search_string);
         let uids: Vec<u32> = session.search(search_string).await?;
+        
+        // If using UID criteria and got empty results, try alternative approach
+        if let SearchCriteria::Uid(uid_str) = &criteria {
+            if uids.is_empty() && !uid_str.contains(',') {
+                log::warn!("UID search for '{}' returned empty results. Trying ALL search as fallback...", uid_str);
+                
+                // Try SEARCH ALL as a fallback
+                let all_uids = session.search("ALL".to_string()).await?;
+                log::debug!("ALL search returned {} UIDs", all_uids.len());
+                
+                // If we found the requested UID in the ALL results, return just that one
+                if let Ok(requested_uid) = uid_str.parse::<u32>() {
+                    if all_uids.contains(&requested_uid) {
+                        log::info!("Found requested UID {} in ALL results, returning it", requested_uid);
+                        return Ok(vec![requested_uid]);
+                    }
+                }
+            }
+        }
+        
+        log::debug!("Search returned {} UIDs", uids.len());
         Ok(uids)
     }
 
@@ -276,22 +311,137 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
         }
 
         let mut session = self.session.lock().await;
-        let sequence_set = uids.iter()
-            .map(|uid| uid.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-
-        // Explicitly request UID, FLAGS, ENVELOPE, and BODY[] if needed
-        let query = if fetch_body {
-            "(UID FLAGS ENVELOPE BODY[])".to_string()
+        
+        // Format sequence set with explicit range notation for better compatibility
+        // For single UIDs, this converts "9" to "9:9" which some servers handle better
+        let sequence_set = if uids.len() == 1 {
+            format!("{}:{}", uids[0], uids[0])
         } else {
-            "(UID FLAGS ENVELOPE)".to_string()
+            uids.iter()
+                .map(|uid| uid.to_string())
+                .collect::<Vec<_>>()
+                .join(",")
         };
-        log::debug!("Using IMAP FETCH query: {}", query);
+        
+        // Remove parentheses and use BODY.PEEK instead of BODY[] for better compatibility
+        // Some servers respond better to space-separated attributes without parentheses
+        let query = if fetch_body {
+            "UID FLAGS ENVELOPE BODY.PEEK[]".to_string()
+        } else {
+            "UID FLAGS ENVELOPE".to_string()
+        };
+        
+        log::debug!("Using IMAP FETCH query: {} for sequence set: {}", query, sequence_set);
 
         // Use uid_fetch when using UIDs
-        let fetches = session.uid_fetch(sequence_set, query).await?;
-        log::debug!("Received {} fetch results from IMAP server.", fetches.len()); // Log fetch count
+        let mut fetches = match session.uid_fetch(sequence_set.clone(), query).await {
+            Ok(results) => results,
+            Err(e) => {
+                log::error!("UID FETCH failed: {:?}", e);
+                return Err(ImapError::from(e));
+            }
+        };
+        
+        log::debug!("Received {} fetch results from IMAP server.", fetches.len());
+        
+        // If single UID fetch failed, try multiple approaches to fetch it
+        if fetches.is_empty() && uids.len() == 1 {
+            log::warn!("First fetch attempt returned no results for UID {}. Trying alternative format...", uids[0]);
+            
+            // Try with parentheses format (the original way)
+            let alt_query = if fetch_body {
+                "(UID FLAGS ENVELOPE BODY[])".to_string()
+            } else {
+                "(UID FLAGS ENVELOPE)".to_string()
+            };
+            
+            log::debug!("Retrying with alternative query: {}", alt_query);
+            match session.uid_fetch(uids[0].to_string(), alt_query).await {
+                Ok(alt_results) => {
+                    log::info!("Alternative approach succeeded, found {} results", alt_results.len());
+                    fetches = alt_results;
+                },
+                Err(e) => {
+                    log::error!("Alternative UID FETCH approach also failed: {:?}", e);
+                    // Continue with original (empty) results
+                }
+            }
+            
+            // If still no results, try a different approach - Using regular FETCH with sequence numbers
+            if fetches.is_empty() {
+                log::warn!("Both UID FETCH approaches failed for UID {}. Trying regular FETCH as last resort...", uids[0]);
+                
+                // First, use SEARCH ALL to get all UIDs
+                let all_uids = match session.search("ALL".to_string()).await {
+                    Ok(uids) => uids,
+                    Err(e) => {
+                        log::error!("SEARCH ALL failed: {:?}", e);
+                        return Err(ImapError::from(e));
+                    }
+                };
+                
+                log::debug!("SEARCH ALL returned {} UIDs", all_uids.len());
+                
+                // Find the sequence number (position) of our UID in the list
+                if let Some(position) = all_uids.iter().position(|&uid| uid == uids[0]) {
+                    // Position is 0-based, but IMAP sequence numbers are 1-based
+                    let sequence_number = position + 1;
+                    log::info!("Found UID {} at sequence number {}", uids[0], sequence_number);
+                    
+                    // Try regular FETCH with sequence number instead of UID
+                    let fetch_query = if fetch_body {
+                        "UID FLAGS ENVELOPE BODY[]".to_string()
+                    } else {
+                        "UID FLAGS ENVELOPE".to_string()
+                    };
+                    
+                    log::debug!("Trying regular FETCH with sequence number {}: {}", sequence_number, fetch_query);
+                    match session.fetch(sequence_number.to_string(), fetch_query).await {
+                        Ok(seq_results) => {
+                            log::info!("Sequence number FETCH succeeded, found {} results", seq_results.len());
+                            fetches = seq_results;
+                        },
+                        Err(e) => {
+                            log::error!("Sequence number FETCH also failed: {:?}", e);
+                            // Keep going with empty results
+                        }
+                    }
+                    
+                    // If still no results, try our final approach - fetch ALL emails and filter
+                    if fetches.is_empty() {
+                        log::warn!("All direct fetch approaches failed. Trying to fetch ALL emails and filter...");
+                        
+                        // Fetch all emails in the current folder
+                        let all_query = if fetch_body {
+                            "UID FLAGS ENVELOPE BODY[]".to_string()
+                        } else {
+                            "UID FLAGS ENVELOPE".to_string()
+                        };
+                        
+                        match session.fetch("1:*".to_string(), all_query).await {
+                            Ok(all_results) => {
+                                log::info!("Fetched {} emails in folder", all_results.len());
+                                
+                                // Filter for our specific UID
+                                let filtered_results: Vec<Fetch> = all_results
+                                    .into_iter()
+                                    .filter(|fetch| fetch.uid.map_or(false, |uid| uids.contains(&uid)))
+                                    .collect();
+                                    
+                                log::info!("Filtered {} emails matching requested UIDs", filtered_results.len());
+                                fetches = filtered_results;
+                            },
+                            Err(e) => {
+                                log::error!("Fetch ALL emails failed: {:?}", e);
+                                // Last resort failed, continue with empty results
+                            }
+                        }
+                    }
+                } else {
+                    log::warn!("UID {} not found in SEARCH ALL results, cannot determine sequence number", uids[0]);
+                }
+            }
+        }
 
         let mut messages = Vec::new();
         for fetch in fetches {
@@ -319,6 +469,16 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
                 size,
             };
             messages.push(email);
+        }
+
+        // For multi-UID requests, verify we have at least one email for the first UID 
+        // even if we couldn't get them all
+        if uids.len() > 1 && messages.is_empty() {
+            // Recursively try to fetch at least the first UID
+            log::warn!("Multi-UID fetch returned empty results. Trying to fetch just the first UID...");
+            if let Ok(single_result) = self.fetch_emails(vec![uids[0]], fetch_body).await {
+                messages.extend(single_result);
+            }
         }
 
         Ok(messages)
@@ -532,10 +692,6 @@ mod tests {
             self.search_result = Some(res);
             self
         }
-         fn set_fetch(mut self, res: Result<Vec<Fetch>, AsyncImapError>) -> Self {
-            self.fetch_result = Some(res);
-            self
-        }
          fn set_create(mut self, res: Result<(), AsyncImapError>) -> Self {
             self.create_result = Some(res);
             self
@@ -548,6 +704,7 @@ mod tests {
             self.move_result = Some(res);
             self
         }
+        // Re-added setter for uid_fetch
         fn set_uid_fetch(mut self, res: Result<Vec<Fetch>, AsyncImapError>) -> Self {
             self.uid_fetch_result = Some(res);
             self
@@ -687,15 +844,16 @@ mod tests {
     }
     
      #[tokio::test]
-    async fn test_wrapper_fetch_emails_error() { // Keep error test
+    async fn test_wrapper_fetch_emails_error() {
+        // Explicitly set an error result for uid_fetch, as fetch_emails uses it
         let mock_ops = MockAsyncImapOps::default_ok()
-            .set_fetch(Err(AsyncImapError::Validate(ValidateError('f'))));
+            .set_uid_fetch(Err(AsyncImapError::No("UID Fetch failed".to_string()))); 
         let wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = wrapper.fetch_emails(vec![1], true).await;
-        assert!(result.is_err());
+        assert!(result.is_err(), "Expected fetch_emails to return an error");
         let err = result.unwrap_err();
         dbg!(&err);
-        assert!(matches!(err, ImapError::Operation(_))); 
+        assert!(matches!(err, ImapError::Operation(_)));
     }
 
     #[tokio::test]
