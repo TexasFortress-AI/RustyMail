@@ -6,6 +6,7 @@ pub mod imap;
 pub mod transport;
 pub mod mcp_port;
 pub mod api;
+pub mod dashboard;
 // Remove error and types from here, they belong inside imap
 // pub mod error;
 // pub mod types; 
