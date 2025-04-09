@@ -1,9 +1,9 @@
 use actix_web::{web, HttpResponse, Responder};
 use serde::Deserialize;
-use log::{info, debug};
+use log::debug;
 use crate::dashboard::api::errors::ApiError;
 use crate::dashboard::services::DashboardState;
-use crate::dashboard::api::models::ChatbotQuery;
+use crate::dashboard::api::models::{ChatbotQuery, ServerConfig};
 
 // Query parameters for client list endpoint
 #[derive(Debug, Deserialize)]
@@ -29,7 +29,7 @@ pub async fn get_connected_clients(
     query: web::Query<ClientQueryParams>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling GET /api/dashboard/clients");
+    debug!("Handling GET /api/dashboard/clients with query: {:?}", query);
     
     let page = query.page.unwrap_or(1);
     let limit = query.limit.unwrap_or(10);
@@ -54,41 +54,21 @@ pub async fn get_configuration(
 ) -> Result<impl Responder, ApiError> {
     debug!("Handling GET /api/dashboard/config");
     
-    let config = state.config_service.get_configuration().await;
-    
-    Ok(HttpResponse::Ok().json(config))
-}
-
-// Handler for setting active adapter
-#[derive(Debug, Deserialize)]
-pub struct SetAdapterRequest {
-    pub adapter_id: String,
-}
-
-pub async fn set_active_adapter(
-    req: web::Json<SetAdapterRequest>,
-    state: web::Data<DashboardState>,
-) -> Result<impl Responder, ApiError> {
-    let adapter_id = &req.adapter_id;
-    info!("Handling POST /api/dashboard/config/adapter with adapter_id: {}", adapter_id);
-    
-    let config = state.config_service.set_active_adapter(adapter_id)
-        .await
-        .map_err(|e| ApiError::BadRequest(e))?;
+    let config: ServerConfig = state.config_service.get_configuration().await;
     
     Ok(HttpResponse::Ok().json(config))
 }
 
 // Handler for chatbot queries
 pub async fn query_chatbot(
-    req: web::Json<ChatbotQuery>,
     state: web::Data<DashboardState>,
+    req: web::Json<ChatbotQuery>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling POST /api/dashboard/chatbot/query");
+    debug!("Handling POST /api/dashboard/chatbot/query with body: {:?}", req);
     
     let response = state.ai_service.process_query(req.0)
         .await
-        .map_err(|e| ApiError::InternalError(e))?;
+        .map_err(|e| ApiError::InternalError(format!("AI service error: {}", e)))?;
     
     Ok(HttpResponse::Ok().json(response))
 }

@@ -1,7 +1,8 @@
 use tokio::sync::RwLock;
 use crate::dashboard::api::models::{ServerConfig, ImapAdapter};
-use log::{info, error};
+use log::info;
 use std::time::Instant;
+use crate::config::Settings;
 
 #[derive(Debug, Clone)]
 pub struct ConfigData {
@@ -13,6 +14,7 @@ pub struct ConfigData {
 
 pub struct ConfigService {
     config: RwLock<ConfigData>,
+    current_config: RwLock<Option<Settings>>,
 }
 
 impl ConfigService {
@@ -40,37 +42,59 @@ impl ConfigService {
             version: env!("CARGO_PKG_VERSION").to_string(),
         };
 
+        // Load initial config (consider injecting Settings instead)
+        let initial_settings = Settings::new(None).ok(); 
+
         Self {
             config: RwLock::new(config_data),
+            current_config: RwLock::new(initial_settings),
         }
     }
 
-    // Get the current server configuration
+    // Get the current server configuration relevant to the dashboard
     pub async fn get_configuration(&self) -> ServerConfig {
-        let config = self.config.read().await;
-        
-        // Find the active adapter
-        let active_adapter = config.available_adapters.iter()
-            .find(|a| a.id == config.active_adapter_id)
-            .cloned()
-            .unwrap_or_else(|| {
-                error!("Active adapter not found in available adapters");
+        let config_guard = self.current_config.read().await;
+        let version = env!("CARGO_PKG_VERSION").to_string();
+        let uptime = self.config.read().await.start_time.elapsed().as_secs();
+
+        if let Some(settings) = &*config_guard {
+            // Create adapter list based on settings
+            let adapters = vec![
                 ImapAdapter {
-                    id: "unknown".to_string(),
-                    name: "Unknown".to_string(),
-                    description: "Unknown adapter".to_string(),
+                    id: "default".to_string(),
+                    name: settings.imap_host.clone(),
+                    description: format!("IMAP server at {}:{}", settings.imap_host, settings.imap_port),
                     is_active: true,
                 }
+            ];
+            // Since active_adapter is not Option, unwrap the first or provide a default
+            let active_adapter = adapters.first().cloned().unwrap_or_else(|| ImapAdapter {
+                 id: "unknown".to_string(),
+                 name: "Unknown".to_string(),
+                 description: "No adapter configured".to_string(),
+                 is_active: true,
             });
 
-        // Calculate uptime in seconds
-        let uptime = config.start_time.elapsed().as_secs();
-        
-        ServerConfig {
-            active_adapter,
-            available_adapters: config.available_adapters.clone(),
-            version: config.version.clone(),
-            uptime,
+            ServerConfig {
+                active_adapter, 
+                available_adapters: adapters,
+                version,
+                uptime,
+            }
+        } else {
+            // Return default config if settings failed to load
+            let default_adapter = ImapAdapter {
+                 id: "unknown".to_string(),
+                 name: "Unknown".to_string(),
+                 description: "Settings not loaded".to_string(),
+                 is_active: true,
+            };
+            ServerConfig {
+                active_adapter: default_adapter,
+                available_adapters: vec![],
+                version,
+                uptime,
+            }
         }
     }
 

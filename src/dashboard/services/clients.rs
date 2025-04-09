@@ -116,59 +116,49 @@ impl ClientManager {
     ) -> PaginatedClients {
         let clients = self.clients.read().await;
         
-        // Filter clients based on the optional filter string
         let filtered_clients: Vec<ClientInfo> = clients
             .values()
             .filter(|client| {
-                if let Some(filter_text) = filter {
-                    // Apply filter to different fields
-                    client.ip_address.as_ref().map_or(false, |ip| ip.contains(filter_text))
-                        || client.user_agent.as_ref().map_or(false, |ua| ua.contains(filter_text))
-                        || match client.status {
-                            ClientStatus::Active if filter_text.eq_ignore_ascii_case("active") => true,
-                            ClientStatus::Idle if filter_text.eq_ignore_ascii_case("idle") => true,
-                            ClientStatus::Disconnecting if filter_text.eq_ignore_ascii_case("disconnecting") => true,
-                            _ => false,
-                        }
-                } else {
-                    true // No filter, include all clients
+                match filter {
+                    Some(f) if !f.is_empty() => {
+                        // Case-insensitive filtering on ID, IP, User Agent, or Status
+                        let f_lower = f.to_lowercase();
+                        client.id.to_lowercase().contains(&f_lower) ||
+                        client.ip_address.as_deref().unwrap_or("").to_lowercase().contains(&f_lower) ||
+                        client.user_agent.as_deref().unwrap_or("").to_lowercase().contains(&f_lower) ||
+                        format!("{:?}", client.status).to_lowercase().contains(&f_lower)
+                    },
+                    _ => true, // No filter or empty filter matches all
                 }
             })
             .map(|client| ClientInfo {
                 id: client.id.clone(),
-                r#type: client.client_type,
-                connected_at: client.connected_at.to_rfc3339(),
-                status: client.status,
-                last_activity: client.last_activity.to_rfc3339(),
+                r#type: client.client_type.clone(),
+                status: client.status.clone(),
                 ip_address: client.ip_address.clone(),
                 user_agent: client.user_agent.clone(),
+                connected_at: client.connected_at.to_rfc3339(),
+                last_activity: client.last_activity.to_rfc3339(),
             })
             .collect();
         
         let total = filtered_clients.len();
-        let total_pages = if total == 0 { 
-            1 
-        } else { 
-            (total + limit - 1) / limit 
-        };
+        let offset = (page.saturating_sub(1)) * limit;
         
-        // Apply pagination
-        let page = page.max(1).min(total_pages);
-        let offset = (page - 1) * limit;
-        let paginated_clients = filtered_clients
+        let paginated_data = filtered_clients
             .into_iter()
             .skip(offset)
             .take(limit)
             .collect();
             
         PaginatedClients {
-            clients: paginated_clients,
+            clients: paginated_data,
             pagination: Pagination {
                 total,
                 page,
                 limit,
-                total_pages,
-            },
+                total_pages: (total as f64 / limit as f64).ceil() as usize,
+            }
         }
     }
     

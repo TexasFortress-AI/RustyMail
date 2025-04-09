@@ -6,25 +6,29 @@ use sysinfo::{System, RefreshKind, CpuRefreshKind, MemoryRefreshKind};
 use log::debug;
 use crate::dashboard::api::models::{DashboardStats, RequestRateData, SystemHealth, SystemStatus};
 use std::collections::VecDeque;
+use rand;
 
 // Store for metrics data
 #[derive(Debug)]
-pub struct MetricsStore {
-    pub active_connections: usize,
-    pub request_rate_points: VecDeque<RequestRateData>,
-    pub cpu_usage: f32,
-    pub memory_usage: f32,
-    pub start_time: Instant,
+struct MetricsStore {
+    active_connections: usize,
+    request_rate_points: VecDeque<RequestRateData>,
+    cpu_usage: f32,
+    memory_usage: f32,
+    #[allow(dead_code)] // Keep for potential future uptime calculation
+    start_time: Instant,
+    last_updated: chrono::DateTime<Utc>,
 }
 
 impl Default for MetricsStore {
     fn default() -> Self {
         Self {
             active_connections: 0,
-            request_rate_points: VecDeque::new(),
+            request_rate_points: VecDeque::with_capacity(24),
             cpu_usage: 0.0,
             memory_usage: 0.0,
             start_time: Instant::now(),
+            last_updated: Utc::now(),
         }
     }
 }
@@ -69,52 +73,32 @@ impl MetricsService {
     }
     
     async fn collect_metrics(sys: &mut System, store: Arc<RwLock<MetricsStore>>) {
-        // Refresh system info
-        sys.refresh_all();
-        
-        // Get CPU usage as percentage (0-100)
-        let cpu_usage = sys.global_cpu_info().cpu_usage();
-        
-        // Get memory usage as percentage
-        let total_memory = sys.total_memory() as f32;
-        let used_memory = sys.used_memory() as f32;
-        let memory_usage = if total_memory > 0.0 {
-            (used_memory / total_memory) * 100.0
-        } else {
-            0.0
-        };
-        
-        // Add current request rate data point with timestamp
-        let timestamp = Utc::now().to_rfc3339();
+        sys.refresh_specifics(
+            RefreshKind::new()
+                .with_cpu(CpuRefreshKind::everything())
+                .with_memory(MemoryRefreshKind::everything())
+        );
 
-        // Update metrics store
-        let mut store = store.write().await;
-        
-        // Maintain up to 24 data points (e.g., last 2 hours if collecting every 5 minutes)
-        if store.request_rate_points.len() >= 24 {
-            store.request_rate_points.pop_front();
+        let mut store_guard = store.write().await;
+
+        // System metrics
+        store_guard.cpu_usage = sys.global_cpu_info().cpu_usage();
+        store_guard.memory_usage = (sys.used_memory() as f32 / sys.total_memory() as f32) * 100.0;
+
+        // TODO: Update request_rate_points (needs tracking mechanism)
+        if store_guard.request_rate_points.len() >= 24 {
+             store_guard.request_rate_points.pop_front();
         }
-        
-        // For now, we're just generating a random number of requests per time period
-        // In a real implementation, this would come from actual tracking
-        let requests_count = rand::random::<u32>() % 100 + 20; // Random value between 20-120
-        
-        store.request_rate_points.push_back(RequestRateData {
-            timestamp,
-            value: requests_count,
+        store_guard.request_rate_points.push_back(RequestRateData {
+             timestamp: Utc::now().to_rfc3339(),
+             value: (rand::random::<u32>() % 100 + 20), // Random placeholder
         });
+
+        // TODO: Collect IMAP active_connections
         
-        // Update other metrics
-        store.cpu_usage = cpu_usage;
-        store.memory_usage = memory_usage;
-        
-        // In a real implementation, we would:
-        // 1. Count actual active IMAP connections
-        // 2. Track request rates from API/MCP calls
-        // 3. Add more detailed metrics
-        
-        debug!("Collected metrics: CPU: {:.1}%, Memory: {:.1}%, Active Connections: {}", 
-               cpu_usage, memory_usage, store.active_connections);
+        store_guard.last_updated = Utc::now();
+        // Debug log
+        debug!("Collected metrics - CPU: {:.1}%, Mem: {:.1}%", store_guard.cpu_usage, store_guard.memory_usage);
     }
     
     pub async fn update_connection_count(&self, count: usize) {
@@ -139,31 +123,22 @@ impl MetricsService {
         
         // Determine system health status based on CPU and memory usage
         let status = if store.cpu_usage > 90.0 || store.memory_usage > 90.0 {
-            SystemStatus::Critical
+            SystemStatus::Critical 
         } else if store.cpu_usage > 70.0 || store.memory_usage > 70.0 {
-            SystemStatus::Degraded
+            SystemStatus::Degraded 
         } else {
-            SystemStatus::Healthy
+            SystemStatus::Healthy 
         };
-        
-        // Convert request rate points to Vec
-        let request_rate: Vec<RequestRateData> = store.request_rate_points
-            .iter()
-            .cloned()
-            .collect();
-        
-        // Get current timestamp in ISO format
-        let last_updated = Utc::now().to_rfc3339();
-        
+
         DashboardStats {
-            active_connections: store.active_connections,
-            request_rate,
+            active_connections: store.active_connections, 
+            request_rate: store.request_rate_points.iter().cloned().collect(),
             system_health: SystemHealth {
                 status,
                 cpu_usage: store.cpu_usage,
                 memory_usage: store.memory_usage,
             },
-            last_updated,
+            last_updated: store.last_updated.to_rfc3339(),
         }
     }
 }
