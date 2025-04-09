@@ -31,6 +31,7 @@ impl Default for MetricsStore {
 
 pub struct MetricsService {
     metrics_store: Arc<RwLock<MetricsStore>>,
+    #[allow(dead_code)] // May be used later for dynamic interval adjustment
     collection_interval: Duration,
 }
 

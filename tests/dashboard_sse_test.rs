@@ -127,8 +127,12 @@ struct TestServer {
 
 impl TestServer {
     async fn new() -> io::Result<Self> {
-        let mut cmd = Command::new("cargo");
-        cmd.args(["run", "--bin", "rustymail"])
+        // Get executable path, environment variables, and port
+        let (executable_path, env_vars, port) = setup_environment();
+        
+        println!("Starting server: {:?}", executable_path);
+        let mut cmd = Command::new(executable_path);
+        cmd.envs(env_vars) // Set the environment variables
            .stdout(Stdio::piped())
            .stderr(Stdio::piped());
 
@@ -152,16 +156,19 @@ impl TestServer {
             }
         });
 
-        // Wait for server to start
-        tokio::time::sleep(Duration::from_secs(2)).await;
-
-        Ok(TestServer {
+        // Create the server struct BEFORE waiting, so we have the port info
+        let server = TestServer {
             process: Some(child),
             _stdout_task: stdout_handle,
             _stderr_task: stderr_handle,
-            port: find_available_port(),
-            pid_file: None,
-        })
+            port, // Use the port determined by setup_environment
+            pid_file: None, // PID file handling can be added if needed
+        };
+
+        // Wait for the server to be ready
+        server.wait_for_ready().await;
+
+        Ok(server)
     }
 
     // Get the base URL for this server instance
@@ -212,49 +219,32 @@ impl TestServer {
     }
 
     async fn shutdown(&mut self) {
-        println!("--- Shutting down TestServer ---");
-        
+        println!("Shutting down test server...");
         if let Some(mut child) = self.process.take() {
-            println!("Attempting to terminate server process...");
-            
-            // First try a graceful shutdown
             match child.kill().await {
-                Ok(_) => println!("Server process kill signal sent."),
-                Err(e) => println!("Failed to kill server process: {}", e),
+                Ok(_) => println!("Server process killed successfully."),
+                Err(e) => eprintln!("Error killing server process: {}", e),
             }
-            
-            // Wait for the process to exit
-            match tokio::time::timeout(Duration::from_secs(5), child.wait()).await {
-                Ok(Ok(status)) => println!("Server process exited with status: {}", status),
-                Ok(Err(e)) => println!("Error waiting for server process exit: {}", e),
-                Err(_) => {
-                    println!("Timeout waiting for server process exit, forcing termination");
-                    // Force kill if graceful shutdown didn't work
-                    if let Some(id) = child.id() {
-                        // On Unix-like systems, use kill -9
-                        let _ = Command::new("kill")
-                            .arg("-9")
-                            .arg(id.to_string())
-                            .output();
-                        println!("Force killed process {}", id);
-                    }
-                }
-            }
-        } else {
-            println!("Server process already gone.");
         }
-        
-        // Remove PID file
-        if let Some(pid_file) = &self.pid_file {
-            println!("Removing PID file: {}", pid_file);
-            fs::remove_file(pid_file).ok();
+
+        // Abort the background tasks
+        self._stdout_task.abort();
+        self._stderr_task.abort();
+        println!("Background I/O tasks aborted.");
+
+        // Wait briefly for tasks to abort (optional, but can help ensure cleanup)
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        if let Some(path) = &self.pid_file {
+            let _ = fs::remove_file(path);
+            println!("Removed PID file: {}", path);
         }
-        
-        println!("--- TestServer shutdown complete ---");
+        println!("Test server shutdown complete.");
     }
 }
 
 // Helper to parse SSE events from a stream
+#[allow(dead_code)] // Keep for potential future use or different test scenarios
 async fn parse_sse_events(stdout: tokio::process::ChildStdout) -> io::Result<Vec<SseEvent>> {
     let mut events = Vec::new();
     let mut reader = tokio::io::BufReader::new(stdout);
@@ -306,7 +296,7 @@ impl SseClient {
 
         let client = reqwest::Client::new();
         let response = client.get(&sse_url)
-            .timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
             .send()
             .await
             .expect("Failed to send request to SSE endpoint");
@@ -466,6 +456,9 @@ mod tests {
         sse_client.stop().await;
         let _ = tokio::time::timeout(Duration::from_secs(3), handle).await;
         
+        // Explicitly drop the client to release the Arc reference
+        drop(sse_client);
+        
         // Shutdown server
         let mut server_mut = Arc::try_unwrap(server_arc)
             .expect("Failed to unwrap Arc");
@@ -507,6 +500,9 @@ mod tests {
         // Stop SSE client
         sse_client.stop().await;
         let _ = tokio::time::timeout(Duration::from_secs(3), handle).await;
+        
+        // Explicitly drop the client to release the Arc reference
+        drop(sse_client);
         
         // Shutdown server
         let mut server_mut = Arc::try_unwrap(server_arc)

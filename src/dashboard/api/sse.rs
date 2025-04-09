@@ -16,6 +16,7 @@ use crate::dashboard::services::clients::ClientManager;
 use chrono::Utc;
 use tokio_stream::wrappers::{ReceiverStream, IntervalStream};
 use crate::dashboard::services::DashboardState;
+use actix_web::HttpRequest;
 
 // SSE Event data structure
 #[derive(Debug, Clone)]
@@ -56,18 +57,9 @@ impl SseManager {
         
         info!("New SSE client registered: {}", client_id);
         
-        // Broadcast client connected event
-        self.broadcast_client_connected(&client_id).await;
-        
-        // Attempt to send a welcome message immediately after registration
-        let welcome_event = SseEvent {
-            event_type: "welcome".to_string(),
-            data: format!(r#"{{"clientId":"{}","message":"Connected to RustyMail SSE"}}"#, client_id),
-        };
-        if let Err(_) = sender.send(welcome_event).await {
-            warn!("Failed to send initial welcome message to client {}", client_id);
-            // Optionally remove the client here if initial send fails, or rely on heartbeat
-        }
+        // Don't send welcome message from here anymore
+        // // Send welcome message immediately
+        // self.send_welcome_message(client_id, sender).await;
     }
     
     // Remove a client when they disconnect
@@ -219,20 +211,27 @@ impl Clone for SseManager {
 pub async fn sse_handler(
     state: web::Data<DashboardState>,
     sse_manager: web::Data<Arc<SseManager>>,
+    req: HttpRequest,
 ) -> Sse<impl Stream<Item = Result<sse::Event, Infallible>>> {
     let (tx, rx) = mpsc::channel(100);
     let client_id = Uuid::new_v4().to_string();
+    let client_id_clone = client_id.clone(); // Clone for the welcome message
     
-    // Register client with the SSE manager
+    // Register client with the SSE manager (NO welcome message here now)
     sse_manager.register_client(client_id.clone(), tx.clone()).await;
-    
-    // Register client with the client manager
-    state.client_manager.register_client(
-        crate::dashboard::api::models::ClientType::Sse,
-        None, 
-        None
-    ).await;
-    
+
+    // --- Send Welcome Message Immediately --- 
+    let welcome_event = SseEvent {
+        event_type: "welcome".to_string(),
+        data: format!(r#"{{"clientId":"{}","message":"Connected to RustyMail SSE"}}"#, client_id_clone),
+    };
+    if let Err(_) = tx.send(welcome_event).await {
+        warn!("Failed to send initial welcome message to client {} in handler", client_id_clone);
+        // If we can't send the first message, probably futile to continue
+        // Consider returning an error response or empty stream here
+    }
+    // --- End Welcome Message --- 
+
     // Convert the receiver to a stream
     let event_stream = ReceiverStream::new(rx)
         .map(move |event: SseEvent| {
@@ -254,6 +253,19 @@ pub async fn sse_handler(
     
     // Merge the event stream and heartbeat stream
     let stream = futures::stream::select(event_stream, heartbeat_interval);
+
+    // Spawn a task to register client with the client manager (non-blocking for handler)
+    let client_manager = Arc::clone(&state.client_manager);
+    // Extract relevant info from request headers
+    let user_agent = req.headers().get(actix_web::http::header::USER_AGENT).and_then(|h| h.to_str().ok()).map(String::from);
+    let ip_address = req.peer_addr().map(|addr| addr.ip().to_string());
+    tokio::spawn(async move {
+        client_manager.register_client(
+            crate::dashboard::api::models::ClientType::Sse,
+            ip_address,
+            user_agent
+        ).await;
+    });
     
     // Return SSE streaming response
     Sse::from_stream(stream)

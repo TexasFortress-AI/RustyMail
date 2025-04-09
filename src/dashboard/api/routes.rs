@@ -1,6 +1,7 @@
 use actix_web::{web, Scope};
 use super::handlers;
 use super::sse;
+use log::info;
 
 pub fn configure_routes() -> Scope {
     web::scope("/api/dashboard")
@@ -12,5 +13,6 @@ pub fn configure_routes() -> Scope {
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
+    info!("Configuring dashboard routes (/api/dashboard)");
     cfg.service(configure_routes());
 }

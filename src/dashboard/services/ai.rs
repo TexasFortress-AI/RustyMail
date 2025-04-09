@@ -3,14 +3,15 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 use crate::dashboard::api::models::{ChatbotQuery, ChatbotResponse, EmailData, EmailMessage, EmailFolder};
 use log::debug;
-use chrono::Utc;
-use std::sync::Arc;
 
 // Conversation history entry
 #[derive(Debug, Clone)]
 struct ConversationEntry {
+    #[allow(dead_code)]
     query: String,
+    #[allow(dead_code)]
     response: String,
+    #[allow(dead_code)]
     timestamp: chrono::DateTime<chrono::Utc>,
 }
 
@@ -82,6 +83,7 @@ impl AiService {
     }
     
     // Generate a mock response for testing
+    #[allow(dead_code)]
     fn generate_mock_response(&self, query: &str) -> String {
         let query_lower = query.to_lowercase();
         
@@ -136,6 +138,7 @@ impl AiService {
     }
     
     // Clean up old conversations
+    #[allow(dead_code)]
     async fn cleanup_old_conversations(&self, conversations: &mut HashMap<String, Conversation>) {
         let now = chrono::Utc::now();
         let mut to_remove = Vec::new();
