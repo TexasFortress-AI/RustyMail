@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 
 // Stats Types
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardStats {
     pub active_connections: usize,
     pub request_rate: Vec<RequestRateData>,
@@ -9,20 +9,23 @@ pub struct DashboardStats {
     pub last_updated: String, // ISO timestamp
 }
 
-#[derive(Debug, Clone, Serialize)]
+// Represents a single data point for request rate
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequestRateData {
     pub timestamp: String,
     pub value: u32,
 }
 
-#[derive(Debug, Clone, Serialize)]
+// Represents system health status
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemHealth {
     pub status: SystemStatus,
     pub memory_usage: f32, // percentage
     pub cpu_usage: f32,    // percentage
 }
 
-#[derive(Debug, Clone, Serialize)]
+// Enum for system status
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum SystemStatus {
     Healthy,
