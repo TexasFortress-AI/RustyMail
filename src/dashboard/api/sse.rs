@@ -1,0 +1,259 @@
+use std::convert::Infallible;
+use std::time::Duration;
+use actix_web::{web, HttpResponse};
+use actix_web::http::header::{ContentType, CONTENT_TYPE};
+use actix_web::web::{Bytes, Data};
+use actix_web_lab::sse::{self, Sse};
+use futures_util::stream::{self, Stream};
+use futures_util::StreamExt;
+use std::sync::Arc;
+use tokio::sync::{mpsc, RwLock};
+use tokio::time::interval;
+use serde_json::json;
+use std::collections::HashMap;
+use uuid::Uuid;
+use log::{info, debug, error, warn};
+use crate::dashboard::services::metrics::MetricsService;
+use crate::dashboard::services::clients::ClientManager;
+use chrono::Utc;
+use tokio_stream::wrappers::{ReceiverStream, IntervalStream};
+use std::pin::Pin;
+use serde::Serialize;
+use crate::dashboard::services::DashboardState;
+
+// SSE Event data structure
+#[derive(Debug, Clone)]
+pub struct SseEvent {
+    pub event_type: String,
+    pub data: String,
+}
+
+// SSE client information
+#[derive(Debug)]
+struct SseClient {
+    sender: mpsc::Sender<SseEvent>,
+}
+
+// SSE Manager that keeps track of connected clients
+pub struct SseManager {
+    clients: RwLock<HashMap<String, SseClient>>,
+    metrics_service: Arc<MetricsService>,
+    client_manager: Arc<ClientManager>,
+}
+
+impl SseManager {
+    pub fn new(metrics_service: Arc<MetricsService>, client_manager: Arc<ClientManager>) -> Self {
+        Self {
+            clients: RwLock::new(HashMap::new()),
+            metrics_service,
+            client_manager,
+        }
+    }
+    
+    // Register a new SSE client
+    pub async fn register_client(&self, client_id: String, sender: mpsc::Sender<SseEvent>) {
+        let mut clients = self.clients.write().await;
+        clients.insert(client_id.clone(), SseClient { sender });
+        
+        // Update metrics
+        self.metrics_service.increment_connections().await;
+        
+        info!("New SSE client registered: {}", client_id);
+        
+        // Broadcast client connected event
+        self.broadcast_client_connected(&client_id).await;
+    }
+    
+    // Remove a client when they disconnect
+    pub async fn remove_client(&self, client_id: &str) {
+        let mut clients = self.clients.write().await;
+        clients.remove(client_id);
+        // Update metrics
+        self.metrics_service.decrement_connections().await;
+        info!("SSE client disconnected: {}", client_id);
+        
+        // Broadcast client disconnected event
+        self.broadcast_client_disconnected(client_id).await;
+    }
+    
+    // Broadcast an event to all connected clients
+    pub async fn broadcast(&self, event: SseEvent) {
+        let clients = self.clients.read().await;
+        
+        for (client_id, client) in clients.iter() {
+            if let Err(_) = client.sender.send(event.clone()).await {
+                debug!("Failed to send event to client {}", client_id);
+                // We'll handle client removal on the next heartbeat
+            }
+        }
+    }
+    
+    // Broadcast a stats updated event
+    pub async fn broadcast_stats_updated(&self) {
+        let stats = self.metrics_service.get_current_stats().await;
+        
+        let event = SseEvent {
+            event_type: "stats_updated".to_string(),
+            data: serde_json::to_string(&stats).unwrap_or_else(|e| {
+                error!("Failed to serialize stats: {}", e);
+                "{}".to_string()
+            }),
+        };
+        
+        self.broadcast(event).await;
+    }
+    
+    // Broadcast a client connected event
+    pub async fn broadcast_client_connected(&self, client_id: &str) {
+        let data = json!({
+            "client": {
+                "id": client_id,
+                "type": "SSE",
+                "connectedAt": Utc::now().to_rfc3339(),
+                "status": "Active",
+            }
+        });
+        
+        let event = SseEvent {
+            event_type: "client_connected".to_string(),
+            data: serde_json::to_string(&data).unwrap_or_else(|e| {
+                error!("Failed to serialize client connected data: {}", e);
+                "{}".to_string()
+            }),
+        };
+        
+        self.broadcast(event).await;
+    }
+    
+    // Broadcast a client disconnected event
+    pub async fn broadcast_client_disconnected(&self, client_id: &str) {
+        let data = json!({
+            "client": {
+                "id": client_id,
+                "disconnectedAt": Utc::now().to_rfc3339(),
+            }
+        });
+        
+        let event = SseEvent {
+            event_type: "client_disconnected".to_string(),
+            data: serde_json::to_string(&data).unwrap_or_else(|e| {
+                error!("Failed to serialize client disconnected data: {}", e);
+                "{}".to_string()
+            }),
+        };
+        
+        self.broadcast(event).await;
+    }
+    
+    // Broadcast a system alert
+    pub async fn broadcast_system_alert(&self, alert_type: &str, message: &str) {
+        let data = json!({
+            "type": alert_type,
+            "message": message,
+            "timestamp": Utc::now().to_rfc3339(),
+        });
+        
+        let event = SseEvent {
+            event_type: "system_alert".to_string(),
+            data: serde_json::to_string(&data).unwrap_or_else(|e| {
+                error!("Failed to serialize system alert data: {}", e);
+                "{}".to_string()
+            }),
+        };
+        
+        self.broadcast(event).await;
+    }
+    
+    // Start background task to broadcast stats periodically
+    pub async fn start_stats_broadcast(&self, dashboard_state: web::Data<DashboardState>) {
+        let sse_manager = Arc::new(self.clone());
+        
+        // Start background task to broadcast stats every 5 seconds
+        tokio::spawn(async move {
+            let mut interval = interval(Duration::from_secs(5));
+            loop {
+                interval.tick().await;
+                
+                // Get current stats
+                let stats = dashboard_state.metrics_service.get_current_stats().await;
+                
+                // Serialize to JSON
+                match serde_json::to_string(&stats) {
+                    Ok(json) => {
+                        // Create event and broadcast
+                        let event = SseEvent {
+                            event_type: "stats_update".to_string(),
+                            data: json,
+                        };
+                        sse_manager.broadcast(event).await;
+                    }
+                    Err(e) => {
+                        warn!("Failed to serialize stats for SSE broadcast: {}", e);
+                    }
+                }
+            }
+        });
+        
+        info!("Started stats broadcast for SSE clients");
+    }
+}
+
+// Make SseManager cloneable
+impl Clone for SseManager {
+    fn clone(&self) -> Self {
+        Self {
+            clients: RwLock::new(HashMap::new()),
+            metrics_service: Arc::clone(&self.metrics_service),
+            client_manager: Arc::clone(&self.client_manager),
+        }
+    }
+}
+
+// SSE event handler endpoint
+pub async fn sse_handler(
+    state: web::Data<DashboardState>,
+    sse_manager: web::Data<Arc<SseManager>>,
+) -> Sse<impl Stream<Item = Result<sse::Event, Infallible>>> {
+    let (tx, rx) = mpsc::channel(100);
+    let client_id = Uuid::new_v4().to_string();
+    
+    // Register client with the SSE manager
+    sse_manager.register_client(client_id.clone(), tx.clone()).await;
+    
+    // Register client with the client manager
+    state.client_manager.register_client(
+        crate::dashboard::api::models::ClientType::Sse,
+        None, 
+        None
+    ).await;
+    
+    // Send welcome message
+    let welcome_data = format!(r#"{{"clientId":"{}","message":"Connected to RustyMail SSE"}}"#, client_id);
+    let _ = tx.send(SseEvent {
+        event_type: "welcome".to_string(),
+        data: welcome_data,
+    }).await;
+    
+    // Convert the receiver to a stream
+    let event_stream = ReceiverStream::new(rx)
+        .map(move |event: SseEvent| {
+            let mut sse_event = sse::Event::default();
+            sse_event = sse_event.event(&event.event_type);
+            sse_event = sse_event.data(&event.data);
+            Ok::<_, Infallible>(sse_event)
+        });
+    
+    // Create a heartbeat stream
+    let heartbeat_interval = IntervalStream::new(interval(Duration::from_secs(15)))
+        .map(|_| {
+            let mut event = sse::Event::default();
+            event = event.comment("heartbeat");
+            Ok::<_, Infallible>(event)
+        });
+    
+    // Merge the event stream and heartbeat stream
+    let stream = futures::stream::select(event_stream, heartbeat_interval);
+    
+    // Return SSE streaming response
+    Sse::from_stream(stream)
+}

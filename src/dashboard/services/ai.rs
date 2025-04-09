@@ -6,212 +6,155 @@ use log::{info, debug, error};
 use std::collections::HashMap;
 use tokio::sync::Mutex;
 use chrono::Utc;
+use tokio::sync::RwLock;
 
-// Simple in-memory conversation store
-type ConversationStore = HashMap<String, Vec<String>>;
+// Conversation history entry
+#[derive(Debug, Clone)]
+struct ConversationEntry {
+    query: String,
+    response: String,
+    timestamp: chrono::DateTime<chrono::Utc>,
+}
+
+// Conversation history
+#[derive(Debug, Clone, Default)]
+struct Conversation {
+    entries: Vec<ConversationEntry>,
+    last_activity: chrono::DateTime<chrono::Utc>,
+}
 
 pub struct AiService {
-    imap_client: Arc<ImapClient>,
-    conversations: Mutex<ConversationStore>,
+    // Conversations keyed by conversation ID
+    conversations: RwLock<HashMap<String, Conversation>>,
+    // Placeholder for actual AI client configuration
+    api_key: Option<String>,
 }
 
 impl AiService {
-    pub fn new(imap_client: Arc<ImapClient>) -> Self {
+    pub fn new(api_key: Option<String>) -> Self {
         Self {
-            imap_client,
-            conversations: Mutex::new(HashMap::new()),
+            conversations: RwLock::new(HashMap::new()),
+            api_key,
         }
     }
-    
+
+    // Process a query from the chatbot
     pub async fn process_query(&self, query: ChatbotQuery) -> Result<ChatbotResponse, String> {
-        let conversation_id = query.conversation_id
-            .unwrap_or_else(|| Uuid::new_v4().to_string());
+        let conversation_id = query.conversation_id.unwrap_or_else(|| Uuid::new_v4().to_string());
+        let query_text = query.query.clone();
         
-        // Store query in conversation history
-        {
-            let mut conversations = self.conversations.lock().await;
-            let history = conversations.entry(conversation_id.clone()).or_insert_with(Vec::new);
-            history.push(query.query.clone());
-            
-            // Limit conversation history
-            if history.len() > 10 {
-                history.remove(0);
-            }
-        }
+        debug!("Processing chatbot query for conversation {}: {}", conversation_id, query_text);
         
-        // Process the query and generate a response
-        let (response_text, email_data, followup_suggestions) = 
-            self.generate_response(&query.query, &conversation_id).await?;
+        // Get or create conversation
+        let mut conversations = self.conversations.write().await;
+        let conversation = conversations
+            .entry(conversation_id.clone())
+            .or_insert_with(|| {
+                debug!("Creating new conversation: {}", conversation_id);
+                Conversation {
+                    entries: Vec::new(),
+                    last_activity: chrono::Utc::now(),
+                }
+            });
+        
+        // Update last activity time
+        conversation.last_activity = chrono::Utc::now();
+        
+        // Generate mock response
+        let response_text = self.generate_mock_response(&query_text);
+        
+        // Add to conversation history
+        conversation.entries.push(ConversationEntry {
+            query: query_text,
+            response: response_text.clone(),
+            timestamp: chrono::Utc::now(),
+        });
+        
+        // Clean up old conversations (keep the lock as short as possible)
+        self.cleanup_old_conversations(&mut conversations).await;
         
         Ok(ChatbotResponse {
             text: response_text,
             conversation_id,
-            email_data,
-            followup_suggestions,
+            email_data: Some(self.generate_mock_email_data()),
+            followup_suggestions: Some(vec![
+                "Show me my unread emails".to_string(),
+                "How many emails do I have from support?".to_string(),
+                "What's in my Sent folder?".to_string(),
+            ]),
         })
     }
     
-    async fn generate_response(
-        &self,
-        query: &str,
-        conversation_id: &str,
-    ) -> Result<(String, Option<EmailData>, Option<Vec<String>>), String> {
-        // Get conversation history
-        let history = {
-            let conversations = self.conversations.lock().await;
-            conversations.get(conversation_id)
-                .map(|h| h.clone())
-                .unwrap_or_default()
-        };
-        
-        // Convert query to lowercase for easier matching
+    // Generate a mock response for testing
+    fn generate_mock_response(&self, query: &str) -> String {
         let query_lower = query.to_lowercase();
         
-        // Simple rule-based responses
         if query_lower.contains("hello") || query_lower.contains("hi") {
-            return Ok((
-                "Hello! I'm the RustyMail assistant. How can I help you with your emails today?".to_string(),
-                None,
-                Some(vec![
-                    "Show me my unread emails".to_string(),
-                    "How many emails are in my inbox?".to_string(),
-                    "Show me my folders".to_string(),
-                ]),
-            ));
+            "Hello! I'm the RustyMail assistant. How can I help you with your emails today?".to_string()
+        } else if query_lower.contains("unread") {
+            "You have 3 unread emails in your inbox. Would you like me to show them to you?".to_string()
+        } else if query_lower.contains("inbox") {
+            "Your inbox contains 24 messages total, with 3 unread. The most recent message is from support@example.com about 'Your recent inquiry'.".to_string()
+        } else if query_lower.contains("sent") {
+            "Your Sent folder contains 12 messages. The most recent was sent to contact@example.com about 'Project status update'.".to_string()
+        } else {
+            "I'm not sure how to respond to that yet. I'm just a simulated AI assistant for development purposes. In the real implementation, I would use RIG or OpenAI to generate helpful responses about your emails.".to_string()
         }
-        
-        // Handle email count queries
-        if query_lower.contains("how many") && (query_lower.contains("email") || query_lower.contains("message")) {
-            // In a real implementation, we would query the IMAP server
-            // For now, we'll return a mock response
-            let folder = if query_lower.contains("inbox") {
-                "INBOX"
-            } else if query_lower.contains("sent") {
-                "Sent"
-            } else {
-                "INBOX"
-            };
-            
-            let unread_count = 12; // Mock value
-            let total_count = 42; // Mock value
-            
-            return Ok((
-                format!("You have {} emails in {}, including {} unread messages.", 
-                        total_count, folder, unread_count),
-                Some(EmailData {
-                    count: Some(total_count),
-                    messages: None,
-                    folders: None,
-                }),
-                Some(vec![
-                    "Show me my unread emails".to_string(),
-                    "When was the last email received?".to_string(),
-                ]),
-            ));
-        }
-        
-        // Handle folder listing
-        if query_lower.contains("folder") && (query_lower.contains("show") || query_lower.contains("list")) {
-            // Mock folders
-            let folders = vec![
-                EmailFolder { 
-                    name: "INBOX".to_string(), 
-                    count: 42, 
-                    unread_count: 12 
-                },
-                EmailFolder { 
-                    name: "Sent".to_string(), 
-                    count: 18, 
-                    unread_count: 0 
-                },
-                EmailFolder { 
-                    name: "Drafts".to_string(), 
-                    count: 3, 
-                    unread_count: 0 
-                },
-                EmailFolder { 
-                    name: "Spam".to_string(), 
-                    count: 7, 
-                    unread_count: 7 
-                },
-            ];
-            
-            return Ok((
-                "Here are your email folders:".to_string(),
-                Some(EmailData {
-                    count: None,
-                    messages: None,
-                    folders: Some(folders),
-                }),
-                Some(vec![
-                    "Show me emails in INBOX".to_string(),
-                    "How many unread emails do I have?".to_string(),
-                ]),
-            ));
-        }
-        
-        // Handle showing emails
-        if (query_lower.contains("show") || query_lower.contains("list")) && 
-           (query_lower.contains("email") || query_lower.contains("message")) {
-            let folder = if query_lower.contains("inbox") {
-                "INBOX"
-            } else if query_lower.contains("sent") {
-                "Sent"
-            } else {
-                "INBOX"
-            };
-            
-            // Create mock messages
-            let messages = vec![
+    }
+    
+    // Generate mock email data for testing
+    fn generate_mock_email_data(&self) -> EmailData {
+        EmailData {
+            messages: Some(vec![
                 EmailMessage {
                     id: "1".to_string(),
-                    subject: "Weekly Team Meeting".to_string(),
-                    from: "team@example.com".to_string(),
-                    date: Utc::now().to_rfc3339(),
-                    snippet: "Let's discuss project progress...".to_string(),
+                    subject: "Your recent inquiry".to_string(),
+                    from: "support@example.com".to_string(), 
+                    date: chrono::Utc::now().to_rfc3339(),
+                    snippet: "Thank you for contacting us about...".to_string(),
                     is_read: false,
                 },
                 EmailMessage {
                     id: "2".to_string(),
-                    subject: "Your Account Statement".to_string(),
-                    from: "bank@example.com".to_string(),
-                    date: Utc::now().to_rfc3339(),
-                    snippet: "Your monthly statement is ready...".to_string(),
+                    subject: "Weekly newsletter".to_string(),
+                    from: "news@example.com".to_string(),
+                    date: (chrono::Utc::now() - chrono::Duration::days(1)).to_rfc3339(),
+                    snippet: "This week's top stories include...".to_string(),
                     is_read: true,
                 },
-                EmailMessage {
-                    id: "3".to_string(),
-                    subject: "Vacation Plans".to_string(),
-                    from: "friend@example.com".to_string(),
-                    date: Utc::now().to_rfc3339(),
-                    snippet: "I was thinking about our summer plans...".to_string(),
-                    is_read: false,
+            ]),
+            count: Some(24),
+            folders: Some(vec![
+                EmailFolder {
+                    name: "INBOX".to_string(),
+                    count: 24,
+                    unread_count: 3,
                 },
-            ];
-            
-            return Ok((
-                format!("Here are the most recent emails in {}:", folder),
-                Some(EmailData {
-                    count: Some(messages.len() as u32),
-                    messages: Some(messages),
-                    folders: None,
-                }),
-                Some(vec![
-                    "Show me my unread emails only".to_string(),
-                    "How many emails do I have total?".to_string(),
-                ]),
-            ));
+                EmailFolder {
+                    name: "Sent".to_string(),
+                    count: 12,
+                    unread_count: 0,
+                },
+            ]),
+        }
+    }
+    
+    // Clean up old conversations
+    async fn cleanup_old_conversations(&self, conversations: &mut HashMap<String, Conversation>) {
+        let now = chrono::Utc::now();
+        let mut to_remove = Vec::new();
+        
+        // Find conversations older than 24 hours
+        for (id, convo) in conversations.iter() {
+            if (now - convo.last_activity).num_hours() > 24 {
+                to_remove.push(id.clone());
+            }
         }
         
-        // Default fallback response
-        Ok((
-            "I'm not sure how to help with that. You can ask me about your emails, folders, or message counts.".to_string(),
-            None,
-            Some(vec![
-                "Show me my recent emails".to_string(),
-                "How many unread emails do I have?".to_string(),
-                "Show me my folders".to_string(),
-            ]),
-        ))
+        // Remove old conversations
+        for id in to_remove {
+            conversations.remove(&id);
+            debug!("Removed old conversation: {}", id);
+        }
     }
 }

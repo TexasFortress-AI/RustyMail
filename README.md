@@ -224,6 +224,64 @@ INTERFACE=rest  # rest, stdio, sse
 
 ---
 
+## Dashboard
+
+RustyMail includes a web-based dashboard for monitoring and interacting with the server. The dashboard provides:
+
+- Real-time statistics about connections and server performance
+- List of connected clients
+- AI chatbot interface for natural language interaction
+- Configuration information
+
+### Dashboard Setup
+
+To set up and build the dashboard:
+
+1. Run the provided build script:
+   ```bash
+   ./scripts/build-dashboard.sh
+   ```
+
+2. Ensure your `.env` file includes the dashboard configuration:
+   ```
+   DASHBOARD_ENABLED=true
+   DASHBOARD_PATH=./dashboard-static
+   ```
+
+3. Run the server with the REST/SSE interface enabled:
+   ```bash
+   cargo run --bin rustymail-server
+   ```
+
+4. Access the dashboard at:
+   ```
+   http://localhost:3000/dashboard
+   ```
+
+### Dashboard Development
+
+For frontend developers, you can work on the dashboard UI separately:
+
+1. Navigate to the frontend directory:
+   ```bash
+   cd frontend/rustymail-app-main
+   ```
+
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+3. Start the development server:
+   ```bash
+   npm run dev
+   ```
+
+4. Build for production:
+   ```bash
+   npm run build
+   ```
+
 ## Development
 
 ### Run Tests
@@ -244,26 +302,18 @@ cargo bench
 cargo clippy
 ```
 
----
-
 ## Contributing
 
 Contributions welcome! Please see `CONTRIBUTING.md`.
-
----
 
 ## License
 
 MIT License. See `LICENSE`.
 
----
-
 ## Authors
 
 - Steve Olson - [GitHub](https://github.com/rangersdo)
 - Contact: [steve@texasfortress.ai](mailto:steve@texasfortress.ai)
-
----
 
 ## Sponsors
 

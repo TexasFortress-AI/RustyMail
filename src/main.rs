@@ -10,6 +10,7 @@ use rustymail::api::mcp_sse::SseAdapter;
 use rustymail::api::mcp_sse::SseState;
 use tokio::sync::Mutex as TokioMutex;
 use env_logger;
+use rustymail::dashboard; // Import dashboard module
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -93,6 +94,10 @@ async fn main() -> std::io::Result<()> {
     let app_state = AppState::new(imap_client_rest.clone(), tool_registry_rest.clone());
     info!("Application state initialized.");
 
+    // Create shared configuration for dashboard
+    let config = web::Data::new(settings.clone());
+    info!("Dashboard configuration initialized.");
+
     // Configure and start HTTP server
     let listen_addr = format!("{}:{}", rest_config.host, rest_config.port);
     info!("Starting HTTP server (REST & SSE) on {}", listen_addr);
@@ -101,9 +106,14 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(app_state.clone())) // Share AppState (client + registry)
             .app_data(web::Data::new(sse_state.clone())) // Share SSE state separately
+            .app_data(config.clone()) // Share configuration for dashboard
             .wrap(actix_web::middleware::Logger::default()) // Add logger middleware
             .configure(configure_rest_service) // Configure REST routes
             .configure(SseAdapter::configure_sse_service) // Configure SSE routes
+            .configure(|cfg| {
+                // Initialize dashboard module with routes and static file serving
+                dashboard::init(config.clone(), cfg);
+            })
     })
     .bind(&listen_addr)
     .map_err(|e| {

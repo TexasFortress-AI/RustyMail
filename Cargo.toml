@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 description = "A modern IMAP client with multiple interface options"
 authors = ["Your Name <your.email@example.com>"]
+default-run = "rustymail-server"
 
 [dependencies]
 # Core IMAP
@@ -25,6 +26,8 @@ actix-web = "4"
 actix-rt = "2"
 # Add actix-web-lab for SSE
 actix-web-lab = "0.20" 
+# Add actix-files for serving static files
+actix-files = "0.6"
 
 # Serialization/Deserialization
 serde = { version = "1.0", features = ["derive"] }
@@ -68,9 +71,13 @@ urlencoding = "2.1"
 # Added base64 dependency
 base64 = "0.21"
 
+# Dashboard dependencies
+sysinfo = "0.30" # For system metrics
+rand = "0.8" # For random number generation in example metrics
+
 [dev-dependencies]
 # Remove reqwest native-tls feature if not needed
-reqwest = { version = "0.12", features = ["json"] } 
+reqwest = { version = "0.12", features = ["json", "stream"] } 
 urlencoding = "2.1" # For URL encoding folder names in E2E tests
 # Add actix-web for REST E2E tests
 actix-web = "4"
@@ -82,8 +89,9 @@ uuid = { version = "1", features = ["v4"] }
 scopeguard = "1.2"
 dotenv = "0.15.0"
 serial_test = "3.1.1"
-rand = "0.8" # Add rand dependency
 itertools = "0.12" # Add itertools dependency
+lazy_static = "1.4" # For static regex patterns in SSE tests
+regex = "1" # For parsing SSE events
 
 [features]
 default = []

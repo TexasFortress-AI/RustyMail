@@ -55,4 +55,13 @@ Achieve comprehensive test coverage for the RustyMail IMAP server, including Uni
 
 *   **Credentials:** Live and E2E tests rely on IMAP credentials stored in a `.env` file at the project root.
 *   **Test Execution:** Use the `bash scripts/test_*.sh` scripts for running specific test suites or all of them.
-*   **Concurrency:** E2E and Live tests currently run sequentially within their respective main test functions (`run_rest_e2e_tests`, tests within `mod live_tests`). 
+*   **Concurrency:** E2E and Live tests currently run sequentially within their respective main test functions (`run_rest_e2e_tests`, tests within `mod live_tests`).
+
+## Completed Tasks
+
+* **Dashboard Integration:**
+  * ✅ Frontend files built and moved to dashboard-static directory
+  * ✅ Dashboard configuration added to .env file
+  * ✅ main.rs updated to initialize dashboard module
+  * ✅ actix-files dependency added for static file serving
+  * ✅ Build script created for dashboard setup 

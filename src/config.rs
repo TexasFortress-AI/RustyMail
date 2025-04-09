@@ -36,6 +36,12 @@ pub struct LogConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DashboardConfig {
+    pub enabled: bool,
+    pub path: Option<String>, // Path to static frontend files
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
     pub interface: InterfaceType,
     pub log: LogConfig,
@@ -45,6 +51,7 @@ pub struct Settings {
     pub imap_pass: String,
     pub rest: Option<RestConfig>, // Use Option for potentially disabled sections
     pub mcp_stdio: Option<McpStdioConfig>,
+    pub dashboard: Option<DashboardConfig>, // Dashboard configuration
 }
 
 impl Settings {
@@ -71,6 +78,7 @@ impl Settings {
             // Add default values
             .set_default("interface", "rest")?
             .set_default("log.level", "info")?
+            .set_default("dashboard.enabled", false)?
             // Load config file source, but make it optional
             .add_source(File::from(config_file_path.clone()).required(false))
             // Use Environment::default() to load unprefixed variables

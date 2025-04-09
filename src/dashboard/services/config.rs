@@ -1,97 +1,116 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use std::time::{Instant, Duration};
+use serde::{Serialize, Deserialize};
 use crate::dashboard::api::models::{ServerConfig, ImapAdapter};
-use crate::config::Settings;
 use log::{info, debug, error};
+use std::time::Instant;
+
+#[derive(Debug, Clone)]
+pub struct ConfigData {
+    pub active_adapter_id: String,
+    pub available_adapters: Vec<ImapAdapter>,
+    pub start_time: Instant,
+    pub version: String,
+}
 
 pub struct ConfigService {
-    config: RwLock<ServerConfig>,
-    start_time: Instant,
+    config: RwLock<ConfigData>,
 }
 
 impl ConfigService {
-    pub fn new(settings: Arc<Settings>) -> Self {
-        let imap_host = settings.imap_host.clone();
-        let version = env!("CARGO_PKG_VERSION").to_string();
-        
-        // Create default adapters
-        let adapters = vec![
+    pub fn new() -> Self {
+        // Define available adapters
+        let available_adapters = vec![
             ImapAdapter {
-                id: "default".to_string(),
-                name: format!("{} (Default)", imap_host),
-                description: format!("Default IMAP server at {}", imap_host),
+                id: "mock".to_string(),
+                name: "Mock IMAP".to_string(),
+                description: "In-memory IMAP server for testing".to_string(),
                 is_active: true,
             },
             ImapAdapter {
-                id: "mock".to_string(),
-                name: "Mock IMAP Server".to_string(),
-                description: "Simulated IMAP server for testing".to_string(),
+                id: "godaddy".to_string(),
+                name: "GoDaddy".to_string(),
+                description: "Live GoDaddy IMAP server".to_string(),
                 is_active: false,
             },
-            ImapAdapter {
-                id: "gmail".to_string(),
-                name: "Gmail IMAP".to_string(), 
-                description: "Gmail IMAP server (imap.gmail.com)".to_string(),
-                is_active: false,
-            },
-            ImapAdapter {
-                id: "outlook".to_string(), 
-                name: "Outlook IMAP".to_string(),
-                description: "Outlook IMAP server (outlook.office365.com)".to_string(),
-                is_active: false,
-            }
         ];
-        
-        let config = ServerConfig {
-            active_adapter: adapters[0].clone(),
-            available_adapters: adapters,
-            version,
-            uptime: 0,
-        };
-        
-        Self {
-            config: RwLock::new(config),
+
+        let config_data = ConfigData {
+            active_adapter_id: "mock".to_string(), // Default to mock
+            available_adapters,
             start_time: Instant::now(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        };
+
+        Self {
+            config: RwLock::new(config_data),
         }
     }
-    
-    // Get current server configuration
+
+    // Get the current server configuration
     pub async fn get_configuration(&self) -> ServerConfig {
-        let mut config = self.config.write().await;
+        let config = self.config.read().await;
         
-        // Update uptime
-        config.uptime = self.start_time.elapsed().as_secs();
+        // Find the active adapter
+        let active_adapter = config.available_adapters.iter()
+            .find(|a| a.id == config.active_adapter_id)
+            .cloned()
+            .unwrap_or_else(|| {
+                error!("Active adapter not found in available adapters");
+                ImapAdapter {
+                    id: "unknown".to_string(),
+                    name: "Unknown".to_string(),
+                    description: "Unknown adapter".to_string(),
+                    is_active: true,
+                }
+            });
+
+        // Calculate uptime in seconds
+        let uptime = config.start_time.elapsed().as_secs();
         
-        config.clone()
+        ServerConfig {
+            active_adapter,
+            available_adapters: config.available_adapters.clone(),
+            version: config.version.clone(),
+            uptime,
+        }
     }
-    
-    // Set active IMAP adapter
+
+    // Set the active IMAP adapter
     pub async fn set_active_adapter(&self, adapter_id: &str) -> Result<ServerConfig, String> {
         let mut config = self.config.write().await;
         
-        // Find adapter by ID
-        let adapter_index = config.available_adapters
-            .iter()
-            .position(|a| a.id == adapter_id)
-            .ok_or_else(|| format!("Adapter with ID '{}' not found", adapter_id))?;
-        
-        // Reset all adapters to inactive
-        for adapter in &mut config.available_adapters {
-            adapter.is_active = false;
+        // Check if adapter exists
+        if !config.available_adapters.iter().any(|a| a.id == adapter_id) {
+            return Err(format!("Adapter '{}' not found", adapter_id));
         }
+
+        // Update adapter active status
+        for adapter in &mut config.available_adapters {
+            adapter.is_active = adapter.id == adapter_id;
+        }
+
+        // Update active adapter ID
+        config.active_adapter_id = adapter_id.to_string();
         
-        // Set selected adapter to active
-        config.available_adapters[adapter_index].is_active = true;
-        config.active_adapter = config.available_adapters[adapter_index].clone();
+        info!("Active IMAP adapter set to: {}", adapter_id);
         
-        // Update uptime
-        config.uptime = self.start_time.elapsed().as_secs();
+        // Return updated configuration
+        let active_adapter = config.available_adapters.iter()
+            .find(|a| a.id == adapter_id)
+            .cloned()
+            .unwrap();
+            
+        let uptime = config.start_time.elapsed().as_secs();
         
-        info!("Active IMAP adapter changed to '{}'", adapter_id);
-        Ok(config.clone())
+        Ok(ServerConfig {
+            active_adapter,
+            available_adapters: config.available_adapters.clone(),
+            version: config.version.clone(),
+            uptime,
+        })
     }
-    
+
     // Add a new IMAP adapter
     pub async fn add_adapter(&self, adapter: ImapAdapter) -> Result<ServerConfig, String> {
         let mut config = self.config.write().await;
@@ -105,9 +124,9 @@ impl ConfigService {
         config.available_adapters.push(adapter);
         
         // Update uptime
-        config.uptime = self.start_time.elapsed().as_secs();
+        config.start_time = Instant::now();
         
-        Ok(config.clone())
+        Ok(self.get_configuration().await)
     }
     
     // Remove an IMAP adapter
@@ -115,7 +134,7 @@ impl ConfigService {
         let mut config = self.config.write().await;
         
         // Cannot remove active adapter
-        if config.active_adapter.id == adapter_id {
+        if config.active_adapter_id == adapter_id {
             return Err("Cannot remove active adapter".to_string());
         }
         
@@ -129,8 +148,8 @@ impl ConfigService {
         config.available_adapters.remove(adapter_index);
         
         // Update uptime
-        config.uptime = self.start_time.elapsed().as_secs();
+        config.start_time = Instant::now();
         
-        Ok(config.clone())
+        Ok(self.get_configuration().await)
     }
 }
