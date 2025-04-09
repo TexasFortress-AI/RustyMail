@@ -10,5 +10,7 @@ echo # Add a newline
 "$SCRIPT_DIR/test_live.sh"
 echo # Add a newline
 "$SCRIPT_DIR/test_e2e.sh"
+echo # Add a newline
+"$SCRIPT_DIR/test_dashboard.sh"
 
 echo "=== ALL Tests Passed ===" 

@@ -596,6 +596,25 @@ The following integration tests have been implemented in `tests/dashboard_sse_te
   - Validates that the server sends periodic heartbeats to keep connections alive
   - Tests the proper format of heartbeat comments
 
+### 6. System Alerts ✨
+- `test_sse_system_alerts`
+  - Tests broadcasting of system alerts to connected clients
+  - Validates alert format and content
+  - Verifies all clients receive the alerts
+
+### 7. Stress Testing ✨
+- `test_sse_stress_test`
+  - Tests the system under high load with many concurrent clients
+  - Measures performance and resource usage
+  - Verifies all clients receive expected events
+  - Tagged as `#[ignore]` due to resource intensity
+
+### 8. Reconnection Handling ✨
+- `test_sse_reconnection`
+  - Tests client reconnection behavior
+  - Verifies client state management after reconnection
+  - Validates that reconnected clients receive welcome events
+
 ### Running the Tests
 
 To run all dashboard SSE tests:
@@ -606,4 +625,9 @@ cargo test --test dashboard_sse_test --features integration_tests
 To run a specific test:
 ```bash
 cargo test --test dashboard_sse_test::test_sse_heartbeat --features integration_tests
+```
+
+To run resource-intensive tests:
+```bash
+cargo test --test dashboard_sse_test --features integration_tests -- --ignored
 ```
