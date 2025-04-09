@@ -32,7 +32,7 @@ pub fn init(config: web::Data<Settings>, app_cfg: &mut web::ServiceConfig) {
     
     // Register API routes with access to dashboard state
     app_cfg.app_data(dashboard_state.clone());
-    api::init(app_cfg);
+    api::init(app_cfg, dashboard_state.clone());
     
     // Serve static frontend files if dashboard is enabled and path is configured
     if let Some(dashboard_config) = &config.dashboard {

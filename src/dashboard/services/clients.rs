@@ -1,11 +1,11 @@
+use std::time::Duration;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
-use std::collections::HashMap;
 use tokio::sync::RwLock;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 use uuid::Uuid;
+use log::{info, debug, warn};
 use crate::dashboard::api::models::{ClientInfo, ClientType, ClientStatus, PaginatedClients, Pagination};
-use log::{debug, warn, info};
 
 #[derive(Debug, Clone)]
 pub struct ClientData {
@@ -188,7 +188,8 @@ impl ClientManager {
             let clients_read = manager.clients.read().await;
             for (id, client) in clients_read.iter() {
                 // If last activity was more than 30 minutes ago, mark for removal
-                if (now - client.last_activity).num_minutes() > 30 {
+                let duration = now.signed_duration_since(client.last_activity);
+                if duration.num_minutes() > 30 {
                     to_remove.push(id.clone());
                 }
             }

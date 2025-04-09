@@ -1,10 +1,8 @@
 use std::convert::Infallible;
 use std::time::Duration;
-use actix_web::{web, HttpResponse};
-use actix_web::http::header::{ContentType, CONTENT_TYPE};
-use actix_web::web::{Bytes, Data};
+use actix_web::web;
 use actix_web_lab::sse::{self, Sse};
-use futures_util::stream::{self, Stream};
+use futures_util::stream::Stream;
 use futures_util::StreamExt;
 use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
@@ -17,8 +15,6 @@ use crate::dashboard::services::metrics::MetricsService;
 use crate::dashboard::services::clients::ClientManager;
 use chrono::Utc;
 use tokio_stream::wrappers::{ReceiverStream, IntervalStream};
-use std::pin::Pin;
-use serde::Serialize;
 use crate::dashboard::services::DashboardState;
 
 // SSE Event data structure
@@ -237,17 +233,19 @@ pub async fn sse_handler(
     // Convert the receiver to a stream
     let event_stream = ReceiverStream::new(rx)
         .map(move |event: SseEvent| {
-            let mut sse_event = sse::Event::default();
-            sse_event = sse_event.event(&event.event_type);
-            sse_event = sse_event.data(&event.data);
+            // Create event using Data::new and event type
+            let sse_event = sse::Event::Data(
+                sse::Data::new(&*event.data)
+                    .event(&*event.event_type)
+            );
             Ok::<_, Infallible>(sse_event)
         });
     
     // Create a heartbeat stream
     let heartbeat_interval = IntervalStream::new(interval(Duration::from_secs(15)))
         .map(|_| {
-            let mut event = sse::Event::default();
-            event = event.comment("heartbeat");
+            // Create event comment
+            let event = sse::Event::Comment("heartbeat".into());
             Ok::<_, Infallible>(event)
         });
     

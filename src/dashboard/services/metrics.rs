@@ -1,11 +1,11 @@
 use std::sync::Arc;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
+use chrono::Utc;
 use tokio::sync::RwLock;
-use chrono::{DateTime, Utc};
-use crate::dashboard::api::models::{DashboardStats, RequestRateData, SystemHealth, SystemStatus};
+use sysinfo::{System, CpuRefreshKind, RefreshKind};
 use log::{debug, error, info};
+use crate::dashboard::api::models::{DashboardStats, RequestRateData, SystemHealth, SystemStatus};
 use std::collections::VecDeque;
-use sysinfo::System;
 
 // Store for metrics data
 #[derive(Debug)]

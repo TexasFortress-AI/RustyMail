@@ -32,7 +32,7 @@ pub struct DashboardState {
 }
 
 // Initialize the services
-pub fn init(config: web::Data<Settings>) -> web::Data<DashboardState> {
+pub fn init(_config: web::Data<Settings>) -> web::Data<DashboardState> {
     info!("Initializing dashboard services");
     
     // Create metrics service with 5-second update interval

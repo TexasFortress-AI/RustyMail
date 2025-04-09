@@ -1,8 +1,8 @@
+use log::{debug, info, error};
 use crate::dashboard::api::models::{ChatbotQuery, ChatbotResponse, EmailData, EmailMessage, EmailFolder};
 use crate::imap::ImapClient;
 use std::sync::Arc;
 use uuid::Uuid;
-use log::{info, debug, error};
 use std::collections::HashMap;
 use tokio::sync::Mutex;
 use chrono::Utc;

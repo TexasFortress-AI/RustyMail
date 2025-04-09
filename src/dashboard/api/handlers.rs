@@ -1,10 +1,9 @@
 use actix_web::{web, HttpResponse, Responder};
-use std::sync::Arc;
 use serde::Deserialize;
 use log::{info, debug};
 use crate::dashboard::api::errors::ApiError;
 use crate::dashboard::services::DashboardState;
-use crate::dashboard::api::models::{ChatbotQuery, ChatbotResponse};
+use crate::dashboard::api::models::ChatbotQuery;
 
 // Query parameters for client list endpoint
 #[derive(Debug, Deserialize)]
