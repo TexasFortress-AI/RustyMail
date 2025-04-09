@@ -1,9 +1,7 @@
-use std::sync::Arc;
 use tokio::sync::RwLock;
-use serde::{Serialize, Deserialize};
 use crate::dashboard::api::models::{ServerConfig, ImapAdapter};
 use log::{info, error};
-use std::time::{Duration, SystemTime, UNIX_EPOCH, Instant};
+use std::time::Instant;
 
 #[derive(Debug, Clone)]
 pub struct ConfigData {

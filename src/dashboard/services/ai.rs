@@ -1,11 +1,7 @@
-use log::{debug, info, error};
+use log::debug;
 use crate::dashboard::api::models::{ChatbotQuery, ChatbotResponse, EmailData, EmailMessage, EmailFolder};
-use crate::imap::ImapClient;
-use std::sync::Arc;
-use uuid::Uuid;
 use std::collections::HashMap;
-use tokio::sync::Mutex;
-use chrono::Utc;
+use uuid::Uuid;
 use tokio::sync::RwLock;
 
 // Conversation history entry

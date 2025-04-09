@@ -2,8 +2,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use chrono::Utc;
 use tokio::sync::RwLock;
-use sysinfo::{System, CpuRefreshKind, RefreshKind};
-use log::{debug, error, info};
+use sysinfo::{System, RefreshKind, CpuRefreshKind, MemoryRefreshKind};
+use log::debug;
 use crate::dashboard::api::models::{DashboardStats, RequestRateData, SystemHealth, SystemStatus};
 use std::collections::VecDeque;
 
@@ -50,7 +50,11 @@ impl MetricsService {
         // Spawn background task to collect metrics
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(collection_interval);
-            let mut sys = System::new();
+            // Initialize system with specific refresh kinds for CPU and memory
+            let refresh_kind = RefreshKind::new()
+                .with_cpu(CpuRefreshKind::everything())
+                .with_memory(MemoryRefreshKind::everything());
+            let mut sys = System::new_with_specifics(refresh_kind);
             
             loop {
                 interval.tick().await;
@@ -69,11 +73,16 @@ impl MetricsService {
         sys.refresh_all();
         
         // Get CPU usage as percentage (0-100)
-        // Implementation depends on sysinfo version
-        let cpu_usage = 0.0; // Mock for now
+        let cpu_usage = sys.global_cpu_info().cpu_usage();
         
         // Get memory usage as percentage
-        let memory_usage = 0.0; // Mock for now
+        let total_memory = sys.total_memory() as f32;
+        let used_memory = sys.used_memory() as f32;
+        let memory_usage = if total_memory > 0.0 {
+            (used_memory / total_memory) * 100.0
+        } else {
+            0.0
+        };
         
         // Add current request rate data point with timestamp
         let timestamp = Utc::now().to_rfc3339();
