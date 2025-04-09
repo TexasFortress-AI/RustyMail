@@ -187,6 +187,24 @@ impl TestServer {
     }
 }
 
+// Implement Drop to ensure shutdown is called even on panic
+impl Drop for TestServer {
+    fn drop(&mut self) {
+        // Only attempt shutdown if a process exists
+        if self.process.is_some() {
+            println!("TestServer drop: Shutting down server process...");
+            // Create a new Runtime to run the async shutdown method in a sync context
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to build Tokio runtime for TestServer Drop");
+            
+            rt.block_on(self.shutdown());
+            println!("TestServer drop: Shutdown finished.");
+        }
+    }
+}
+
 // Helper function for health check
 async fn test_health_check(client: &Client) -> bool {
     let health_url = format!("{}/health", BASE_URL);

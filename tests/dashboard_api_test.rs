@@ -152,19 +152,54 @@ mod dashboard_api_tests {
         async fn shutdown(&mut self) {
             println!("Shutting down test server on port {}...", self.port);
             if let Some(mut child) = self.process.take() {
+                let pid = child.id();
+                println!("Attempting to kill server process with PID {:?}...", pid);
                 match child.kill().await {
-                    Ok(_) => println!("Server process killed successfully."),
-                    Err(e) => eprintln!("Error killing server process: {}", e),
+                    Ok(_) => {
+                        println!("Kill signal sent to server process {:?}", pid);
+                        // Wait briefly for the process to exit after kill
+                        match tokio::time::timeout(Duration::from_secs(5), child.wait()).await {
+                            Ok(Ok(status)) => println!("Server process {:?} exited with status: {}", pid, status),
+                            Ok(Err(e)) => eprintln!("Error waiting for server process {:?} exit: {}", pid, e),
+                            Err(_) => eprintln!("Timeout waiting for server process {:?} to exit after kill", pid),
+                        }
+                    },
+                    Err(e) => eprintln!("Error sending kill signal to server process {:?}: {}", pid, e),
                 }
             }
-            self._stdout_task.abort();
-            self._stderr_task.abort();
+            // Abort background tasks regardless of kill success
+            if !self._stdout_task.is_finished() {
+                self._stdout_task.abort();
+            }
+            if !self._stderr_task.is_finished() {
+                self._stderr_task.abort();
+            }
             println!("Background I/O tasks aborted.");
-            tokio::time::sleep(Duration::from_millis(100)).await;
+            // No need for extra sleep here, wait() handled potential delays
             if let Some(path) = &self.pid_file {
                 let _ = fs::remove_file(path);
             }
             println!("Test server shutdown complete.");
+        }
+    }
+
+    // Implement Drop to ensure shutdown is called even on panic
+    impl Drop for TestServer {
+        fn drop(&mut self) {
+            // Only attempt shutdown if a process exists
+            if self.process.is_some() {
+                println!("TestServer drop: Shutting down server process...");
+                // Create a new Runtime to run the async shutdown method in a sync context
+                // Note: Using block_on in a test Drop is generally okay, but avoid in production Drop impls
+                // Consider using a dedicated cleanup thread or signal handling for robust production scenarios
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("Failed to build Tokio runtime for TestServer Drop");
+                
+                rt.block_on(self.shutdown());
+                 println!("TestServer drop: Shutdown finished.");
+            }
         }
     }
     // --- End Test Server Infrastructure ---

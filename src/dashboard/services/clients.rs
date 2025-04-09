@@ -1,7 +1,7 @@
 use std::time::Duration;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Utc, Duration as ChronoDuration};
 use std::collections::HashMap;
 use uuid::Uuid;
 use log::{info, debug, warn};
@@ -169,31 +169,69 @@ impl ClientManager {
         clients.len()
     }
     
-    // Cleanup inactive clients (run periodically)
+    // Cleanup inactive or disconnecting clients (run periodically)
     async fn cleanup_inactive_clients(clients_arc: Arc<RwLock<HashMap<String, ClientData>>>) {
         let now = Utc::now();
+        // Define timeouts using chrono::Duration
+        let idle_timeout = ChronoDuration::minutes(30); 
+        let disconnecting_grace_period = ChronoDuration::minutes(1); 
+
         let mut to_remove = Vec::new();
 
-        // Find inactive clients
-        {
+        // Find clients to remove
+        { // Scoped read lock
             let clients_read = clients_arc.read().await;
+            debug!("Running client cleanup task. Current client count: {}", clients_read.len());
             for (id, client) in clients_read.iter() {
-                // If last activity was more than 30 minutes ago, mark for removal
-                let duration = now.signed_duration_since(client.last_activity);
-                if duration.num_minutes() > 30 {
+                let time_since_last_activity = now.signed_duration_since(client.last_activity);
+                
+                let should_remove = match client.status {
+                    // Remove if Idle for longer than the idle timeout
+                    ClientStatus::Idle => {
+                        let is_over_timeout = time_since_last_activity > idle_timeout;
+                        if is_over_timeout {
+                             debug!("Marking Idle client {} for removal (inactive for {}s > {}s)", id, time_since_last_activity.num_seconds(), idle_timeout.num_seconds());
+                        }
+                        is_over_timeout
+                    }
+                    // Remove if Disconnecting for longer than the grace period
+                    ClientStatus::Disconnecting => {
+                         let is_over_grace = time_since_last_activity > disconnecting_grace_period;
+                         if is_over_grace {
+                             debug!("Marking Disconnecting client {} for removal (disconnecting for {}s > {}s)", id, time_since_last_activity.num_seconds(), disconnecting_grace_period.num_seconds());
+                         }
+                         is_over_grace
+                    }
+                    // Don't remove Active clients based on inactivity alone in this task
+                    ClientStatus::Active => false, 
+                };
+
+                if should_remove {
                     to_remove.push(id.clone());
                 }
             }
-        }
+        } // Read lock is dropped here
 
-        // Remove inactive clients
+        // Remove the identified clients
         if !to_remove.is_empty() {
-            let mut clients_write = clients_arc.write().await;
+            let mut clients_write = clients_arc.write().await; // Acquire write lock
+            let mut removed_count = 0;
             for id in to_remove.iter() {
-                clients_write.remove(id);
-                info!("Removed inactive client: {}", id);
+                // Check if the client still exists before removing 
+                // (it might have been removed by another operation between locks)
+                if clients_write.remove(id).is_some() {
+                    info!("Cleaned up inactive/disconnected client: {}", id);
+                    removed_count += 1;
+                }
             }
-            info!("Cleaned up {} inactive clients", to_remove.len());
+            if removed_count > 0 {
+                info!("Client cleanup task removed {} clients.", removed_count);
+            } else {
+                 // This might happen if clients were removed between read and write locks
+                 debug!("Client cleanup task found candidates but none were present for removal.");
+            }
+        } else {
+            debug!("Client cleanup task found no clients to remove in this cycle.");
         }
     }
 }

@@ -30,6 +30,12 @@ pub enum ApiError {
     
     #[error("Serialization error: {0}")]
     SerializationError(String),
+
+    #[error("AI Service error: {0}")]
+    AiServiceError(String),
+
+    #[error("AI Service request failed: {0}")]
+    AiRequestError(String),
 }
 
 #[derive(Serialize)]
@@ -44,10 +50,10 @@ impl ResponseError for ApiError {
         let error_message = self.to_string();
         
         // Log internal errors with more detail
-        if status_code == StatusCode::INTERNAL_SERVER_ERROR {
-            log::error!("Dashboard error: {:?}", self);
+        if status_code == StatusCode::INTERNAL_SERVER_ERROR || status_code == StatusCode::SERVICE_UNAVAILABLE {
+            log::error!("Dashboard API error: {:?}", self);
         } else {
-            log::warn!("Dashboard error: {:?}", self);
+            log::warn!("Dashboard API error: {:?}", self);
         }
         
         HttpResponse::build(status_code).json(ErrorResponse {
@@ -65,6 +71,9 @@ impl ResponseError for ApiError {
             ApiError::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             ApiError::ImapError(_) => StatusCode::INTERNAL_SERVER_ERROR,
             ApiError::SerializationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            // AI Errors map to Service Unavailable or Internal Error
+            ApiError::AiServiceError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::AiRequestError(_) => StatusCode::SERVICE_UNAVAILABLE,
         }
     }
 }

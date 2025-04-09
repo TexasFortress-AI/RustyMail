@@ -74,6 +74,7 @@ base64 = "0.21"
 # Dashboard dependencies
 sysinfo = "0.30" # For system metrics
 rand = "0.8" # For random number generation in example metrics
+reqwest = { version = "0.12", features = ["json"] }
 
 [dev-dependencies]
 # Remove reqwest native-tls feature if not needed
