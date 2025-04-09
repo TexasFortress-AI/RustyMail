@@ -57,6 +57,11 @@ src/
 This structure keeps all dashboard-related code in a single location, maintaining a clear separation from the existing codebase while making it easy to understand what components are part of the dashboard feature.
 
 **✅ COMPLETED: Basic module structure has been implemented and is ready for development**
+**✅ COMPLETED: Core SSE functionality implemented and integration tested.**
+**✅ COMPLETED: Basic REST API endpoints and services implemented with initial tests.**
+**✅ COMPLETED: Metrics middleware implemented for request timing.**
+**✅ COMPLETED: Service initialization integrated into main application.**
+**✅ COMPLETED: SSE integration testing refined (dynamic ports, improved setup).**
 
 ## API Endpoints Implementation
 
@@ -372,7 +377,7 @@ impl AiService {
 
 1. **Unit Tests**: For individual components and services
 2. **Integration Tests**: For API endpoints and service interactions
-3. **End-to-End Tests**: Full system testing with mocked IMAP server
+3. **End-to-End Tests**: Full system testing with mocked IMAP server (Note: Live IMAP server used in current SSE tests)
 
 Example unit test:
 ```rust
@@ -417,27 +422,36 @@ async fn test_dashboard_api() {
 
 ## Implementation Schedule
 
-1. **Week 1**: Core infrastructure and API setup
+(Revised based on current progress - Approximate)
+
+1. **Weeks 1-2**: Core infrastructure and API setup
    - Base Axum app setup
    - Endpoint routing
    - Model definitions
+   - **✅ COMPLETED**
 
-2. **Week 2**: Service implementation
-   - Metrics collection
-   - Client management
-   - Configuration handling
+2. **Weeks 2-3**: Service implementation & SSE
+   - Initial Metrics collection (System/Request)
+   - Client management service foundation
+   - Configuration handling service foundation
+   - AI service foundation
+   - SSE broadcasting implementation
+   - **✅ COMPLETED**
 
-3. **Week 3**: IMAP integration and SSE implementation
-   - Connect to IMAP modules
-   - Implement SSE broadcasting
-   - Real-time metrics
+3. **Weeks 3-4**: IMAP integration and SSE Testing Refinement
+   - Connect to IMAP modules for metrics (**IN PROGRESS**)
+   - Implement SSE broadcasting for stats
+   - Refine SSE integration tests (dynamic ports, etc.)
+   - **✅ SSE Testing Refinement COMPLETED**
+   - **✅ SSE Stats Broadcasting COMPLETED**
 
-4. **Week 4**: AI integration and testing
-   - OpenAI client integration
-   - RIG integration
-   - Testing and debugging
+4. **Week 4-5**: API Completion & AI Integration
+   - Finalize Client Management API endpoint & Service Logic (**NEXT**)
+   - Finalize Config API endpoint & Service Logic (**NEXT**)
+   - OpenAI/RIG client integration (**NEXT**)
+   - Testing and debugging for new endpoints
 
-5. **Week 5**: Finalization and documentation
+5. **Week 5+**: Finalization and documentation
    - Performance optimization
    - Documentation
    - Frontend integration
@@ -449,3 +463,74 @@ async fn test_dashboard_api() {
 3. Enhanced analytics dashboard with historical data
 4. Alerting and notification system
 5. User management and authentication for dashboard access
+
+## Dashboard SSE Integration Test Implementation
+
+### Test Infrastructure
+
+The dashboard SSE implementation is tested using integration tests that:
+
+1. Start the full RustyMail server with dashboard enabled
+2. Connect to the SSE endpoint
+3. Verify events are received
+4. Test various scenarios like reconnection, stress, etc.
+
+### Current Test Setup
+
+The current test strategy in `tests/dashboard_sse_test.rs` follows these steps:
+
+1. The `TestServer` struct spawns a RustyMail server process
+2. Environment variables set up the IMAP connection and dashboard
+3. The `SseClient` connects to the `/dashboard/api/events` endpoint
+4. Tests verify proper event delivery
+
+### Port Conflict Issues
+
+The main issue is that the tests use a hardcoded port (8080) which creates conflicts:
+
+1. If multiple tests run in parallel, they compete for the same port
+2. If a server is already running on port 8080, tests will fail
+3. If a test crashes, it may leave a zombie process bound to port 8080
+
+### Solutions
+
+1. **Dynamic Port Allocation**:
+   ```rust
+   // Find an available port
+   fn find_available_port() -> u16 {
+       let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("Failed to bind to random port");
+       listener.local_addr().expect("Failed to get local address").port()
+   }
+   
+   // In TestServer::new
+   let port = find_available_port();
+   // Update env vars with this port
+   env_vars.insert("REST_PORT".to_string(), port.to_string());
+   // Update BASE_URL constant
+   let base_url = format!("http://127.0.0.1:{}", port);
+   ```
+
+2. **Process Cleanup**:
+   - Modify the TestServer shutdown process to ensure complete cleanup
+   - Add a cleanup step that kills orphaned processes
+   - Use pidfiles to track running test servers
+
+3. **Endpoint Path Correction**:
+   - Ensure the SSE endpoint path matches between tests and implementation
+   - Change from `/dashboard/api/events` to `/api/dashboard/events` if needed
+
+4. **Improved Test Isolation**:
+   - Use `serial_test` attribute to prevent parallel execution
+   - Add proper teardown even when tests panic
+   
+### Path Forward
+
+1. Update the test code to use dynamic port allocation **✅ COMPLETED**
+2. Fix endpoint path discrepancies **✅ COMPLETED (Implicitly handled by current setup)**
+3. Ensure proper process cleanup (**ONGOING / TODO - Refine `TestServer` Drop logic**)
+4. Add logs to debug event delivery issues (**DONE as needed**)
+5. Ensure welcome events and stats updates are properly implemented **✅ COMPLETED**
+6. **Implement IMAP metrics collection in `MetricsService`** (**NEXT**)
+7. **Finalize API endpoints for Clients, Config, and AI** (**NEXT**)
+
+With these changes, the dashboard SSE integration tests should run reliably, without port conflicts, and provide meaningful test coverage for the SSE implementation.

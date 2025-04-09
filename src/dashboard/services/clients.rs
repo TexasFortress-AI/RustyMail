@@ -20,28 +20,29 @@ pub struct ClientData {
 }
 
 pub struct ClientManager {
-    clients: RwLock<HashMap<String, ClientData>>,
+    clients: Arc<RwLock<HashMap<String, ClientData>>>,
     cleanup_interval: Duration,
 }
 
 impl ClientManager {
     pub fn new(cleanup_interval: Duration) -> Self {
-        let clients = RwLock::new(HashMap::new());
+        let clients = Arc::new(RwLock::new(HashMap::new()));
         let manager = Self {
-            clients,
+            clients: clients.clone(),
             cleanup_interval,
         };
-        
+
         // Start the cleanup task
-        let manager_clone = Arc::new(manager.clone());
+        let clients_for_task = clients.clone();
+        let interval_for_task = cleanup_interval;
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(cleanup_interval);
+            let mut interval = tokio::time::interval(interval_for_task);
             loop {
                 interval.tick().await;
-                Self::cleanup_inactive_clients(manager_clone.clone()).await;
+                Self::cleanup_inactive_clients(clients_for_task.clone()).await;
             }
         });
-        
+
         manager
     }
     
@@ -169,13 +170,13 @@ impl ClientManager {
     }
     
     // Cleanup inactive clients (run periodically)
-    async fn cleanup_inactive_clients(manager: Arc<ClientManager>) {
+    async fn cleanup_inactive_clients(clients_arc: Arc<RwLock<HashMap<String, ClientData>>>) {
         let now = Utc::now();
         let mut to_remove = Vec::new();
-        
+
         // Find inactive clients
         {
-            let clients_read = manager.clients.read().await;
+            let clients_read = clients_arc.read().await;
             for (id, client) in clients_read.iter() {
                 // If last activity was more than 30 minutes ago, mark for removal
                 let duration = now.signed_duration_since(client.last_activity);
@@ -184,26 +185,15 @@ impl ClientManager {
                 }
             }
         }
-        
+
         // Remove inactive clients
         if !to_remove.is_empty() {
-            let mut clients_write = manager.clients.write().await;
+            let mut clients_write = clients_arc.write().await;
             for id in to_remove.iter() {
                 clients_write.remove(id);
                 info!("Removed inactive client: {}", id);
             }
             info!("Cleaned up {} inactive clients", to_remove.len());
-        }
-    }
-}
-
-// Implement Clone for ClientManager to allow it to be used in cleanup tasks
-impl Clone for ClientManager {
-    fn clone(&self) -> Self {
-        // Create a new clients hashmap with the same interval
-        Self {
-            clients: RwLock::new(HashMap::new()),
-            cleanup_interval: self.cleanup_interval,
         }
     }
 }

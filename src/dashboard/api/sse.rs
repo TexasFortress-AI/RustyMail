@@ -47,6 +47,11 @@ impl SseManager {
         }
     }
     
+    // Get the current count of active SSE clients
+    pub async fn get_active_client_count(&self) -> usize {
+        self.clients.read().await.len()
+    }
+    
     // Register a new SSE client
     pub async fn register_client(&self, client_id: String, sender: mpsc::Sender<SseEvent>) {
         let mut clients = self.clients.write().await;

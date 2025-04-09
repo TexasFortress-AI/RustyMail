@@ -63,9 +63,12 @@ async fn main() -> std::io::Result<()> {
 
     let config = web::Data::new(settings.clone());
     info!("Dashboard configuration initialized.");
-    
-    let dashboard_state = dashboard::services::init(config.clone());
+
+    let dashboard_state = dashboard::services::init(config.clone(), imap_client_rest.clone());
     info!("Dashboard state initialized.");
+
+    // Start background metrics collection task (needs DashboardState)
+    dashboard_state.metrics_service.start_background_collection(dashboard_state.clone());
 
     // Create and initialize SSE manager
     let sse_manager = Arc::new(SseManager::new(

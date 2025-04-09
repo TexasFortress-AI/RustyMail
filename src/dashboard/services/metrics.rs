@@ -3,9 +3,11 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 use tokio::sync::RwLock;
 use sysinfo::{System, RefreshKind, CpuRefreshKind, MemoryRefreshKind};
-use log::debug;
+use log::{debug, info};
 use crate::dashboard::api::models::{DashboardStats, SystemHealth, SystemStatus};
 use std::collections::VecDeque;
+use crate::dashboard::services::DashboardState;
+use actix_web::web;
 
 // Store for metrics data
 #[derive(Debug)]
@@ -52,30 +54,18 @@ impl MetricsService {
     
     pub fn new(collection_interval: Duration) -> Self {
         let metrics_store = Arc::new(RwLock::new(MetricsStore::default()));
-        let store_clone = Arc::clone(&metrics_store);
-        
-        // Spawn background task to collect metrics
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(collection_interval);
-            // Initialize system with specific refresh kinds for CPU and memory
-            let refresh_kind = RefreshKind::new()
-                .with_cpu(CpuRefreshKind::everything())
-                .with_memory(MemoryRefreshKind::everything());
-            let mut sys = System::new_with_specifics(refresh_kind);
-            
-            loop {
-                interval.tick().await;
-                MetricsService::collect_metrics(&mut sys, store_clone.clone()).await;
-            }
-        });
-        
+        // Don't spawn task here, will be spawned from main.rs after state is created
         Self { 
             metrics_store,
             collection_interval,
         }
     }
     
-    async fn collect_metrics(sys: &mut System, store: Arc<RwLock<MetricsStore>>) {
+    async fn collect_metrics(
+        sys: &mut System, 
+        store: Arc<RwLock<MetricsStore>>, 
+        dashboard_state: Arc<DashboardState>
+    ) {
         sys.refresh_specifics(
             RefreshKind::new()
                 .with_cpu(CpuRefreshKind::everything())
@@ -88,16 +78,18 @@ impl MetricsService {
         store_guard.cpu_usage = sys.global_cpu_info().cpu_usage();
         store_guard.memory_usage = (sys.used_memory() as f32 / sys.total_memory() as f32) * 100.0;
 
+        // Get active connections from SseManager
+        let sse_connections = dashboard_state.sse_manager.get_active_client_count().await;
+        // For now, active_connections metric represents active SSE dashboard clients
+        store_guard.active_connections = sse_connections;
+
         // TODO: Update request_rate_points (needs tracking mechanism)
         if store_guard.request_timestamps.len() >= 24 {
              store_guard.request_timestamps.pop_front();
         }
         store_guard.request_timestamps.push_back(Instant::now());
 
-        // TODO: Collect IMAP active_connections
-        
         store_guard.last_updated = Utc::now();
-        // Debug log
         debug!("Collected metrics - CPU: {:.1}%, Mem: {:.1}%", store_guard.cpu_usage, store_guard.memory_usage);
     }
     
@@ -147,7 +139,7 @@ impl MetricsService {
         };
 
         DashboardStats {
-            active_connections: store.active_connections, // Read directly
+            active_sse_connections: store.active_connections, // Use renamed field
             requests_per_minute, 
             average_response_time_ms, 
             system_health: SystemHealth {
@@ -197,5 +189,28 @@ impl MetricsService {
                 break;
             }
         }
+    }
+
+    // Modify the background task spawner to pass DashboardState
+    pub fn start_background_collection(&self, dashboard_state_data: web::Data<DashboardState>) {
+        let metrics_store_clone = Arc::clone(&self.metrics_store);
+        let collection_interval = self.collection_interval;
+        // Clone the Arc directly from web::Data
+        let dashboard_state_arc: Arc<DashboardState> = dashboard_state_data.into_inner(); 
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(collection_interval);
+            let refresh_kind = RefreshKind::new()
+                .with_cpu(CpuRefreshKind::everything())
+                .with_memory(MemoryRefreshKind::everything());
+            let mut sys = System::new_with_specifics(refresh_kind);
+            
+            loop {
+                interval.tick().await;
+                // Pass the cloned Arc<DashboardState>
+                MetricsService::collect_metrics(&mut sys, metrics_store_clone.clone(), dashboard_state_arc.clone()).await;
+            }
+        });
+        info!("Started background metrics collection task");
     }
 }
