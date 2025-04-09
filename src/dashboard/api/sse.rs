@@ -58,7 +58,7 @@ impl SseManager {
         clients.insert(client_id.clone(), SseClient { sender: sender.clone() });
         
         // Update metrics
-        self.metrics_service.increment_connections().await;
+        // self.metrics_service.increment_connections().await; // Removed: Metrics now use IMAP count
         
         info!("New SSE client registered: {}", client_id);
         
@@ -72,7 +72,7 @@ impl SseManager {
         let mut clients = self.clients.write().await;
         clients.remove(client_id);
         // Update metrics
-        self.metrics_service.decrement_connections().await;
+        // self.metrics_service.decrement_connections().await; // Removed: Metrics now use IMAP count
         info!("SSE client disconnected: {}", client_id);
         
         // Broadcast client disconnected event

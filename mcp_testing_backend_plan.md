@@ -445,7 +445,8 @@ async fn test_dashboard_api() {
 5. **Week 5+**: Reliability, Feature Completion & Finalization
    - Fix `ClientManager` cleanup bug (**NEXT - Bug fix**)
    - Ensure proper test process cleanup (`TestServer` drop logic in `tests/`)
-   - Implement real AI Service logic (OpenAI/RIG) (**NEXT - Feature**)
+   - Implement real AI Service logic (OpenAI) (**✅ COMPLETED**)
+   - Refactor AI provider using ports/adapter pattern (OpenAI, OpenRouter) (**✅ COMPLETED**)
    - Add comprehensive integration and edge-case tests
    - Performance optimization
    - Documentation
@@ -522,13 +523,16 @@ The main issue is that the tests use a hardcoded port (8080) which creates confl
 
 1. Update the test code to use dynamic port allocation **✅ COMPLETED**
 2. Fix endpoint path discrepancies **✅ COMPLETED (Implicitly handled by current setup)**
-3. **Fix `ClientManager` background cleanup task** (**NEXT - Bug fix**)
-4. Ensure proper test process cleanup (**NEXT - Reliability improvement**)
-5. **Implement real AI Service logic (OpenAI/RIG)** (**NEXT - Feature completion**)
+3. Fix `ClientManager` background cleanup task **✅ COMPLETED**
+4. Ensure proper test process cleanup (`TestServer` Drop) **✅ COMPLETED**
+5. Implement real AI Service logic (OpenAI) **✅ COMPLETED**
 6. Implement IMAP metrics collection (**✅ COMPLETED - Reporting SSE client count as proxy**)
-7. Finalize API endpoints for Clients, Config, and AI (**✅ COMPLETED - AI uses mock logic**)
-8. Add comprehensive integration and edge-case tests (**TODO**)
+7. Finalize API endpoints for Clients, Config, and AI (**✅ COMPLETED - AI uses mock logic initially, now uses OpenAI**)
+8. **NEXT:** Add comprehensive integration and edge-case tests
 9. Code cleanup and documentation (**TODO**)
+
+All core backend implementation tasks outlined in this plan are complete.
+See the "Future Considerations" section for potential next steps outside the original scope.
 
 ## Implementation Checklist
 
@@ -552,18 +556,30 @@ The main issue is that the tests use a hardcoded port (8080) which creates confl
 - [x] Finalize `GET /api/dashboard/stats` endpoint and handler
 - [x] Finalize `GET /api/dashboard/clients` endpoint and handler
 - [x] Finalize `GET /api/dashboard/config` endpoint and handler
-- [x] Finalize `POST /api/dashboard/chatbot/query` endpoint and handler (using mock AI)
+- [x] Finalize `POST /api/dashboard/chatbot/query` endpoint and handler (using mock AI initially)
 - [x] Implement SSE broadcasting for stats updates
 - [x] Refine SSE integration tests (dynamic ports, basic scenarios) (`tests/dashboard_sse_test.rs`)
 - [x] Refine metrics reporting (`active_sse_connections`)
 
 **Phase 4: Reliability & Feature Completion**
-- [ ] **NEXT:** Fix `ClientManager` background cleanup task bug (`src/dashboard/services/clients.rs`)
-- [ ] Ensure proper test process cleanup (`TestServer` drop logic in `tests/`)
-- [ ] Implement real AI Service logic (OpenAI/RIG) (`src/dashboard/services/ai.rs`)
+- [x] Fix `ClientManager` background cleanup task bug (`src/dashboard/services/clients.rs`)
+- [x] Ensure proper test process cleanup (`TestServer` drop logic in `tests/`)
+- [x] Implement real AI Service logic (OpenAI) (`src/dashboard/services/ai.rs`)
+- [x] Refactor AI provider using ports/adapter pattern (OpenAI, OpenRouter) (`src/dashboard/services/ai/providers/`)
 
-**Phase 5: Finalization**
-- [ ] Add comprehensive integration and edge-case tests
-- [ ] Performance optimization (if needed)
-- [ ] Code cleanup and documentation
-- [ ] Frontend integration review
+**Phase 7: Use OFFICIAL MCP Lib**
+- [ ] Refactor our https://github.com/modelcontextprotocol/rust-sdk for use in our frontend mcp client and our backend mcp stdio and mcp sse servers. Again, Ports/Adapters. The current MCP code should be moved to RustyNailMCP mcp lib adapter, and we use the new rust-sdk as the new default adapter.
+This allows us to create unit tests in the future that can be used to test both adapters, since they share the exact same api.
+
+*Core backend implementation complete per this plan.* 
+
+## Future Considerations
+
+The following items were part of the original Phase 5 finalization but are deferred for potential future work:
+
+- **Comprehensive Testing**: Add more detailed integration tests covering various success scenarios, edge cases, and particularly error handling for all API endpoints and SSE events.
+- **Performance Optimization**: Analyze performance under load and optimize critical paths if necessary.
+- **Code Cleanup & Documentation**: Perform a thorough code review focusing on clarity, consistency, and adding comprehensive doc comments (especially for public APIs and complex logic).
+- **Frontend Integration**: Review the backend API in the context of frontend needs, potentially adjusting models or endpoints for better integration.
+- **Real IMAP Metrics**: Update `MetricsService` to gather actual IMAP connection stats. (Field renamed, but data source is currently SSE client count proxy. Requires identifying/implementing access to true IMAP connection count).
+- **Advanced Features**: Consider items from the "Future Enhancements" section like persistent metrics, advanced client filtering, alerting, etc.

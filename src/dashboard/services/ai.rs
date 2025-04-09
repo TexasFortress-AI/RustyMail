@@ -1,46 +1,18 @@
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use crate::dashboard::api::models::{ChatbotQuery, ChatbotResponse, EmailData, EmailMessage, EmailFolder};
+use crate::dashboard::api::models::{ChatbotQuery, ChatbotResponse, EmailData};
 use log::{debug, warn, error};
-use reqwest::Client;
-use serde::{Serialize, Deserialize};
-use crate::dashboard::api::errors::ApiError;
+use std::sync::Arc;
 
-// OpenAI API constants
-const OPENAI_API_URL: &str = "https://api.openai.com/v1/chat/completions";
-const OPENAI_MODEL: &str = "gpt-4o-mini"; // Specify the desired model
-
-// OpenAI API request/response structures
-#[derive(Serialize)]
-struct OpenAiRequest {
-    model: String,
-    messages: Vec<OpenAiMessage>,
-    // Add other parameters like temperature, max_tokens if needed
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-struct OpenAiMessage {
-    role: String,
-    content: String,
-}
-
-#[derive(Deserialize)]
-struct OpenAiResponse {
-    choices: Vec<OpenAiChoice>,
-    // Add usage, error fields if needed for more detailed handling
-}
-
-#[derive(Deserialize)]
-struct OpenAiChoice {
-    message: OpenAiMessage,
-    // Add finish_reason if needed
-}
+// Import the provider trait and message struct
+mod providers;
+use providers::{AiProvider, AiChatMessage};
 
 // Conversation history entry
 #[derive(Debug, Clone)]
 struct ConversationEntry {
-    message: OpenAiMessage, // Store as OpenAiMessage for history context
+    message: AiChatMessage, // Use the common message struct
     timestamp: chrono::DateTime<chrono::Utc>,
 }
 
@@ -54,16 +26,16 @@ struct Conversation {
 #[derive(Debug)]
 pub struct AiService {
     conversations: RwLock<HashMap<String, Conversation>>,
-    api_key: Option<String>,
-    http_client: Client, // Use reqwest::Client
+    provider: Arc<dyn AiProvider>, // Use the trait object
+    mock_mode: bool, // Flag to force mock responses
 }
 
 impl AiService {
-    pub fn new(api_key: Option<String>) -> Self {
+    pub fn new(provider: Arc<dyn AiProvider>, force_mock: bool) -> Self {
         Self {
             conversations: RwLock::new(HashMap::new()),
-            api_key,
-            http_client: Client::new(), // Create a reqwest client instance
+            provider,
+            mock_mode: force_mock,
         }
     }
 
@@ -88,37 +60,33 @@ impl AiService {
         conversation.last_activity = chrono::Utc::now();
 
         // Prepare the message history for OpenAI
-        let mut messages_history: Vec<OpenAiMessage> = conversation.entries.iter()
+        let mut messages_history: Vec<AiChatMessage> = conversation.entries.iter()
             .map(|entry| entry.message.clone()) // Clone messages from history
             .collect();
         
         // Add the current user query
-        let user_message = OpenAiMessage { role: "user".to_string(), content: query_text.clone() };
+        let user_message = AiChatMessage { role: "user".to_string(), content: query_text.clone() };
         messages_history.push(user_message.clone());
         
         // Generate response: Use API key if available, otherwise use mock logic
-        let response_text_result = match &self.api_key {
-            Some(key) => {
-                self.call_openai_api(key, &messages_history).await
-            }
-            None => {
-                warn!("No OpenAI API key configured. Using mock AI response.");
-                Ok(self.generate_mock_response(&query_text))
-            }
+        let response_text_result = if self.mock_mode {
+            warn!("AI Service is in mock mode. Using mock response.");
+            Ok(self.generate_mock_response(&query_text))
+        } else {
+            // Call the provider via the trait object
+            self.provider.generate_response(&messages_history).await
         };
 
         let response_text = match response_text_result {
             Ok(text) => text,
             Err(e) => {
                 error!("AI Service failed to get response: {}. Falling back to mock.", e);
-                // Optionally, return the error instead of falling back
-                // return Err(e); 
                 self.generate_mock_response(&query_text) // Fallback to mock
             }
         };
 
         // Store user query and AI response in conversation history
-        let assistant_message = OpenAiMessage { role: "assistant".to_string(), content: response_text.clone() };
+        let assistant_message = AiChatMessage { role: "assistant".to_string(), content: response_text.clone() };
         conversation.entries.push(ConversationEntry {
             message: user_message, // Store user query
             timestamp: chrono::Utc::now(),
@@ -140,51 +108,6 @@ impl AiService {
         })
     }
 
-    // Helper function to call OpenAI API
-    async fn call_openai_api(&self, api_key: &str, messages: &[OpenAiMessage]) -> Result<String, ApiError> {
-        let request_payload = OpenAiRequest {
-            model: OPENAI_MODEL.to_string(),
-            messages: messages.to_vec(),
-        };
-
-        debug!("Sending request to OpenAI API: model={}, messages_count={}", 
-               request_payload.model, request_payload.messages.len());
-
-        let response = self.http_client
-            .post(OPENAI_API_URL)
-            .bearer_auth(api_key)
-            .json(&request_payload)
-            .timeout(std::time::Duration::from_secs(30)) // Add timeout
-            .send()
-            .await
-            .map_err(|e| ApiError::AiRequestError(format!("Network error calling OpenAI: {}", e)))?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("OpenAI API request failed with status {}: {}", status, error_body);
-            return Err(ApiError::AiRequestError(format!(
-                "OpenAI API returned error status {}: {}",
-                status,
-                error_body
-            )));
-        }
-
-        let response_body = response
-            .json::<OpenAiResponse>()
-            .await
-            .map_err(|e| ApiError::AiServiceError(format!("Failed to deserialize OpenAI response: {}", e)))?;
-
-        // Extract the first choice's message content
-        if let Some(choice) = response_body.choices.first() {
-            debug!("Received response from OpenAI API.");
-            Ok(choice.message.content.clone())
-        } else {
-            warn!("OpenAI API response did not contain any choices.");
-            Err(ApiError::AiServiceError("OpenAI response was empty or missing choices".to_string()))
-        }
-    }
-    
     // Generate a mock response for testing or fallback
     fn generate_mock_response(&self, query: &str) -> String {
         let query_lower = query.to_lowercase();

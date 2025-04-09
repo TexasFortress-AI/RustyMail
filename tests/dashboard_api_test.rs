@@ -299,58 +299,93 @@ mod dashboard_api_tests {
         println!("--- Starting test_get_connected_clients ---");
         let server = TestServer::new().await.expect("Failed to start test server");
         let server_arc = Arc::new(server);
+        let base_url = server_arc.base_url();
 
         // --- Make some connections to populate client list --- 
-        // 1. SSE Connection (from previous test infrastructure)
-        let sse_test_url = format!("{}/api/dashboard/events", server_arc.base_url());
+        // Create multiple SSE connections
+        let mut sse_handles = Vec::new();
         let sse_client = reqwest::Client::new();
-        let sse_response_future = sse_client.get(&sse_test_url).send();
-        // We don't need to fully consume the SSE stream, just establish connection
-        let _sse_response = tokio::time::timeout(Duration::from_secs(5), sse_response_future).await
-            .expect("SSE connection timed out")
-            .expect("SSE connection failed");
-        // Give manager time to register
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        for i in 0..5 { // Create 5 SSE clients
+            let sse_test_url = format!("{}/api/dashboard/events", base_url);
+            let sse_response_future = sse_client.get(&sse_test_url).send();
+            let _sse_response = tokio::time::timeout(Duration::from_secs(5), sse_response_future).await
+                .expect("SSE connection timed out")
+                .expect(&format!("SSE connection {} failed", i));
+            sse_handles.push(_sse_response); // Keep response handle alive
+        }
+        // Give manager time to register SSE clients
+        tokio::time::sleep(Duration::from_millis(1000)).await;
         
-        // 2. Basic API Request (acts as another client type conceptually)
-        let stats_url = format!("{}/api/dashboard/stats", server_arc.base_url());
+        // Make some API requests (these are not typically registered as persistent clients)
+        let stats_url = format!("{}/api/dashboard/stats", base_url);
         let api_client = reqwest::Client::new();
-        let _stats_res = api_client.get(&stats_url).send().await.expect("Stats request failed");
-        // Give manager time to register (if it tracks API clients)
+        for _ in 0..3 {
+            let _stats_res = api_client.get(&stats_url).send().await.expect("Stats request failed");
+        }
         tokio::time::sleep(Duration::from_millis(500)).await;
         // --- End connection setup --- 
         
         let client = reqwest::Client::new();
-        let clients_url = format!("{}/api/dashboard/clients", server_arc.base_url());
+        let clients_base_url = format!("{}/api/dashboard/clients", base_url);
 
-        // Test default pagination
-        println!("Sending request to {} (default page)", clients_url);
-        let response = client.get(&clients_url)
-            .timeout(Duration::from_secs(10))
-            .send()
-            .await
-            .expect("Failed to send request to /clients endpoint (default)");
+        // Test default pagination (limit 10)
+        println!("Testing default pagination...");
+        let response_default = client.get(&clients_base_url)
+            .send().await.expect("Default clients request failed");
+        assert!(response_default.status().is_success());
+        let page_default: PaginatedClients = response_default.json().await.expect("Failed to parse default clients");
+        assert!(page_default.pagination.total >= 5, "Expected at least 5 SSE clients, found {}", page_default.pagination.total);
+        assert_eq!(page_default.pagination.page, 1);
+        assert_eq!(page_default.pagination.limit, 10);
+        assert_eq!(page_default.clients.len(), std::cmp::min(page_default.pagination.total, 10), "Client count mismatch on default page");
+        let total_clients = page_default.pagination.total;
 
-        assert!(response.status().is_success(), "Request failed with status: {}", response.status());
+        // Test custom pagination (limit 2, page 2)
+        println!("Testing pagination: limit=2, page=2...");
+        let response_page2 = client.get(&clients_base_url)
+            .query(&[("limit", "2"), ("page", "2")])
+            .send().await.expect("Page 2 clients request failed");
+        assert!(response_page2.status().is_success());
+        let page2: PaginatedClients = response_page2.json().await.expect("Failed to parse page 2 clients");
+        assert_eq!(page2.pagination.total, total_clients);
+        assert_eq!(page2.pagination.page, 2);
+        assert_eq!(page2.pagination.limit, 2);
+        assert!(page2.clients.len() <= 2, "Page 2 should have at most 2 clients");
+        if total_clients > 2 { // Only expect clients if total > limit*(page-1)
+             assert_eq!(page2.clients.len(), std::cmp::min(2, total_clients.saturating_sub(2)), "Client count mismatch on page 2");
+        }
 
-        let clients_body = response.text().await.expect("Failed to read response body");
-        println!("Received clients body (default): {}", clients_body);
+        // Test filtering (assuming SSE clients have 'reqwest' in user agent)
+        println!("Testing filtering: filter=reqwest...");
+        let response_filtered = client.get(&clients_base_url)
+            .query(&[("filter", "reqwest")]) // Filter by expected user agent part
+            .send().await.expect("Filtered clients request failed");
+        assert!(response_filtered.status().is_success());
+        let page_filtered: PaginatedClients = response_filtered.json().await.expect("Failed to parse filtered clients");
+        assert!(page_filtered.pagination.total > 0, "Expected filtered clients for 'reqwest'");
+        assert!(page_filtered.pagination.total <= total_clients, "Filtered total cannot exceed original total");
+        assert!(!page_filtered.clients.is_empty());
+        for client_info in &page_filtered.clients {
+            assert!(client_info.user_agent.as_ref().map_or(false, |ua| ua.to_lowercase().contains("reqwest")), 
+                    "Filtered client {:?} user agent does not contain 'reqwest'", client_info);
+        }
+        
+        // Test filtering with no results
+        println!("Testing filtering: filter=NoMatchExpected...");
+        let response_no_match = client.get(&clients_base_url)
+            .query(&[("filter", "NoMatchExpected")]) 
+            .send().await.expect("No match filter request failed");
+        assert!(response_no_match.status().is_success());
+        let page_no_match: PaginatedClients = response_no_match.json().await.expect("Failed to parse no match filter");
+        assert_eq!(page_no_match.pagination.total, 0, "Expected 0 clients for filter 'NoMatchExpected'");
+        assert!(page_no_match.clients.is_empty());
 
-        let clients_page: PaginatedClients = serde_json::from_str(&clients_body)
-            .expect("Failed to deserialize response into PaginatedClients");
+        // Cleanup SSE connections
+        drop(sse_handles);
 
-        assert!(clients_page.pagination.total >= 1, "Expected at least one client (SSE)"); // Should have at least the SSE client
-        assert_eq!(clients_page.pagination.page, 1);
-        assert_eq!(clients_page.pagination.limit, 10); // Default limit
-        assert!(!clients_page.clients.is_empty());
-        assert!(clients_page.clients.len() <= 10);
-
-        // TODO: Add tests for pagination parameters (page, limit)
-        // TODO: Add tests for filtering (e.g., filter by IP if available)
-
-        // Shutdown server
-        let mut server_mut = Arc::try_unwrap(server_arc).expect("Failed to unwrap Arc for shutdown");
-        server_mut.shutdown().await;
+        // Shutdown server (handled by Drop trait now)
+        // let mut server_mut = Arc::try_unwrap(server_arc).expect("Failed to unwrap Arc for shutdown");
+        // server_mut.shutdown().await;
         println!("--- Finished test_get_connected_clients ---");
     }
 
@@ -360,44 +395,80 @@ mod dashboard_api_tests {
         println!("--- Starting test_query_chatbot ---");
         let server = TestServer::new().await.expect("Failed to start test server");
         let server_arc = Arc::new(server);
+        let base_url = server_arc.base_url();
 
         let client = reqwest::Client::new();
-        let chatbot_url = format!("{}/api/dashboard/chatbot/query", server_arc.base_url());
+        let chatbot_url = format!("{}/api/dashboard/chatbot/query", base_url);
 
-        let query = ChatbotQuery {
-            query: "hello there".to_string(),
-            conversation_id: None, // Start a new conversation
+        // First query: Start a new conversation
+        let query1 = ChatbotQuery {
+            query: "What is RustyMail?".to_string(),
+            conversation_id: None, 
         };
 
-        println!("Sending POST request to {} with query: {:?}", chatbot_url, query);
-        let response = client.post(&chatbot_url)
-            .json(&query)
-            .timeout(Duration::from_secs(10))
-            .send()
-            .await
-            .expect("Failed to send request to /chatbot/query endpoint");
+        println!("Sending first chatbot query: {:?}", query1);
+        let response1 = client.post(&chatbot_url)
+            .json(&query1)
+            .timeout(Duration::from_secs(30)) // Increased timeout for potential API call
+            .send().await.expect("First chatbot request failed");
 
-        assert!(response.status().is_success(), "Request failed with status: {}", response.status());
+        assert!(response1.status().is_success(), "First request failed with status: {}", response1.status());
+        let chatbot_response1: ChatbotResponse = response1.json().await
+            .expect("Failed to deserialize first chatbot response");
+        println!("Received first response: {:?}", chatbot_response1);
 
-        let chatbot_body = response.text().await.expect("Failed to read response body");
-        println!("Received chatbot body: {}", chatbot_body);
+        assert!(!chatbot_response1.text.is_empty());
+        assert!(!chatbot_response1.conversation_id.is_empty());
+        let conversation_id = chatbot_response1.conversation_id.clone();
 
-        let chatbot_response: ChatbotResponse = serde_json::from_str(&chatbot_body)
-            .expect("Failed to deserialize response into ChatbotResponse");
+        // Check if response indicates mock or real AI based on API key presence
+        // Check environment variables relevant *at test execution time*
+        let using_real_provider = 
+            std::env::var("OPENROUTER_API_KEY").is_ok_and(|k| !k.is_empty()) ||
+            std::env::var("OPENAI_API_KEY").is_ok_and(|k| !k.is_empty());
 
-        // Basic assertions based on mock response
-        assert!(!chatbot_response.text.is_empty());
-        assert!(!chatbot_response.conversation_id.is_empty());
-        // Check if the response contains expected keywords based on current mock logic
-        if query.query.contains("hello") {
-            assert!(chatbot_response.text.contains("Hello"));
+        if using_real_provider {
+            println!("AI Provider key found (OpenRouter or OpenAI), expecting non-mock response.");
+            assert!(!chatbot_response1.text.contains("(Mock Response)"), 
+                    "Expected non-mock response with API key, but got: {}", chatbot_response1.text);
         } else {
-            // Add checks for other mock responses if needed
+            println!("No AI Provider key found, expecting mock response.");
+            assert!(chatbot_response1.text.contains("(Mock Response)"), 
+                    "Expected mock response without API key, but got: {}", chatbot_response1.text);
         }
 
-        // Shutdown server
-        let mut server_mut = Arc::try_unwrap(server_arc).expect("Failed to unwrap Arc for shutdown");
-        server_mut.shutdown().await;
+        // Second query: Continue the conversation
+        let query2 = ChatbotQuery {
+            query: "Tell me more about its features.".to_string(),
+            conversation_id: Some(conversation_id.clone()),
+        };
+
+        println!("Sending second chatbot query (continuing conversation {}): {:?}", conversation_id, query2);
+        let response2 = client.post(&chatbot_url)
+            .json(&query2)
+            .timeout(Duration::from_secs(30)) // Increased timeout
+            .send().await.expect("Second chatbot request failed");
+
+        assert!(response2.status().is_success(), "Second request failed with status: {}", response2.status());
+        let chatbot_response2: ChatbotResponse = response2.json().await
+            .expect("Failed to deserialize second chatbot response");
+        println!("Received second response: {:?}", chatbot_response2);
+
+        assert!(!chatbot_response2.text.is_empty());
+        assert_eq!(chatbot_response2.conversation_id, conversation_id, "Conversation ID mismatch in second response");
+        
+         // Also check mock/real status for the second response
+         if using_real_provider {
+            assert!(!chatbot_response2.text.contains("(Mock Response)"), 
+                    "Expected non-mock response for second query, but got: {}", chatbot_response2.text);
+        } else {
+            assert!(chatbot_response2.text.contains("(Mock Response)"), 
+                    "Expected mock response for second query, but got: {}", chatbot_response2.text);
+        }
+
+        // Shutdown server (handled by Drop trait now)
+        // let mut server_mut = Arc::try_unwrap(server_arc).expect("Failed to unwrap Arc for shutdown");
+        // server_mut.shutdown().await;
         println!("--- Finished test_query_chatbot ---");
     }
 }
