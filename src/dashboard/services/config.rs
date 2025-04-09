@@ -3,6 +3,7 @@ use crate::dashboard::api::models::{ServerConfig, ImapAdapter};
 use log::info;
 use std::time::Instant;
 use crate::config::Settings;
+use sysinfo;
 
 #[derive(Debug, Clone)]
 pub struct ConfigData {
@@ -55,7 +56,8 @@ impl ConfigService {
     pub async fn get_configuration(&self) -> ServerConfig {
         let config_guard = self.current_config.read().await;
         let version = env!("CARGO_PKG_VERSION").to_string();
-        let uptime = self.config.read().await.start_time.elapsed().as_secs();
+        // Use sysinfo for system uptime
+        let uptime = sysinfo::System::uptime(); 
 
         if let Some(settings) = &*config_guard {
             // Create adapter list based on settings

@@ -34,7 +34,7 @@ pub enum SystemStatus {
 }
 
 // Client Types
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ClientInfo {
     pub id: String,
     pub r#type: ClientType,
@@ -47,7 +47,7 @@ pub struct ClientInfo {
     pub user_agent: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum ClientType {
     Sse,
@@ -55,7 +55,7 @@ pub enum ClientType {
     Console,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub enum ClientStatus {
     Active,
@@ -63,13 +63,13 @@ pub enum ClientStatus {
     Disconnecting,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PaginatedClients {
     pub clients: Vec<ClientInfo>,
     pub pagination: Pagination,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pagination {
     pub total: usize,
     pub page: usize,
@@ -78,7 +78,7 @@ pub struct Pagination {
 }
 
 // Config Types
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerConfig {
     pub active_adapter: ImapAdapter,
     pub available_adapters: Vec<ImapAdapter>,
@@ -86,7 +86,7 @@ pub struct ServerConfig {
     pub uptime: u64, // seconds
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImapAdapter {
     pub id: String,
     pub name: String,
@@ -95,13 +95,13 @@ pub struct ImapAdapter {
 }
 
 // Chatbot Types
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ChatbotQuery {
     pub query: String,
     pub conversation_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatbotResponse {
     pub text: String,
     pub conversation_id: String,

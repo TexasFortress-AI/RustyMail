@@ -19,7 +19,6 @@ mod dashboard_api_tests {
         DashboardStats, 
         ServerConfig,
         PaginatedClients,
-        ClientInfo,
         ChatbotQuery,
         ChatbotResponse
     };

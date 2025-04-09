@@ -73,7 +73,7 @@ impl AiService {
         Ok(ChatbotResponse {
             text: response_text,
             conversation_id,
-            email_data: Some(self.generate_mock_email_data()),
+            email_data: None,
             followup_suggestions: Some(vec![
                 "Show me my unread emails".to_string(),
                 "How many emails do I have from support?".to_string(),
