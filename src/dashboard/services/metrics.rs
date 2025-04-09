@@ -4,31 +4,34 @@ use chrono::Utc;
 use tokio::sync::RwLock;
 use sysinfo::{System, RefreshKind, CpuRefreshKind, MemoryRefreshKind};
 use log::debug;
-use crate::dashboard::api::models::{DashboardStats, RequestRateData, SystemHealth, SystemStatus};
+use crate::dashboard::api::models::{DashboardStats, SystemHealth, SystemStatus};
 use std::collections::VecDeque;
-use rand;
 
 // Store for metrics data
 #[derive(Debug)]
 struct MetricsStore {
-    active_connections: usize,
-    request_rate_points: VecDeque<RequestRateData>,
+    active_connections: usize, // Changed back to usize
     cpu_usage: f32,
     memory_usage: f32,
     #[allow(dead_code)] // Keep for potential future uptime calculation
     start_time: Instant,
     last_updated: chrono::DateTime<Utc>,
+    // Store timestamps of requests within the last minute (or other interval)
+    request_timestamps: VecDeque<Instant>,
+    // Store response times for requests within the last minute
+    response_times_ms: VecDeque<u128>,
 }
 
 impl Default for MetricsStore {
     fn default() -> Self {
         Self {
-            active_connections: 0,
-            request_rate_points: VecDeque::with_capacity(24),
+            active_connections: 0, // Initialize usize
             cpu_usage: 0.0,
             memory_usage: 0.0,
             start_time: Instant::now(),
             last_updated: Utc::now(),
+            request_timestamps: VecDeque::with_capacity(1000), // Estimate capacity
+            response_times_ms: VecDeque::with_capacity(1000), 
         }
     }
 }
@@ -86,13 +89,10 @@ impl MetricsService {
         store_guard.memory_usage = (sys.used_memory() as f32 / sys.total_memory() as f32) * 100.0;
 
         // TODO: Update request_rate_points (needs tracking mechanism)
-        if store_guard.request_rate_points.len() >= 24 {
-             store_guard.request_rate_points.pop_front();
+        if store_guard.request_timestamps.len() >= 24 {
+             store_guard.request_timestamps.pop_front();
         }
-        store_guard.request_rate_points.push_back(RequestRateData {
-             timestamp: Utc::now().to_rfc3339(),
-             value: (rand::random::<u32>() % 100 + 20), // Random placeholder
-        });
+        store_guard.request_timestamps.push_back(Instant::now());
 
         // TODO: Collect IMAP active_connections
         
@@ -102,26 +102,42 @@ impl MetricsService {
     }
     
     pub async fn update_connection_count(&self, count: usize) {
-        let mut store = self.metrics_store.write().await;
-        store.active_connections = count;
+        let mut store_guard = self.metrics_store.write().await;
+        store_guard.active_connections = count;
     }
     
     pub async fn increment_connections(&self) {
-        let mut store = self.metrics_store.write().await;
-        store.active_connections += 1;
+        let mut store_guard = self.metrics_store.write().await;
+        store_guard.active_connections += 1;
     }
     
     pub async fn decrement_connections(&self) {
-        let mut store = self.metrics_store.write().await;
-        if store.active_connections > 0 {
-            store.active_connections -= 1;
+        let mut store_guard = self.metrics_store.write().await;
+        if store_guard.active_connections > 0 {
+            store_guard.active_connections -= 1;
         }
     }
     
     pub async fn get_current_stats(&self) -> DashboardStats {
+        // Read store data
         let store = self.metrics_store.read().await;
         
-        // Determine system health status based on CPU and memory usage
+        // Calculate Requests Per Minute (RPM)
+        let now = Instant::now();
+        let cutoff = now.checked_sub(Duration::from_secs(60)).unwrap_or(now); 
+        let requests_in_last_minute = store.request_timestamps.iter().filter(|ts| **ts >= cutoff).count();
+        let requests_per_minute = requests_in_last_minute as f64; 
+
+        // Calculate Average Response Time
+        let total_response_time_ms: u128 = store.response_times_ms.iter().sum();
+        let response_count = store.response_times_ms.len();
+        let average_response_time_ms = if response_count > 0 {
+             total_response_time_ms as f64 / response_count as f64 
+        } else {
+            0.0
+        };
+
+        // Determine system health status 
         let status = if store.cpu_usage > 90.0 || store.memory_usage > 90.0 {
             SystemStatus::Critical 
         } else if store.cpu_usage > 70.0 || store.memory_usage > 70.0 {
@@ -131,14 +147,55 @@ impl MetricsService {
         };
 
         DashboardStats {
-            active_connections: store.active_connections, 
-            request_rate: store.request_rate_points.iter().cloned().collect(),
+            active_connections: store.active_connections, // Read directly
+            requests_per_minute, 
+            average_response_time_ms, 
             system_health: SystemHealth {
                 status,
-                cpu_usage: store.cpu_usage,
-                memory_usage: store.memory_usage,
+                cpu_usage: store.cpu_usage, 
+                memory_usage: store.memory_usage, 
             },
             last_updated: store.last_updated.to_rfc3339(),
+        }
+    }
+
+    // Method to be called when a request starts
+    pub async fn record_request_start(&self) {
+        let mut store = self.metrics_store.write().await;
+        let now = Instant::now();
+        store.request_timestamps.push_back(now);
+        // Prune old timestamps (e.g., older than 60 seconds)
+        let cutoff = now - Duration::from_secs(60);
+        while let Some(ts) = store.request_timestamps.front() {
+            if *ts < cutoff {
+                store.request_timestamps.pop_front();
+            } else {
+                break;
+            }
+        }
+    }
+
+    // Method to be called when a request finishes, with its duration
+    pub async fn record_response_time(&self, duration: Duration) {
+        let mut store = self.metrics_store.write().await;
+        let now = Instant::now();
+        let duration_ms = duration.as_millis();
+        store.response_times_ms.push_back(duration_ms);
+        // Prune old response times (e.g., older than 60 seconds)
+        // We need a way to associate response times with timestamps or just keep a fixed window
+        // For simplicity, let's prune based on count for now, keeping last N entries
+        const MAX_RESPONSE_TIMES: usize = 1000; 
+        while store.response_times_ms.len() > MAX_RESPONSE_TIMES {
+            store.response_times_ms.pop_front();
+        }
+        // Also prune request timestamps to avoid unbounded growth if response isn't recorded
+        let cutoff = now - Duration::from_secs(60);
+         while let Some(ts) = store.request_timestamps.front() {
+            if *ts < cutoff {
+                store.request_timestamps.pop_front();
+            } else {
+                break;
+            }
         }
     }
 }

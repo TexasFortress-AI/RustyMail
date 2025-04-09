@@ -8,6 +8,7 @@ pub mod handlers;
 pub mod models;
 pub mod errors;
 pub mod sse;
+pub mod middleware;
 
 // Re-export main types needed elsewhere
 pub use routes::configure as init_routes;

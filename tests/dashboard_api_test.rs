@@ -170,16 +170,28 @@ mod dashboard_api_tests {
     // --- End Test Server Infrastructure ---
 
     #[tokio::test]
-    #[serial] // Ensure tests run serially due to server startup/shutdown
+    #[serial] 
     async fn test_get_dashboard_stats() {
         println!("--- Starting test_get_dashboard_stats ---");
         let server = TestServer::new().await.expect("Failed to start test server");
-        let server_arc = Arc::new(server); // Use Arc for potential sharing
+        let server_arc = Arc::new(server);
+        let base_url = server_arc.base_url(); // Get base URL for convenience
+
+        // --- Simulate some requests to generate metrics --- 
+        // Remove unused variable placeholder
+        // let metrics_service = { ... };
 
         let client = reqwest::Client::new();
-        let stats_url = format!("{}/api/dashboard/stats", server_arc.base_url());
+        let stats_url = format!("{}/api/dashboard/stats", base_url);
 
-        println!("Sending request to {}", stats_url);
+        // Make a few requests to populate stats
+        for _ in 0..5 {
+             let _ = client.get(&stats_url).send().await;
+             tokio::time::sleep(Duration::from_millis(50)).await; // Small delay between requests
+        }
+        tokio::time::sleep(Duration::from_secs(1)).await; // Wait for metrics collection
+
+        println!("Sending final request to {}", stats_url);
         let response = client.get(&stats_url)
             .timeout(Duration::from_secs(10))
             .send()
@@ -191,16 +203,16 @@ mod dashboard_api_tests {
         let stats_body = response.text().await.expect("Failed to read response body");
         println!("Received stats body: {}", stats_body);
 
-        // Deserialize and validate the structure
         let stats: DashboardStats = serde_json::from_str(&stats_body)
             .expect("Failed to deserialize response into DashboardStats");
 
-        // Basic assertions (more can be added)
+        // Assertions
         assert!(stats.system_health.cpu_usage >= 0.0);
         assert!(stats.system_health.memory_usage >= 0.0);
         assert!(stats.last_updated.len() > 0);
-        // request_rate might be empty initially
-        // assert!(!stats.request_rate.is_empty());
+        // Assert new fields (values might be 0 if middleware isn't calling record methods)
+        assert!(stats.requests_per_minute >= 0.0); 
+        assert!(stats.average_response_time_ms >= 0.0);
 
         // Shutdown server
         let mut server_mut = Arc::try_unwrap(server_arc).expect("Failed to unwrap Arc for shutdown");

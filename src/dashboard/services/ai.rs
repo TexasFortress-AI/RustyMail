@@ -56,11 +56,14 @@ impl AiService {
         // Update last activity time
         conversation.last_activity = chrono::Utc::now();
         
-        // Generate response based on API key
-        let response_text = if let Some(key) = &self.api_key {
-            format!("AI response using key {}", key)
+        // Generate response: Use API key if available, otherwise use mock logic
+        let response_text = if let Some(_key) = &self.api_key {
+            // Placeholder: In a real scenario, call OpenAI/RIG here
+            // format!("AI response using key {}", key)
+            self.generate_mock_response(&query_text) // Use mock even if key exists for now
         } else {
-            "No API key configured".to_string()
+            // Use mock response generator if no key
+            self.generate_mock_response(&query_text)
         };
         
         // Add to conversation history
@@ -82,8 +85,7 @@ impl AiService {
         })
     }
     
-    // Generate a mock response for testing
-    #[allow(dead_code)]
+    // Generate a mock response for testing (remove allow(dead_code))
     fn generate_mock_response(&self, query: &str) -> String {
         let query_lower = query.to_lowercase();
         
@@ -101,6 +103,7 @@ impl AiService {
     }
     
     // Generate mock email data for testing
+    #[allow(dead_code)]
     fn generate_mock_email_data(&self) -> EmailData {
         EmailData {
             messages: Some(vec![

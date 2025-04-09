@@ -100,6 +100,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(dashboard_state.clone())       
             .app_data(web::Data::new(sse_manager.clone())) // Register SseManager
             .wrap(actix_web::middleware::Logger::default())
+            .wrap(dashboard::api::middleware::Metrics) // Re-enable Metrics middleware
             // Configure routes
             .configure(configure_rest_service)       
             .configure(SseAdapter::configure_sse_service)

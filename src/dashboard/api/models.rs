@@ -4,7 +4,8 @@ use serde::{Serialize, Deserialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardStats {
     pub active_connections: usize,
-    pub request_rate: Vec<RequestRateData>,
+    pub requests_per_minute: f64,
+    pub average_response_time_ms: f64,
     pub system_health: SystemHealth,
     pub last_updated: String, // ISO timestamp
 }

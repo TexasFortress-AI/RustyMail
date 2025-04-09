@@ -16,66 +16,57 @@ START SPECIFICATION:
 - Explain your OBSERVATIONS clearly, then provide REASONING to identify the exact issue. Add console logs when needed to gather more information.
 
 
-RustyMail is a high-performance IMAP API server implementing the following core business capabilities:
+RustyMail is a high-performance IMAP API server providing multiple interfaces (REST, MCP Stdio, MCP SSE) for accessing email services. The core business logic is organized around several key components:
 
-### Core Email Management
-- Multiple interface support: REST API, MCP Stdio, MCP SSE
-- Full IMAP folder and message operations 
-- Email search with complex criteria
-- Flag management and email movement between folders
-- Real-time updates via Server-Sent Events (SSE)
+### Core Components and Domain Logic
 
-### Key Components:
+1. IMAP Session Management (`src/imap/session.rs`, Score: 95)
+- Atomic email movement between folders with integrity checks
+- Folder synchronization and status tracking 
+- Server-side search optimization with criteria transformation
+- Flag operation handling with IMAP STORE commands
 
-1. IMAP Session Management (`src/imap/session.rs`)
-- Session abstraction for IMAP operations
-- Custom search criteria transformation
-- Email metadata and content fetching
-- Flag and folder operation handling
+2. MCP Protocol Implementation (`src/api/mcp.rs`, Score: 90) 
+- JSON-RPC 2.0 compliant request/response handling
+- Transport abstraction for stdio and SSE interfaces
+- Domain error mapping to standardized error codes
 
-2. MCP Protocol Implementation (`src/api/mcp.rs`) 
-- JSON-RPC 2.0 compliant interface
-- Custom IMAP operation tools
-- Support for stdio and SSE transports
-- Error mapping between IMAP and JSON-RPC
+3. Email and Folder Models (`src/imap/types.rs`, Score: 85)
+- Custom email structure with IMAP-specific metadata
+- Folder hierarchy management with delimiter support
+- Search criteria modeling for complex queries
+- Flag operation state transitions
 
-3. SSE Real-time Updates (`src/api/sse.rs`)
-- Client registration and tracking
-- Message broadcasting system
-- Heartbeat mechanism
-- Session cleanup handling
-
-4. REST API Interface (`src/api/rest.rs`)
-- IMAP operation endpoints
-- Folder prefix handling
-- Email body conditional fetching
-- Custom error mapping
+4. Real-time Updates via SSE (`src/api/sse.rs`, Score: 80)
+- Client registration and lifecycle management
+- Event broadcasting system for push updates
+- Heartbeat mechanism for connection maintenance
 
 ### Code Conventions
 
 #### IMAP Operations
-- MUST: Use `async-imap` for all IMAP interactions
-- AVOID: Direct socket connections or custom IMAP implementations
-- WHY: Ensures protocol compliance and security
-- EXAMPLE: `src/imap/client.rs`
+- MUST: Use atomic operations for email moves and flag changes
+- AVOID: Direct folder manipulation without status checks
+- WHY: Prevents data corruption from race conditions
+- EXAMPLE: `src/imap/session.rs:move_email()`
 
-#### Error Handling
-- MUST: Map domain errors to appropriate HTTP/JSON-RPC codes
-- AVOID: Generic error responses without context
-- WHY: Provides clear error feedback to clients
-- EXAMPLE: `src/api/rest.rs` error mapping
+#### MCP Protocol
+- MUST: Follow JSON-RPC 2.0 spec for all MCP communication
+- AVOID: Custom message formats or non-standard error codes
+- WHY: Ensures protocol compliance and interoperability
+- EXAMPLE: `src/api/mcp.rs:handle_request()`
 
-#### Message Processing
-- MUST: Handle both text and HTML email bodies
-- AVOID: Assuming single content type
-- WHY: Supports all email formats
-- EXAMPLE: `src/imap/types.rs`
+#### Email Processing
+- MUST: Validate all email attributes before operations
+- AVOID: Assumptions about message structure or encoding
+- WHY: Handles diverse email formats reliably
+- EXAMPLE: `src/imap/types.rs:Email`
 
 #### Real-time Updates
 - MUST: Use SSE for live notifications
 - AVOID: Polling or websockets
 - WHY: Efficient server-push updates
-- EXAMPLE: `src/api/sse.rs`
+- EXAMPLE: `src/api/sse.rs:broadcast_event()`
 
 $END$
 END SPECIFICATION

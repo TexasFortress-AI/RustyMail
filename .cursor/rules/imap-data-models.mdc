@@ -1,79 +1,72 @@
 # imap-data-models
 
 ### Email Model Structure
-- MUST: Define Email struct with fields:
-  ```rust
-  struct Email {
-    uid: u32,
-    flags: Vec<String>,
-    envelope: ImapEnvelope,
-    body: Option<String>, 
-    size: u32
-  }
-  ```
-- AVOID: Storing raw IMAP message data directly
-- WHY: Provides clean domain model for email manipulation
-- EXAMPLE: `src/imap/types.rs`
+- MUST: Implement `Email` struct in `src/imap/types.rs` containing:
+  - `uid: u32` for IMAP message identification
+  - `flags: Vec<String>` for IMAP message flags
+  - `envelope: Option<ImapEnvelope>` for message metadata 
+  - `body: Option<String>` for message content
+  - `size: u32` for message size
+- AVOID: Storing raw IMAP protocol data directly
+- WHY: Provides clean domain model mapping to IMAP message structure
+- EXAMPLE: `src/imap/types.rs:10-20`
 
-### Envelope Data Model 
-- MUST: Implement ImapEnvelope with:
-  - From/To/CC addresses as ImapAddress vectors
-  - Subject and date as Strings
-  - Message-ID and In-Reply-To for threading
-- AVOID: Custom string parsing of envelope data
-- WHY: Standardizes email metadata handling
-- EXAMPLE: `src/imap/types.rs`
+### Address Model 
+- MUST: Use `ImapAddress` struct with:
+  - `name: Option<String>` for display name
+  - `mailbox: Option<String>` for local part
+  - `host: Option<String>` for domain
+- AVOID: Parsing email addresses manually
+- WHY: Maps directly to IMAP envelope address structure
+- EXAMPLE: `src/imap/types.rs:30-40`
 
-### Address Structure
-- MUST: Model ImapAddress with:
-  ```rust
-  struct ImapAddress {
-    name: Option<String>,
-    mailbox: String,
-    host: String
-  }
-  ```
-- AVOID: Free-form address strings
-- WHY: Enables proper email address validation and formatting
-- EXAMPLE: `src/imap/types.rs`
-
-### Folder Model
-- MUST: Implement Folder with:
-  - Name as String
-  - Delimiter as char
-  - Metadata via MailboxInfo struct
-- AVOID: Nested folder hierarchies in memory
-- WHY: Maps to IMAP folder structure
-- EXAMPLE: `src/imap/types.rs`
+### Envelope Model
+- MUST: Implement `ImapEnvelope` with fields:
+  - `date: Option<String>` 
+  - `subject: Option<String>`
+  - `from: Vec<ImapAddress>`
+  - `sender: Vec<ImapAddress>`
+  - `reply_to: Vec<ImapAddress>`
+  - `to: Vec<ImapAddress>`
+  - `cc: Vec<ImapAddress>` 
+  - `bcc: Vec<ImapAddress>`
+  - `in_reply_to: Option<String>`
+  - `message_id: Option<String>`
+- AVOID: Creating custom envelope formats
+- WHY: Matches IMAP protocol envelope structure exactly
+- EXAMPLE: `src/imap/types.rs:50-70`
 
 ### Search Criteria Model
-- MUST: Define SearchCriteria enum with:
-  - Basic criteria (Subject, From, Body etc)
-  - Compound criteria (And, Or, Not)
-  - Date-based criteria
-- AVOID: Raw IMAP search strings
-- WHY: Type-safe search query construction
-- EXAMPLE: `src/imap/types.rs`
+- MUST: Define `SearchCriteria` enum with variants:
+  - `All`
+  - `Unseen`
+  - `Flagged`
+  - `From(String)`
+  - `To(String)` 
+  - `Subject(String)`
+  - `Body(String)`
+  - `Uid(Vec<u32>)`
+  - `Since(String)`
+- AVOID: Free-form string search criteria
+- WHY: Type-safe representation of IMAP search criteria
+- EXAMPLE: `src/imap/types.rs:80-100`
 
 ### Flag Operations
-- MUST: Model flag changes via:
-  ```rust
-  enum FlagOperation {
-    Add(Vec<String>),
-    Remove(Vec<String>),
-    Set(Vec<String>)
-  }
-  ```
+- MUST: Use `FlagOperation` enum:
+  - `Add(Vec<String>)`
+  - `Remove(Vec<String>)`
+  - `Replace(Vec<String>)`
 - AVOID: Direct flag string manipulation
 - WHY: Safe flag state transitions
-- EXAMPLE: `src/imap/types.rs`
+- EXAMPLE: `src/imap/types.rs:110-120`
 
-### Testing Requirements
-- MUST: Test all model serialization/deserialization
-- MUST: Validate all field constraints
-- MUST: Test flag operation combinations
-- MUST: Verify search criteria composition
-- AVOID: Testing raw IMAP protocol details
-- EXAMPLE: `src/imap/types_test.rs`
+### Folder Structure
+- MUST: Use `Folder` struct:
+  - `name: String`
+  - `delimiter: Option<String>`
+  - `attributes: Vec<String>`
+- AVOID: Storing folder paths as plain strings
+- WHY: Maps to IMAP folder/mailbox structure
+- EXAMPLE: `src/imap/types.rs:130-140`
 
 $END$

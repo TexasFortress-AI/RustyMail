@@ -1,90 +1,93 @@
----
-description: 
-globs: 
-alwaysApply: false
----
 # interface-implementations
 
-### REST API Interface
-- MUST: Implement REST endpoints using actix-web for IMAP operations
-- AVOID: Mixing HTTP method semantics (e.g. using POST for read operations)
-- WHY: Ensures consistent and RESTful access to IMAP functionality
+### REST Interface Implementation Conventions
+
+- MUST: Implement REST endpoints using actix-web
+- AVOID: Mixing HTTP concerns with IMAP logic
+- WHY: Separation of concerns ensures clean interface boundaries
 - EXAMPLE: `src/api/rest.rs`
 
 ```rust
-// Endpoint for folder operations
-async fn create_folder(
-    folder_name: String,
-    imap_client: Arc<ImapClient>
-) -> Result<HttpResponse, ApiError> {
-    // Domain-specific folder name validation
-    validate_folder_name(&folder_name)?;
-    imap_client.create_folder(&folder_name).await?;
-    Ok(HttpResponse::Created().finish())
+// Good
+async fn list_folders(state: web::Data<AppState>) -> Result<impl Responder> {
+    let folders = state.imap_client.list_folders().await?;
+    Ok(web::Json(folders))
 }
 ```
 
-### MCP Stdio Interface
-- MUST: Use JSON-RPC 2.0 protocol for all MCP stdio communication
-- AVOID: Custom message formats or raw stdin/stdout handling
-- WHY: Provides standardized request/response pattern for mail operations
-- EXAMPLE: `src/api/mcp.rs`
+### SSE Interface Implementation Conventions
+
+- MUST: Use tokio broadcast channels for SSE events
+- AVOID: Blocking operations in SSE event handlers
+- WHY: Ensures non-blocking real-time updates
+- EXAMPLE: `src/api/mcp_sse.rs`
 
 ```rust
-// MCP tool implementation
-impl McpTool for McpListFoldersTool {
-    fn execute(&self, _params: Value) -> Result<Value, McpPortError> {
-        let folders = self.imap_client.list_folders()?;
-        Ok(json!({"folders": folders}))
-    }
+// Good
+pub struct SseState {
+    clients: Arc<RwLock<HashMap<ClientId, mpsc::Sender<String>>>>
 }
 ```
 
-### Server-Sent Events Interface
-- MUST: Implement SSE using actix-web-lab for real-time updates
-- AVOID: Long-polling or WebSocket for one-way notifications
-- WHY: Efficient server-to-client push for mailbox changes
-- EXAMPLE: `src/api/sse.rs`
+### Stdio Interface Implementation Conventions
 
+- MUST: Use async_std for stdin/stdout handling
+- AVOID: Direct println/readln calls
+- WHY: Maintains consistent async behavior
+- EXAMPLE: `src/api/mcp_stdio.rs`
+
+### Error Mapping Conventions
+
+- MUST: Map domain errors to interface-specific errors
+- AVOID: Generic error messages
+- WHY: Provides consistent error handling across interfaces
+- EXAMPLE: `src/api/error.rs`
+
+### Interface Business Logic Summary
+
+1. REST Interface (`src/api/rest.rs`):
+- Handles IMAP operations via HTTP endpoints
+- Maps IMAP folder operations to REST resources
+- Manages session state through cookies
+
+2. SSE Interface (`src/api/mcp_sse.rs`):
+- Maintains client connections
+- Broadcasts IMAP events in real-time
+- Handles client registration/deregistration
+
+3. Stdio Interface (`src/api/mcp_stdio.rs`):
+- Processes JSON-RPC commands from stdin
+- Returns results via stdout
+- Maintains stateful IMAP sessions
+
+### Implementation Patterns
+
+#### REST Pattern
 ```rust
-// SSE connection handler
-async fn sse_connect_handler(
-    state: Data<SseState>,
-) -> Sse<SseStream> {
-    let (tx, rx) = mpsc::channel(100);
-    state.clients.lock().await.insert(tx);
-    
-    Sse::new(SseStream::new(rx))
-        .keep_alive(Duration::from_secs(15))
-}
+// src/api/rest.rs
+pub async fn move_email(
+    state: web::Data<AppState>,
+    params: web::Json<MoveEmailParams>
+) -> Result<impl Responder>
 ```
 
-### Interface State Management
-- MUST: Use atomic reference counting (Arc) for shared IMAP client state
-- AVOID: Global mutable state or unsafe static variables
-- WHY: Thread-safe access to IMAP client across interfaces
-- EXAMPLE: `src/bin/rustymail.rs`
-
+#### SSE Pattern
 ```rust
-let imap_client = Arc::new(ImapClient::connect(config).await?);
+// src/api/mcp_sse.rs
+pub async fn handle_client_message(
+    client_id: ClientId,
+    message: String,
+    state: Arc<SseState>
+)
 ```
 
-### Interface Error Handling
-- MUST: Map domain errors to interface-specific error types
-- AVOID: Generic error messages or exposing internal errors
-- WHY: Consistent error handling across interfaces
-- EXAMPLE: `src/api/rest.rs`
-
+#### Stdio Pattern
 ```rust
-impl From<ImapError> for ApiError {
-    fn from(err: ImapError) -> Self {
-        match err {
-            ImapError::Auth(_) => ApiError::Unauthorized,
-            ImapError::Mailbox(_) => ApiError::NotFound,
-            _ => ApiError::InternalError
-        }
-    }
-}
+// src/api/mcp_stdio.rs
+pub async fn process_command(
+    command: String,
+    state: Arc<McpPortState>
+) -> Result<String>
 ```
 
 $END$

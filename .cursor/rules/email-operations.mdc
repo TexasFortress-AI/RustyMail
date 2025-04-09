@@ -1,60 +1,53 @@
----
-description: 
-globs: 
-alwaysApply: false
----
 # email-operations
 
 ### Email Movement Operations
-- MUST: Use atomic move operations between folders via AsyncImapSession
-- AVOID: Moving emails without checking folder existence first
-- WHY: Maintains data integrity during email transfers 
-- EXAMPLE: `src/imap/session.rs`
-```rust
-pub async fn move_email(&mut self, uids: &[u32], from: &str, to: &str) -> Result<()> {
-    self.select_folder(from).await?;
-    self.copy_messages(uids, to).await?;
-    self.delete_messages(uids).await?;
-    self.expunge().await?;
-}
-```
+- MUST: Implement atomic email moves using `async_imap::Session::mv` with fallback to copy+delete
+- AVOID: Direct deletion without verifying successful copy
+- WHY: Ensures data integrity during folder transfers
+- EXAMPLE: `src/imap/session.rs:move_email()`
 
 ### Folder Synchronization
-- MUST: Implement folder status checks before operations
-- AVOID: Direct folder manipulation without status verification
-- WHY: Prevents data corruption from race conditions
-- EXAMPLE: `src/imap/session.rs::select_folder()`
+- MUST: Check folder status before email operations using `select_folder()`
+- AVOID: Caching folder state or assuming folder exists
+- WHY: Prevents race conditions and lost updates
+- EXAMPLE: `src/imap/session.rs:select_folder()`
 
-### Search Implementation
-- MUST: Use async-imap's native search capabilities with transformed criteria
-- AVOID: Client-side email filtering
+### Email Search Implementation 
+- MUST: Transform search criteria to IMAP format using `format_search_criteria()`
+- AVOID: Client-side filtering of search results
 - WHY: Leverages server-side optimizations
-- EXAMPLE: `src/imap/session.rs::format_search_criteria()`
+- EXAMPLE: `src/imap/session.rs:search_emails()`
 
 ### Session State Management
-- MUST: Track folder selection state via ImapSession wrapper
-- AVOID: Global session state or unmanaged connections
-- WHY: Ensures consistent session handling
-- EXAMPLE: `src/imap/session.rs::AsyncImapSessionWrapper`
+- MUST: Track selected folder in `ImapSession` wrapper
+- AVOID: Global state or multiple folder selections
+- WHY: Maintains consistent session context
+- EXAMPLE: `src/imap/session.rs:ImapSession`
 
-### Atomic Flag Operations
-- MUST: Implement store_flags using STORE command
-- AVOID: Multiple separate flag operations
-- WHY: Maintains atomic guarantees for flag updates
-- EXAMPLE: `src/imap/session.rs::store_flags()`
+Key Business Logic Files:
 
-Testing Requirements:
-1. Unit tests for each atomic operation
-2. Integration tests for multi-step workflows
-3. Error handling tests for connection failures
-4. Concurrent operation tests
-5. Session state verification tests
+`src/imap/session.rs`:
+```rust
+// Core email operations
+move_email() - Atomic move with fallback
+select_folder() - Folder state management  
+search_emails() - Server-side search
+store_flags() - Atomic flag updates
+```
 
-Importance Scores:
-- Email Movement: 95 (core business operation)
-- Folder Sync: 90 (data integrity critical)
-- Search: 85 (key business functionality)
-- Session State: 90 (operational integrity)
-- Flag Operations: 85 (core metadata management)
+`src/imap/types.rs`:
+```rust
+// Domain models
+Email - Core email data structure
+Folder - IMAP folder representation
+SearchCriteria - Search query model
+FlagOperation - Flag change operations
+```
+
+Business Impact Scores:
+- Email Movement (95) - Core data integrity 
+- Folder Sync (90) - Critical for consistency
+- Search (85) - Key user functionality
+- Session State (80) - Important for reliability
 
 $END$
