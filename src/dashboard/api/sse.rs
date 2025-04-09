@@ -32,7 +32,7 @@ struct SseClient {
 
 // SSE Manager that keeps track of connected clients
 pub struct SseManager {
-    clients: RwLock<HashMap<String, SseClient>>,
+    clients: Arc<RwLock<HashMap<String, SseClient>>>,
     metrics_service: Arc<MetricsService>,
     client_manager: Arc<ClientManager>,
 }
@@ -40,7 +40,7 @@ pub struct SseManager {
 impl SseManager {
     pub fn new(metrics_service: Arc<MetricsService>, client_manager: Arc<ClientManager>) -> Self {
         Self {
-            clients: RwLock::new(HashMap::new()),
+            clients: Arc::new(RwLock::new(HashMap::new())),
             metrics_service,
             client_manager,
         }
@@ -49,7 +49,7 @@ impl SseManager {
     // Register a new SSE client
     pub async fn register_client(&self, client_id: String, sender: mpsc::Sender<SseEvent>) {
         let mut clients = self.clients.write().await;
-        clients.insert(client_id.clone(), SseClient { sender });
+        clients.insert(client_id.clone(), SseClient { sender: sender.clone() });
         
         // Update metrics
         self.metrics_service.increment_connections().await;
@@ -58,6 +58,16 @@ impl SseManager {
         
         // Broadcast client connected event
         self.broadcast_client_connected(&client_id).await;
+        
+        // Attempt to send a welcome message immediately after registration
+        let welcome_event = SseEvent {
+            event_type: "welcome".to_string(),
+            data: format!(r#"{{"clientId":"{}","message":"Connected to RustyMail SSE"}}"#, client_id),
+        };
+        if let Err(_) = sender.send(welcome_event).await {
+            warn!("Failed to send initial welcome message to client {}", client_id);
+            // Optionally remove the client here if initial send fails, or rely on heartbeat
+        }
     }
     
     // Remove a client when they disconnect
@@ -198,7 +208,7 @@ impl SseManager {
 impl Clone for SseManager {
     fn clone(&self) -> Self {
         Self {
-            clients: RwLock::new(HashMap::new()),
+            clients: Arc::clone(&self.clients),
             metrics_service: Arc::clone(&self.metrics_service),
             client_manager: Arc::clone(&self.client_manager),
         }
@@ -222,13 +232,6 @@ pub async fn sse_handler(
         None, 
         None
     ).await;
-    
-    // Send welcome message
-    let welcome_data = format!(r#"{{"clientId":"{}","message":"Connected to RustyMail SSE"}}"#, client_id);
-    let _ = tx.send(SseEvent {
-        event_type: "welcome".to_string(),
-        data: welcome_data,
-    }).await;
     
     // Convert the receiver to a stream
     let event_stream = ReceiverStream::new(rx)

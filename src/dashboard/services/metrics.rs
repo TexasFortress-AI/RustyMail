@@ -44,7 +44,6 @@ impl MetricsService {
     
     pub fn new(collection_interval: Duration) -> Self {
         let metrics_store = Arc::new(RwLock::new(MetricsStore::default()));
-        
         let store_clone = Arc::clone(&metrics_store);
         
         // Spawn background task to collect metrics

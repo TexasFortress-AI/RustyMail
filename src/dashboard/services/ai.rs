@@ -1,8 +1,10 @@
-use log::debug;
-use crate::dashboard::api::models::{ChatbotQuery, ChatbotResponse, EmailData, EmailMessage, EmailFolder};
 use std::collections::HashMap;
-use uuid::Uuid;
 use tokio::sync::RwLock;
+use uuid::Uuid;
+use crate::dashboard::api::models::{ChatbotQuery, ChatbotResponse, EmailData, EmailMessage, EmailFolder};
+use log::debug;
+use chrono::Utc;
+use std::sync::Arc;
 
 // Conversation history entry
 #[derive(Debug, Clone)]
@@ -19,10 +21,9 @@ struct Conversation {
     last_activity: chrono::DateTime<chrono::Utc>,
 }
 
+#[derive(Debug)]
 pub struct AiService {
-    // Conversations keyed by conversation ID
     conversations: RwLock<HashMap<String, Conversation>>,
-    // Placeholder for actual AI client configuration
     api_key: Option<String>,
 }
 
@@ -34,14 +35,12 @@ impl AiService {
         }
     }
 
-    // Process a query from the chatbot
     pub async fn process_query(&self, query: ChatbotQuery) -> Result<ChatbotResponse, String> {
         let conversation_id = query.conversation_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let query_text = query.query.clone();
         
         debug!("Processing chatbot query for conversation {}: {}", conversation_id, query_text);
         
-        // Get or create conversation
         let mut conversations = self.conversations.write().await;
         let conversation = conversations
             .entry(conversation_id.clone())
@@ -56,8 +55,12 @@ impl AiService {
         // Update last activity time
         conversation.last_activity = chrono::Utc::now();
         
-        // Generate mock response
-        let response_text = self.generate_mock_response(&query_text);
+        // Generate response based on API key
+        let response_text = if let Some(key) = &self.api_key {
+            format!("AI response using key {}", key)
+        } else {
+            "No API key configured".to_string()
+        };
         
         // Add to conversation history
         conversation.entries.push(ConversationEntry {
@@ -65,9 +68,6 @@ impl AiService {
             response: response_text.clone(),
             timestamp: chrono::Utc::now(),
         });
-        
-        // Clean up old conversations (keep the lock as short as possible)
-        self.cleanup_old_conversations(&mut conversations).await;
         
         Ok(ChatbotResponse {
             text: response_text,
@@ -104,33 +104,33 @@ impl AiService {
             messages: Some(vec![
                 EmailMessage {
                     id: "1".to_string(),
-                    subject: "Your recent inquiry".to_string(),
-                    from: "support@example.com".to_string(), 
+                    subject: "Welcome to RustyMail".to_string(),
+                    from: "system@rustymail.com".to_string(),
                     date: chrono::Utc::now().to_rfc3339(),
-                    snippet: "Thank you for contacting us about...".to_string(),
+                    snippet: "Welcome to RustyMail! Here's how to get started...".to_string(),
                     is_read: false,
                 },
                 EmailMessage {
                     id: "2".to_string(),
-                    subject: "Weekly newsletter".to_string(),
-                    from: "news@example.com".to_string(),
-                    date: (chrono::Utc::now() - chrono::Duration::days(1)).to_rfc3339(),
-                    snippet: "This week's top stories include...".to_string(),
+                    subject: "Your account settings".to_string(),
+                    from: "support@rustymail.com".to_string(),
+                    date: chrono::Utc::now().to_rfc3339(),
+                    snippet: "Your account has been configured with...".to_string(),
                     is_read: true,
-                },
+                }
             ]),
-            count: Some(24),
+            count: Some(2),
             folders: Some(vec![
                 EmailFolder {
                     name: "INBOX".to_string(),
-                    count: 24,
-                    unread_count: 3,
+                    count: 2,
+                    unread_count: 1,
                 },
                 EmailFolder {
                     name: "Sent".to_string(),
-                    count: 12,
+                    count: 5,
                     unread_count: 0,
-                },
+                }
             ]),
         }
     }

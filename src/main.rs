@@ -4,7 +4,7 @@ use rustymail::imap::ImapClient;
 use rustymail::api::rest::{AppState, configure_rest_service};
 use std::sync::Arc;
 use dotenvy::dotenv;
-use log::{info, debug, error};
+use log::{info, debug, error, warn};
 use rustymail::mcp_port::create_mcp_tool_registry;
 use rustymail::api::mcp_sse::SseAdapter;
 use rustymail::api::mcp_sse::SseState;
@@ -30,8 +30,22 @@ async fn main() -> std::io::Result<()> {
             panic!("Configuration loading failed: {:?}", e);
         }
     };
-    // Determine active interface from settings
+
+    // Determine active interface from settings and print config details
     let active_interface = settings.interface.clone();
+    info!("Using interface: {:?}", active_interface);
+    info!("IMAP config: host={}, port={}, user={}", settings.imap_host, settings.imap_port, settings.imap_user);
+
+    // Get or create default REST config
+    let rest_config = settings.rest.as_ref().cloned().unwrap_or_else(|| {
+        warn!("No REST configuration found, using defaults");
+        rustymail::config::RestConfig {
+            enabled: true,
+            host: "127.0.0.1".to_string(),
+            port: 3000
+        }
+    });
+    info!("REST config: enabled={}, host={}, port={}", rest_config.enabled, rest_config.host, rest_config.port);
 
     // --- Handle Stdio Interface ---
     if active_interface == rustymail::config::InterfaceType::McpStdio {
@@ -65,7 +79,6 @@ async fn main() -> std::io::Result<()> {
 
     // --- Handle REST/SSE Interface (if not Stdio) ---
     info!("Starting in REST/SSE mode...");
-    let rest_config = settings.rest.as_ref().expect("REST config section must be present if not in Stdio mode");
     if !rest_config.enabled {
         panic!("REST interface must be enabled if not in Stdio mode");
     }
@@ -99,7 +112,8 @@ async fn main() -> std::io::Result<()> {
     info!("Dashboard configuration initialized.");
 
     // Configure and start HTTP server
-    let listen_addr = format!("{}:{}", rest_config.host, rest_config.port);
+    let (host, port) = (rest_config.host, rest_config.port);
+    let listen_addr = format!("{}:{}", host, port);
     info!("Starting HTTP server (REST & SSE) on {}", listen_addr);
 
     HttpServer::new(move || {

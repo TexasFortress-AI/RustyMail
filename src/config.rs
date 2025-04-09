@@ -5,10 +5,10 @@ use serde::{Deserialize, Serialize};
 // use std::path::Path;
 use thiserror::Error;
 // Remove unused env import if not needed elsewhere
-// use std::env; 
-use std::path::PathBuf; // Import PathBuf
+use std::env;
 // Remove dotenvy
-// use dotenvy; 
+// use dotenvy;
+use log::warn;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -56,37 +56,75 @@ pub struct Settings {
 
 impl Settings {
     pub fn new(config_path: Option<&str>) -> Result<Self, config::ConfigError> {
-        // Remove dotenvy loading
-
-        // Determine the configuration file path (default.toml)
-        let config_file_path = match config_path {
-            Some(p) => PathBuf::from(p),
-            None => {
-                // Use CARGO_MANIFEST_DIR, handle potential error
-                let manifest_dir = std::env::var("CARGO_MANIFEST_DIR")
-                    .map_err(|e| config::ConfigError::Foreign(Box::new(e)))?; 
-                let mut default_path = PathBuf::from(manifest_dir);
-                default_path.push("config");
-                default_path.push("default.toml");
-                default_path
-            }
-        };
-
-        println!("Attempting to load configuration from: {:?}", config_file_path);
-
-        let builder = config::Config::builder()
-            // Add default values
+        // Default configuration values
+        let mut config_builder = config::Config::builder()
+            // Default interface value
             .set_default("interface", "rest")?
-            .set_default("log.level", "info")?
+            
+            // IMAP defaults
+            .set_default("imap_host", "localhost")?
+            .set_default("imap_port", 993)?
+            
+            // REST defaults
+            .set_default("rest.host", "127.0.0.1")?
+            .set_default("rest.port", 3000)?
+            .set_default("rest.enabled", true)?
+            
+            // Dashboard defaults
             .set_default("dashboard.enabled", false)?
-            // Load config file source, but make it optional
-            .add_source(File::from(config_file_path.clone()).required(false))
-            // Use Environment::default() to load unprefixed variables
-            .add_source(Environment::default().separator("__"));
-            // Remove manual overrides
-
-        // Build and deserialize
-        builder.build()?.try_deserialize()
+            // Log defaults
+            .set_default("log.level", "info")?;
+        
+        // Add configuration from file
+        if let Some(path) = config_path {
+            config_builder = config_builder.add_source(File::with_name(path));
+        }
+        
+        // Add environment variables with prefix
+        // e.g. `RUSTYMAIL_IMAP_HOST=...` would override `imap_host`
+        config_builder = config_builder.add_source(
+            Environment::with_prefix("RUSTYMAIL")
+                .separator("_")
+                .ignore_empty(true)
+        );
+        
+        // Add direct environment variables for important settings
+        // e.g. `IMAP_HOST=...` would override `imap_host`
+        let env_vars = [
+            ("IMAP_HOST", "imap_host"),
+            ("IMAP_PORT", "imap_port"),
+            ("IMAP_USER", "imap_user"),
+            ("IMAP_PASS", "imap_pass"),
+            ("REST_HOST", "rest.host"),
+            ("REST_PORT", "rest.port"),
+            ("REST_ENABLED", "rest.enabled"),
+            ("DASHBOARD_ENABLED", "dashboard.enabled"),
+            ("DASHBOARD_PATH", "dashboard.path"),
+        ];
+        
+        for (env_var, config_path) in &env_vars {
+            if let Ok(value) = env::var(env_var) {
+                // Handle special case for port which needs to be parsed to integer
+                if *env_var == "IMAP_PORT" || *env_var == "REST_PORT" {
+                    if let Ok(port) = value.parse::<u16>() {
+                        config_builder = config_builder.set_override(config_path, port)?;
+                    } else {
+                        warn!("Invalid port value in {}: {}", env_var, value);
+                    }
+                } else if *env_var == "DASHBOARD_ENABLED" || *env_var == "REST_ENABLED" {
+                    if let Ok(enabled) = value.parse::<bool>() {
+                        config_builder = config_builder.set_override(config_path, enabled)?;
+                    } else {
+                        warn!("Invalid boolean value in {}: {}", env_var, value);
+                    }
+                } else {
+                    config_builder = config_builder.set_override(config_path, value)?;
+                }
+            }
+        }
+        
+        // Build the config and deserialize it into Settings
+        config_builder.build()?.try_deserialize()
     }
 }
 

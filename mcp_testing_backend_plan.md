@@ -445,189 +445,71 @@ async fn test_dashboard_api() {
 4. Alerting and notification system
 5. User management and authentication for dashboard access
 
-# RustyMail Dashboard SSE Testing Plan
+## Dashboard SSE Integration Test Implementation
 
-## Overview
-This document outlines the testing approach for the RustyMail dashboard's Server-Sent Events (SSE) implementation, which provides real-time updates to frontend clients.
+### Test Infrastructure
 
-## Components Under Test
-- SSE endpoint (`/dashboard/api/events`)
-- Event broadcasting system
-- Client registration and tracking
-- Event types and data formats
-- Connection handling and heartbeats
+The dashboard SSE implementation is tested using integration tests that:
 
-## Test Environment Setup
-- Mock IMAP server configuration
-- Multiple test clients with different lifetimes
-- System metrics collection for load testing
-- Network condition simulation (latency, disconnections)
+1. Start the full RustyMail server with dashboard enabled
+2. Connect to the SSE endpoint
+3. Verify events are received
+4. Test various scenarios like reconnection, stress, etc.
 
-## Test Categories
+### Current Test Setup
 
-### 1. Connection Management Tests
-- Verify client registration process
-- Test client disconnection handling
-- Verify client tracking in metrics
-- Test connection limits and throttling
-- Validate client cleanup for inactive connections
+The current test strategy in `tests/dashboard_sse_test.rs` follows these steps:
 
-### 2. Event Broadcasting Tests
-- Verify broadcast to all connected clients
-- Test event serialization for different event types
-- Verify targeted broadcasts to specific clients
-- Test broadcasting with no connected clients
-- Validate proper event type and format for each event
+1. The `TestServer` struct spawns a RustyMail server process
+2. Environment variables set up the IMAP connection and dashboard
+3. The `SseClient` connects to the `/dashboard/api/events` endpoint
+4. Tests verify proper event delivery
 
-### 3. SSE Protocol Compliance Tests
-- Verify correct content type (`text/event-stream`)
-- Test event format compliance
-- Validate proper event ID handling
-- Test comment-based heartbeats
-- Verify reconnection behavior
+### Port Conflict Issues
 
-### 4. Real-time Events Tests
-- Test stats update events (frequency and content)
-- Verify client connected/disconnected events
-- Test system alert events
-- Validate welcome message on connection
-- Test custom event broadcasts
+The main issue is that the tests use a hardcoded port (8080) which creates conflicts:
 
-### 5. Performance Tests
-- Measure broadcast latency under load
-- Test with high client connection count (100+)
-- Verify memory usage with long-lived connections
-- Test reconnection storms (many clients reconnecting simultaneously)
-- Measure CPU usage during high-frequency broadcasts
+1. If multiple tests run in parallel, they compete for the same port
+2. If a server is already running on port 8080, tests will fail
+3. If a test crashes, it may leave a zombie process bound to port 8080
 
-### 6. Error Handling Tests
-- Test serialization failures
-- Verify dropped client handling
-- Test malformed event handling
-- Validate rate limiting and backpressure
-- Test system recovery after service disruption
+### Solutions
 
-## Integration Test Scenarios
+1. **Dynamic Port Allocation**:
+   ```rust
+   // Find an available port
+   fn find_available_port() -> u16 {
+       let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("Failed to bind to random port");
+       listener.local_addr().expect("Failed to get local address").port()
+   }
+   
+   // In TestServer::new
+   let port = find_available_port();
+   // Update env vars with this port
+   env_vars.insert("REST_PORT".to_string(), port.to_string());
+   // Update BASE_URL constant
+   let base_url = format!("http://127.0.0.1:{}", port);
+   ```
 
-### Scenario 1: Dashboard Lifecycle
-1. Start RustyMail server
-2. Connect multiple dashboard clients
-3. Verify stats updates to all clients
-4. Disconnect half of clients
-5. Verify client disconnected events
-6. Connect new clients
-7. Verify client connected events
+2. **Process Cleanup**:
+   - Modify the TestServer shutdown process to ensure complete cleanup
+   - Add a cleanup step that kills orphaned processes
+   - Use pidfiles to track running test servers
 
-### Scenario 2: System Alerts
-1. Connect multiple dashboard clients
-2. Trigger system alerts (resource usage, configuration changes)
-3. Verify all clients receive alerts with correct formatting
-4. Test alert prioritization and ordering
+3. **Endpoint Path Correction**:
+   - Ensure the SSE endpoint path matches between tests and implementation
+   - Change from `/dashboard/api/events` to `/api/dashboard/events` if needed
 
-### Scenario 3: Long-running Connection
-1. Establish SSE connection
-2. Maintain for extended period (1+ hour)
-3. Verify heartbeats maintain connection
-4. Monitor resource usage
-5. Verify all expected events received
+4. **Improved Test Isolation**:
+   - Use `serial_test` attribute to prevent parallel execution
+   - Add proper teardown even when tests panic
+   
+### Path Forward
 
-## Test Implementation Details
+1. Update the test code to use dynamic port allocation
+2. Fix endpoint path discrepancies
+3. Ensure proper process cleanup
+4. Add logs to debug event delivery issues
+5. Ensure welcome events and stats updates are properly implemented
 
-### Test Client Implementation
-```rust
-async fn test_sse_client() {
-    // Connect to SSE endpoint
-    let client = reqwest::Client::new();
-    let mut resp = client.get("http://localhost:8080/dashboard/api/events")
-        .header("Accept", "text/event-stream")
-        .send()
-        .await
-        .expect("Failed to connect to SSE endpoint");
-
-    // Process events
-    let mut stream = resp.bytes_stream();
-    while let Some(item) = stream.next().await {
-        let bytes = item.expect("Error reading from stream");
-        // Parse and validate SSE events
-        // ...
-    }
-}
-```
-
-### Test Framework Integration
-- Integration with existing test suite
-- Automated test execution in CI pipeline
-- Metrics collection and performance baseline comparison
-
-## Test Success Criteria
-- All SSE clients receive expected events
-- Events properly formatted according to SSE specification
-- Client connection/disconnection properly tracked
-- System resource usage within acceptable limits under load
-- Reconnection works reliably after network interruption
-
-## Implemented Integration Tests
-
-The following integration tests have been implemented in `tests/dashboard_sse_test.rs`:
-
-### 1. Connection and Welcome Message
-- `test_sse_connection_receives_welcome`
-  - Verifies that a client receives a welcome message upon connection
-  - Checks proper event format and client ID assignment
-
-### 2. Stats Updates
-- `test_sse_receives_stats_updates`
-  - Verifies that clients receive periodic stats updates
-  - Validates the content and format of stats events
-
-### 3. Multiple Concurrent Clients
-- `test_multiple_concurrent_sse_clients`
-  - Tests the system with multiple simultaneous client connections
-  - Verifies that all clients receive the expected events
-  - Ensures resource usage remains within acceptable limits
-
-### 4. Client Connection Events
-- `test_sse_client_connected_events`
-  - Verifies that existing clients receive notifications when new clients connect
-  - Tests the format and content of client_connected events
-
-### 5. Heartbeat Mechanism
-- `test_sse_heartbeat`
-  - Validates that the server sends periodic heartbeats to keep connections alive
-  - Tests the proper format of heartbeat comments
-
-### 6. System Alerts ✨
-- `test_sse_system_alerts`
-  - Tests broadcasting of system alerts to connected clients
-  - Validates alert format and content
-  - Verifies all clients receive the alerts
-
-### 7. Stress Testing ✨
-- `test_sse_stress_test`
-  - Tests the system under high load with many concurrent clients
-  - Measures performance and resource usage
-  - Verifies all clients receive expected events
-  - Tagged as `#[ignore]` due to resource intensity
-
-### 8. Reconnection Handling ✨
-- `test_sse_reconnection`
-  - Tests client reconnection behavior
-  - Verifies client state management after reconnection
-  - Validates that reconnected clients receive welcome events
-
-### Running the Tests
-
-To run all dashboard SSE tests:
-```bash
-cargo test --test dashboard_sse_test --features integration_tests
-```
-
-To run a specific test:
-```bash
-cargo test --test dashboard_sse_test::test_sse_heartbeat --features integration_tests
-```
-
-To run resource-intensive tests:
-```bash
-cargo test --test dashboard_sse_test --features integration_tests -- --ignored
-```
+With these changes, the dashboard SSE integration tests should run reliably, without port conflicts, and provide meaningful test coverage for the SSE implementation.
