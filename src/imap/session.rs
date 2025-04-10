@@ -1,53 +1,60 @@
 use async_trait::async_trait;
-use std::sync::Arc;
-use tokio::sync::Mutex;
+use std::{
+    sync::Arc,
+    collections::HashSet,
+    borrow::Cow,
+};
+use tokio::{
+    sync::Mutex,
+    net::TcpStream as TokioTcpStream,
+};
 use futures_util::TryStreamExt;
 use tokio_util::compat::Compat;
 use tokio_rustls::client::TlsStream as TokioTlsStream;
-use tokio::net::TcpStream as TokioTcpStream;
-use std::collections::HashSet; // Needed for search conversion
-use imap_types::core::{Quoted, NString, IString};
-use std::borrow::Cow;
 use async_native_tls::TlsStream;
-use async_imap::Session as ImapSessionClient;
-use crate::imap::error::ImapError;
-use crate::imap::types::{Email, Folder, MailboxInfo, SearchCriteria, ImapEnvelope, ImapAddress};
-// Comment out unused ImapConfig
-// use crate::config::ImapConfig;
-use async_imap::types::{Fetch, Flag, MailboxDatum, NameAttribute, Seq, Status};
-use async_imap::{Client, ClientTls, extensions::UidPlus};
-use chrono::{DateTime, NaiveDate, Utc};
-use log::{debug, info, warn, error, trace};
-use tokio::sync::Mutex as TokioMutex;
-use urlencoding;
-use serde::Deserialize;
 
+// IMAP types
 use async_imap::{
-    Session as AsyncImapSession, 
-    types::{Flag as AsyncImapFlag, Name, Mailbox as AsyncMailbox},
+    Session as ImapSessionClient,
+    Session as AsyncImapSession,
+    Client, ClientTls,
+    extensions::UidPlus,
+    types::{
+        Fetch, MailboxDatum, NameAttribute, Seq, Status,
+        Flag as AsyncImapFlag, Name, Mailbox as AsyncMailbox,
+    },
+    error::{Error as AsyncImapError, ValidateError},
 };
 
-use async_imap::error::{Error as ImapError, ValidateError};
+use imap_types::{
+    core::{Quoted, NString, IString},
+    command::CommandBody,
+    fetch::Attribute,
+    flag::Flag as ImapTypesFlag,
+    response::{Data, Status as ImapStatus},
+    state::State,
+};
 
+// Local types
 use crate::imap::{
     error::ImapError,
     types::{
         Email, Folder, MailboxInfo, SearchCriteria,
         StoreOperation, Flags, Envelope, Address,
+        ImapEnvelope, ImapAddress,
     },
 };
 
-use imap_types::{
-    command::CommandBody,
-    fetch::Attribute,
-    flag::Flag,
-    response::{Data, Status},
-    state::State,
-};
+// Other imports
+use chrono::{DateTime, NaiveDate, Utc};
+use log::{debug, info, warn, error, trace};
+use serde::Deserialize;
+use urlencoding;
 
-// Type alias for the stream compatible with futures_util::io traits
+// Type aliases
 pub type TlsCompatibleStream = Compat<TokioTlsStream<TokioTcpStream>>;
 pub type TlsImapSession = AsyncImapSession<TlsCompatibleStream>;
+pub type Flag = ImapTypesFlag;
 
 // Define a constant for the delimiter
 const DEFAULT_MAILBOX_DELIMITER: char = '/';

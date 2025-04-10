@@ -1,19 +1,22 @@
 use actix_web::{
-    rt,
-    web::{self, Bytes, Data, Path},
+    web::{self, Data, Path},
     Error as ActixError, HttpRequest, HttpResponse, Responder,
     get,
 };
 use actix_web_lab::sse::{self, Sse, Event};
 use futures_util::stream::Stream;
-use tokio::time::{Duration};
-use tokio::sync::{
-    Mutex as TokioMutex,
-    RwLock
+use tokio::{
+    sync::{
+        Mutex as TokioMutex,
+        RwLock,
+        mpsc,
+    },
+    time::{Duration, interval},
 };
-use std::sync::{Arc};
-use std::collections::HashMap;
-use std::convert::Infallible;
+use std::{
+    sync::Arc,
+    collections::HashMap,
+};
 use uuid::Uuid;
 use crate::{
     mcp::{
@@ -21,11 +24,9 @@ use crate::{
         types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError},
     },
 };
-use log::{debug, error, info, warn};
+use log::{error, info};
 use serde::Serialize;
-use serde_json::{self};
-use tokio::time::interval;
-use tokio::sync::mpsc;
+use serde_json;
 use crate::api::rest::ApiError;
 
 #[derive(Debug, Serialize)]

@@ -1,32 +1,38 @@
 //! Handles MCP communication over stdin/stdout.
 
+// Standard library imports
 use std::io::{self, BufRead, Write};
-use log::{debug, error, info, warn};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
-use tokio::sync::Mutex;
-use serde_json::Value;
+
+// Async runtime
+use tokio::{
+    io::{AsyncBufReadExt, AsyncWriteExt},
+    sync::Mutex,
+};
+
+// Serialization
+use serde_json::{self, json};
+
+// Sync primitives
 use std::sync::Arc;
 
+// Logging
+use tracing::{debug, error, info, warn};
+
+// MCP types
 use crate::mcp::{
     types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError},
-    error_codes::{ErrorCode, PARSE_ERROR, INTERNAL_ERROR},
+    error_codes::{
+        ErrorCode,
+        PARSE_ERROR,
+        INTERNAL_ERROR,
+    },
     handler::McpHandler,
 };
-use crate::imap::types::{
-    Email,
-    Folder,
-    MailboxInfo,
-};
-use crate::imap::error::ImapError;
-use crate::mcp::types::{Request, Response, ErrorResponse};
-use crate::mcp_port::create_mcp_tool_registry;
+
+// IMAP types
 use crate::imap::ImapSessionFactory;
-use crate::imap::session::ImapSession;
-use crate::imap::types::{SearchCriteria, Flags, FlagOperation};
-use serde_json::json;
-use tracing::{debug, error, info};
-use crate::api::mcp::error_codes::ErrorCode;
-use crate::api::mcp::types::{Request, Response, ErrorResponse};
+
+use crate::mcp_port::create_mcp_tool_registry;
 
 // --- McpStdioAdapter Logic ---
 

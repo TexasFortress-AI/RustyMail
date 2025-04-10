@@ -1,20 +1,29 @@
 use actix_web::{
-    web::{self, Bytes, Data, Path, Responder, get, App, HttpServer},
+    web::{self, Bytes, Data, Path, Responder},
     Error as ActixError, HttpRequest, HttpResponse,
 };
 use actix_web_lab::sse::{self, Sse, Event};
 use futures_util::stream::{Stream, StreamExt};
-use tokio::time::{Duration, Instant};
-use tokio::sync::{
-    Mutex as TokioMutex,
-    RwLock,
-    mpsc,
-    broadcast::{self, Receiver}
+use tokio::{
+    sync::{
+        Mutex as TokioMutex,
+        RwLock,
+        mpsc,
+        broadcast::{self, Receiver}
+    },
+    time::{Duration, Instant},
 };
-use std::sync::Arc;
-use std::collections::HashMap;
-use std::convert::Infallible;
+use std::{
+    sync::Arc,
+    collections::HashMap,
+    convert::Infallible,
+};
 use uuid::Uuid;
+use log::{debug, error, info, warn};
+use serde::Serialize;
+use serde_json::{self, json, Value};
+
+// Local imports
 use crate::{
     api::rest::AppState,
     imap::ImapSessionFactory,
@@ -24,63 +33,10 @@ use crate::{
         error_codes::ErrorCode,
     },
 };
-use log::{debug, error, info, warn};
-use serde::Serialize;
-use serde_json::{self, json, Value};
-use crate::imap::{
-    AsyncImapOps,
-    types::{Email, Folder, MailboxInfo},
-    error::ImapError
-};
-use crate::api::sse::SseState;
-use crate::mcp::{
-    ErrorCode,
-    PARSE_ERROR,
-    INTERNAL_ERROR,
-    INVALID_REQUEST,
-    METHOD_NOT_FOUND,
-    INVALID_PARAMS,
-    SERVER_ERROR,
-    SESSION_EXPIRED,
-    AUTHENTICATION_FAILED,
-    FOLDER_NOT_FOUND,
-    EMAIL_NOT_FOUND,
-    OPERATION_FAILED,
-    CONNECTION_ERROR,
-    TIMEOUT_ERROR,
-    PROTOCOL_ERROR,
-    INVALID_STATE,
-    QUOTA_EXCEEDED,
-    RATE_LIMITED,
-    MAINTENANCE_MODE,
-    VERSION_MISMATCH,
-    UNSUPPORTED_FEATURE,
-    INVALID_CREDENTIALS,
-    ACCOUNT_LOCKED,
-    INVALID_TOKEN,
-    TOKEN_EXPIRED,
-    PERMISSION_DENIED,
-    RESOURCE_BUSY,
-    INVALID_CONFIG,
-    NETWORK_ERROR,
-    DNS_ERROR,
-    SSL_ERROR,
-    SERVER_UNAVAILABLE,
-    SERVICE_UNAVAILABLE,
-    BAD_GATEWAY,
-    GATEWAY_TIMEOUT,
-    PROXY_ERROR,
-    LOOP_DETECTED,
-    NOT_EXTENDED,
-    NETWORK_AUTH_REQUIRED,
-    UNKNOWN_ERROR
-};
-use crate::imap::{
-    AsyncImapOps,
-    Email,
-    Folder,
-    MailboxInfo,
-    ImapError
+
+// Re-exports for use in other modules
+pub use actix_web::{
+    web::{App, HttpServer},
 };
 
 #[derive(Debug, Serialize)]

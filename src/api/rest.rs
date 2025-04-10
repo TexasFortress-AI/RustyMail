@@ -1,20 +1,24 @@
 use actix_web::{
-    error as actix_error, get, http::StatusCode, middleware::Logger, post, web, App,
-    Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder, Result as ActixResult,
+    error as actix_error,
+    http::StatusCode,
+    web::{self, Data, Path},
+    Error as ActixError,
+    HttpRequest, HttpResponse,
+    Responder,
+    Result as ActixResult,
     ResponseError,
 };
 use actix_web_lab::middleware::from_fn as mw_from_fn;
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, Utc};
-use log::{debug, error, info, warn};
-use serde::{Deserialize, Serialize};
+use log::{error, info};
+use serde::Serialize;
 use serde_json::json;
 use std::{
     collections::HashMap,
     future::Future,
     pin::Pin,
     sync::Arc,
-    time::Duration,
 };
 use thiserror::Error;
 use tokio::sync::Mutex as TokioMutex;
@@ -22,33 +26,23 @@ use urlencoding;
 use uuid::Uuid;
 
 use crate::{
-    api::{
-        mcp_sse::SseState, // Use state from mcp_sse module
-        // sse::SseManager, // Removed - Belongs to dashboard?
-        // ApiContext, // Removed - Not defined/used
-    },
-    config::{RestConfig, Settings},
-    // dashboard::services::DashboardState, // Explicitly commented out per user request
+    api::rest::AppState,
     imap::{
         error::ImapError,
-        session::{ // Session trait and factory
+        session::{
             ImapSession, ImapSessionFactory,
         },
-        types::{ // Specific IMAP data types
+        types::{
             AppendEmailPayload, FlagOperation, Flags, Folder, Email, MailboxInfo, ModifyFlagsPayload, 
             SearchCriteria, StoreOperation,
         },
-        // client::ImapClient, // Only needed if used directly, not just via factory
     },
     mcp::{
         handler::McpHandler,
-        types::{JsonRpcResponse, McpPortState}, // Types related to MCP interaction
-        // McpTool // Not directly used in REST handlers
+        types::{JsonRpcResponse, McpPortState},
     },
-    // prelude::*, // Avoid wildcard imports unless strictly necessary
 };
 
-use crate::imap::session::StoreOperation; // Import StoreOperation from session
 use async_imap::error::Error as AsyncImapError;
 
 use crate::api::mcp::types::{JsonRpcRequest, JsonRpcError};

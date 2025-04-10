@@ -1,48 +1,46 @@
-// use crate::config::Settings;
-use crate::imap::error::ImapError;
-use crate::imap::session::{AsyncImapSessionWrapper, ImapSession, StoreOperation};
-use crate::imap::types::{Email, Folder, SearchCriteria, MailboxInfo, FlagOperation, Flags, AppendEmailPayload, ExpungeResponse, ModifyFlagsPayload};
-use async_imap::{Client as AsyncImapClient, Session as AsyncImapSession};
-use async_imap::error::Error as AsyncImapNativeError;
-use imap_types::{
-    sequence::SequenceSet, 
-    response::Status as ResponseStatus,
-    fetch::Attribute as FetchAttribute,
-    flag::Flag as ImapFlag,
-    command::CommandBody,
-    response::Data,
-    status::StatusDataItem,
-    state::State as ImapState,
-};
-use async_trait::async_trait;
-use base64::Engine;
-use log;
-use rustls::pki_types::ServerName as PkiServerName;
-use rustls::{ClientConfig, RootCertStore};
+// Standard library imports
 use std::sync::Arc;
 use std::time::Duration;
+
+// External crate imports
+use async_imap::{Client as AsyncImapClient, Session as AsyncImapSession};
+use async_imap::error::Error as AsyncImapNativeError;
+use async_imap::State as AsyncImapState;
+use async_trait::async_trait;
+use base64::Engine;
+use chrono::{DateTime, Utc};
+use futures::StreamExt;
+use log::info;
+use rustls::pki_types::ServerName as PkiServerName;
+use rustls::{ClientConfig, RootCertStore};
 use tokio::net::TcpStream as TokioTcpStream;
 use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_rustls::{client::TlsStream as TokioTlsStreamClient, TlsConnector};
 use tokio_util::compat::{Compat, TokioAsyncReadCompatExt};
 
-// Add imports for DateTime and Utc
-use chrono::{DateTime, Utc};
-use async_imap::State as AsyncImapState;
-use futures::StreamExt;
-use imap_types::response::Capability;
+// IMAP types
+use imap_types::{
+    command::CommandBody,
+    fetch::Attribute as FetchAttribute,
+    flag::Flag as ImapFlag,
+    response::{Capability, Status as ResponseStatus},
+    sequence::SequenceSet,
+    status::StatusDataItem,
+};
 
-// --- Type Aliases ---
+// Internal imports
+use crate::imap::error::ImapError;
+use crate::imap::session::{AsyncImapOps, AsyncImapSessionWrapper, ImapSession, StoreOperation};
+use crate::imap::types::{
+    AppendEmailPayload, Email, ExpungeResponse, FlagOperation, Flags,
+    Folder, MailboxInfo, ModifyFlagsPayload, SearchCriteria,
+};
 
-// Concrete Tokio types
+// Type Aliases
 type BaseTcpStream = TokioTcpStream;
 type BaseTlsStream = TokioTlsStreamClient<BaseTcpStream>;
-
-// Compatibility wrapper for async_imap
 type CompatStream = Compat<BaseTlsStream>;
-
-// The actual session type returned by async_imap::login
 type UnderlyingImapSession = AsyncImapSession<CompatStream>;
 
 /// High-level asynchronous IMAP client providing a simplified interface.
@@ -143,7 +141,7 @@ impl ImapClient {
         username: &str,
         password: &str,
     ) -> Result<Self, ImapError> {
-        log::info!("Public connect called for user '{}' at {}:{}", username, host, port);
+        info!("Public connect called for user '{}' at {}:{}", username, host, port);
         let login_timeout = Duration::from_secs(30); // Example timeout
 
         // Call internal logic to get the raw underlying session
@@ -198,12 +196,12 @@ async fn setup_tls_stream(
     tls_connector: TlsConnector,
     server_name_for_tls: PkiServerName<'static>,
 ) -> Result<BaseTlsStream, ImapError> {
-    log::debug!("Attempting TCP connection to {}:{}...", host, port);
+    info!("Attempting TCP connection to {}:{}...", host, port);
     let tcp_stream = BaseTcpStream::connect((host, port)).await?;
-    log::debug!("TCP connected. Performing TLS handshake...");
+    info!("TCP connected. Performing TLS handshake...");
 
     let tls_stream = tls_connector.connect(server_name_for_tls, tcp_stream).await?;
-    log::debug!("TLS handshake successful.");
+    info!("TLS handshake successful.");
     Ok(tls_stream)
 }
 
@@ -215,19 +213,19 @@ async fn perform_imap_login(
     timeout_duration: Duration,
 ) -> Result<UnderlyingImapSession, ImapError> {
     let client = AsyncImapClient::new(compat_stream);
-    log::debug!("IMAP client created. Attempting login for user '{}'...", username);
+    info!("IMAP client created. Attempting login for user '{}'...", username);
 
     match timeout(timeout_duration, client.login(username, password)).await {
         Ok(Ok(session)) => {
-            log::info!("IMAP login successful for user: {}", username);
+            info!("IMAP login successful for user: {}", username);
             Ok(session)
         }
         Ok(Err((e, _client))) => {
-            log::error!("IMAP login failed for user {}: {:?}", username, e);
+            info!("IMAP login failed for user {}: {:?}", username, e);
             Err(ImapError::from(e))
         }
         Err(elapsed_err) => {
-            log::error!("IMAP login timed out for user {} after {:?}. Error: {}", username, timeout_duration, elapsed_err);
+            info!("IMAP login timed out for user {} after {:?}. Error: {}", username, timeout_duration, elapsed_err);
             Err(ImapError::ConnectionError("Login timed out".to_string()))
         }
     }
@@ -241,7 +239,7 @@ async fn connect_and_login_internal(
     password: &str,
     timeout_duration: Duration,
 ) -> Result<UnderlyingImapSession, ImapError> {
-    log::info!("Starting internal connection process for {}:{}", host, port);
+    info!("Starting internal connection process for {}:{}", host, port);
 
     // --- Server Name Setup ---
     let host_owned = host.to_string();
@@ -252,12 +250,12 @@ async fn connect_and_login_internal(
     let mut root_cert_store = RootCertStore::empty();
     let certs = rustls_native_certs::load_native_certs()?;
     let (added, ignored) = root_cert_store.add_parsable_certificates(certs);
-    log::debug!("Loaded {} native certs, ignored {}.", added, ignored);
+    info!("Loaded {} native certs, ignored {}.", added, ignored);
     if added == 0 && ignored > 0 {
-        log::warn!("No valid native certs found, TLS connection might fail.");
+        info!("No valid native certs found, TLS connection might fail.");
     }
     if root_cert_store.is_empty() {
-        log::warn!("Root certificate store is empty after loading native certs.");
+        info!("Root certificate store is empty after loading native certs.");
     }
 
     let config = ClientConfig::builder()
