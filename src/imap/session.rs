@@ -60,14 +60,14 @@ pub trait AsyncImapOps: Send + Sync {
     async fn list_folders(&mut self) -> Result<Vec<Folder>, ImapError>;
     async fn create_folder(&mut self, name: &str) -> Result<(), ImapError>;
     async fn delete_folder(&mut self, name: &str) -> Result<(), ImapError>;
-    async fn rename_folder(&mut self, from: &str, to: &str) -> Result<(), ImapError>;
+    async fn rename_folder(&mut self, old_name: &str, new_name: &str) -> Result<(), ImapError>;
     async fn select_folder(&mut self, name: &str) -> Result<MailboxInfo, ImapError>;
-    async fn search_emails(&mut self, criteria: &SearchCriteria) -> Result<Vec<u32>, ImapError>;
-    async fn fetch_emails(&mut self, uids: &[u32], fetch_body: bool) -> Result<Vec<Email>, ImapError>;
+    async fn search_emails(&mut self, criteria: &str) -> Result<Vec<u32>, ImapError>;
+    async fn fetch_emails(&mut self, uids: &[u32]) -> Result<Vec<Email>, ImapError>;
     async fn fetch_raw_message(&mut self, uid: u32) -> Result<Vec<u8>, ImapError>;
-    async fn move_email(&mut self, source_folder: &str, uids: &[u32], destination_folder: &str) -> Result<(), ImapError>;
-    async fn store_flags(&mut self, uids: &[u32], operation: StoreOperation, flags: &[String]) -> Result<(), ImapError>;
-    async fn append(&mut self, folder: &str, payload: &[u8], flags: Option<&[String]>, date: Option<DateTime<Utc>>) -> Result<(), ImapError>;
+    async fn move_email(&mut self, uid: u32, target_folder: &str) -> Result<(), ImapError>;
+    async fn store_flags(&mut self, uid: u32, flags: &str) -> Result<(), ImapError>;
+    async fn append(&mut self, folder: &str, content: &[u8], flags: &str) -> Result<(), ImapError>;
     async fn expunge(&mut self) -> Result<(), ImapError>;
 }
 
@@ -111,8 +111,8 @@ impl AsyncImapOps for TlsImapSession {
         })
     }
 
-    async fn rename_folder(&mut self, from: &str, to: &str) -> Result<(), ImapError> {
-        self.rename(from, to).await.map_err(|e| {
+    async fn rename_folder(&mut self, old_name: &str, new_name: &str) -> Result<(), ImapError> {
+        self.rename(old_name, new_name).await.map_err(|e| {
             error!("IMAP rename folder failed: {}", e);
             ImapError::OperationError(e.to_string())
         })
@@ -127,22 +127,17 @@ impl AsyncImapOps for TlsImapSession {
         Ok(MailboxInfo::from(mailbox_data))
     }
 
-    async fn search_emails(&mut self, criteria: &SearchCriteria) -> Result<Vec<u32>, ImapError> {
-        let query = criteria.to_string();
-        self.uid_search(&query).await.map_err(|e| {
+    async fn search_emails(&mut self, criteria: &str) -> Result<Vec<u32>, ImapError> {
+        self.uid_search(criteria).await.map_err(|e| {
             error!("IMAP search failed: {}", e);
             ImapError::OperationError(e.to_string())
         })
     }
 
-    async fn fetch_emails(&mut self, uids: &[u32], fetch_body: bool) -> Result<Vec<Email>, ImapError> {
+    async fn fetch_emails(&mut self, uids: &[u32]) -> Result<Vec<Email>, ImapError> {
         let mut emails = Vec::new();
         for uid in uids {
-            let fetch_items = if fetch_body {
-                "BODY[] FLAGS ENVELOPE INTERNALDATE"
-            } else {
-                "FLAGS ENVELOPE INTERNALDATE"
-            };
+            let fetch_items = "BODY[] FLAGS ENVELOPE INTERNALDATE";
 
             let fetch_result = self.uid_fetch(&uid.to_string(), fetch_items).await.map_err(|e| {
                 error!("IMAP fetch failed for UID {}: {}", uid, e);
@@ -174,32 +169,19 @@ impl AsyncImapOps for TlsImapSession {
         }
     }
 
-    async fn move_email(&mut self, source_folder: &str, uids: &[u32], destination_folder: &str) -> Result<(), ImapError> {
-        self.select_folder(source_folder).await?;
+    async fn move_email(&mut self, uid: u32, target_folder: &str) -> Result<(), ImapError> {
+        self.select_folder(target_folder).await?;
 
-        let sequence_set = uids.iter()
-            .map(|uid| uid.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-
-        self.uid_mv(&sequence_set, destination_folder).await.map_err(|e| {
+        let sequence_set = uid.to_string();
+        self.uid_mv(&sequence_set, target_folder).await.map_err(|e| {
             error!("IMAP move failed: {}", e);
             ImapError::OperationError(e.to_string())
         })
     }
 
-    async fn store_flags(&mut self, uids: &[u32], operation: StoreOperation, flags: &[String]) -> Result<(), ImapError> {
-        let sequence_set = uids.iter()
-            .map(|uid| uid.to_string())
-            .collect::<Vec<_>>()
-            .join(",");
-
-        let flags_str = flags.join(" ");
-        let command = match operation {
-            StoreOperation::Add => format!("+FLAGS ({})", flags_str),
-            StoreOperation::Remove => format!("-FLAGS ({})", flags_str),
-            StoreOperation::Set => format!("FLAGS ({})", flags_str),
-        };
+    async fn store_flags(&mut self, uid: u32, flags: &str) -> Result<(), ImapError> {
+        let sequence_set = uid.to_string();
+        let command = format!("FLAGS ({})", flags);
 
         self.uid_store(&sequence_set, &command).await.map_err(|e| {
             error!("IMAP store flags failed: {}", e);
@@ -209,11 +191,8 @@ impl AsyncImapOps for TlsImapSession {
         Ok(())
     }
 
-    async fn append(&mut self, folder: &str, payload: &[u8], flags: Option<&[String]>, date: Option<DateTime<Utc>>) -> Result<(), ImapError> {
-        let flags_str = flags.map(|f| format!("({})", f.join(" ")));
-        let date_str = date.map(|d| d.format("%d-%b-%Y %H:%M:%S %z").to_string());
-
-        self.append_with_flags(folder, payload, flags_str.as_deref(), date_str.as_deref()).await.map_err(|e| {
+    async fn append(&mut self, folder: &str, content: &[u8], flags: &str) -> Result<(), ImapError> {
+        self.append_with_flags(folder, content, flags, None).await.map_err(|e| {
             error!("IMAP append failed: {}", e);
             ImapError::OperationError(e.to_string())
         })

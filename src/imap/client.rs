@@ -86,9 +86,9 @@ impl AsyncImapOps for ImapClient {
         session.delete_folder(name).await
     }
 
-    async fn rename_folder(&mut self, from: &str, to: &str) -> Result<(), ImapError> {
+    async fn rename_folder(&mut self, old_name: &str, new_name: &str) -> Result<(), ImapError> {
         let mut session = self.session.lock().await;
-        session.rename_folder(from, to).await
+        session.rename_folder(old_name, new_name).await
     }
 
     async fn select_folder(&mut self, name: &str) -> Result<MailboxInfo, ImapError> {
@@ -96,14 +96,14 @@ impl AsyncImapOps for ImapClient {
         session.select_folder(name).await
     }
 
-    async fn search_emails(&mut self, criteria: &SearchCriteria) -> Result<Vec<u32>, ImapError> {
+    async fn search_emails(&mut self, criteria: &str) -> Result<Vec<u32>, ImapError> {
         let mut session = self.session.lock().await;
         session.search_emails(criteria).await
     }
 
-    async fn fetch_emails(&mut self, uids: &[u32], fetch_body: bool) -> Result<Vec<Email>, ImapError> {
+    async fn fetch_emails(&mut self, uids: &[u32]) -> Result<Vec<Email>, ImapError> {
         let mut session = self.session.lock().await;
-        session.fetch_emails(uids, fetch_body).await
+        session.fetch_emails(uids).await
     }
 
     async fn fetch_raw_message(&mut self, uid: u32) -> Result<Vec<u8>, ImapError> {
@@ -111,19 +111,19 @@ impl AsyncImapOps for ImapClient {
         session.fetch_raw_message(uid).await
     }
 
-    async fn move_email(&mut self, source_folder: &str, uids: &[u32], destination_folder: &str) -> Result<(), ImapError> {
+    async fn move_email(&mut self, uid: u32, target_folder: &str) -> Result<(), ImapError> {
         let mut session = self.session.lock().await;
-        session.move_email(source_folder, uids, destination_folder).await
+        session.move_email(uid, target_folder).await
     }
 
-    async fn store_flags(&mut self, uids: &[u32], operation: StoreOperation, flags: &[String]) -> Result<(), ImapError> {
+    async fn store_flags(&mut self, uid: u32, flags: &str) -> Result<(), ImapError> {
         let mut session = self.session.lock().await;
-        session.store_flags(uids, operation, flags).await
+        session.store_flags(uid, flags).await
     }
 
-    async fn append(&mut self, folder: &str, payload: &[u8], flags: Option<&[String]>, date: Option<DateTime<Utc>>) -> Result<(), ImapError> {
+    async fn append(&mut self, folder: &str, content: &[u8], flags: &str) -> Result<(), ImapError> {
         let mut session = self.session.lock().await;
-        session.append(folder, payload, flags, date).await
+        session.append(folder, content, flags).await
     }
 
     async fn expunge(&mut self) -> Result<(), ImapError> {

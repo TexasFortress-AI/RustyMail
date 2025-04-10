@@ -82,6 +82,12 @@ use crate::imap::{
     ImapError
 };
 
+use crate::api::sse::SseState;
+use crate::imap::session::AsyncImapOps;
+use crate::imap::types::{Email, Folder, MailboxInfo};
+use crate::mcp::error_codes::ErrorCode;
+use crate::mcp::types::{JsonRpcRequest, JsonRpcError};
+
 #[derive(Debug, Serialize)]
 struct SseCommandPayload {
     command: String,
