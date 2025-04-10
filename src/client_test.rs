@@ -2,6 +2,8 @@ use crate::config::Settings;
 use crate::imap::client::ImapClient;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use crate::api::sse::SseState;
+use crate::imap::client_test::tests::MockAsyncImapOps;
 
 #[cfg(test)]
 mod tests {
@@ -68,7 +70,7 @@ async fn test_rest_server_configuration() {
 #[tokio::test]
 async fn test_sse_state_initialization() {
     // Test SSE state initialization
-    let sse_state = Arc::new(Mutex::new(crate::api::mcp_sse::SseState::new()));
+    let sse_state = Arc::new(Mutex::new(SseState::new()));
     assert!(sse_state.lock().await.is_empty());
 }
 
@@ -76,7 +78,7 @@ async fn test_sse_state_initialization() {
 async fn test_mcp_tool_registry_creation() {
     // Create a mock IMAP client
     let mock_client = Arc::new(ImapClient::new(Arc::new(Mutex::new(
-        crate::imap::session::MockAsyncImapOps::new()
+        MockAsyncImapOps::new()
     ))));
 
     // Create a session factory
@@ -88,4 +90,9 @@ async fn test_mcp_tool_registry_creation() {
     // Test MCP tool registry creation
     let tool_registry = crate::mcp_port::create_mcp_tool_registry(session_factory);
     assert!(!tool_registry.is_empty());
+}
+
+#[tokio::test]
+async fn test_tool_registry_creation() {
+    // ... test body ...
 } 

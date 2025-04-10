@@ -8,168 +8,176 @@
 //! `broadcast_task`) or could be partially legacy. Clarification on the intended
 //! distinct roles of `sse.rs` and `mcp_sse.rs` might be needed.
 
+use actix::prelude::*;
 use actix_web::{
-    web::{self, Data, Path},
-    Error as ActixError, HttpRequest, HttpResponse, Responder,
+    web::{self, Data, Payload},
+    Error as ActixError, HttpRequest, HttpResponse,
 };
-use actix_web_lab::sse::{self, Sse, Event};
-use tokio_stream::wrappers::ReceiverStream;
-use tokio_stream::StreamExt;
-use tokio::{
-    sync::{
-        Mutex as TokioMutex,
-        RwLock,
-        mpsc,
-    },
-    time::{Duration, interval},
-};
+use actix_web_actors::ws;
+use actix_web_lab::sse::{self, Sse};
+use futures_util::{StreamExt as _, TryStreamExt as _};
+use log::{debug, info, error, warn};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::{
-    sync::Arc,
     collections::HashMap,
+    pin::Pin,
+    sync::Arc,
+    task::{Context, Poll},
+    time::{Duration, Instant},
 };
+use tokio::{
+    sync::{mpsc, Mutex as TokioMutex},
+    time::interval,
+};
+use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
-use crate::{
-    mcp::{
-        McpHandler, McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError,
-    },
-};
-use log::{error, info, warn};
-use serde::Serialize;
-use serde_json;
 
-#[derive(Debug, Serialize)]
-struct SseCommandPayload {
-    command: String,
-    payload: JsonRpcRequest,
+use crate::{
+    config::Settings,
+    mcp::{
+        handler::McpHandler,
+        types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError, ErrorCode},
+    },
+    session_manager::SessionManager,
+};
+
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
+const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
+
+#[derive(Debug, Clone)]
+pub struct ClientState {
+    hb: Instant,
+    session_id: String,
+}
+
+impl ClientState {
+    fn new(session_id: String) -> Self {
+        Self { hb: Instant::now(), session_id }
+    }
 }
 
 #[derive(Debug)]
-pub struct SseClientInfo {
-    sender: mpsc::Sender<sse::Event>,
-}
-
-pub struct SseClient {
-    sender: mpsc::Sender<sse::Event>,
-    info: SseClientInfo,
-}
-
-#[derive(Clone)]
 pub struct SseState {
-    clients: Arc<RwLock<HashMap<Uuid, mpsc::Sender<sse::Event>>>>,
+    sessions: HashMap<String, mpsc::Sender<sse::Event>>,
+    hb_interval: Duration,
+    client_timeout: Duration,
     mcp_handler: Arc<dyn McpHandler>,
     port_state: Arc<TokioMutex<McpPortState>>,
 }
 
 impl SseState {
     pub fn new(mcp_handler: Arc<dyn McpHandler>, port_state: Arc<TokioMutex<McpPortState>>) -> Self {
-        Self {
-            clients: Arc::new(RwLock::new(HashMap::new())),
+        SseState {
+            sessions: HashMap::new(),
+            hb_interval: HEARTBEAT_INTERVAL,
+            client_timeout: CLIENT_TIMEOUT,
             mcp_handler,
             port_state,
         }
     }
 
-    async fn add_client(&self, client_id: Uuid) -> Result<mpsc::Receiver<sse::Event>, JsonRpcError> {
-        let (tx, rx) = mpsc::channel(100);
-        let mut clients_guard = self.clients.write().await;
-        if clients_guard.contains_key(&client_id) {
-            error!("SSE State: Client {} already exists!", client_id);
-            return Err(JsonRpcError::internal_error(format!("Client ID {} already exists", client_id)));
-        }
-        clients_guard.insert(client_id, tx);
-        info!("SSE State: Client {} added.", client_id);
-        Ok(rx)
-    }
-
-    async fn remove_client(&self, client_id: &Uuid) {
-        if self.clients.write().await.remove(client_id).is_some() {
-            info!("SSE State: Client {} removed.", client_id);
-        } else {
-            warn!("SSE State: Attempted to remove non-existent client {}.", client_id);
-        }
-    }
-
-    pub async fn broadcast_event(&self, event: sse::Event) {
-        let clients = self.clients.read().await;
-        if clients.is_empty() {
-            warn!("SSE State: No clients connected, cannot broadcast event: {:?}", event);
-            return;
-        }
-        info!("SSE State: Broadcasting event to {} clients: {:?}", clients.len(), event);
-        let sends = clients.iter().map(|(_, tx)| {
-            let event_clone = event.clone();
-            async move {
-                if let Err(e) = tx.send(event_clone).await {
-                    error!("SSE State: Failed to send event to client: {}", e);
+    fn heartbeat(&self, ctx: &mut Context<'_>) {
+        ctx.run_interval(self.hb_interval, |act, ctx_inner| {
+            let mut dead_sessions = Vec::new();
+            for (id, client_sender) in &act.sessions {
+                if client_sender.is_closed() {
+                    warn!("SSE session {} disconnected. Removing.", id);
+                    dead_sessions.push(id.clone());
                 }
             }
+
+            for id in dead_sessions {
+                act.sessions.remove(&id);
+            }
         });
-        futures_util::future::join_all(sends).await;
     }
 
-    async fn handle_mcp_request(&self, client_id: &Uuid, request: JsonRpcRequest) {
-        warn!("SSE State: Handling MCP request for client {} and broadcasting response to ALL clients.", client_id);
-        let request_json = match serde_json::to_value(request.clone()) {
-            Ok(v) => v,
-            Err(e) => {
-                error!("SSE State: Failed to serialize MCP request to JSON: {}", e);
-                let err_event = Event::Data(sse::Data::new(r#"{"type":"error", "message":"Failed to serialize request"}"#));
-                self.broadcast_event(err_event).await;
-                return;
-            }
-        };
-        
-        let response_json = self.mcp_handler.handle_request(self.port_state.clone(), request_json).await;
-        
-        match serde_json::to_string(&response_json) {
-            Ok(response_str) => {
-                info!("SSE State: Broadcasting MCP response: {}", response_str);
-                self.broadcast_event(Event::Data(sse::Data::new(response_str))).await;
-            }
-            Err(e) => {
-                 error!("SSE State: Failed to serialize MCP response for broadcast: {}", e);
-                 let err_event = Event::Data(sse::Data::new(&format!(r#"{{"type":"error", "message":"Failed to serialize response: {}"}}"#, e)));
-                 self.broadcast_event(err_event).await;
+    fn add_session(&mut self, id: String, sender: mpsc::Sender<sse::Event>) {
+        info!("Adding new SSE session: {}", id);
+        self.sessions.insert(id, sender);
+    }
+
+    fn remove_session(&mut self, id: &str) {
+        info!("Removing SSE session: {}", id);
+        self.sessions.remove(id);
+    }
+
+    async fn broadcast(&self, msg: String) {
+        let event = sse::Event::Data(sse::Data::new(&msg));
+        for sender in self.sessions.values() {
+            if let Err(e) = sender.send(event.clone()).await {
+                error!("Failed to broadcast message: {:?}", e);
             }
         }
+    }
+
+    async fn handle_mcp_request(&self, session_id: &str, request: JsonRpcRequest) -> Option<JsonRpcResponse> {
+        debug!("Handling MCP request from SSE session {}: {:?}", session_id, request);
+        let request_json = match serde_json::to_value(request) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Failed to serialize request to JSON: {}", e);
+                return Some(JsonRpcResponse::error(None, JsonRpcError::parse_error(e.to_string())));
+            }
+        };
+
+        let session_id_arc = Arc::new(session_id.to_string());
+        let port_state_clone = self.port_state.clone();
+        
+        match self.mcp_handler.handle_request(session_id_arc, request_json, port_state_clone).await {
+            Ok(Some(response_value)) => {
+                match serde_json::from_value(response_value) {
+                    Ok(resp) => Some(resp),
+                    Err(e) => {
+                        error!("Failed to deserialize MCP response: {}", e);
+                        Some(JsonRpcResponse::error(None, JsonRpcError::internal_error(e.to_string())))
+                    }
+                }
+            }
+            Ok(None) => None,
+            Err(json_rpc_error) => {
+                 Some(JsonRpcResponse::error(None, json_rpc_error))
+            }
+        }
+    }
+}
+
+impl Actor for SseState {
+    type Context = Context<Self>;
+
+    fn started(&mut self, ctx: &mut Self::Context) {
+        info!("SseState actor started");
+        self.heartbeat(ctx);
     }
 }
 
 pub async fn sse_handler(
     req: HttpRequest,
-    _stream: web::Payload,
-    state: Data<SseState>,
+    state: Data<Arc<TokioMutex<SseState>>>,
 ) -> Result<HttpResponse, ActixError> {
-    let client_id = Uuid::new_v4();
-    info!("SSE State: New client connecting, assigning ID: {}", client_id);
+    info!("Handling new SSE connection request");
+    let sse_state = state.get_ref().clone();
+    let (tx, rx) = mpsc::channel(100);
+    let session_id = Uuid::new_v4().to_string();
 
-    let rx = match state.add_client(client_id).await {
-        Ok(rx) => rx,
-        Err(e) => {
-            error!("SSE State: Failed to add client {}: {:?}", client_id, e);
-            return Ok(HttpResponse::InternalServerError().json(e));
-        }
-    };
+    sse_state.lock().await.add_session(session_id.clone(), tx);
 
-    let sse_stream = Sse::from_custom_stream(ReceiverStream::new(rx))
-         .with_keep_alive(Duration::from_secs(20));
-         
-    info!("SSE State: Client {} connected, returning stream.", client_id);
-    
-    Ok(sse_stream.respond_to(&req)?)
+    info!("SSE connection established for session {}", session_id);
+
+    let stream = ReceiverStream::new(rx).map(Ok::<_, ActixError>);
+    let sse_stream = Sse::from_stream(stream)
+        .with_keep_alive(Duration::from_secs(15));
+
+    Ok(sse_stream.respond_to(&req))
 }
 
-async fn broadcast_task(sse_state: Data<SseState>) {
-    info!("Starting SSE broadcast_task (sending 'tick' every 5s)");
-    let mut interval = interval(Duration::from_secs(5));
-    loop {
-        interval.tick().await;
-        let event = Event::Comment("tick".into());
-        sse_state.broadcast_event(event).await;
-    }
+async fn broadcast_update(state: Data<Arc<TokioMutex<SseState>>>, message: &str) {
+    let state_guard = state.lock().await;
+    state_guard.broadcast(message.to_string()).await;
 }
 
-pub fn configure_sse_service(cfg: &mut web::ServiceConfig, sse_state: Data<SseState>) {
+pub fn configure_sse_service(cfg: &mut web::ServiceConfig, sse_state: Data<Arc<TokioMutex<SseState>>>) {
     info!("Configuring generic SSE service endpoint (/events)...");
     cfg.app_data(sse_state.clone())
        .service(

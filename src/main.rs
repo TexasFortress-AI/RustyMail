@@ -22,13 +22,20 @@ use rustymail::dashboard;
 use rustymail::dashboard::api::SseManager; // Keep for dashboard
 // --- Add imports for factory --- 
 use rustymail::imap::client::ImapClient; // Needed for the factory closure
-use rustymail::prelude::{ImapSession, ImapError}; // Needed for factory types
 use std::future::Future;
 use std::pin::Pin;
 // --- End imports for factory --- 
 use crate::api::rest::start_rest_api_server;
 // use crate::dashboard::start_dashboard_server;
-use crate::imap::ImapSessionFactory;
+use rustymail::api::rest::start_rest_api;
+use rustymail::api::sse::start_sse_server;
+use rustymail::imap::client::connect as connect_imap;
+use rustymail::mcp::adapters::stdio::run_stdio_handler;
+use rustymail::mcp::handler::{JsonRpcHandler}; // Add JsonRpcHandler
+use rustymail::mcp_port::create_mcp_tool_registry;
+use rustymail::ImapClientFactory;
+use rustymail::prelude::*; // Import many common types
+use rustymail::prelude::CloneableImapSessionFactory;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -77,7 +84,7 @@ async fn main() -> std::io::Result<()> {
 
     // --- Create IMAP Session Factory --- 
     let imap_settings = settings.clone(); // Clone settings needed for the factory
-    let imap_session_factory: ImapSessionFactory = Arc::new(move || {
+    let raw_imap_session_factory: ImapSessionFactory = Arc::new(move || {
         let settings_clone = imap_settings.clone(); // Clone again for the async block
         Box::pin(async move {
             info!("ImapSessionFactory: Creating new IMAP session..."); // Add log
@@ -94,6 +101,8 @@ async fn main() -> std::io::Result<()> {
             Ok(client) // <-- Return the client directly
         })
     });
+    // Wrap the factory in a cloneable wrapper
+    let imap_session_factory = CloneableImapSessionFactory::new(raw_imap_session_factory);
     info!("IMAP Session Factory created.");
 
     // --- Create Tool Registry (REMOVED) --- 

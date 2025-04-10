@@ -1,20 +1,22 @@
 // src/mcp/adapters/legacy.rs
 
 use async_trait::async_trait;
-use std::sync::Arc;
 use std::collections::HashMap;
-use tokio::sync::Mutex as TokioMutex;
-use serde_json::{Value, json};
-use log::{debug, error, info, warn};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
 
-use crate::mcp::{
-    handler::McpHandler, 
-    types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError}
-};
-use crate::imap::ImapSessionFactory;
-use crate::mcp_port::{McpTool, create_mcp_tool_registry};
-use crate::imap::session::ImapSession;
-use crate::imap::error::ImapError;
+use crate::config::Settings;
+use crate::imap::error::ImapError as ImapInternalError;
+use crate::imap::session::AsyncImapOps;
+use crate::prelude::CloneableImapSessionFactory;
+use crate::mcp::handler::McpHandler;
+use crate::mcp::types::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, McpPortState};
+use crate::prelude::{McpTool};
+use crate::prelude::*;
+
+use serde_json::{json, Value};
+use tokio::sync::Mutex as TokioMutex;
 
 // pub use error_codes::*; // Unused
 
@@ -24,7 +26,7 @@ fn create_jsonrpc_error_response(id: Option<Value>, code: i32, message: String) 
         jsonrpc: "2.0".to_string(),
         id: id,
         result: None,
-        error: Some(JsonRpcError { code, message, data: None }),
+        error: Some(JsonRpcError { code: code.into(), message, data: None }),
     }
 }
 
@@ -32,11 +34,11 @@ fn create_jsonrpc_error_response(id: Option<Value>, code: i32, message: String) 
 #[derive(Clone)]
 pub struct LegacyMcpHandler {
     tool_registry: Arc<HashMap<String, Arc<dyn McpTool>>>,
-    session_factory: Arc<ImapSessionFactory>,
+    session_factory: CloneableImapSessionFactory,
 }
 
 impl LegacyMcpHandler {
-    pub fn new(tool_registry: Arc<HashMap<String, Arc<dyn McpTool>>>, session_factory: Arc<ImapSessionFactory>) -> Self {
+    pub fn new(tool_registry: Arc<HashMap<String, Arc<dyn McpTool>>>, session_factory: CloneableImapSessionFactory) -> Self {
         info!("LegacyMcpHandler: Tool registry created with {} tools.", tool_registry.len());
         LegacyMcpHandler {
             tool_registry,
@@ -58,9 +60,11 @@ impl LegacyMcpHandler {
             Some(tool) => {
                 debug!("Executing tool '{}' via LegacyMcpHandler", method);
                 
-                // Create IMAP session
-                let session = match (self.session_factory)().await {
-                    Ok(s) => Arc::new(s) as Arc<dyn crate::imap::session::ImapSession>,
+                // Create IMAP session using the factory's method
+                let session_result = self.session_factory.create_session().await;
+
+                let session = match session_result {
+                    Ok(s) => Arc::new(TokioMutex::new(s)) as Arc<TokioMutex<dyn AsyncImapOps>>,
                     Err(imap_err) => {
                         error!("LegacyMcpHandler: Failed to create IMAP session for tool '{}': {:?}", method, imap_err);
                         let jsonrpc_err = JsonRpcError::from(imap_err);
@@ -70,7 +74,7 @@ impl LegacyMcpHandler {
 
                 // Acquire mutable lock and call execute with Value
                 let mut state_guard = state.lock().await;
-                let result = tool.execute(session, &mut state_guard, params_value).await;
+                let result = tool.execute(session.clone(), &mut state_guard, params_value).await;
                 drop(state_guard); 
 
                 match result {
@@ -116,6 +120,7 @@ impl McpHandler for LegacyMcpHandler {
                 error!("LegacyAdapter: Failed to serialize response: {}", e);
                 json!(JsonRpcResponse::internal_error("Failed to serialize response"))
             }
+
         }
     }
 } 

@@ -1,4 +1,11 @@
 START SPECIFICATION:
+---
+description: Generate high-level overview documentation focused on core business logic, domain models, and unique workflows when analyzing multiple source files that comprise a complete software system
+globs: 
+alwaysApply: false
+---
+
+
 # main-overview
 
 ## Development Guidelines
@@ -10,57 +17,49 @@ START SPECIFICATION:
 - Explain your OBSERVATIONS clearly, then provide REASONING to identify the exact issue. Add console logs when needed to gather more information.
 
 
-RustyMail is a high-performance IMAP API server providing multiple interfaces (REST, MCP Stdio, MCP SSE) for accessing email services. The core business logic is organized around several key components:
+RustyMail implements a high-performance IMAP server with multiple client interfaces (REST, MCP Stdio, MCP SSE). The core business logic is organized around these key components:
 
-### Core Components and Domain Logic
+## IMAP Session Management
+- Manages concurrent IMAP client sessions through a factory pattern
+- Handles session lifecycle including connection, authentication, and cleanup
+- Implements atomic operations for moving emails and updating flags
+- Located in `src/imap/session.rs`
 
-1. IMAP Session Management (`src/imap/session.rs`, Score: 95)
-- Atomic email movement between folders with integrity checks
-- Folder synchronization and status tracking 
-- Server-side search optimization with criteria transformation
-- Flag operation handling with IMAP STORE commands
+## Mail Control Protocol (MCP) 
+- JSON-RPC 2.0 compliant protocol for IMAP operations
+- Supports multiple transports: stdio and SSE
+- Implements domain-specific error codes for IMAP operations
+- Defined in `src/mcp/handler.rs` and `src/mcp/types.rs`
 
-2. MCP Protocol Implementation (`src/api/mcp.rs`, Score: 90) 
-- JSON-RPC 2.0 compliant request/response handling
-- Transport abstraction for stdio and SSE interfaces
-- Domain error mapping to standardized error codes
+## Email Domain Model
+- Represents emails with UID, flags, envelope data
+- Implements mailbox information tracking
+- Provides search criteria model for complex queries
+- Defined in `src/imap/types.rs`
 
-3. Email and Folder Models (`src/imap/types.rs`, Score: 85)
-- Custom email structure with IMAP-specific metadata
-- Folder hierarchy management with delimiter support
-- Search criteria modeling for complex queries
-- Flag operation state transitions
+## Real-time Updates
+- SSE-based broadcasting of mailbox changes
+- Client tracking and event distribution
+- Connection lifecycle management
+- Implemented in `src/api/sse.rs`
 
-4. Real-time Updates via SSE (`src/api/sse.rs`, Score: 80)
-- Client registration and lifecycle management
-- Event broadcasting system for push updates
-- Heartbeat mechanism for connection maintenance
+## Business Operations
+Key workflows include:
+- Atomic email movement between folders
+- Flag state management
+- Folder synchronization
+- Search operations
+- Email appending with flag preservation
 
-### Code Conventions
+## Error Handling
+Domain-specific error hierarchy:
+- IMAP protocol errors
+- Authentication failures
+- Connection issues
+- Operation timeouts
+- Defined in `src/mcp/error_codes.rs`
 
-#### IMAP Operations
-- MUST: Use atomic operations for email moves and flag changes
-- AVOID: Direct folder manipulation without status checks
-- WHY: Prevents data corruption from race conditions
-- EXAMPLE: `src/imap/session.rs:move_email()`
-
-#### MCP Protocol
-- MUST: Follow JSON-RPC 2.0 spec for all MCP communication
-- AVOID: Custom message formats or non-standard error codes
-- WHY: Ensures protocol compliance and interoperability
-- EXAMPLE: `src/api/mcp.rs:handle_request()`
-
-#### Email Processing
-- MUST: Validate all email attributes before operations
-- AVOID: Assumptions about message structure or encoding
-- WHY: Handles diverse email formats reliably
-- EXAMPLE: `src/imap/types.rs:Email`
-
-#### Real-time Updates
-- MUST: Use SSE for live notifications
-- AVOID: Polling or websockets
-- WHY: Efficient server-push updates
-- EXAMPLE: `src/api/sse.rs:broadcast_event()`
+The system uses a layered architecture with the IMAP client at the core, wrapped by the MCP protocol layer, and exposed through multiple transport interfaces. All business operations maintain ACID properties through atomic IMAP commands.
 
 $END$
 END SPECIFICATION

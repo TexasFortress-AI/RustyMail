@@ -1,86 +1,105 @@
-use std::fmt;
-use std::error::Error;
-use async_imap::error::Error as AsyncImapError;
+use std::error::Error as StdError;
 use thiserror::Error;
+use async_imap::error::Error as AsyncImapError;
+use imap_types::error::ValidationError as FlagValidationError;
+use imap_types::flag;
+use std::fmt;
+use async_imap;
+use tokio_native_tls;
 
 #[derive(Debug, Error)]
 pub enum ImapError {
     #[error("Connection error: {0}")]
-    ConnectionError(String),
+    Connection(String),
+    
+    #[error("TLS error: {0}")]
+    Tls(String),
+    
     #[error("Authentication error: {0}")]
-    AuthenticationError(String),
+    Auth(String),
+    
+    #[error("Invalid mailbox: {0}")]
+    InvalidMailbox(String),
+    
+    #[error("Folder not found: {0}")]
+    FolderNotFound(String),
+    
+    #[error("Folder already exists: {0}")]
+    FolderExists(String),
+    
+    #[error("Email not found: {0:?}")]
+    EmailNotFound(Vec<u32>),
+    
+    #[error("Envelope not found")]
+    EnvelopeNotFound,
+    
+    #[error("Folder not selected")]
+    FolderNotSelected,
+    
+    #[error("Operation requires folder selection: {0}")]
+    RequiresFolderSelection(String),
+    
+    #[error("Fetch error: {0}")]
+    Fetch(String),
+    
+    #[error("Operation error: {0}")]
+    Operation(String),
+    
     #[error("Command error: {0}")]
-    CommandError(String),
+    Command(String),
+    
+    #[error("Flag error: {0}")]
+    Flag(String),
+    
+    #[error("Invalid search criteria: {0}")]
+    InvalidCriteria(String),
+    
     #[error("Parse error: {0}")]
-    ParseError(String),
-    #[error("Invalid state: {0}")]
-    InvalidState(String),
+    Parse(String),
+    
+    #[error("Bad response: {0}")]
+    BadResponse(String),
+    
+    #[error("Internal error: {0}")]
+    Internal(String),
+    
     #[error("Operation timed out")]
     Timeout,
-    #[error("Resource not found")]
-    NotFound,
-    #[error("Permission denied")]
-    PermissionDenied,
-    #[error("Quota exceeded")]
-    QuotaExceeded,
-    #[error("Invalid argument: {0}")]
-    InvalidArgument(String),
-    #[error("Internal error: {0}")]
-    InternalError(String),
-    #[error("Server responded with NO: {0}")]
-    No(String),
-    #[error("Server responded with BAD: {0}")]
-    Bad(String),
-    #[error("Session error: {0}")]
-    SessionError(String),
+    
+    #[error("Unknown error: {0}")]
+    Unknown(String),
 }
 
-impl fmt::Display for ImapError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ImapError::ConnectionError(msg) => write!(f, "IMAP connection error: {}", msg),
-            ImapError::AuthenticationError(msg) => write!(f, "IMAP authentication error: {}", msg),
-            ImapError::OperationError(msg) => write!(f, "IMAP operation error: {}", msg),
-            ImapError::ParseError(msg) => write!(f, "IMAP parse error: {}", msg),
-            ImapError::Encoding(msg) => write!(f, "IMAP encoding error: {}", msg),
-            ImapError::Internal(msg) => write!(f, "IMAP internal error: {}", msg),
+impl From<async_imap::error::Error> for ImapError {
+    fn from(err: async_imap::error::Error) -> Self {
+        match err {
+            async_imap::error::Error::Parse(e) => ImapError::Parse(e.to_string()),
+            async_imap::error::Error::No(msg) => ImapError::Operation(msg),
+            async_imap::error::Error::Bad(msg) => ImapError::BadResponse(msg),
+            async_imap::error::Error::Io(e) => ImapError::Connection(e.to_string()),
+            async_imap::error::Error::Validate(e) => ImapError::Command(e.to_string()),
+            _ => ImapError::Unknown(err.to_string()),
         }
     }
 }
 
-impl Error for ImapError {}
-
-impl From<AsyncImapError> for ImapError {
-    fn from(error: AsyncImapError) -> Self {
-        match error {
-            AsyncImapError::Parse(e) => ImapError::ParseError(e.to_string()),
-            AsyncImapError::Append => ImapError::OperationError("Append operation failed".to_string()),
-            AsyncImapError::Create => ImapError::OperationError("Create operation failed".to_string()),
-            AsyncImapError::Delete => ImapError::OperationError("Delete operation failed".to_string()),
-            AsyncImapError::Examine => ImapError::OperationError("Examine operation failed".to_string()),
-            AsyncImapError::Fetch => ImapError::OperationError("Fetch operation failed".to_string()),
-            AsyncImapError::Login => ImapError::AuthenticationError("Login failed".to_string()),
-            AsyncImapError::Logout => ImapError::OperationError("Logout failed".to_string()),
-            AsyncImapError::Rename => ImapError::OperationError("Rename operation failed".to_string()),
-            AsyncImapError::Search => ImapError::OperationError("Search operation failed".to_string()),
-            AsyncImapError::Select => ImapError::OperationError("Select operation failed".to_string()),
-            AsyncImapError::Store => ImapError::OperationError("Store operation failed".to_string()),
-            AsyncImapError::Validate(e) => ImapError::ParseError(e.to_string()),
-            AsyncImapError::No(msg) => ImapError::No(msg),
-            AsyncImapError::Bad(msg) => ImapError::Bad(msg),
-            AsyncImapError::Bye(msg) => ImapError::ConnectionError(msg),
-            AsyncImapError::ConnectionError(e) => ImapError::ConnectionError(e.to_string()),
-            AsyncImapError::TlsError(e) => ImapError::ConnectionError(e.to_string()),
-            AsyncImapError::IoError(e) => ImapError::ConnectionError(e.to_string()),
-            _ => ImapError::Internal("Unknown error".to_string()),
-        }
+impl From<tokio_native_tls::native_tls::Error> for ImapError {
+    fn from(err: tokio_native_tls::native_tls::Error) -> Self {
+        ImapError::Tls(err.to_string())
     }
 }
 
 impl From<std::io::Error> for ImapError {
     fn from(err: std::io::Error) -> Self {
-        ImapError::ConnectionError(err.to_string())
+        ImapError::Connection(err.to_string())
     }
 }
+
+impl From<flag::ValidationError> for ImapError {
+    fn from(err: flag::ValidationError) -> Self {
+        ImapError::Flag(err.to_string())
+    }
+}
+
 
 

@@ -1,72 +1,49 @@
+---
+description: Specification for IMAP data models and structures used for email/folder representation and management
+globs: 
+alwaysApply: false
+---
+
+
 # imap-data-models
 
-### Email Model Structure
-- MUST: Implement `Email` struct in `src/imap/types.rs` containing:
-  - `uid: u32` for IMAP message identification
-  - `flags: Vec<String>` for IMAP message flags
-  - `envelope: Option<ImapEnvelope>` for message metadata 
-  - `body: Option<String>` for message content
-  - `size: u32` for message size
-- AVOID: Storing raw IMAP protocol data directly
-- WHY: Provides clean domain model mapping to IMAP message structure
-- EXAMPLE: `src/imap/types.rs:10-20`
+## Core Data Models
 
-### Address Model 
-- MUST: Use `ImapAddress` struct with:
-  - `name: Option<String>` for display name
-  - `mailbox: Option<String>` for local part
-  - `host: Option<String>` for domain
-- AVOID: Parsing email addresses manually
-- WHY: Maps directly to IMAP envelope address structure
-- EXAMPLE: `src/imap/types.rs:30-40`
+### Email Model (src/imap/types.rs)
+- `Email` struct represents email messages with:
+  - UID for unique identification
+  - Flags indicating status (read, flagged, etc.)
+  - Internal date for server timestamp
+  - Envelope containing header information
+  - Body content and structure
 
-### Envelope Model
-- MUST: Implement `ImapEnvelope` with fields:
-  - `date: Option<String>` 
-  - `subject: Option<String>`
-  - `from: Vec<ImapAddress>`
-  - `sender: Vec<ImapAddress>`
-  - `reply_to: Vec<ImapAddress>`
-  - `to: Vec<ImapAddress>`
-  - `cc: Vec<ImapAddress>` 
-  - `bcc: Vec<ImapAddress>`
-  - `in_reply_to: Option<String>`
-  - `message_id: Option<String>`
-- AVOID: Creating custom envelope formats
-- WHY: Matches IMAP protocol envelope structure exactly
-- EXAMPLE: `src/imap/types.rs:50-70`
+### Folder Model (src/imap/types.rs) 
+- `MailboxInfo` struct captures folder metadata:
+  - Name and hierarchical path
+  - Delimiter for nested folders
+  - Special attributes (e.g. Sent, Drafts)
+  - Message counts and flags
 
-### Search Criteria Model
-- MUST: Define `SearchCriteria` enum with variants:
-  - `All`
-  - `Unseen`
-  - `Flagged`
-  - `From(String)`
-  - `To(String)` 
-  - `Subject(String)`
-  - `Body(String)`
-  - `Uid(Vec<u32>)`
-  - `Since(String)`
-- AVOID: Free-form string search criteria
-- WHY: Type-safe representation of IMAP search criteria
-- EXAMPLE: `src/imap/types.rs:80-100`
+### Search Model (src/imap/types.rs)
+- `SearchCriteria` enum defines email search parameters:
+  - Date ranges
+  - Flag states
+  - Header field matching 
+  - Text content searches
 
-### Flag Operations
-- MUST: Use `FlagOperation` enum:
-  - `Add(Vec<String>)`
-  - `Remove(Vec<String>)`
-  - `Replace(Vec<String>)`
-- AVOID: Direct flag string manipulation
-- WHY: Safe flag state transitions
-- EXAMPLE: `src/imap/types.rs:110-120`
+### Modification Models (src/imap/types.rs)
+- `FlagOperation` enum for flag changes:
+  - Add flags
+  - Remove flags 
+  - Replace flags
+- `ModifyFlagsPayload` for bulk flag updates
+- `AppendEmailPayload` for email creation
 
-### Folder Structure
-- MUST: Use `Folder` struct:
-  - `name: String`
-  - `delimiter: Option<String>`
-  - `attributes: Vec<String>`
-- AVOID: Storing folder paths as plain strings
-- WHY: Maps to IMAP folder/mailbox structure
-- EXAMPLE: `src/imap/types.rs:130-140`
+### Unsolicited Response Model (src/imap/types.rs)
+- `UnsolicitedResponse` enum tracks server events:
+  - New message arrivals
+  - Message expunges
+  - Flag updates
+  - Recent changes
 
 $END$

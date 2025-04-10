@@ -128,14 +128,57 @@ impl Settings {
     }
 }
 
-#[derive(Error, Debug)]
-pub enum SettingsError {
-    #[error("Failed to load or parse configuration: {0}")]
-    LoadError(#[from] config::ConfigError),
-}
-
 impl Default for LogConfig {
     fn default() -> Self {
         LogConfig { level: "info".to_string() }
     }
+}
+
+impl Default for RestConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            host: "127.0.0.1".to_string(),
+            port: 3000,
+        }
+    }
+}
+
+impl Default for McpStdioConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+        }
+    }
+}
+
+impl Default for DashboardConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            path: None,
+        }
+    }
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            interface: InterfaceType::Rest,
+            log: LogConfig::default(),
+            imap_host: "localhost".to_string(),
+            imap_port: 993,
+            imap_user: String::new(),
+            imap_pass: String::new(),
+            rest: Some(RestConfig::default()),
+            mcp_stdio: Some(McpStdioConfig::default()),
+            dashboard: Some(DashboardConfig::default()),
+        }
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum SettingsError {
+    #[error("Failed to load or parse configuration: {0}")]
+    LoadError(#[from] config::ConfigError),
 } 

@@ -1,96 +1,65 @@
 ---
-description: 
-globs: 
-alwaysApply: true
+description: Specifies the Model Context Protocol (MCP) implementation for JSON-RPC messaging over stdio and SSE transports
+globs: ["src/mcp/**", "src/api/mcp*", "src/transport*"]
+alwaysApply: false
 ---
+
+
 # mcp-protocol
 
-### Message Format Conventions
-- MUST: Use JSON-RPC 2.0 format for all MCP messages
-- AVOID: Custom message formats or protocol extensions
-- WHY: Ensures interoperability and standard error handling
-- EXAMPLE: `src/api/mcp_stdio.rs`
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "unique-id",
-  "method": "imap/listFolders",
-  "params": {}
-}
-```
+### Core Protocol Components
 
-### Transport Layer Implementation
-- MUST: Support both stdio and SSE transports via `Transport` trait
-- AVOID: Direct socket connections or custom protocols
-- WHY: Enables consistent protocol handling across transport types
-- EXAMPLE: `src/transport.rs`
+1. **Message Format**
+- Implements JSON-RPC 2.0 message format for all MCP communications
+- Defines request/response structures with required fields:
+  - jsonrpc: Must be "2.0"  
+  - id: Unique request identifier
+  - method: Target method name (e.g. "imap/listFolders")
+  - params: Method parameters object
+  - result/error: Response payload
 
-### Error Code Mapping
-- MUST: Map domain errors to standard JSON-RPC error codes (-32000 to -32099)
-- AVOID: Custom error codes outside reserved ranges
-- WHY: Maintains protocol compliance and standard error handling
-- EXAMPLE: `src/mcp_port.rs`
-```rust
-const IMAP_CONNECTION_ERROR: i32 = -32000;
-const IMAP_AUTH_ERROR: i32 = -32001;
-```
+2. **Error Handling**
+- Defines standardized error codes:
+  - -32700: Parse error
+  - -32600: Invalid request
+  - -32601: Method not found 
+  - -32602: Invalid params
+  - -32603: Internal error
+  - -32000 to -32099: IMAP-specific errors
 
-### State Management
-- MUST: Track selected folder state in `McpPortState`
-- AVOID: Global state or direct folder path manipulation
-- WHY: Ensures consistent context for operations like email moves
-- EXAMPLE: `src/api/mcp_stdio.rs`
+3. **Transport Implementations**
 
-### SSE Client Management 
-- MUST: Use `SseState` for client registration and message routing
-- AVOID: Direct client socket management
-- WHY: Enables proper client lifecycle and message delivery
-- EXAMPLE: `src/api/mcp_sse.rs`
+Stdio Transport:
+- Reads JSON-RPC messages line-by-line from stdin
+- Writes responses to stdout
+- Supports synchronous request/response pattern
 
-### Business Logic Implementation
+SSE Transport:
+- Maintains persistent SSE connections with clients
+- Broadcasts messages to all connected clients
+- Supports asynchronous events and notifications
+- Implements client registration/deregistration
 
-1. **Transport Layer (`src/transport.rs`)**
-- Handles message serialization/deserialization
-- Routes messages between transports
-- Maps errors to JSON-RPC format
+4. **State Management**
+- Tracks active SSE clients with unique IDs
+- Maintains folder selection state between commands
+- Handles client disconnections and cleanup
 
-2. **MCP Port (`src/mcp_port.rs`)**
-- Maintains tool registry for command execution
-- Tracks session state
-- Maps domain errors to MCP errors
+5. **Method Registry**
+- Registers supported MCP methods:
+  - imap/listFolders
+  - imap/createFolder
+  - imap/deleteFolder 
+  - imap/renameFolder
+  - imap/searchEmails
+  - imap/fetchEmails
+  - imap/moveEmail
 
-3. **SSE Implementation (`src/api/mcp_sse.rs`)**
-- Manages client connections with unique IDs
-- Broadcasts events to connected clients
-- Implements heartbeat mechanism
-
-4. **Stdio Implementation (`src/api/mcp_stdio.rs`)**
-- Processes JSON-RPC requests from stdin
-- Executes MCP tools asynchronously
-- Maintains selected folder state
-
-### Supported Methods
-- imap/listFolders
-- imap/createFolder
-- imap/deleteFolder
-- imap/renameFolder
-- imap/searchEmails
-- imap/fetchEmails
-- imap/moveEmail
-
-### Error Codes
-```rust
--32700: Parse error
--32600: Invalid request  
--32601: Method not found
--32602: Invalid params
--32603: Internal error
--32000: IMAP connection error
--32001: Authentication failure
--32002: Folder not found
--32003: Folder already exists
--32004: Email not found
--32010: IMAP operation failed
-```
+File paths:
+- src/mcp/error_codes.rs
+- src/mcp/handler.rs
+- src/mcp/types.rs
+- src/api/mcp_sse.rs
+- src/api/mcp_stdio.rs
 
 $END$

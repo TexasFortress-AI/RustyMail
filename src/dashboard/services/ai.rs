@@ -27,6 +27,7 @@ struct Conversation {
 }
 
 // #[derive(Debug)] // Removed Debug derive
+#[derive(Debug)]
 pub struct AiService {
     conversations: RwLock<HashMap<String, Conversation>>,
     providers: HashMap<String, Arc<dyn AiProvider>>,
@@ -47,6 +48,18 @@ pub enum AiError {
 }
 
 impl AiService {
+    /// Creates a new mock AiService instance for testing
+    pub fn new_mock() -> Self {
+        let mut providers: HashMap<String, Arc<dyn AiProvider>> = HashMap::new();
+        providers.insert("mock".to_string(), Arc::new(provider::MockAiProvider));
+        
+        Self {
+            providers,
+            conversations: RwLock::new(HashMap::new()),
+            mock_mode: true, // Force mock mode
+        }
+    }
+
     pub fn new(
         openai_api_key: Option<String>,
         openrouter_api_key: Option<String>,

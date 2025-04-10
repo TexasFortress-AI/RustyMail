@@ -1,53 +1,61 @@
+---
+description: Specifies email operations including atomic moves, folder sync, search, and session management
+globs: ["src/imap/**/*.rs", "src/api/**/*.rs"]
+alwaysApply: false
+---
+
+
 # email-operations
 
-### Email Movement Operations
-- MUST: Implement atomic email moves using `async_imap::Session::mv` with fallback to copy+delete
-- AVOID: Direct deletion without verifying successful copy
-- WHY: Ensures data integrity during folder transfers
-- EXAMPLE: `src/imap/session.rs:move_email()`
+### Core Email Operations
 
-### Folder Synchronization
-- MUST: Check folder status before email operations using `select_folder()`
-- AVOID: Caching folder state or assuming folder exists
-- WHY: Prevents race conditions and lost updates
-- EXAMPLE: `src/imap/session.rs:select_folder()`
+The email operations logic is centered around the IMAP session management and atomic operations in `src/imap/session.rs`:
 
-### Email Search Implementation 
-- MUST: Transform search criteria to IMAP format using `format_search_criteria()`
-- AVOID: Client-side filtering of search results
-- WHY: Leverages server-side optimizations
-- EXAMPLE: `src/imap/session.rs:search_emails()`
+1. **Atomic Move Operations**
+- Implements atomic email moves between folders using transactional semantics
+- Validates source and destination folders before initiating moves 
+- Maintains message states during transfer
+- Handles partial failures with rollback capabilities
 
-### Session State Management
-- MUST: Track selected folder in `ImapSession` wrapper
-- AVOID: Global state or multiple folder selections
-- WHY: Maintains consistent session context
-- EXAMPLE: `src/imap/session.rs:ImapSession`
+2. **Folder Synchronization**
+- Implements optimistic locking for folder modifications
+- Tracks folder modification sequences
+- Validates folder states before operations
+- Detects and resolves folder conflicts
 
-Key Business Logic Files:
+3. **Search Implementation**
+- Provides search criteria parsing and validation
+- Supports complex search filters including:
+  - Subject/body text search
+  - Flag-based filtering
+  - Date range queries
+  - Header field searches
+- Maps search results to domain objects
 
-`src/imap/session.rs`:
-```rust
-// Core email operations
-move_email() - Atomic move with fallback
-select_folder() - Folder state management  
-search_emails() - Server-side search
-store_flags() - Atomic flag updates
+4. **Session State Management**
+- Maintains IMAP session state 
+- Tracks selected folders
+- Manages connection lifecycle
+- Handles session recovery
+
+5. **Email Flag Operations**
+- Atomic flag updates
+- Bulk flag modifications
+- Flag state validation
+- Flag synchronization across sessions
+
+6. **Email Movement**
+- Validates source/destination folders
+- Preserves message attributes during moves
+- Handles quota restrictions
+- Maintains folder consistency
+
+Relevant Files:
 ```
-
-`src/imap/types.rs`:
-```rust
-// Domain models
-Email - Core email data structure
-Folder - IMAP folder representation
-SearchCriteria - Search query model
-FlagOperation - Flag change operations
+src/imap/session.rs
+src/imap/client.rs
+src/imap/types.rs
+src/api/rest.rs
 ```
-
-Business Impact Scores:
-- Email Movement (95) - Core data integrity 
-- Folder Sync (90) - Critical for consistency
-- Search (85) - Key user functionality
-- Session State (80) - Important for reliability
 
 $END$

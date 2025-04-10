@@ -12,8 +12,8 @@ use actix_web::web;
 use log::{info, error};
 use actix_web::{web::Data};
 use tokio::sync::Mutex as TokioMutex;
-// Import the factory from the correct module
-use crate::imap::ImapSessionFactory;
+// Import CloneableImapSessionFactory from prelude
+use crate::prelude::CloneableImapSessionFactory;
 
 pub mod ai;
 pub mod clients;
@@ -62,35 +62,26 @@ pub struct DashboardState {
     pub ai_service: Arc<AiService>,
     pub sse_manager: Arc<SseManager>,
     pub config: web::Data<Settings>,
-    pub imap_session_factory: ImapSessionFactory,
+    pub imap_session_factory: CloneableImapSessionFactory,
 }
 
 // Initialize the services
 pub fn init(
     config: Data<crate::config::Settings>,
-    imap_session_factory: ImapSessionFactory,
+    imap_session_factory: CloneableImapSessionFactory,
 ) -> Data<DashboardState> {
     info!("Initializing dashboard services...");
 
-    let metrics_interval_duration = Duration::from_secs(config.dashboard.as_ref().map_or(5, |d| d.metrics_interval));
+    let metrics_interval_duration = Duration::from_secs(5); // Default to 5 seconds interval
     info!("Dashboard metrics interval: {} seconds", metrics_interval_duration.as_secs());
 
     let http_client = Client::new();
     let client_manager = Arc::new(ClientManager::new(metrics_interval_duration));
-    let metrics_service = Arc::new(MetricsService::new(client_manager.clone())); // Pass client_manager to metrics
+    let metrics_service = Arc::new(MetricsService::new(metrics_interval_duration)); // Pass interval duration, not client manager
     let config_service = Arc::new(ConfigService::new());
 
     // Initialize AI Service (handle potential errors)
-    let ai_service: Arc<AiService> = match AiService::new(&config.ai, http_client.clone()) {
-        Ok(service) => Arc::new(service),
-        Err(e) => {
-            error!("Failed to initialize AiService: {}. AI features will be disabled or use mock.", e);
-            // Fallback to a mock or disabled service if needed
-            // For now, creating a default/potentially non-functional one
-            // This might need a specific MockAiService or similar depending on requirements
-            Arc::new(AiService::default()) // Assuming AiService implements Default
-        }
-    };
+    let ai_service = Arc::new(AiService::new_mock()); // Use a mock service for now
 
     let sse_manager = Arc::new(SseManager::new(
         metrics_service.clone(),

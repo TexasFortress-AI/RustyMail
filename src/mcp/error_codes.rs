@@ -1,3 +1,6 @@
+//! Defines the standard JSON-RPC 2.0 error codes and custom
+//! MCP/IMAP specific codes used within RustyMail.
+
 use serde::{Deserialize, Serialize};
 
 /// Defines the standard and implementation-specific error codes used in the MCP protocol.
@@ -8,79 +11,89 @@ use serde::{Deserialize, Serialize};
 ///   - These are further subdivided into IMAP-specific and MCP-specific ranges.
 ///
 /// See: [JSON-RPC 2.0 Specification - Error Object](https://www.jsonrpc.org/specification#error_object)
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ErrorCode {
     // Standard JSON-RPC 2.0 error codes
-    /// Invalid JSON was received by the server.
-    /// An error occurred on the server while parsing the JSON text.
     ParseError = -32700,
-    /// The JSON sent is not a valid Request object.
     InvalidRequest = -32600,
-    /// The method does not exist / is not available.
     MethodNotFound = -32601,
-    /// Invalid method parameter(s).
     InvalidParams = -32602,
-    /// Internal JSON-RPC error.
     InternalError = -32603,
     
-    // IMAP-specific error codes
-    /// Error related to establishing or maintaining the connection to the IMAP server.
+    // IMAP-specific error codes (implementation-defined range)
     ImapConnectionError = -32000,
-    /// Authentication with the IMAP server failed (e.g., wrong username/password).
-    ImapAuthenticationError = -32001,
-    /// A general error occurred during an IMAP operation (e.g., folder not found, email exists).
-    /// Specific details should be in the error message or data.
-    ImapOperationError = -32002,
-    /// An error occurred while parsing the IMAP server's response.
-    ImapParseError = -32003,
-    /// An error related to character encoding during IMAP communication.
-    ImapEncodingError = -32004,
-    /// An unexpected or internal error originating from the IMAP client library or interaction.
-    ImapInternalError = -32005,
+    ImapAuthError = -32001, 
+    ImapFolderNotFound = -32002,
+    ImapFolderExists = -32003,
+    ImapEmailNotFound = -32004,
+    ImapEnvelopeNotFound = -32005,
+    ImapFolderNotSelected = -32006,
+    ImapOperationError = -32007,
+    ImapInvalidFlag = -32008,
+    ImapInvalidSearchCriteria = -32009,
+    ImapBadResponse = -32010,
+    ImapTimeoutError = -32011,
     
     // MCP-specific error codes
-    /// Error related to the MCP transport connection (e.g., Stdio pipe broken, SSE connection lost).
-    McpConnectionError = -32050,
-    /// Authentication failure specific to the MCP layer (if applicable).
-    McpAuthenticationError = -32051,
-    /// A general error occurred during an MCP operation itself, not mapped from IMAP.
-    McpOperationError = -32052,
-    /// Error parsing the MCP message structure (distinct from JSON ParseError).
-    McpParseError = -32053,
-    /// Error related to character encoding within the MCP layer.
-    McpEncodingError = -32054,
-    /// An internal error within the MCP framework logic.
-    McpInternalError = -32055,
+    McpInvalidRequest = -32050,
+    McpInvalidParams = -32051,
+    McpMethodNotFound = -32052,
+    McpInternalError = -32053,
+    McpParseError = -32054,
+    
+    // Session errors
+    SessionNotFound = -32080,
+    SessionCreationFailed = -32081,
+    SessionAccessDenied = -32082,
+    
+    // General errors
+    UnknownError = -32099
 }
 
 impl ErrorCode {
     /// Returns the standard descriptive message for the error code.
     pub fn message(&self) -> &'static str {
         match self {
+            // Standard JSON-RPC 2.0 error messages
             ErrorCode::ParseError => "Parse error",
             ErrorCode::InvalidRequest => "Invalid request",
             ErrorCode::MethodNotFound => "Method not found",
             ErrorCode::InvalidParams => "Invalid params",
             ErrorCode::InternalError => "Internal error",
             
+            // IMAP-specific error messages
             ErrorCode::ImapConnectionError => "IMAP: Connection error",
-            ErrorCode::ImapAuthenticationError => "IMAP: Authentication error",
+            ErrorCode::ImapAuthError => "IMAP: Authentication error",
+            ErrorCode::ImapFolderNotFound => "IMAP: Folder not found",
+            ErrorCode::ImapFolderExists => "IMAP: Folder already exists",
+            ErrorCode::ImapEmailNotFound => "IMAP: Email not found",
+            ErrorCode::ImapEnvelopeNotFound => "IMAP: Envelope not found",
+            ErrorCode::ImapFolderNotSelected => "IMAP: No folder selected",
             ErrorCode::ImapOperationError => "IMAP: Operation error",
-            ErrorCode::ImapParseError => "IMAP: Protocol parse error",
-            ErrorCode::ImapEncodingError => "IMAP: Encoding error",
-            ErrorCode::ImapInternalError => "IMAP: Internal error",
+            ErrorCode::ImapInvalidFlag => "IMAP: Invalid flag",
+            ErrorCode::ImapInvalidSearchCriteria => "IMAP: Invalid search criteria",
+            ErrorCode::ImapBadResponse => "IMAP: Bad response",
+            ErrorCode::ImapTimeoutError => "IMAP: Operation timed out",
             
-            ErrorCode::McpConnectionError => "MCP: Connection error",
-            ErrorCode::McpAuthenticationError => "MCP: Authentication error",
-            ErrorCode::McpOperationError => "MCP: Operation error",
-            ErrorCode::McpParseError => "MCP: Parse error",
-            ErrorCode::McpEncodingError => "MCP: Encoding error",
+            // MCP-specific error messages
+            ErrorCode::McpInvalidRequest => "MCP: Invalid request",
+            ErrorCode::McpInvalidParams => "MCP: Invalid parameters",
+            ErrorCode::McpMethodNotFound => "MCP: Method not found",
             ErrorCode::McpInternalError => "MCP: Internal error",
+            ErrorCode::McpParseError => "MCP: Parse error",
+            
+            // Session error messages
+            ErrorCode::SessionNotFound => "Session not found",
+            ErrorCode::SessionCreationFailed => "Failed to create session",
+            ErrorCode::SessionAccessDenied => "Session access denied",
+            
+            // General error messages
+            ErrorCode::UnknownError => "Unknown error",
         }
     }
 }
 
-// Constants for common error codes
+// Constants for common error codes (for backward compatibility)
 pub const PARSE_ERROR: i32 = ErrorCode::ParseError as i32;
 pub const INVALID_REQUEST: i32 = ErrorCode::InvalidRequest as i32;
 pub const METHOD_NOT_FOUND: i32 = ErrorCode::MethodNotFound as i32;

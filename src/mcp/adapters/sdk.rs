@@ -2,6 +2,7 @@
 
 use async_trait::async_trait;
 use std::sync::Arc;
+use crate::prelude::CloneableImapSessionFactory;
 use std::collections::HashMap;
 use tokio::sync::Mutex as TokioMutex;
 use serde_json::{Value, json};
@@ -22,7 +23,7 @@ use crate::mcp::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError, Mc
 type McpResult = Result<Value, JsonRpcError>; // Use JsonRpcError
 
 // Import session factory type correctly
-use crate::imap::ImapSessionFactory;
+// use crate::imap::ImapSessionFactory;
 // Import UnboundedSender correctly
 use tokio::sync::mpsc::UnboundedSender;
 use crate::imap::client::ImapClient;
@@ -49,7 +50,7 @@ pub struct RustyMailContext {
     // State specific to this request/connection
     pub port_state: McpPortState,
     // Factory to create IMAP sessions on demand for tools
-    pub session_factory: ImapSessionFactory,
+    pub session_factory: CloneableImapSessionFactory,
 }
 
 // Implement the rmcp Context trait (if required by rmcp - assuming basic marker trait or similar)
@@ -79,7 +80,7 @@ impl McpToolWrapper {
         let params_value = params.unwrap_or(Value::Null);
 
         // Get session using the factory from context
-        let imap_client_result = (context.session_factory)().await;
+        let imap_client_result = context.session_factory.create_session().await;
            
         let imap_client = match imap_client_result {
              Ok(client) => client,
@@ -109,22 +110,36 @@ impl McpToolWrapper {
 pub struct SdkMcpAdapter {
     // Stub out sdk_server if rmcp is not used
     // sdk_server: Arc<SdkServer<RustyMailContext>>,
-    session_factory: ImapSessionFactory, 
+    session_factory: CloneableImapSessionFactory, 
 }
 
 impl SdkMcpAdapter {
     /// Creates a new SdkMcpAdapter.
-    /// NOTE: Requires `ImapSessionFactory` to be provided.
-    pub fn new(session_factory: ImapSessionFactory) -> Result<Self, Box<dyn std::error::Error>> {
+    /// NOTE: Requires `CloneableImapSessionFactory` to be provided.
+    pub fn new(session_factory: CloneableImapSessionFactory) -> Result<Self, Box<dyn std::error::Error>> {
         info!("Initializing SdkMcpAdapter...");
         Ok(Self { session_factory })
+    }
+
+    /// Temporary constructor that creates a new adapter with a placeholder factory
+    /// until the proper factory can be injected
+    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+        info!("Initializing SdkMcpAdapter with placeholder factory...");
+        // This is a placeholder. In production, a real factory should be provided.
+        Ok(Self { 
+            session_factory: CloneableImapSessionFactory::new(
+                Arc::new(|| Box::pin(async { 
+                    Err(ImapError::Connection("Placeholder factory - not implemented".to_string())) 
+                }))
+            ) 
+        })
     }
 
     // Helper to get an IMAP session using the factory stored in the adapter.
     // Changed error type to JsonRpcError.
     async fn get_session(&self) -> Result<ImapClient, JsonRpcError> {
         info!("SDK Adapter: Getting IMAP session via factory.");
-        (self.session_factory)()
+        self.session_factory.create_session()
             .await
             .map_err(JsonRpcError::from) // Map ImapError -> JsonRpcError
     }
@@ -172,7 +187,7 @@ fn map_mcp_error_to_sdk_error(mcp_err: mcp_port::McpError) -> RpcToolError {
 
 /// State specifically for the SdkMcpAdapter if needed (e.g., for SSE integration).
 pub struct McpSdkState {
-    pub session_factory: ImapSessionFactory, 
+    pub session_factory: CloneableImapSessionFactory, 
     pub sse_tx: Option<UnboundedSender<String>>,
     pub mcp_state: Arc<TokioMutex<McpPortState>>,
 } 

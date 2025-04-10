@@ -1,10 +1,26 @@
-use serde::{Deserialize, Serialize};
-// Remove unused import
-// use imap_types::envelope::Envelope;
-use imap_types::core::{NString};
-use async_trait::async_trait;
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fmt,
+    convert::Infallible,
+};
+// use std::str::FromStr; // Unused
+
+use async_imap::types::{
+    Fetch,
+    Flag as AsyncImapFlag,
+    Name as AsyncImapName,
+    Mailbox as AsyncImapMailbox,
+};
 use chrono::{DateTime, Utc};
-use std::fmt;
+use imap_types::{ 
+    core::{NString}, 
+}; 
+use serde::{Deserialize, Serialize};
+// use thiserror::Error; // Unused
+
+use crate::imap::error::ImapError;
+use crate::imap::session::DEFAULT_MAILBOX_DELIMITER;
 
 /// Represents an email message in the IMAP system.
 ///
@@ -49,7 +65,7 @@ pub struct Email {
     pub internal_date: Option<DateTime<Utc>>,
     /// Email envelope containing metadata like subject, sender, recipients
     pub envelope: Option<Envelope>,
-    /// Raw email body content
+    /// Raw email body content as bytes
     pub body: Option<Vec<u8>>,
 }
 
@@ -89,10 +105,10 @@ pub struct Folder {
 /// let mailbox = MailboxInfo {
 ///     name: "INBOX".to_string(),
 ///     delimiter: Some('/'),
-///     attributes: vec!["\\Noinferiors".to_string()],
 ///     exists: 42,
 ///     recent: 5,
 ///     unseen: Some(10),
+///     selectable: true,
 /// };
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,23 +116,23 @@ pub struct MailboxInfo {
     /// Name of the mailbox
     pub name: String,
     /// Character used to separate mailbox levels in the hierarchy
-    pub delimiter: Option<char>,
-    /// List of mailbox attributes (e.g., \\Noinferiors, \\Noselect)
-    pub attributes: Vec<String>,
+    pub delimiter: String,
+    /// Whether the mailbox can be selected
+    pub selectable: bool,
     /// Total number of messages in the mailbox
     pub exists: u32,
-    /// Number of recent messages
+    /// Number of messages with the \Recent flag
     pub recent: u32,
     /// Number of unseen messages
     pub unseen: Option<u32>,
 }
 
-impl From<async_imap::types::Name> for MailboxInfo {
-    fn from(name: async_imap::types::Name) -> Self {
+impl From<AsyncImapName> for MailboxInfo {
+    fn from(name: AsyncImapName) -> Self {
         Self {
             name: name.name().to_string(),
-            delimiter: name.delimiter(),
-            attributes: name.attributes().iter().map(|a| a.to_string()).collect(),
+            delimiter: name.delimiter().unwrap_or(DEFAULT_MAILBOX_DELIMITER).to_string(),
+            selectable: name.selectable(),
             exists: 0,
             recent: 0,
             unseen: None,
@@ -124,15 +140,15 @@ impl From<async_imap::types::Name> for MailboxInfo {
     }
 }
 
-impl From<async_imap::types::MailboxData> for MailboxInfo {
-    fn from(data: async_imap::types::MailboxData) -> Self {
+impl From<AsyncImapMailbox> for MailboxInfo {
+    fn from(mailbox: AsyncImapMailbox) -> Self {
         Self {
-            name: data.name,
-            delimiter: None, // Not available in MailboxData
-            attributes: vec![], // Not available in MailboxData
-            exists: data.exists,
-            recent: data.recent,
-            unseen: data.unseen,
+            name: mailbox.name().to_string(),
+            delimiter: mailbox.delimiter().unwrap_or(DEFAULT_MAILBOX_DELIMITER).to_string(),
+            selectable: true,
+            exists: mailbox.exists(),
+            recent: mailbox.recent(),
+            unseen: mailbox.unseen(),
         }
     }
 }
@@ -214,7 +230,6 @@ pub enum FlagOperation {
 /// Represents a list of flags for modification.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Flags {
-    // Represent flags as simple strings for now
     #[serde(default)]
     pub items: Vec<String>,
 }
@@ -224,86 +239,20 @@ pub struct Flags {
 pub struct ModifyFlagsPayload {
     pub uids: Vec<u32>,
     pub operation: FlagOperation,
-    pub flags: Flags, // Use the Flags struct
+    pub flags: Flags,
 }
 
 /// Payload for appending an email.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppendEmailPayload {
-    // Raw email content as bytes/string
-    pub content: String, // Or consider bytes if more appropriate
-    pub flags: Flags, // Flags to set on the appended message
+    pub content: String,
+    pub flags: Flags,
 }
 
 /// Response after expunging a folder.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ExpungeResponse {
     pub message: String,
-    // Potentially add expunged UIDs if the command returns them
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ImapAddress {
-    pub name: NString<'static>,
-    pub adl: NString<'static>,
-    pub mailbox: NString<'static>,
-    pub host: NString<'static>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct ImapEnvelope {
-    pub date: NString<'static>,
-    pub subject: NString<'static>,
-    pub from: Vec<ImapAddress>,
-    pub sender: Vec<ImapAddress>,
-    pub reply_to: Vec<ImapAddress>,
-    pub to: Vec<ImapAddress>,
-    pub cc: Vec<ImapAddress>,
-    pub bcc: Vec<ImapAddress>,
-    pub in_reply_to: NString<'static>,
-    pub message_id: NString<'static>,
-}
-
-/// Represents a set of UIDs for IMAP operations
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct UidSet {
-    pub items: Vec<u32>,
-}
-
-/// Represents an unsolicited response from the IMAP server
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum UnsolicitedResponse {
-    Exists(u32),
-    Recent(u32),
-    Expunge(u32),
-    Flags(Vec<String>),
-    FetchFlags { uid: u32, flags: Vec<String> },
-}
-
-/// Represents an email address in the IMAP system.
-///
-/// This struct contains the components of an email address, including
-/// the display name, mailbox, and host parts.
-///
-/// # Examples
-///
-/// ```rust
-/// use rustymail::imap::types::Address;
-///
-/// let address = Address {
-///     name: Some("Alice Smith".to_string()),
-///     mailbox: Some("alice".to_string()),
-///     host: Some("example.com".to_string()),
-/// };
-/// ```
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct Address {
-    /// Display name of the email address owner
-    pub name: Option<String>,
-    /// Mailbox part of the email address
-    pub mailbox: Option<String>,
-    /// Host part of the email address
-    pub host: Option<String>,
 }
 
 /// Represents the envelope of an email message.
@@ -354,80 +303,104 @@ pub struct Envelope {
     pub message_id: Option<String>,
 }
 
+/// Represents an email address in the IMAP system.
+///
+/// This struct contains the components of an email address, including
+/// the display name, mailbox, and host parts.
+///
+/// # Examples
+///
+/// ```rust
+/// use rustymail::imap::types::Address;
+///
+/// let address = Address {
+///     name: Some("Alice Smith".to_string()),
+///     mailbox: Some("alice".to_string()),
+///     host: Some("example.com".to_string()),
+/// };
+/// ```
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Address {
+    /// Optional name associated with the address
+    pub name: Option<String>,
+    /// Optional mailbox part of the address
+    pub mailbox: Option<String>,
+    /// Optional host part of the address
+    pub host: Option<String>,
+}
+
 impl Email {
-    pub fn from_fetch(fetch: async_imap::types::Fetch) -> Result<Self, ImapError> {
-        let uid = fetch.uid.ok_or_else(|| ImapError::OperationError("No UID in fetch response".to_string()))?;
-        let flags = fetch.flags().map(|f| f.to_string()).collect();
-        let internal_date = fetch.internal_date;
+    pub fn from_fetch(fetch: &Fetch) -> Result<Self, ImapError> {
+        let flags = fetch.flags().map(|f| f.into_iter().map(|f| f.to_string()).collect()).unwrap_or_default();
+        let envelope = fetch.envelope().map(|env| Envelope {
+            date: env.date.map(|d| d.to_string()),
+            subject: env.subject.map(|s| s.to_string()),
+            from: env.from.unwrap_or_default().iter().map(Self::convert_address).collect(),
+            sender: env.sender.unwrap_or_default().iter().map(Self::convert_address).collect(),
+            reply_to: env.reply_to.unwrap_or_default().iter().map(Self::convert_address).collect(),
+            to: env.to.unwrap_or_default().iter().map(Self::convert_address).collect(),
+            cc: env.cc.unwrap_or_default().iter().map(Self::convert_address).collect(),
+            bcc: env.bcc.unwrap_or_default().iter().map(Self::convert_address).collect(),
+            in_reply_to: env.in_reply_to.map(|s| s.to_string()),
+            message_id: env.message_id.map(|s| s.to_string()),
+        });
+
+        let internal_date = fetch.internal_date()
+            .map(|d| DateTime::parse_from_rfc2822(&d.to_string()).ok())
+            .flatten();
+
+        Ok(Self {
+            uid: fetch.uid.unwrap_or(0),
+            flags,
+            internal_date,
+            envelope,
+            body: None, // Body handling would go here
+        })
+    }
+
+    fn convert_address(addr: &Address) -> crate::imap::types::Address {
+        crate::imap::types::Address {
+            name: addr.name.as_ref().map(|s| s.to_string()),
+            route: addr.route.as_ref().map(|s| s.to_string()),
+            mailbox: addr.mailbox.as_ref().map(|s| s.to_string()),
+            host: addr.host.as_ref().map(|s| s.to_string()),
+        }
+    }
+}
+
+impl From<Fetch> for Email {
+    fn from(fetch: Fetch) -> Self {
+        let uid = fetch.uid.unwrap_or(0);
+        let flags = fetch.flags().unwrap_or_default()
+            .iter()
+            .map(|f| f.to_string())
+            .collect();
         
-        let envelope = if let Some(env) = fetch.envelope() {
-            Some(Envelope {
-                date: env.date.map(|s| s.to_string()),
-                subject: env.subject.map(|s| s.to_string()),
-                from: env.from.into_iter().map(Address::from).collect(),
-                to: env.to.into_iter().map(Address::from).collect(),
-                cc: env.cc.into_iter().map(Address::from).collect(),
-                bcc: env.bcc.into_iter().map(Address::from).collect(),
-                reply_to: env.reply_to.into_iter().map(Address::from).collect(),
-                in_reply_to: env.in_reply_to.map(|s| s.to_string()),
-                message_id: env.message_id.map(|s| s.to_string()),
-            })
-        } else {
-            None
-        };
+        let envelope = fetch.envelope().map(|env| Envelope {
+            date: env.date().map(|d| d.to_string()),
+            subject: Self::nstring_to_string(env.subject()),
+            from: env.from().unwrap_or_default().iter().map(Self::convert_address).collect(),
+            sender: env.sender().unwrap_or_default().iter().map(Self::convert_address).collect(),
+            reply_to: env.reply_to().unwrap_or_default().iter().map(Self::convert_address).collect(),
+            to: env.to().unwrap_or_default().iter().map(Self::convert_address).collect(),
+            cc: env.cc().unwrap_or_default().iter().map(Self::convert_address).collect(),
+            bcc: env.bcc().unwrap_or_default().iter().map(Self::convert_address).collect(),
+            in_reply_to: Self::nstring_to_string(env.in_reply_to()),
+            message_id: Self::nstring_to_string(env.message_id()),
+        });
+
+        let internal_date = fetch.internal_date()
+            .and_then(|d| DateTime::parse_from_rfc2822(&d).ok())
+            .map(|d| d.with_timezone(&Utc));
 
         let body = fetch.body().map(|b| b.to_vec());
 
-        Ok(Self {
+        Self {
             uid,
             flags,
             internal_date,
             envelope,
             body,
-        })
-    }
-}
-
-impl From<async_imap::types::Address> for Address {
-    fn from(addr: async_imap::types::Address) -> Self {
-        Self {
-            name: addr.name.map(|s| s.to_string()),
-            mailbox: addr.mailbox.map(|s| s.to_string()),
-            host: addr.host.map(|s| s.to_string()),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum StoreOperation {
-    Add,
-    Remove,
-    Set,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ImapError {
-    #[error("Authentication failed: {0}")]
-    AuthenticationError(String),
-    
-    #[error("Connection error: {0}")]
-    ConnectionError(String),
-    
-    #[error("Operation failed: {0}")]
-    OperationError(String),
-    
-    #[error("Parse error: {0}")]
-    ParseError(String),
-}
-
-impl From<async_imap::error::Error> for ImapError {
-    fn from(err: async_imap::error::Error) -> Self {
-        match err {
-            async_imap::error::Error::Io(e) => ImapError::ConnectionError(e.to_string()),
-            async_imap::error::Error::Parse(e) => ImapError::ParseError(e.to_string()),
-            async_imap::error::Error::No(e) => ImapError::OperationError(e.to_string()),
-            async_imap::error::Error::Bad(e) => ImapError::OperationError(e.to_string()),
-            _ => ImapError::OperationError(err.to_string()),
         }
     }
 }

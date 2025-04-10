@@ -1,10 +1,47 @@
 // src/mcp/types.rs
 
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 // Use the ErrorCode enum from the dedicated module for consistency
 use crate::mcp::error_codes::ErrorCode; 
 use crate::imap::error::ImapError;
+use std::fmt;
+use tokio::sync::Mutex;
+use log;
+use crate::session_manager::SessionManager;
+use std::sync::Arc;
+
+// Error code constants for IMAP errors - these match the enum values in ErrorCode
+pub const CODE_IMAP_CONNECTION_ERROR: i64 = ErrorCode::ImapConnectionError as i64;
+pub const CODE_IMAP_AUTH_ERROR: i64 = ErrorCode::ImapAuthError as i64;
+pub const CODE_IMAP_FOLDER_NOT_FOUND: i64 = ErrorCode::ImapFolderNotFound as i64;
+pub const CODE_IMAP_FOLDER_EXISTS: i64 = ErrorCode::ImapFolderExists as i64;
+pub const CODE_IMAP_EMAIL_NOT_FOUND: i64 = ErrorCode::ImapEmailNotFound as i64;
+pub const CODE_IMAP_ENVELOPE_NOT_FOUND: i64 = ErrorCode::ImapEnvelopeNotFound as i64;
+pub const CODE_IMAP_FOLDER_NOT_SELECTED: i64 = ErrorCode::ImapFolderNotSelected as i64;
+pub const CODE_IMAP_OPERATION_ERROR: i64 = ErrorCode::ImapOperationError as i64;
+pub const CODE_IMAP_INVALID_FLAG: i64 = ErrorCode::ImapInvalidFlag as i64;
+pub const CODE_IMAP_INVALID_SEARCH_CRITERIA: i64 = ErrorCode::ImapInvalidSearchCriteria as i64;
+pub const CODE_IMAP_BAD_RESPONSE: i64 = ErrorCode::ImapBadResponse as i64;
+pub const CODE_IMAP_TIMEOUT_ERROR: i64 = ErrorCode::ImapTimeoutError as i64;
+pub const CODE_IMAP_PARSE_ERROR: i64 = -32020; // Custom code for IMAP parse errors
+pub const CODE_IMAP_IO_ERROR: i64 = -32021; // Custom code for IMAP IO errors
+pub const CODE_IMAP_TLS_ERROR: i64 = -32022; // Custom code for IMAP TLS errors
+pub const CODE_IMAP_UNKNOWN_ERROR: i64 = -32023; // Custom code for unknown IMAP errors
+pub const CODE_IMAP_INTERNAL_ERROR: i64 = -32024; // Custom code for internal IMAP errors
+pub const CODE_IMAP_MISSING_DATA: i64 = -32025; // Custom code for missing data errors
+pub const CODE_IMAP_FETCH_ERROR: i64 = -32026; // Custom code for fetch errors
+pub const CODE_IMAP_ENCODING_ERROR: i64 = -32027; // Custom code for encoding errors
+pub const CODE_IMAP_VALIDATION_ERROR: i64 = -32028; // Custom code for validation errors
+pub const CODE_IMAP_OPERATION_FAILED: i64 = -32029; // Custom code for operation failed errors
+pub const CODE_IMAP_REQUIRES_FOLDER_SELECTION: i64 = -32030; // Custom code for operations requiring folder selection
+
+// JSON-RPC standard error codes
+pub const ERROR_PARSE: i64 = ErrorCode::ParseError as i64;
+pub const ERROR_INVALID_REQUEST: i64 = ErrorCode::InvalidRequest as i64;
+pub const ERROR_METHOD_NOT_FOUND: i64 = ErrorCode::MethodNotFound as i64;
+pub const ERROR_INVALID_PARAMS: i64 = ErrorCode::InvalidParams as i64;
+pub const ERROR_INTERNAL: i64 = ErrorCode::InternalError as i64;
 
 /// State relevant to a specific MCP connection or communication channel (port).
 ///
@@ -18,12 +55,46 @@ pub struct McpPortState {
     /// The name of the currently selected IMAP folder, if any.
     /// This is used as the default source folder for operations like `moveEmail`.
     pub selected_folder: Option<String>,
+    session_id: Option<String>,
+    session_manager: Arc<SessionManager>,
+}
+
+impl McpPortState {
+    pub fn new(session_manager: Arc<SessionManager>) -> Self {
+        Self {
+            selected_folder: None,
+            session_id: None,
+            session_manager,
+        }
+    }
+    
+    pub fn set_session_id(&mut self, session_id: String) {
+        self.session_id = Some(session_id);
+    }
+    
+    pub fn get_session_id(&self) -> Option<&String> {
+        self.session_id.as_ref()
+    }
+    
+    pub fn get_session_manager(&self) -> &Arc<SessionManager> {
+        &self.session_manager
+    }
+
+    #[cfg(test)]
+    pub fn new_mock() -> Self {
+        use crate::session_manager::MockSessionManager;
+        Self {
+            selected_folder: None,
+            session_id: Some("mock_session".to_string()),
+            session_manager: Arc::new(MockSessionManager::new()),
+        }
+    }
 }
 
 /// Represents a JSON-RPC 2.0 request according to the specification.
 ///
 /// See: [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification#request_object)
-#[derive(Deserialize, Serialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct JsonRpcRequest {
     /// Must be exactly "2.0".
     pub jsonrpc: String,
@@ -47,7 +118,7 @@ pub struct JsonRpcRequest {
 ///         If there was an error in detecting the id in the Request object (e.g. Parse error/Invalid Request), it MUST be Null.
 ///
 /// See: [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification#response_object)
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct JsonRpcResponse {
     /// Must be exactly "2.0".
     pub jsonrpc: String,
@@ -112,11 +183,11 @@ impl JsonRpcResponse {
 /// Represents a JSON-RPC 2.0 error object according to the specification.
 ///
 /// See: [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification#error_object)
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct JsonRpcError {
     /// A Number that indicates the error type that occurred.
     /// Must be an integer. Standard codes are defined, and -32000 to -32099 are reserved for implementation-defined server-errors.
-    pub code: i32,
+    pub code: i64,
     /// A String providing a short description of the error.
     pub message: String,
     /// A Primitive or Structured value that contains additional information about the error.
@@ -151,7 +222,7 @@ impl JsonRpcError {
     /// Creates a Parse Error (-32700).
     pub fn parse_error() -> Self {
         JsonRpcError {
-            code: ErrorCode::ParseError as i32,
+            code: ErrorCode::ParseError as i64,
             message: ErrorCode::ParseError.message().to_string(),
             data: None,
         }
@@ -160,7 +231,7 @@ impl JsonRpcError {
     /// Creates an Invalid Request Error (-32600).
     pub fn invalid_request() -> Self {
          JsonRpcError {
-            code: ErrorCode::InvalidRequest as i32,
+            code: ErrorCode::InvalidRequest as i64,
             message: ErrorCode::InvalidRequest.message().to_string(),
             data: None,
         }
@@ -169,7 +240,7 @@ impl JsonRpcError {
     /// Creates a Method Not Found Error (-32601).
     pub fn method_not_found() -> Self {
         JsonRpcError {
-            code: ErrorCode::MethodNotFound as i32,
+            code: ErrorCode::MethodNotFound as i64,
             message: ErrorCode::MethodNotFound.message().to_string(),
             data: None,
         }
@@ -185,7 +256,7 @@ impl JsonRpcError {
             format!("{}: {}", ErrorCode::InvalidParams.message(), details_str)
         };
         JsonRpcError {
-            code: ErrorCode::InvalidParams as i32,
+            code: ErrorCode::InvalidParams as i64,
             message,
             data: None, // Optionally include details in data: Some(Value::String(details_str)),
         }
@@ -201,29 +272,19 @@ impl JsonRpcError {
              format!("{}: {}", ErrorCode::InternalError.message(), details_str)
         };
         JsonRpcError {
-            code: ErrorCode::InternalError as i32,
+            code: ErrorCode::InternalError as i64,
             message,
             // Include the detailed internal error message in the 'data' field for debugging.
             data: Some(Value::String(details_str)),
         }
     }
 
-    /// Creates a `JsonRpcError` from an `ImapError`.
-    /// This function maps specific IMAP domain errors to appropriate
-    /// JSON-RPC error codes within the implementation-defined server error range (-32000 to -32099).
-    pub fn from_imap_error(err: ImapError) -> Self {
-        match err {
-            ImapError::ConnectionError(e) => JsonRpcError::new(-32000, &format!("Connection error: {}", e)),
-            ImapError::AuthenticationError(e) => JsonRpcError::new(-32001, &format!("Authentication error: {}", e)),
-            ImapError::CommandError(e) => JsonRpcError::new(-32002, &format!("Command error: {}", e)),
-            ImapError::ParseError(e) => JsonRpcError::new(-32003, &format!("Parse error: {}", e)),
-            ImapError::InvalidState(e) => JsonRpcError::new(-32004, &format!("Invalid state: {}", e)),
-            ImapError::Timeout => JsonRpcError::new(-32005, "Operation timed out"),
-            ImapError::NotFound => JsonRpcError::new(-32006, "Resource not found"),
-            ImapError::PermissionDenied => JsonRpcError::new(-32007, "Permission denied"),
-            ImapError::QuotaExceeded => JsonRpcError::new(-32008, "Quota exceeded"),
-            ImapError::InvalidArgument(e) => JsonRpcError::new(-32009, &format!("Invalid argument: {}", e)),
-            ImapError::InternalError(e) => JsonRpcError::new(-32010, &format!("Internal error: {}", e)),
+    /// Creates a server error response with the specified code and message.
+    pub fn server_error(code: i64, message: String) -> Self {
+        Self {
+            code,
+            message,
+            data: None,
         }
     }
 }
@@ -232,58 +293,112 @@ impl JsonRpcError {
 /// and a detailed error message string.
 ///
 /// This helps translate internal IMAP issues into standardized MCP/JSON-RPC errors.
-fn map_imap_err_to_mcp(err: &ImapError) -> (ErrorCode, String) {
+fn map_imap_err_to_mcp(err: &ImapError) -> (i64, String) {
     match err {
-        // Connection and Auth errors
-        ImapError::Connection(msg) | ImapError::ConnectionError(msg) | ImapError::Tls(msg) =>
-            (ErrorCode::ImapConnectionError, format!("Connection/TLS Error: {}", msg)),
-        ImapError::Auth(msg) | ImapError::AuthenticationError(msg) =>
-            (ErrorCode::ImapAuthenticationError, format!("Authentication Error: {}", msg)),
-        
-        // Specific operation errors related to missing entities
-        ImapError::FolderNotFound(name) =>
-            (ErrorCode::ImapOperationError, format!("Folder not found: {}", name)), // Use generic operation error
-        ImapError::FolderExists(name) =>
-            (ErrorCode::ImapOperationError, format!("Folder already exists: {}", name)), // Use generic operation error
-        ImapError::EmailNotFound(uids) =>
-             (ErrorCode::ImapOperationError, format!("Email not found for UIDs: {:?}", uids)), // Use generic operation error
-        ImapError::EnvelopeNotFound =>
-             (ErrorCode::ImapOperationError, "Envelope data not found in fetch response".to_string()),
-        
-        // Errors related to required context (like selected folder)
-        ImapError::FolderNotSelected | ImapError::RequiresFolderSelection(_) =>
-            (ErrorCode::ImapOperationError, "Operation requires a folder to be selected".to_string()),
-
-        // General operation failures
-        ImapError::Mailbox(msg) | ImapError::Fetch(msg) | ImapError::Append(msg) | ImapError::Operation(msg) | ImapError::OperationFailed(msg) | ImapError::Command(msg) =>
-            (ErrorCode::ImapOperationError, format!("Operation Failed: {}", msg)),
-        
-        // Invalid input from the client side (map to InvalidParams)
-        ImapError::InvalidCriteria(crit) =>
-             (ErrorCode::InvalidParams, format!("Invalid search criteria provided: {:?}", crit)),
-
-        // Lower-level or unexpected errors (map to Internal or specific IMAP internal codes)
-        ImapError::Parse(msg) | ImapError::ParseError(msg) =>
-             (ErrorCode::ImapParseError, format!("IMAP Protocol Parse Error: {}", msg)),
-        ImapError::BadResponse(msg) =>
-             (ErrorCode::ImapInternalError, format!("Bad Server Response: {}", msg)), // Server misbehaved
-        ImapError::Io(msg) =>
-             (ErrorCode::ImapInternalError, format!("IMAP IO Error: {}", msg)), // Treat IO as internal
-        ImapError::SessionError(e) =>
-            (ErrorCode::ImapInternalError, format!("Underlying IMAP Session Error: {}", e)),
-        ImapError::Encoding(msg) =>
-            (ErrorCode::ImapEncodingError, format!("Internal Encoding Error: {}", msg)),
-        ImapError::Config(msg) =>
-            (ErrorCode::InternalError, format!("Internal Configuration Error: {}", msg)), // General internal error
-        ImapError::Internal(msg) =>
-            (ErrorCode::InternalError, format!("Internal Server Error: {}", msg)), // General internal error
+        ImapError::Connection(msg) => 
+            (ErrorCode::ImapConnectionError as i64, format!("Connection error: {}", msg)),
+        ImapError::Auth(msg) => 
+            (ErrorCode::ImapAuthError as i64, format!("Authentication error: {}", msg)),
+        ImapError::Parse(msg) => 
+            (ErrorCode::ImapParseError as i64, format!("Parse error: {}", msg)),
+        ImapError::Validation(msg) => 
+            (ErrorCode::ImapValidationError as i64, format!("Validation error: {}", msg)),
+        ImapError::Command(msg) => 
+            (ErrorCode::ImapCommandError as i64, format!("Command error: {}", msg)),
+        ImapError::InvalidCriteria(crit) => 
+            (ErrorCode::ImapInvalidSearchCriteria as i64, format!("Invalid search criteria: {}", crit)),
+        ImapError::Timeout(msg) => 
+            (ErrorCode::ImapTimeout as i64, format!("Timeout: {}", msg)),
+        ImapError::NoBodies => 
+            (ErrorCode::ImapMessageError as i64, "No message bodies found".to_string()),
+        ImapError::NoEnvelope => 
+            (ErrorCode::ImapMessageError as i64, "No envelope found".to_string()),
+        ImapError::Operation(msg) => 
+            (ErrorCode::ImapOperationError as i64, format!("Operation error: {}", msg)),
+        ImapError::OperationFailed(msg) => 
+            (ErrorCode::ImapOperationFailed as i64, format!("Operation failed: {}", msg)),
+        ImapError::FolderNotFound(folder) => 
+            (ErrorCode::ImapFolderNotFound as i64, format!("Folder not found: {}", folder)),
+        ImapError::InvalidMailbox(msg) => 
+            (ErrorCode::ImapFolderNotFound as i64, format!("Invalid mailbox: {}", msg)),
+        ImapError::Other(msg) => 
+            (ErrorCode::UnknownError as i64, format!("Unknown error: {}", msg)),
     }
 }
 
 // Implement From trait for convenience
 impl From<ImapError> for JsonRpcError {
     fn from(err: ImapError) -> Self {
-        JsonRpcError::from_imap_error(err)
+        match err {
+            ImapError::Parse(msg) => 
+                Self::server_error(CODE_IMAP_PARSE_ERROR, format!("Parse error: {}", msg)),
+            
+            ImapError::Flag(msg) => 
+                Self::server_error(CODE_IMAP_VALIDATION_ERROR, format!("Flag validation error: {}", msg)),
+                
+            ImapError::Command(msg) => 
+                Self::server_error(CODE_IMAP_COMMAND_ERROR, format!("Command error: {}", msg)),
+                
+            ImapError::Connection(msg) => 
+                Self::server_error(CODE_IMAP_CONNECTION_ERROR, format!("Connection error: {}", msg)),
+                
+            ImapError::Auth(msg) => 
+                Self::server_error(CODE_IMAP_AUTH_ERROR, format!("Authentication error: {}", msg)),
+                
+            ImapError::Timeout => 
+                Self::server_error(CODE_IMAP_TIMEOUT_ERROR, "Operation timed out".to_string()),
+                
+            ImapError::InvalidMailbox(msg) => 
+                Self::server_error(CODE_IMAP_INVALID_MAILBOX, format!("Invalid mailbox: {}", msg)),
+                
+            ImapError::Io(err) => 
+                Self::server_error(CODE_IMAP_IO_ERROR, format!("I/O error: {}", err)),
+                
+            ImapError::Tls(err) => 
+                Self::server_error(CODE_IMAP_TLS_ERROR, format!("TLS error: {}", err)),
+                
+            ImapError::MissingData(msg) => 
+                Self::server_error(CODE_IMAP_MISSING_DATA, format!("Missing data: {}", msg)),
+                
+            ImapError::Fetch(msg) => 
+                Self::server_error(CODE_IMAP_FETCH_ERROR, format!("Fetch error: {}", msg)),
+                
+            ImapError::Encoding(msg) => 
+                Self::server_error(CODE_IMAP_ENCODING_ERROR, format!("Encoding error: {}", msg)),
+                
+            ImapError::Unknown(msg) => 
+                Self::server_error(CODE_IMAP_UNKNOWN_ERROR, format!("Unknown error: {}", msg)),
+                
+            ImapError::FolderNotFound(folder) => 
+                Self::server_error(CODE_IMAP_FOLDER_NOT_FOUND, format!("Folder not found: {}", folder)),
+                
+            ImapError::FolderExists(folder) => 
+                Self::server_error(CODE_IMAP_FOLDER_EXISTS, format!("Folder already exists: {}", folder)),
+                
+            ImapError::EmailNotFound(uids) => 
+                Self::server_error(CODE_IMAP_EMAIL_NOT_FOUND, format!("Email not found: {:?}", uids)),
+                
+            ImapError::EnvelopeNotFound => 
+                Self::server_error(CODE_IMAP_ENVELOPE_NOT_FOUND, "Envelope not found".to_string()),
+                
+            ImapError::FolderNotSelected => 
+                Self::server_error(CODE_IMAP_FOLDER_NOT_SELECTED, "No folder selected".to_string()),
+                
+            ImapError::RequiresFolderSelection(op) => 
+                Self::server_error(CODE_IMAP_REQUIRES_FOLDER_SELECTION, format!("Operation requires folder selection: {}", op)),
+                
+            ImapError::Operation(msg) => 
+                Self::server_error(CODE_IMAP_OPERATION_ERROR, format!("Operation error: {}", msg)),
+                
+            ImapError::InvalidCriteria(crit) => 
+                Self::server_error(CODE_IMAP_INVALID_SEARCH_CRITERIA, format!("Invalid search criteria: {}", crit)),
+                
+            ImapError::BadResponse(msg) => 
+                Self::server_error(CODE_IMAP_BAD_RESPONSE, format!("Bad response: {}", msg)),
+                
+            ImapError::Internal(msg) => 
+                Self::server_error(CODE_IMAP_INTERNAL_ERROR, format!("Internal error: {}", msg)),
+        }
     }
 }
 

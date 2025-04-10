@@ -1,93 +1,42 @@
+---
+description: Analysis of interface implementations (REST, SSE, stdio) and their unique handling of email operations
+globs: ["src/api/**/*.rs", "src/mcp/**/*.rs", "src/dashboard/api/**/*.rs"]
+alwaysApply: false
+---
+
+
 # interface-implementations
 
-### REST Interface Implementation Conventions
+The project implements three distinct interfaces for email operations:
 
-- MUST: Implement REST endpoints using actix-web
-- AVOID: Mixing HTTP concerns with IMAP logic
-- WHY: Separation of concerns ensures clean interface boundaries
-- EXAMPLE: `src/api/rest.rs`
+## REST Interface
+- Implements RESTful endpoints for IMAP operations with JSON payloads
+- Manages authentication state through session tokens
+- Maps domain errors to HTTP status codes (400-500 range)
+- Handles concurrent client requests through connection pooling
+- Provides endpoints for folder management, email search/retrieval
 
-```rust
-// Good
-async fn list_folders(state: web::Data<AppState>) -> Result<impl Responder> {
-    let folders = state.imap_client.list_folders().await?;
-    Ok(web::Json(folders))
-}
-```
+## SSE Interface 
+- Manages real-time client connections through Server-Sent Events
+- Broadcasts email state changes and notifications to connected clients
+- Maintains client registration with unique UUIDs
+- Implements heartbeat mechanism for connection health
+- Handles client disconnection and cleanup
 
-### SSE Interface Implementation Conventions
+## stdio Interface
+- Processes JSON-RPC commands received via stdin
+- Provides line-oriented protocol for command/response
+- Supports full IMAP operation set through JSON-RPC methods
+- Maintains session state between commands
+- Returns results and errors in JSON-RPC format
 
-- MUST: Use tokio broadcast channels for SSE events
-- AVOID: Blocking operations in SSE event handlers
-- WHY: Ensures non-blocking real-time updates
-- EXAMPLE: `src/api/mcp_sse.rs`
+Common Interface Components:
+- Shared IMAP session management
+- Consistent error code mapping
+- Common data models for emails and folders 
+- Unified authentication handling
+- Protocol-independent business operations
 
-```rust
-// Good
-pub struct SseState {
-    clients: Arc<RwLock<HashMap<ClientId, mpsc::Sender<String>>>>
-}
-```
-
-### Stdio Interface Implementation Conventions
-
-- MUST: Use async_std for stdin/stdout handling
-- AVOID: Direct println/readln calls
-- WHY: Maintains consistent async behavior
-- EXAMPLE: `src/api/mcp_stdio.rs`
-
-### Error Mapping Conventions
-
-- MUST: Map domain errors to interface-specific errors
-- AVOID: Generic error messages
-- WHY: Provides consistent error handling across interfaces
-- EXAMPLE: `src/api/error.rs`
-
-### Interface Business Logic Summary
-
-1. REST Interface (`src/api/rest.rs`):
-- Handles IMAP operations via HTTP endpoints
-- Maps IMAP folder operations to REST resources
-- Manages session state through cookies
-
-2. SSE Interface (`src/api/mcp_sse.rs`):
-- Maintains client connections
-- Broadcasts IMAP events in real-time
-- Handles client registration/deregistration
-
-3. Stdio Interface (`src/api/mcp_stdio.rs`):
-- Processes JSON-RPC commands from stdin
-- Returns results via stdout
-- Maintains stateful IMAP sessions
-
-### Implementation Patterns
-
-#### REST Pattern
-```rust
-// src/api/rest.rs
-pub async fn move_email(
-    state: web::Data<AppState>,
-    params: web::Json<MoveEmailParams>
-) -> Result<impl Responder>
-```
-
-#### SSE Pattern
-```rust
-// src/api/mcp_sse.rs
-pub async fn handle_client_message(
-    client_id: ClientId,
-    message: String,
-    state: Arc<SseState>
-)
-```
-
-#### Stdio Pattern
-```rust
-// src/api/mcp_stdio.rs
-pub async fn process_command(
-    command: String,
-    state: Arc<McpPortState>
-) -> Result<String>
-```
+Each interface maintains its own connection state while sharing core IMAP functionality through a common session layer. The interfaces handle protocol-specific requirements while delegating actual email operations to shared business logic.
 
 $END$
