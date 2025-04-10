@@ -2,7 +2,7 @@ use crate::imap::error::ImapError;
 use crate::imap::ImapSessionFactory;
 use crate::imap::session::{ImapSession, StoreOperation};
 use crate::imap::types::{Folder, ModifyFlagsPayload, AppendEmailPayload, SearchCriteria, Flags, FlagOperation};
-use crate::mcp::types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError};
+use crate::mcp::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError};
 use crate::mcp::{self, error_codes};
 use serde_json::{json, Value};
 use log::{error, info, debug, warn};

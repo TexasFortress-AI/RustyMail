@@ -437,7 +437,7 @@ fn parse_flags(flag_strings: &[String]) -> Result<Vec<Flags>, ApiError> {
                 // Keep custom flag logic
                 if custom.starts_with('\\') || custom.starts_with('$') { 
                      Ok(Flags::custom(custom))
-                } else {
+    } else {
                      Err(ApiError::InvalidRequest(format!("Invalid flag format: {}", s)))
                 }
             }

@@ -1,5 +1,5 @@
 use crate::imap::client::ImapClient;
-use crate::imap::error::ImapError;
+    use crate::imap::error::ImapError;
 use crate::imap::session::MockAsyncImapOps;
 use crate::imap::types::{Email, Folder, MailboxInfo};
 use std::sync::Arc;

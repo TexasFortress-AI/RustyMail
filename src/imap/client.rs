@@ -183,6 +183,18 @@ impl ImapClient {
         let guard = self.session.try_lock().ok()?;
         guard.current_folder()
     }
+
+    /// Fetches the raw message content for a given UID
+    /// 
+    /// # Arguments
+    /// * `uid` - The UID of the message to fetch
+    /// 
+    /// # Returns
+    /// * `Result<Vec<u8>, ImapError>` - The raw message content or an error
+    pub async fn fetch_raw_message(&self, uid: u32) -> Result<Vec<u8>, ImapError> {
+        let mut session = self.session.lock().await;
+        session.fetch_raw_message(uid).await
+    }
 }
 
 // --- Internal Connection Logic ---

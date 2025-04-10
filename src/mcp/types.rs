@@ -211,15 +211,21 @@ impl JsonRpcError {
     /// Creates a `JsonRpcError` from an `ImapError`.
     /// This function maps specific IMAP domain errors to appropriate
     /// JSON-RPC error codes within the implementation-defined server error range (-32000 to -32099).
-    pub fn from_imap_error(err: &ImapError) -> Self {
-         let (error_code, detailed_message) = map_imap_err_to_mcp(err);
-         JsonRpcError {
-             code: error_code as i32,
-             // Use the standard message for the code, put details in 'data'.
-             message: error_code.message().to_string(), 
-             data: Some(Value::String(detailed_message)), // Include specific IMAP error details in data
-         }
-     }
+    pub fn from_imap_error(err: ImapError) -> Self {
+        match err {
+            ImapError::ConnectionError(e) => JsonRpcError::new(-32000, &format!("Connection error: {}", e)),
+            ImapError::AuthenticationError(e) => JsonRpcError::new(-32001, &format!("Authentication error: {}", e)),
+            ImapError::CommandError(e) => JsonRpcError::new(-32002, &format!("Command error: {}", e)),
+            ImapError::ParseError(e) => JsonRpcError::new(-32003, &format!("Parse error: {}", e)),
+            ImapError::InvalidState(e) => JsonRpcError::new(-32004, &format!("Invalid state: {}", e)),
+            ImapError::Timeout => JsonRpcError::new(-32005, "Operation timed out"),
+            ImapError::NotFound => JsonRpcError::new(-32006, "Resource not found"),
+            ImapError::PermissionDenied => JsonRpcError::new(-32007, "Permission denied"),
+            ImapError::QuotaExceeded => JsonRpcError::new(-32008, "Quota exceeded"),
+            ImapError::InvalidArgument(e) => JsonRpcError::new(-32009, &format!("Invalid argument: {}", e)),
+            ImapError::InternalError(e) => JsonRpcError::new(-32010, &format!("Internal error: {}", e)),
+        }
+    }
 }
 
 /// Maps an `ImapError` to a tuple containing the most appropriate `ErrorCode`
@@ -277,7 +283,7 @@ fn map_imap_err_to_mcp(err: &ImapError) -> (ErrorCode, String) {
 // Implement From trait for convenience
 impl From<ImapError> for JsonRpcError {
     fn from(err: ImapError) -> Self {
-        JsonRpcError::from_imap_error(&err)
+        JsonRpcError::from_imap_error(err)
     }
 }
 

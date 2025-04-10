@@ -1,15 +1,38 @@
 use std::fmt;
 use std::error::Error;
 use async_imap::error::Error as AsyncImapError;
+use thiserror::Error;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum ImapError {
+    #[error("Connection error: {0}")]
     ConnectionError(String),
+    #[error("Authentication error: {0}")]
     AuthenticationError(String),
-    OperationError(String),
+    #[error("Command error: {0}")]
+    CommandError(String),
+    #[error("Parse error: {0}")]
     ParseError(String),
-    Encoding(String),
-    Internal(String),
+    #[error("Invalid state: {0}")]
+    InvalidState(String),
+    #[error("Operation timed out")]
+    Timeout,
+    #[error("Resource not found")]
+    NotFound,
+    #[error("Permission denied")]
+    PermissionDenied,
+    #[error("Quota exceeded")]
+    QuotaExceeded,
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
+    #[error("Internal error: {0}")]
+    InternalError(String),
+    #[error("Server responded with NO: {0}")]
+    No(String),
+    #[error("Server responded with BAD: {0}")]
+    Bad(String),
+    #[error("Session error: {0}")]
+    SessionError(String),
 }
 
 impl fmt::Display for ImapError {
@@ -43,14 +66,20 @@ impl From<AsyncImapError> for ImapError {
             AsyncImapError::Select => ImapError::OperationError("Select operation failed".to_string()),
             AsyncImapError::Store => ImapError::OperationError("Store operation failed".to_string()),
             AsyncImapError::Validate(e) => ImapError::ParseError(e.to_string()),
-            AsyncImapError::No(msg) => ImapError::OperationError(msg),
-            AsyncImapError::Bad(msg) => ImapError::OperationError(msg),
+            AsyncImapError::No(msg) => ImapError::No(msg),
+            AsyncImapError::Bad(msg) => ImapError::Bad(msg),
             AsyncImapError::Bye(msg) => ImapError::ConnectionError(msg),
             AsyncImapError::ConnectionError(e) => ImapError::ConnectionError(e.to_string()),
             AsyncImapError::TlsError(e) => ImapError::ConnectionError(e.to_string()),
             AsyncImapError::IoError(e) => ImapError::ConnectionError(e.to_string()),
             _ => ImapError::Internal("Unknown error".to_string()),
         }
+    }
+}
+
+impl From<std::io::Error> for ImapError {
+    fn from(err: std::io::Error) -> Self {
+        ImapError::ConnectionError(err.to_string())
     }
 }
 
