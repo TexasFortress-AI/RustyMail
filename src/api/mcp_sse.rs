@@ -1,36 +1,32 @@
 use actix_web::{
-    web::{self, Bytes, Data, Path, Responder},
-    Error as ActixError, HttpRequest, HttpResponse,
+    web::{self, Data, Path},
+    Error as ActixError, HttpRequest, HttpResponse, Responder,
 };
 use actix_web_lab::sse::{self, Sse, Event};
-use futures_util::stream::{Stream, StreamExt};
+use futures_util::stream::Stream;
 use tokio::{
     sync::{
         Mutex as TokioMutex,
         RwLock,
         mpsc,
-        broadcast::{self, Receiver}
     },
-    time::{Duration, Instant},
+    time::{Duration, interval},
 };
 use std::{
     sync::Arc,
     collections::HashMap,
-    convert::Infallible,
 };
 use uuid::Uuid;
-use log::{debug, error, info, warn};
+use log::{error, info};
 use serde::Serialize;
-use serde_json::{self, json, Value};
+use serde_json;
 
 // Local imports
 use crate::{
-    api::rest::AppState,
-    imap::ImapSessionFactory,
+    api::rest::ApiError,
     mcp::{
         handler::McpHandler,
         types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError},
-        error_codes::ErrorCode,
     },
 };
 

@@ -1,23 +1,19 @@
-use async_trait::async_trait;
+// Standard library imports
 use std::{
     sync::Arc,
     collections::HashSet,
     borrow::Cow,
 };
-use tokio::{
-    sync::Mutex,
-    net::TcpStream as TokioTcpStream,
-};
-use futures_util::TryStreamExt;
-use tokio_util::compat::Compat;
-use tokio_rustls::client::TlsStream as TokioTlsStream;
-use async_native_tls::TlsStream;
 
-// IMAP types
+// Async runtime and utilities
+use tokio::sync::Mutex;
+use async_trait::async_trait;
+
+// IMAP types and client
 use async_imap::{
     Session as ImapSessionClient,
     Session as AsyncImapSession,
-    Client, ClientTls,
+    Client,
     extensions::UidPlus,
     types::{
         Fetch, MailboxDatum, NameAttribute, Seq, Status,
@@ -32,7 +28,6 @@ use imap_types::{
     fetch::Attribute,
     flag::Flag as ImapTypesFlag,
     response::{Data, Status as ImapStatus},
-    state::State,
 };
 
 // Local types
@@ -46,7 +41,7 @@ use crate::imap::{
 };
 
 // Other imports
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Utc};
 use log::{debug, info, warn, error, trace};
 use serde::Deserialize;
 use urlencoding;

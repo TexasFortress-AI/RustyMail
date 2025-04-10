@@ -5,11 +5,9 @@ use std::time::Duration;
 // External crate imports
 use async_imap::{Client as AsyncImapClient, Session as AsyncImapSession};
 use async_imap::error::Error as AsyncImapNativeError;
-use async_imap::State as AsyncImapState;
 use async_trait::async_trait;
 use base64::Engine;
 use chrono::{DateTime, Utc};
-use futures::StreamExt;
 use log::info;
 use rustls::pki_types::ServerName as PkiServerName;
 use rustls::{ClientConfig, RootCertStore};
