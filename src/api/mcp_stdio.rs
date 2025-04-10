@@ -18,7 +18,6 @@ use tokio::{
 use serde_json::{self, json, Value}; // Import Value
 
 // Sync primitives
-use std::sync::Arc;
 
 // Logging
 use tracing::{debug, error, info, warn};

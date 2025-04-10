@@ -31,7 +31,6 @@ use crate::mcp::{
 // Re-exports for use in other modules (if needed by main.rs or elsewhere)
 pub use actix_web::{
     App, HttpServer,
-    web, // Keep web module import if other items from it are used
 };
 
 #[derive(Debug, Serialize)]

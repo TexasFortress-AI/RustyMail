@@ -35,7 +35,7 @@ use crate::imap::{
     error::ImapError,
     types::{
         Email, Folder, MailboxInfo, SearchCriteria,
-        StoreOperation, Flags, Envelope, Address,
+        FlagOperation, Flags, Envelope, Address,
         ImapEnvelope, ImapAddress,
     },
 };
@@ -642,41 +642,17 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
     }
 
     async fn move_email(&self, source_folder: &str, uids: Vec<u32>, destination_folder: &str) -> Result<(), ImapError> {
-        let uid_set = uids.iter().map(ToString::to_string).collect::<Vec<_>>().join(",");
         let mut session = self.session.lock().await;
-
-        // 1. Select Source Folder
-        session.select(source_folder).await.map_err(ImapError::from)?;
-
-        // 2. Attempt MOVE extension first
-        match session.uid_mv(uid_set.clone(), destination_folder).await.map_err(ImapError::from) {
-            Ok(_) => {
-                log::debug!("MOVE successful for UIDs {} from '{}' to '{}'", uid_set, source_folder, destination_folder);
-                Ok(())
-            }
-            Err(move_error) => {
-                log::warn!("MOVE command failed (maybe not supported?), falling back to COPY + STORE + EXPUNGE. Error: {:?}", move_error);
-                // Fallback: COPY + STORE \Deleted + EXPUNGE
-                // 3. COPY to Destination
-                session.uid_copy(uid_set.clone(), destination_folder).await.map_err(ImapError::from)?;
-                log::debug!("Fallback: COPY successful for UIDs {} to '{}'", uid_set, destination_folder);
-
-                // 4. Ensure Source is still selected (COPY might deselect)
-                session.select(source_folder).await.map_err(ImapError::from)?;
-                log::debug!("Fallback: Re-selected source folder '{}'", source_folder);
-
-                // 5. STORE \Deleted flag in Source
-                let delete_flag_cmd = "+FLAGS (\\Deleted)".to_string();
-                session.uid_store(uid_set.clone(), delete_flag_cmd).await.map_err(ImapError::from)?;
-                log::debug!("Fallback: Stored \\Deleted flag for UIDs {} in '{}'", uid_set, source_folder);
-
-                // 6. EXPUNGE Source
-                session.expunge().await.map_err(ImapError::from)?;
-                log::debug!("Fallback: EXPUNGE successful for source folder '{}'", source_folder);
-
-                Ok(())
-            }
+        
+        // Select source folder first
+        session.select_folder(source_folder).await?;
+        
+        // Move each email individually
+        for uid in uids {
+            session.move_email(uid, destination_folder).await?;
         }
+        
+        Ok(())
     }
 
     async fn logout(&self) -> Result<(), ImapError> {
@@ -684,28 +660,20 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
         session_guard.logout().await.map_err(ImapError::from)
     }
 
-    async fn store_flags(&self, uids: Vec<u32>, operation: StoreOperation, flags: Vec<String>) -> Result<(), ImapError> {
-        let uid_set = uids.iter().map(|uid| uid.to_string()).collect::<Vec<String>>().join(",");
+    async fn store_flags(&self, uids: Vec<u32>, operation: FlagOperation, flags: Vec<String>) -> Result<(), ImapError> {
+        let mut session = self.session.lock().await;
         let flags_str = flags.join(" ");
         let command = match operation {
-            StoreOperation::Add => format!("+FLAGS ({})", flags_str),
-            StoreOperation::Remove => format!("-FLAGS ({})", flags_str),
-            StoreOperation::Set => format!("FLAGS ({})", flags_str),
+            FlagOperation::Add => format!("+FLAGS ({})", flags_str),
+            FlagOperation::Remove => format!("-FLAGS ({})", flags_str),
+            FlagOperation::Set => format!("FLAGS ({})", flags_str),
         };
-
-        let mut session = self.session.lock().await;
-        let result = session.uid_store(uid_set, command).await.map_err(ImapError::from);
-
-        match &result {
-            Ok(_) => log::debug!("IMAP STORE successful"),
-            Err(e) => log::error!("IMAP STORE failed: {:?}", e),
-        }
-        result
+        session.store_flags(uids, &command).await.map_err(|e| ImapError::from(e))
     }
 
     async fn append(&self, folder: &str, payload: Vec<u8>) -> Result<(), ImapError> {
         let mut session = self.session.lock().await;
-        session.append(folder, payload).await.map_err(|e| ImapError::from(e))
+        session.append(folder, &payload, "").await.map_err(|e| ImapError::from(e))
     }
 
     async fn expunge(&self) -> Result<(), ImapError> {
@@ -769,6 +737,11 @@ fn make_envelope(env: &async_imap::types::Envelope) -> Result<ImapEnvelope, Imap
         in_reply_to: make_nstring(env.in_reply_to.clone()), 
         message_id: make_nstring(env.message_id.clone()), 
     })
+}
+
+// Convert NString to Option<String>
+fn make_nstring_option(nstr: NString<'_>) -> Option<String> {
+    nstr.map(|cow| cow.into_owned())
 }
 
 #[cfg(test)]
