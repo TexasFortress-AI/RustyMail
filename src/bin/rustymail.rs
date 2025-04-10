@@ -51,7 +51,11 @@ async fn main() -> std::io::Result<()> {
     };
 
     // --- Create Tool Registry ---
-    let tool_registry = create_mcp_tool_registry(imap_client.clone());
+    let session_factory = Arc::new(move || {
+        let client = imap_client.clone();
+        async move { Ok(client) as Result<Arc<dyn ImapSession>, rustymail::imap::error::ImapError> }
+    });
+    let tool_registry = create_mcp_tool_registry(session_factory);
     info!("MCP Tool Registry created (for rustymail binary).");
 
     // --- Initialize SSE State --- 

@@ -12,7 +12,7 @@ use actix_web::web;
 // Store for metrics data
 #[derive(Debug)]
 struct MetricsStore {
-    active_imap_connections: usize, // Use the new name
+    active_dashboard_sse_clients: usize, // Renamed from active_imap_connections
     cpu_usage: f32,
     memory_usage: f32,
     #[allow(dead_code)] // Keep for potential future uptime calculation
@@ -27,7 +27,7 @@ struct MetricsStore {
 impl Default for MetricsStore {
     fn default() -> Self {
         Self {
-            active_imap_connections: 0, // Use the new name
+            active_dashboard_sse_clients: 0, // Renamed from active_imap_connections
             cpu_usage: 0.0,
             memory_usage: 0.0,
             start_time: Instant::now(),
@@ -78,13 +78,13 @@ impl MetricsService {
         store_guard.cpu_usage = sys.global_cpu_info().cpu_usage();
         store_guard.memory_usage = (sys.used_memory() as f32 / sys.total_memory() as f32) * 100.0;
 
-        // --- Get active connection count --- 
-        // TODO: This currently uses the SSE client count as a proxy.
-        //       Update this to query the actual IMAP connection pool/manager 
-        //       when that information is available to the dashboard state.
+        // --- Get active dashboard SSE client count --- 
+        // TODO: This metric currently tracks connected Dashboard SSE clients. 
+        //       Implementing true IMAP connection tracking would require architectural changes
+        //       (e.g., a connection pool) as sessions are created per-request.
         let sse_connection_count = dashboard_state.sse_manager.get_active_client_count().await;
-        store_guard.active_imap_connections = sse_connection_count; // Store SSE count in the target field
-        debug!("Collected active connection count (proxy: SSE clients): {}", sse_connection_count);
+        store_guard.active_dashboard_sse_clients = sse_connection_count; // Store SSE count in the renamed field
+        debug!("Collected active dashboard SSE client count: {}", sse_connection_count);
         // --- End connection count --- 
 
         // TODO: Update request_rate_points (needs tracking mechanism)
@@ -94,8 +94,8 @@ impl MetricsService {
         store_guard.request_timestamps.push_back(Instant::now());
 
         store_guard.last_updated = Utc::now();
-        debug!("Collected metrics - CPU: {:.1}%, Mem: {:.1}%, IMAP Conns: {}", 
-               store_guard.cpu_usage, store_guard.memory_usage, store_guard.active_imap_connections);
+        debug!("Collected metrics - CPU: {:.1}%, Mem: {:.1}%, Dashboard SSE Clients: {}", 
+               store_guard.cpu_usage, store_guard.memory_usage, store_guard.active_dashboard_sse_clients);
     }
     
     pub async fn get_current_stats(&self) -> DashboardStats {
@@ -127,7 +127,7 @@ impl MetricsService {
         };
 
         DashboardStats {
-            active_imap_connections: store.active_imap_connections, // Use renamed field
+            active_dashboard_sse_clients: store.active_dashboard_sse_clients, // Use renamed field
             requests_per_minute, 
             average_response_time_ms, 
             system_health: SystemHealth {

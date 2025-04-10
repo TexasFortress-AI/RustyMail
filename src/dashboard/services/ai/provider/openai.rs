@@ -6,6 +6,7 @@ use serde::{Serialize, Deserialize};
 use log::{debug, warn, error};
 use crate::dashboard::api::errors::ApiError;
 use super::{AiProvider, AiChatMessage}; // Import trait and common message struct
+use crate::api::rest::ApiError as RestApiError;
 
 // OpenAI API constants
 const OPENAI_API_URL: &str = "https://api.openai.com/v1/chat/completions";
@@ -25,14 +26,18 @@ struct OpenAiChatResponse {
     // Add usage, error fields if needed
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct OpenAiChoice {
-    message: AiChatMessage, // Reuses the common struct
-    // Add finish_reason if needed
+    message: AiChatMessage,
+    // Add other fields if needed, like finish_reason
 }
-// --- End Structs ---
 
-#[derive(Debug)]
+#[derive(Deserialize, Debug)]
+struct OpenAiUsage {
+    // Define usage fields if needed
+}
+
+#[derive(Clone)]
 pub struct OpenAiAdapter {
     api_key: String,
     http_client: Client,
@@ -58,7 +63,7 @@ impl OpenAiAdapter {
 
 #[async_trait]
 impl AiProvider for OpenAiAdapter {
-    async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, ApiError> {
+    async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError> {
         let request_payload = OpenAiChatRequest {
             model: self.model.clone(),
             messages: messages.to_vec(), // Clone messages for the request
@@ -74,13 +79,13 @@ impl AiProvider for OpenAiAdapter {
             .timeout(std::time::Duration::from_secs(30))
             .send()
             .await
-            .map_err(|e| ApiError::AiRequestError(format!("Network error calling OpenAI: {}", e)))?;
+            .map_err(|e| RestApiError::AiProviderError(format!("Network error calling OpenAI: {}", e)))?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
             error!("OpenAI API request failed with status {}: {}", status, error_body);
-            return Err(ApiError::AiRequestError(format!(
+            return Err(RestApiError::AiProviderError(format!(
                 "OpenAI API returned error status {}: {}",
                 status,
                 error_body
@@ -90,7 +95,7 @@ impl AiProvider for OpenAiAdapter {
         let response_body = response
             .json::<OpenAiChatResponse>()
             .await
-            .map_err(|e| ApiError::AiServiceError(format!("Failed to deserialize OpenAI response: {}", e)))?;
+            .map_err(|e| RestApiError::AiProviderError(format!("Failed to deserialize OpenAI response: {}", e)))?;
 
         // Extract the first choice's message content
         if let Some(choice) = response_body.choices.first() {
@@ -98,7 +103,7 @@ impl AiProvider for OpenAiAdapter {
             Ok(choice.message.content.clone())
         } else {
             warn!("OpenAI API response did not contain any choices.");
-            Err(ApiError::AiServiceError("OpenAI response was empty or missing choices".to_string()))
+            Err(RestApiError::AiProviderError("OpenAI response was empty or missing choices".to_string()))
         }
     }
 } 

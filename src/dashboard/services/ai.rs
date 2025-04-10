@@ -1,13 +1,16 @@
+pub mod provider;
+
+use log::{debug, error, info, warn};
+use crate::dashboard::api::models::{ChatbotQuery, ChatbotResponse, EmailData};
+use crate::dashboard::services::ai::provider::{AiProvider, AiChatMessage, MockAiProvider};
+use std::sync::Arc;
+use crate::api::rest::ApiError;
+use thiserror::Error;
+use async_trait::async_trait;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use crate::dashboard::api::models::{ChatbotQuery, ChatbotResponse, EmailData};
-use log::{debug, warn, error};
-use std::sync::Arc;
-
-// Import the provider trait and message struct
-mod providers;
-use providers::{AiProvider, AiChatMessage};
+use reqwest::Client;
 
 // Conversation history entry
 #[derive(Debug, Clone)]
@@ -23,20 +26,51 @@ struct Conversation {
     last_activity: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug)]
+// #[derive(Debug)] // Removed Debug derive
 pub struct AiService {
     conversations: RwLock<HashMap<String, Conversation>>,
-    provider: Arc<dyn AiProvider>, // Use the trait object
+    providers: HashMap<String, Arc<dyn AiProvider>>,
     mock_mode: bool, // Flag to force mock responses
 }
 
+// Define AI Service Error
+#[derive(Error, Debug)]
+pub enum AiError {
+    #[error("Provider error: {0}")]
+    ProviderError(String),
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String),
+    #[error("API Error during AI operation: {0}")]
+    ApiError(#[from] crate::api::rest::ApiError),
+    #[error("Provider not found: {0}")]
+    ProviderNotFound(String),
+}
+
 impl AiService {
-    pub fn new(provider: Arc<dyn AiProvider>, force_mock: bool) -> Self {
-        Self {
-            conversations: RwLock::new(HashMap::new()),
-            provider,
-            mock_mode: force_mock,
+    pub fn new(
+        openai_api_key: Option<String>,
+        openrouter_api_key: Option<String>,
+    ) -> Result<Self, String> {
+        let mut providers: HashMap<String, Arc<dyn AiProvider>> = HashMap::new();
+        let http_client = Client::new();
+
+        if let Some(key) = openai_api_key {
+            providers.insert("openai".to_string(), Arc::new(provider::OpenAiAdapter::new(key, http_client.clone())));
         }
+        if let Some(key) = openrouter_api_key {
+             providers.insert("openrouter".to_string(), Arc::new(provider::OpenRouterAdapter::new(key, http_client.clone())));
+        }
+
+        if providers.is_empty() {
+            info!("No AI provider API keys found. Using MockAiProvider.");
+             providers.insert("mock".to_string(), Arc::new(provider::MockAiProvider));
+        }
+
+        Ok(Self {
+            providers,
+            conversations: RwLock::new(HashMap::new()), // Initialize RwLock with HashMap
+            mock_mode: false, // Default mock_mode
+        })
     }
 
     pub async fn process_query(&self, query: ChatbotQuery) -> Result<ChatbotResponse, ApiError> {
@@ -72,9 +106,13 @@ impl AiService {
         let response_text_result = if self.mock_mode {
             warn!("AI Service is in mock mode. Using mock response.");
             Ok(self.generate_mock_response(&query_text))
+        } else if let Some(provider) = self.providers.get("openai").or_else(|| self.providers.get("mock")) {
+            // Use the first available provider
+            provider.generate_response(&messages_history).await
+                .map_err(|e| ApiError::InternalError(format!("AI provider error: {}", e)))
         } else {
-            // Call the provider via the trait object
-            self.provider.generate_response(&messages_history).await
+            warn!("No AI providers available. Using mock response.");
+            Ok(self.generate_mock_response(&query_text))
         };
 
         let response_text = match response_text_result {
@@ -149,5 +187,16 @@ impl AiService {
             conversations.remove(&id);
             debug!("Removed old conversation: {}", id);
         }
+    }
+
+    // Placeholder for sending context to the actual AI provider
+    async fn send_conversation_context(&self, provider_id: &str, messages: &[AiChatMessage]) -> Result<String, AiError> {
+        // Find the provider
+        let provider = self.providers.get(provider_id)
+            .ok_or_else(|| AiError::ProviderNotFound(provider_id.to_string()))?;
+        
+        // Call the provider's method
+        provider.generate_response(messages).await
+            .map_err(|e| AiError::ProviderError(format!("Provider '{}' error: {}", provider_id, e)))
     }
 }

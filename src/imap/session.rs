@@ -8,126 +8,222 @@ use tokio::net::TcpStream as TokioTcpStream;
 use std::collections::HashSet; // Needed for search conversion
 use imap_types::core::{Quoted, NString, IString};
 use std::borrow::Cow;
+use async_native_tls::TlsStream;
+use async_imap::Session as ImapSessionClient;
+use crate::imap::error::ImapError;
+use crate::imap::types::{Email, Folder, MailboxInfo, SearchCriteria, ImapEnvelope, ImapAddress};
+// Comment out unused ImapConfig
+// use crate::config::ImapConfig;
+use async_imap::types::{Fetch, Flag, MailboxDatum, NameAttribute, Seq, Status};
+use async_imap::{Client, ClientTls, extensions::UidPlus};
+use chrono::{DateTime, NaiveDate, Utc};
+use log::{debug, info, warn, error, trace};
+use tokio::sync::Mutex as TokioMutex;
+use urlencoding;
+use serde::Deserialize;
 
 use async_imap::{
     Session as AsyncImapSession, 
-    types::{Flag as AsyncImapFlag, Name, Fetch, Mailbox as AsyncMailbox},
+    types::{Flag as AsyncImapFlag, Name, Mailbox as AsyncMailbox},
 };
 
-use crate::imap::types::{Email, Folder, MailboxInfo, SearchCriteria, ImapEnvelope, ImapAddress};
-use crate::imap::error::ImapError;
+use async_imap::error::{Error as ImapError, ValidateError};
+
+use crate::imap::{
+    error::ImapError,
+    types::{
+        Email, Folder, MailboxInfo, SearchCriteria,
+        StoreOperation, Flags, Envelope, Address,
+    },
+};
+
+use imap_types::{
+    command::CommandBody,
+    fetch::Attribute,
+    flag::Flag,
+    response::{Data, Status},
+    state::State,
+};
 
 // Type alias for the stream compatible with futures_util::io traits
-pub type TlsImapSession = AsyncImapSession<Compat<TokioTlsStream<TokioTcpStream>>>;
+pub type TlsCompatibleStream = Compat<TokioTlsStream<TokioTcpStream>>;
+pub type TlsImapSession = AsyncImapSession<TlsCompatibleStream>;
 
-// 1. Define the trait abstracting async_imap::Session operations
+// Define a constant for the delimiter
+const DEFAULT_MAILBOX_DELIMITER: char = '/';
+
+/// Trait defining asynchronous IMAP operations, abstracted over the specific IMAP client library implementation.
 #[async_trait]
 pub trait AsyncImapOps: Send + Sync {
-    async fn list(&mut self, reference_name: Option<&str>, mailbox_pattern: Option<&str>)
-        -> Result<Vec<Name>, async_imap::error::Error>;
-    
-    async fn create(&mut self, mailbox_name: &str) -> Result<(), async_imap::error::Error>;
-    
-    async fn delete(&mut self, mailbox_name: &str) -> Result<(), async_imap::error::Error>;
-    
-    async fn rename(&mut self, current_mailbox_name: &str, new_mailbox_name: &str) -> Result<(), async_imap::error::Error>;
-    
-    async fn select(&mut self, mailbox_name: &str) -> Result<AsyncMailbox, async_imap::error::Error>;
-    
-    async fn search(&mut self, query: String) -> Result<Vec<u32>, async_imap::error::Error>;
-
-    async fn fetch(&mut self, sequence_set: String, query: String)
-        -> Result<Vec<Fetch>, async_imap::error::Error>;
-
-    async fn uid_mv(&mut self, sequence_set: String, mailbox: &str) -> Result<(), async_imap::error::Error>;
-
-    async fn uid_copy(&mut self, sequence_set: String, mailbox: &str) -> Result<(), async_imap::error::Error>;
-
-    async fn uid_store(&mut self, sequence_set: String, command: String) -> Result<(), async_imap::error::Error>;
-
-    async fn append(&mut self, folder: &str, payload: Vec<u8>) -> Result<(), async_imap::error::Error>;
-
-    async fn expunge(&mut self) -> Result<(), async_imap::error::Error>;
-
-    async fn logout(&mut self) -> Result<(), async_imap::error::Error>;
-
-    // Added uid_fetch signature
-    async fn uid_fetch(&mut self, uid_set: String, query: String)
-        -> Result<Vec<Fetch>, async_imap::error::Error>;
-
-    // Add other methods as needed, e.g., uid_store for setting flags
-    // async fn uid_store(&mut self, sequence_set: String, command: &str, flags: String) -> Result<(), async_imap::error::Error>;
+    async fn login(&mut self, username: &str, password: &str) -> Result<(), ImapError>;
+    async fn logout(&mut self) -> Result<(), ImapError>;
+    async fn list_folders(&mut self) -> Result<Vec<Folder>, ImapError>;
+    async fn create_folder(&mut self, name: &str) -> Result<(), ImapError>;
+    async fn delete_folder(&mut self, name: &str) -> Result<(), ImapError>;
+    async fn rename_folder(&mut self, from: &str, to: &str) -> Result<(), ImapError>;
+    async fn select_folder(&mut self, name: &str) -> Result<MailboxInfo, ImapError>;
+    async fn search_emails(&mut self, criteria: &SearchCriteria) -> Result<Vec<u32>, ImapError>;
+    async fn fetch_emails(&mut self, uids: &[u32], fetch_body: bool) -> Result<Vec<Email>, ImapError>;
+    async fn fetch_raw_message(&mut self, uid: u32) -> Result<Vec<u8>, ImapError>;
+    async fn move_email(&mut self, source_folder: &str, uids: &[u32], destination_folder: &str) -> Result<(), ImapError>;
+    async fn store_flags(&mut self, uids: &[u32], operation: StoreOperation, flags: &[String]) -> Result<(), ImapError>;
+    async fn append(&mut self, folder: &str, payload: &[u8], flags: Option<&[String]>, date: Option<DateTime<Utc>>) -> Result<(), ImapError>;
+    async fn expunge(&mut self) -> Result<(), ImapError>;
 }
 
 // 2. Implement the trait for the real TlsImapSession
 #[async_trait]
 impl AsyncImapOps for TlsImapSession {
-    async fn list(&mut self, reference_name: Option<&str>, mailbox_pattern: Option<&str>)
-        -> Result<Vec<Name>, async_imap::error::Error> {
-        let stream = self.list(reference_name, mailbox_pattern).await?;
-        stream.try_collect().await
+    async fn login(&mut self, username: &str, password: &str) -> Result<(), ImapError> {
+        self.login(username, password).await.map_err(|e| {
+            error!("IMAP login failed: {}", e);
+            ImapError::AuthenticationError(e.to_string())
+        })
     }
 
-    async fn create(&mut self, mailbox_name: &str) -> Result<(), async_imap::error::Error> {
-        self.create(mailbox_name).await
+    async fn logout(&mut self) -> Result<(), ImapError> {
+        self.logout().await.map_err(|e| {
+            error!("IMAP logout failed: {}", e);
+            ImapError::ConnectionError(e.to_string())
+        })
     }
 
-    async fn delete(&mut self, mailbox_name: &str) -> Result<(), async_imap::error::Error> {
-        self.delete(mailbox_name).await
+    async fn list_folders(&mut self) -> Result<Vec<Folder>, ImapError> {
+        let mailboxes = self.list(Some(""), Some("*")).await.map_err(|e| {
+            error!("IMAP list folders failed: {}", e);
+            ImapError::OperationError(e.to_string())
+        })?;
+
+        Ok(mailboxes.into_iter().map(MailboxInfo::from).collect())
     }
 
-    async fn rename(&mut self, current_mailbox_name: &str, new_mailbox_name: &str) -> Result<(), async_imap::error::Error> {
-        self.rename(current_mailbox_name, new_mailbox_name).await
+    async fn create_folder(&mut self, name: &str) -> Result<(), ImapError> {
+        self.create(name).await.map_err(|e| {
+            error!("IMAP create folder failed: {}", e);
+            ImapError::OperationError(e.to_string())
+        })
     }
 
-    async fn select(&mut self, mailbox_name: &str) -> Result<AsyncMailbox, async_imap::error::Error> {
-        self.select(mailbox_name).await
+    async fn delete_folder(&mut self, name: &str) -> Result<(), ImapError> {
+        self.delete(name).await.map_err(|e| {
+            error!("IMAP delete folder failed: {}", e);
+            ImapError::OperationError(e.to_string())
+        })
     }
 
-    async fn search(&mut self, query: String) -> Result<Vec<u32>, async_imap::error::Error> {
-        let uids_set: HashSet<u32> = self.search(query).await?;
-        Ok(uids_set.into_iter().collect())
+    async fn rename_folder(&mut self, from: &str, to: &str) -> Result<(), ImapError> {
+        self.rename(from, to).await.map_err(|e| {
+            error!("IMAP rename folder failed: {}", e);
+            ImapError::OperationError(e.to_string())
+        })
     }
 
-    async fn fetch(&mut self, sequence_set: String, query: String)
-        -> Result<Vec<Fetch>, async_imap::error::Error> {
-        let stream = self.fetch(sequence_set, query).await?;
-        stream.try_collect().await
+    async fn select_folder(&mut self, name: &str) -> Result<MailboxInfo, ImapError> {
+        let mailbox_data = self.select(name).await.map_err(|e| {
+            error!("IMAP select folder failed: {}", e);
+            ImapError::OperationError(e.to_string())
+        })?;
+
+        Ok(MailboxInfo::from(mailbox_data))
     }
 
-    async fn uid_mv(&mut self, sequence_set: String, mailbox: &str) -> Result<(), async_imap::error::Error> {
-        self.uid_mv(sequence_set, mailbox).await
+    async fn search_emails(&mut self, criteria: &SearchCriteria) -> Result<Vec<u32>, ImapError> {
+        let query = criteria.to_string();
+        self.uid_search(&query).await.map_err(|e| {
+            error!("IMAP search failed: {}", e);
+            ImapError::OperationError(e.to_string())
+        })
     }
 
-    async fn logout(&mut self) -> Result<(), async_imap::error::Error> {
-        self.logout().await
+    async fn fetch_emails(&mut self, uids: &[u32], fetch_body: bool) -> Result<Vec<Email>, ImapError> {
+        let mut emails = Vec::new();
+        for uid in uids {
+            let fetch_items = if fetch_body {
+                "BODY[] FLAGS ENVELOPE INTERNALDATE"
+            } else {
+                "FLAGS ENVELOPE INTERNALDATE"
+            };
+
+            let fetch_result = self.uid_fetch(&uid.to_string(), fetch_items).await.map_err(|e| {
+                error!("IMAP fetch failed for UID {}: {}", uid, e);
+                ImapError::OperationError(e.to_string())
+            })?;
+
+            if let Some(fetch) = fetch_result.into_iter().next() {
+                let email = Email::from_fetch(fetch)?;
+                emails.push(email);
+            }
+        }
+
+        Ok(emails)
     }
 
-    async fn uid_store(&mut self, sequence_set: String, command: String) -> Result<(), async_imap::error::Error> {
-        let stream = self.uid_store(sequence_set, command).await?;
-        stream.try_collect::<Vec<_>>().await?;
+    async fn fetch_raw_message(&mut self, uid: u32) -> Result<Vec<u8>, ImapError> {
+        let sequence_set = uid.to_string();
+        let query = "BODY[]";
+        let fetches = self.fetch(sequence_set, query.to_string()).await?;
+
+        if let Some(fetch) = fetches.iter().next() {
+            if let Some(body_bytes) = fetch.body() {
+                Ok(body_bytes.to_vec())
+            } else {
+                Err(ImapError::Fetch("Body not found for UID".to_string()))
+            }
+        } else {
+            Err(ImapError::Fetch(format!("Message with UID {} not found", uid)))
+        }
+    }
+
+    async fn move_email(&mut self, source_folder: &str, uids: &[u32], destination_folder: &str) -> Result<(), ImapError> {
+        self.select_folder(source_folder).await?;
+
+        let sequence_set = uids.iter()
+            .map(|uid| uid.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+
+        self.uid_mv(&sequence_set, destination_folder).await.map_err(|e| {
+            error!("IMAP move failed: {}", e);
+            ImapError::OperationError(e.to_string())
+        })
+    }
+
+    async fn store_flags(&mut self, uids: &[u32], operation: StoreOperation, flags: &[String]) -> Result<(), ImapError> {
+        let sequence_set = uids.iter()
+            .map(|uid| uid.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+
+        let flags_str = flags.join(" ");
+        let command = match operation {
+            StoreOperation::Add => format!("+FLAGS ({})", flags_str),
+            StoreOperation::Remove => format!("-FLAGS ({})", flags_str),
+            StoreOperation::Set => format!("FLAGS ({})", flags_str),
+        };
+
+        self.uid_store(&sequence_set, &command).await.map_err(|e| {
+            error!("IMAP store flags failed: {}", e);
+            ImapError::OperationError(e.to_string())
+        })?;
+
         Ok(())
     }
 
-    async fn append(&mut self, folder: &str, payload: Vec<u8>) -> Result<(), async_imap::error::Error> {
-        self.append(folder, payload).await
+    async fn append(&mut self, folder: &str, payload: &[u8], flags: Option<&[String]>, date: Option<DateTime<Utc>>) -> Result<(), ImapError> {
+        let flags_str = flags.map(|f| format!("({})", f.join(" ")));
+        let date_str = date.map(|d| d.format("%d-%b-%Y %H:%M:%S %z").to_string());
+
+        self.append_with_flags(folder, payload, flags_str.as_deref(), date_str.as_deref()).await.map_err(|e| {
+            error!("IMAP append failed: {}", e);
+            ImapError::OperationError(e.to_string())
+        })
     }
 
-    async fn expunge(&mut self) -> Result<(), async_imap::error::Error> {
-        let stream = self.expunge().await?;
-        stream.try_collect::<Vec<_>>().await?;
-        Ok(())
-    }
-
-    // Added uid_fetch implementation
-    async fn uid_fetch(&mut self, uid_set: String, query: String)
-        -> Result<Vec<Fetch>, async_imap::error::Error> {
-        let stream = self.uid_fetch(uid_set, query).await?;
-        stream.try_collect().await
-    }
-
-    async fn uid_copy(&mut self, sequence_set: String, mailbox: &str) -> Result<(), async_imap::error::Error> {
-        self.uid_copy(sequence_set, mailbox).await
+    async fn expunge(&mut self) -> Result<(), ImapError> {
+        self.expunge().await.map_err(|e| {
+            error!("IMAP expunge failed: {}", e);
+            ImapError::OperationError(e.to_string())
+        })
     }
 }
 
@@ -191,8 +287,8 @@ pub trait ImapSession: Send + Sync {
     /// Selects a folder, making it the current folder for subsequent operations.
     /// Returns metadata about the selected folder.
     async fn select_folder(&self, name: &str) -> Result<MailboxInfo, ImapError>;
-    async fn search_emails(&self, criteria: SearchCriteria) -> Result<Vec<u32>, ImapError>;
-    async fn fetch_emails(&self, uids: Vec<u32>, fetch_body: bool) -> Result<Vec<Email>, ImapError>;
+    async fn search_emails(&self, criteria: &SearchCriteria) -> Result<Vec<u32>, ImapError>;
+    async fn fetch_emails(&self, criteria: &SearchCriteria, limit: u32, fetch_body: bool) -> Result<Vec<Email>, ImapError>;
 
 
     async fn move_email(&self, source_folder: &str, uids: Vec<u32>, destination_folder: &str) -> Result<(), ImapError>;
@@ -203,7 +299,7 @@ pub trait ImapSession: Send + Sync {
 }
 
 // Add StoreOperation enum
-#[derive(Debug)]
+#[derive(Debug, Deserialize)]
 pub enum StoreOperation {
     Add,
     Remove,
@@ -269,8 +365,8 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
         Ok(info)
     }
 
-    async fn search_emails(&self, criteria: SearchCriteria) -> Result<Vec<u32>, ImapError> {
-        let criteria_str = format_search_criteria(&criteria)?;
+    async fn search_emails(&self, criteria: &SearchCriteria) -> Result<Vec<u32>, ImapError> {
+        let criteria_str = format_search_criteria(criteria)?;
         
         let mut session = self.session.lock().await;
         log::debug!("Executing IMAP SEARCH: {}", criteria_str);
@@ -279,55 +375,58 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
         Ok(uids)
     }
 
-    async fn fetch_emails(&self, uids: Vec<u32>, fetch_body: bool) -> Result<Vec<Email>, ImapError> {
+    async fn fetch_emails(&self, criteria: &SearchCriteria, limit: u32, fetch_body: bool) -> Result<Vec<Email>, ImapError> {
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+
+        // 1. Search for emails matching criteria
+        let uids = self.search_emails(criteria).await?;
         if uids.is_empty() {
             return Ok(Vec::new());
         }
 
+        // 2. Take up to 'limit' UIDs
+        let limited_uids: Vec<String> = uids.into_iter()
+            .take(limit as usize)
+            .map(|uid| uid.to_string())
+            .collect();
+        
+        let sequence_set = limited_uids.join(",");
+        if sequence_set.is_empty() {
+            return Ok(Vec::new()); // Should not happen if uids wasn't empty, but good practice
+        }
+
         let mut session = self.session.lock().await;
-        
-        // Format sequence set with explicit range notation for better compatibility
-        // For single UIDs, this converts "9" to "9:9" which some servers handle better
-        let sequence_set = if uids.len() == 1 {
-            format!("{}:{}", uids[0], uids[0])
-        } else {
-            uids.iter()
-                .map(|uid| uid.to_string())
-                .collect::<Vec<_>>()
-                .join(",")
-        };
-        
-        // Restore original query logic
+
+        // 3. Construct the FETCH query
         let query = if fetch_body {
             "UID FLAGS ENVELOPE BODY.PEEK[]".to_string()
         } else {
             "UID FLAGS ENVELOPE".to_string()
         };
-        // DEBUG: Simplify query to just UID
-        // let query = "UID".to_string();
         
-        log::debug!("Using IMAP FETCH query: {} for sequence set: {}", query, sequence_set);
+        debug!("Using IMAP UID FETCH query: {} for sequence set: {}", query, sequence_set);
 
-        // Use uid_fetch when using UIDs
+        // 4. Perform the UID FETCH
         let fetches = session.uid_fetch(sequence_set.clone(), query).await.map_err(|e| ImapError::from(e))?;
         
-        log::debug!("Received {} fetch results from IMAP server.", fetches.len());
+        debug!("Received {} fetch results from IMAP server.", fetches.len());
         
-        // Process fetches into Email structs
+        // 5. Process fetches into Email structs (existing logic)
         let mut emails = Vec::new();
         for fetch in fetches.into_iter() {
-            // Log the raw fetch object
+            // ... (keep existing processing logic from line 431 onwards) ...
             log::debug!("Raw IMAP Fetch result: {:?}", fetch);
 
             let uid = fetch.uid.unwrap_or(0);
-            let raw_flags = fetch.flags().collect::<Vec<_>>(); // Collect raw flags
+            let raw_flags = fetch.flags().collect::<Vec<_>>();
             log::debug!("FETCH UID {}: Raw flags received: {:?}", uid, raw_flags);
             
             let flags = raw_flags.iter().map(convert_async_flag_to_string).collect::<Vec<String>>();
             log::debug!("FETCH UID {}: Converted flags: {:?}", uid, flags);
 
             let envelope = fetch.envelope().ok_or(ImapError::EnvelopeNotFound)?;
-            // Only extract body if fetch_body was true and body is present
             let body = if fetch_body {
                 fetch.body().map(|b| b.to_vec())
             } else {
@@ -337,7 +436,7 @@ impl<T: AsyncImapOps + Send + Sync + 'static> ImapSession for AsyncImapSessionWr
 
             let email = Email {
                 uid,
-                flags, // Use the converted flags variable
+                flags,
                 envelope: Some(make_envelope(envelope)?),
                 body,
                 size,
@@ -457,41 +556,41 @@ fn make_nstring(bytes_opt: Option<Cow<'_, [u8]>>) -> NString<'static> {
     }
 }
 
-fn make_envelope(env: &async_imap::imap_proto::Envelope) -> Result<ImapEnvelope, ImapError> {
+fn make_envelope(env: &async_imap::types::Envelope) -> Result<ImapEnvelope, ImapError> {
     Ok(ImapEnvelope {
         date: make_nstring(env.date.clone()), 
         subject: make_nstring(env.subject.clone()), 
-        from: env.from.as_ref().map(|addrs| addrs.into_iter().map(|addr| ImapAddress {
+        from: env.from.as_ref().map(|addrs| addrs.iter().map(|addr| ImapAddress {
             name: make_nstring(addr.name.clone()), 
             adl: make_nstring(addr.adl.clone()), 
             mailbox: make_nstring(addr.mailbox.clone()), 
             host: make_nstring(addr.host.clone()), 
         }).collect()).unwrap_or_default(),
-        sender: env.sender.as_ref().map(|addrs| addrs.into_iter().map(|addr| ImapAddress {
+        sender: env.sender.as_ref().map(|addrs| addrs.iter().map(|addr| ImapAddress {
             name: make_nstring(addr.name.clone()),
             adl: make_nstring(addr.adl.clone()),
             mailbox: make_nstring(addr.mailbox.clone()),
             host: make_nstring(addr.host.clone()),
         }).collect()).unwrap_or_default(),
-        reply_to: env.reply_to.as_ref().map(|addrs| addrs.into_iter().map(|addr| ImapAddress {
+        reply_to: env.reply_to.as_ref().map(|addrs| addrs.iter().map(|addr| ImapAddress {
             name: make_nstring(addr.name.clone()),
             adl: make_nstring(addr.adl.clone()),
             mailbox: make_nstring(addr.mailbox.clone()),
             host: make_nstring(addr.host.clone()),
         }).collect()).unwrap_or_default(),
-        to: env.to.as_ref().map(|addrs| addrs.into_iter().map(|addr| ImapAddress {
+        to: env.to.as_ref().map(|addrs| addrs.iter().map(|addr| ImapAddress {
             name: make_nstring(addr.name.clone()),
             adl: make_nstring(addr.adl.clone()),
             mailbox: make_nstring(addr.mailbox.clone()),
             host: make_nstring(addr.host.clone()),
         }).collect()).unwrap_or_default(),
-        cc: env.cc.as_ref().map(|addrs| addrs.into_iter().map(|addr| ImapAddress {
+        cc: env.cc.as_ref().map(|addrs| addrs.iter().map(|addr| ImapAddress {
             name: make_nstring(addr.name.clone()),
             adl: make_nstring(addr.adl.clone()),
             mailbox: make_nstring(addr.mailbox.clone()),
             host: make_nstring(addr.host.clone()),
         }).collect()).unwrap_or_default(),
-        bcc: env.bcc.as_ref().map(|addrs| addrs.into_iter().map(|addr| ImapAddress {
+        bcc: env.bcc.as_ref().map(|addrs| addrs.iter().map(|addr| ImapAddress {
             name: make_nstring(addr.name.clone()),
             adl: make_nstring(addr.adl.clone()),
             mailbox: make_nstring(addr.mailbox.clone()),
@@ -516,19 +615,19 @@ mod tests {
     // --- Mock --- 
     #[derive(Default, Debug)]
     struct MockAsyncImapOps {
-        list_result: Option<Result<Vec<Name>, AsyncImapError>>,
-        create_result: Option<Result<(), AsyncImapError>>,
-        delete_result: Option<Result<(), AsyncImapError>>,
-        rename_result: Option<Result<(), AsyncImapError>>,
-        select_results: std::collections::VecDeque<Result<AsyncMailbox, AsyncImapError>>, // Use VecDeque for multiple calls
-        search_result: Option<Result<Vec<u32>, AsyncImapError>>,
-        fetch_result: Option<Result<Vec<Fetch>, AsyncImapError>>,
-        uid_fetch_result: Option<Result<Vec<Fetch>, AsyncImapError>>,
-        move_result: Option<Result<(), AsyncImapError>>,
-        copy_result: Option<Result<(), AsyncImapError>>,
-        store_flags_result: Option<Result<(), AsyncImapError>>,
-        append_result: Option<Result<(), AsyncImapError>>,
-        expunge_result: Option<Result<(), AsyncImapError>>,
+        list_result: Option<Result<Vec<Name>, ImapError>>,
+        create_result: Option<Result<(), ImapError>>,
+        delete_result: Option<Result<(), ImapError>>,
+        rename_result: Option<Result<(), ImapError>>,
+        select_results: std::collections::VecDeque<Result<AsyncMailbox, ImapError>>, // Use VecDeque for multiple calls
+        search_result: Option<Result<Vec<u32>, ImapError>>,
+        fetch_result: Option<Result<Vec<Fetch>, ImapError>>,
+        uid_fetch_result: Option<Result<Vec<Fetch>, ImapError>>,
+        move_result: Option<Result<(), ImapError>>,
+        copy_result: Option<Result<(), ImapError>>,
+        store_flags_result: Option<Result<(), ImapError>>,
+        append_result: Option<Result<(), ImapError>>,
+        expunge_result: Option<Result<(), ImapError>>,
     }
 
     // Remove complex/broken mock data helpers
@@ -560,36 +659,36 @@ mod tests {
             }
         }
         // Simplified setters
-        fn set_list(mut self, res: Result<Vec<Name>, AsyncImapError>) -> Self {
+        fn set_list(mut self, res: Result<Vec<Name>, ImapError>) -> Self {
             self.list_result = Some(res);
             self
         }
-         fn add_select(mut self, res: Result<AsyncMailbox, AsyncImapError>) -> Self {
+         fn add_select(mut self, res: Result<AsyncMailbox, ImapError>) -> Self {
              self.select_results.push_back(res);
              self
          }
-         fn set_search(mut self, res: Result<Vec<u32>, AsyncImapError>) -> Self {
+         fn set_search(mut self, res: Result<Vec<u32>, ImapError>) -> Self {
             self.search_result = Some(res);
             self
         }
-         fn set_create(mut self, res: Result<(), AsyncImapError>) -> Self {
+         fn set_create(mut self, res: Result<(), ImapError>) -> Self {
             self.create_result = Some(res);
             self
         }
-         fn set_delete(mut self, res: Result<(), AsyncImapError>) -> Self {
+         fn set_delete(mut self, res: Result<(), ImapError>) -> Self {
             self.delete_result = Some(res);
             self
         }
-         fn set_move(mut self, res: Result<(), AsyncImapError>) -> Self {
+         fn set_move(mut self, res: Result<(), ImapError>) -> Self {
              self.move_result = Some(res);
              self
          }
         // Re-added setter for uid_fetch
-        fn set_uid_fetch(mut self, res: Result<Vec<Fetch>, AsyncImapError>) -> Self {
+        fn set_uid_fetch(mut self, res: Result<Vec<Fetch>, ImapError>) -> Self {
             self.uid_fetch_result = Some(res);
             self
         }
-        fn set_copy(mut self, res: Result<(), AsyncImapError>) -> Self {
+        fn set_copy(mut self, res: Result<(), ImapError>) -> Self {
             self.copy_result = Some(res);
             self
         }
@@ -597,54 +696,113 @@ mod tests {
 
     #[async_trait]
     impl AsyncImapOps for MockAsyncImapOps {
-        // Methods remain the same, returning owned results via take()
-        async fn list(&mut self, _ref_name: Option<&str>, _pattern: Option<&str>) -> Result<Vec<Name>, AsyncImapError> {
+        async fn list(&mut self, _ref_name: Option<&str>, _pattern: Option<&str>) -> Result<Vec<Name>, async_imap::error::Error> {
             self.list_result.take().unwrap_or(Ok(vec![]))
         }
-        async fn create(&mut self, _name: &str) -> Result<(), AsyncImapError> { 
-           self.create_result.take().unwrap_or(Ok(()))
+
+        async fn create(&mut self, _name: &str) -> Result<(), async_imap::error::Error> { 
+            self.create_result.take().unwrap_or(Ok(()))
         }
-        async fn delete(&mut self, _name: &str) -> Result<(), AsyncImapError> { 
+
+        async fn delete(&mut self, _name: &str) -> Result<(), async_imap::error::Error> { 
             self.delete_result.take().unwrap_or(Ok(()))
         }
-        async fn rename(&mut self, _from: &str, _to: &str) -> Result<(), AsyncImapError> { 
+
+        async fn rename(&mut self, _from: &str, _to: &str) -> Result<(), async_imap::error::Error> { 
             self.rename_result.take().unwrap_or(Ok(()))
         }
-        async fn select(&mut self, _name: &str) -> Result<AsyncMailbox, AsyncImapError> {
-             self.select_results.pop_front().unwrap_or_else(|| {
-                // Provide a default if the queue is empty to avoid panic
+
+        async fn select(&mut self, _name: &str) -> Result<AsyncMailbox, async_imap::error::Error> {
+            self.select_results.pop_front().unwrap_or_else(|| {
                 Ok(AsyncMailbox {
                     flags: vec![], exists: 0, recent: 0, unseen: Some(0), permanent_flags: vec![],
                     uid_next: Some(1), uid_validity: Some(1), highest_modseq: None
                 })
             })
         }
-        async fn search(&mut self, _query: String) -> Result<Vec<u32>, AsyncImapError> {
-             self.search_result.take().unwrap_or(Ok(vec![]))
+
+        async fn search(&mut self, _query: &str) -> Result<Vec<u32>, ImapError> {
+            self.search_result.take().unwrap_or(Ok(vec![]))
         }
-        async fn fetch(&mut self, _sequence_set: String, _query: String) -> Result<Vec<Fetch>, AsyncImapError> {
-             self.fetch_result.take().unwrap_or(Ok(vec![]))
+
+        async fn fetch(&mut self, _sequence_set: &str, _query: &str) -> Result<Vec<Fetch>, ImapError> {
+            self.fetch_result.take().unwrap_or(Ok(vec![]))
         }
-        async fn uid_mv(&mut self, _sequence_set: String, _mailbox: &str) -> Result<(), AsyncImapError> {
+
+        async fn uid_mv(&mut self, _sequence_set: String, _mailbox: &str) -> Result<(), async_imap::error::Error> {
             self.move_result.take().unwrap_or(Ok(()))
         }
-        async fn logout(&mut self) -> Result<(), AsyncImapError> {
-            Ok(()) // Always return Ok since the result field is removed
+
+        async fn logout(&mut self) -> Result<(), ImapError> {
+            Ok(())
         }
-        async fn uid_store(&mut self, _sequence_set: String, _command: String) -> Result<(), AsyncImapError> {
+
+        async fn uid_store(&mut self, _sequence_set: String, _command: String) -> Result<(), ImapError> {
             self.store_flags_result.take().unwrap_or(Ok(()))
         }
-        async fn append(&mut self, _folder: &str, _payload: Vec<u8>) -> Result<(), AsyncImapError> {
+
+        async fn append(&mut self, _folder: &str, _payload: Vec<u8>) -> Result<(), ImapError> {
             self.append_result.take().unwrap_or(Ok(()))
         }
-        async fn expunge(&mut self) -> Result<(), AsyncImapError> {
+
+        async fn expunge(&mut self) -> Result<(), ImapError> {
             self.expunge_result.take().unwrap_or(Ok(()))
         }
-        async fn uid_fetch(&mut self, _uid_set: String, _query: String) -> Result<Vec<Fetch>, AsyncImapError> {
+
+        async fn uid_fetch(&mut self, _uid_set: String, _query: String) -> Result<Vec<Fetch>, ImapError> {
             self.uid_fetch_result.take().unwrap_or(Ok(vec![]))
         }
-        async fn uid_copy(&mut self, _sequence_set: String, _mailbox: &str) -> Result<(), AsyncImapError> {
-            self.copy_result.take().unwrap_or(Ok(()))
+
+        async fn uid_copy(&mut self, _sequence_set: String, _mailbox: &str) -> Result<Option<async_imap::types::UidSet>, ImapError> {
+            self.copy_result.take().map(|r| r.map(|_| None))
+        }
+
+        async fn store(&mut self, _sequence_set: &str, _command: async_imap::types::StoreType<'_>) -> Result<Vec<Fetch>, ImapError> {
+            Ok(vec![])
+        }
+
+        async fn uid_search(&mut self, _query: &str) -> Result<Vec<u32>, ImapError> {
+            self.search_result.take().unwrap_or(Ok(vec![]))
+        }
+
+        async fn append(&mut self, _mailbox: &str, _data: &[u8], _flags: &[Flag<'_>], _date_time: Option<DateTime<Utc>>) -> Result<Option<u32>, ImapError> {
+            self.append_result.take().map(|r| r.map(|_| None))
+        }
+
+        async fn examine(&mut self, _mailbox: &str) -> Result<async_imap::types::MailboxData, ImapError> {
+            Ok(async_imap::types::MailboxData {
+                exists: 0,
+                recent: 0,
+                flags: vec![],
+                permanent_flags: vec![],
+                unseen: None,
+                uid_next: None,
+                uid_validity: None,
+                highest_modseq: None,
+            })
+        }
+
+        async fn status(&mut self, _mailbox: &str, _items: &[async_imap::types::StatusDataItem]) -> Result<Status, ImapError> {
+            Ok(Status {
+                mailbox: "INBOX".to_string(),
+                items: vec![],
+            })
+        }
+
+        fn is_selected(&self) -> bool {
+            true
+        }
+
+        fn is_logged_in(&self) -> bool {
+            true
+        }
+
+        fn delimiter(&self) -> Option<char> {
+            Some('/')
+        }
+
+        async fn poll(&mut self) -> Result<Option<UnsolicitedResponse>, async_imap::error::Error> {
+            Ok(None)
         }
     }
 
@@ -662,7 +820,7 @@ mod tests {
     #[tokio::test]
     async fn test_wrapper_list_folders_error() {
         let mock_ops = MockAsyncImapOps::default_ok()
-            .set_list(Err(AsyncImapError::Validate(ValidateError('x'))));
+            .set_list(Err(ImapError::Validate(ValidateError('x'))));
         let wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = wrapper.list_folders().await;
         assert!(result.is_err());
@@ -694,7 +852,7 @@ mod tests {
     async fn test_wrapper_select_folder_error() {
         let mut mock_ops = MockAsyncImapOps::default_ok();
         mock_ops.select_results.clear();
-        mock_ops = mock_ops.add_select(Err(AsyncImapError::No(String::from("Select failed"))));
+        mock_ops = mock_ops.add_select(Err(ImapError::No("Select failed")));
 
         let session_wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = session_wrapper.select_folder("NonExistent").await;
@@ -716,7 +874,7 @@ mod tests {
     #[tokio::test]
     async fn test_wrapper_search_emails_error() {
         let mock_ops = MockAsyncImapOps::default_ok()
-            .set_search(Err(AsyncImapError::Bad(String::from("Bad search"))));
+            .set_search(Err(ImapError::Bad("Bad search")));
         let wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = wrapper.search_emails(SearchCriteria::All).await;
         assert!(result.is_err());
@@ -737,7 +895,7 @@ mod tests {
      #[tokio::test]
     async fn test_wrapper_fetch_emails_error() {
         let mock_ops = MockAsyncImapOps::default_ok()
-            .set_uid_fetch(Err(AsyncImapError::No(String::from("UID Fetch failed"))));
+            .set_uid_fetch(Err(ImapError::No("UID Fetch failed")));
         let wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = wrapper.fetch_emails(vec![1], true).await;
         assert!(result.is_err());
@@ -757,7 +915,7 @@ mod tests {
     #[tokio::test]
     async fn test_wrapper_create_folder_error() {
         let mock_ops = MockAsyncImapOps::default_ok()
-             .set_create(Err(AsyncImapError::No(String::from("Exists"))));
+             .set_create(Err(ImapError::No("Exists")));
         let session_wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = session_wrapper.create_folder("ExistsAlready").await;
         assert!(result.is_err());
@@ -778,7 +936,7 @@ mod tests {
     #[tokio::test]
     async fn test_wrapper_delete_folder_error() {
         let mock_ops = MockAsyncImapOps::default_ok()
-            .set_delete(Err(AsyncImapError::No(String::from("No delete"))));
+            .set_delete(Err(ImapError::No("No delete")));
         let session_wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = session_wrapper.delete_folder("ToDelete").await;
         assert!(result.is_err());
@@ -798,7 +956,7 @@ mod tests {
     #[tokio::test]
     async fn test_wrapper_move_email_error_on_move() { // Test failure on initial MOVE
         let mock_ops = MockAsyncImapOps::default_ok()
-            .set_move(Err(AsyncImapError::No(String::from("No move")))); // Set MOVE to fail
+            .set_move(Err(ImapError::No("No move"))); // Set MOVE to fail
         let wrapper = AsyncImapSessionWrapper::new(mock_ops);
         // Expecting Ok because fallback should succeed with default mocks
         let result = wrapper.move_email("INBOX", vec![1], "Archive").await;
@@ -808,8 +966,8 @@ mod tests {
      #[tokio::test]
     async fn test_wrapper_move_email_error_on_copy() {
         let mock_ops = MockAsyncImapOps::default_ok()
-            .set_move(Err(AsyncImapError::No(String::from("No move support"))))
-            .set_copy(Err(AsyncImapError::No(String::from("No copy"))));
+            .set_move(Err(ImapError::No("No move support")))
+            .set_copy(Err(ImapError::No("No copy")));
         let session_wrapper = AsyncImapSessionWrapper::new(mock_ops);
         let result = session_wrapper.move_email("INBOX", vec![1], "Archive").await;
         assert!(result.is_err());

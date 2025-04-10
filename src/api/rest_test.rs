@@ -28,8 +28,8 @@ mod tests {
         logout_called: AtomicBool,
     }
 
-    #[derive(Debug, Clone)] // Ensure MockImapSession is Clone for AppState
-    struct MockImapSession {
+    #[derive(Debug, Clone)] // Ensure MockImapClient is Clone for AppState
+    struct MockImapClient {
         tracker: Arc<MockCallTracker>,
         list_folders_result: Result<Vec<Folder>, ImapError>,
         select_folder_result: Result<MailboxInfo, ImapError>,
@@ -42,7 +42,7 @@ mod tests {
         logout_result: Result<(), ImapError>,
     }
 
-    impl MockImapSession {
+    impl MockImapClient {
         fn default_ok() -> Self {
             Self {
                 tracker: Arc::new(MockCallTracker::default()),
@@ -103,7 +103,7 @@ mod tests {
     }
 
     #[async_trait]
-    impl ImapSession for MockImapSession {
+    impl ImapSession for MockImapClient {
         async fn list_folders(&self) -> Result<Vec<Folder>, ImapError> {
             self.tracker.list_folders_called.store(true, Ordering::SeqCst);
             self.list_folders_result.clone()
@@ -146,7 +146,7 @@ mod tests {
 
     // --- Test Setup --- 
     async fn setup_test_app() -> (impl actix_web::dev::Service<actix_http::Request, Response = actix_web::dev::ServiceResponse>, Arc<MockCallTracker>) {
-        let mock_session = MockImapSession::default_ok();
+        let mock_session = MockImapClient::default_ok();
         let tracker = mock_session.tracker.clone();
 
         // Create ImapClient backed by the mock session
@@ -284,7 +284,7 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         assert!(tracker.fetch_emails_called.load(Ordering::SeqCst));
         let emails: Vec<Email> = test::read_body_json(resp).await;
-        // Assert based on MockImapSession::default_ok fetch_emails_result
+        // Assert based on MockImapClient::default_ok fetch_emails_result
         assert_eq!(emails.len(), 1);
         assert_eq!(emails[0].uid, 1);
     }
@@ -309,7 +309,7 @@ mod tests {
     #[actix_web::test]
     async fn test_delete_folder_not_found() {
         // Setup mock to return an error simulating "not found"
-        let mock_session = MockImapSession::default_ok()
+        let mock_session = MockImapClient::default_ok()
             .set_delete_result(Err(ImapError::Operation("Folder does not exist".to_string())));
         let tracker = mock_session.tracker.clone();
         let mock_imap_client = Arc::new(ImapClient::new_with_session(Arc::new(Mutex::new(mock_session))));
@@ -369,7 +369,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_select_folder_not_found() {
-        let mock_session = MockImapSession::default_ok()
+        let mock_session = MockImapClient::default_ok()
             .set_select_result(Err(ImapError::Mailbox("Folder does not exist".to_string())));
         let tracker = mock_session.tracker.clone();
         let mock_imap_client = Arc::new(ImapClient::new_with_session(Arc::new(Mutex::new(mock_session))));
@@ -406,7 +406,7 @@ mod tests {
 
     #[actix_web::test]
     async fn test_fetch_emails_imap_error() {
-         let mock_session = MockImapSession::default_ok()
+         let mock_session = MockImapClient::default_ok()
             .set_fetch_emails_result(Err(ImapError::Operation("Fetch failed".to_string())));
         let tracker = mock_session.tracker.clone();
         let mock_imap_client = Arc::new(ImapClient::new_with_session(Arc::new(Mutex::new(mock_session))));
@@ -449,7 +449,7 @@ mod tests {
     async fn setup_test_app_with_list_error(err: ImapError) 
         -> impl actix_web::dev::Service<actix_http::Request, Response = actix_web::dev::ServiceResponse> 
     {
-        let mock_session = MockImapSession::default_ok().set_list_folders_result(Err(err));
+        let mock_session = MockImapClient::default_ok().set_list_folders_result(Err(err));
         let mock_imap_client = Arc::new(ImapClient::new_with_session(Arc::new(Mutex::new(mock_session))));
         let app_state = AppState { imap_client: mock_imap_client };
         test::init_service(
@@ -463,7 +463,7 @@ mod tests {
     async fn setup_test_app_with_create_error(err: ImapError) 
         -> impl actix_web::dev::Service<actix_http::Request, Response = actix_web::dev::ServiceResponse> 
     {
-        let mock_session = MockImapSession::default_ok().set_create_result(Err(err));
+        let mock_session = MockImapClient::default_ok().set_create_result(Err(err));
         let mock_imap_client = Arc::new(ImapClient::new_with_session(Arc::new(Mutex::new(mock_session))));
         let app_state = AppState { imap_client: mock_imap_client };
         test::init_service(

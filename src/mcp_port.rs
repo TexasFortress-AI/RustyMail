@@ -1,10 +1,29 @@
-use async_trait::async_trait;
-use serde_json::Value;
-use thiserror::Error;
 use crate::imap::error::ImapError;
-use crate::imap::client::ImapClientTrait;
+use crate::imap::ImapSessionFactory;
+use crate::imap::session::{ImapSession, StoreOperation};
+use crate::imap::types::{Folder, ModifyFlagsPayload, AppendEmailPayload, SearchCriteria, Flags, FlagOperation};
+use crate::mcp::types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError};
+use crate::mcp::{self, error_codes};
+use serde_json::{json, Value};
+use log::{error, info, debug, warn};
 use std::sync::Arc;
 use std::collections::HashMap;
+use async_trait::async_trait;
+use base64::{engine::general_purpose, Engine as _};
+use thiserror::Error;
+use tokio::sync::Mutex as TokioMutex;
+use chrono::{DateTime, Utc};
+
+// --- Define McpTool trait (ensure it's present or imported correctly) ---
+// Assuming McpTool trait is defined elsewhere and imported
+#[async_trait]
+pub trait McpTool: Send + Sync {
+    fn name(&self) -> &'static str;
+    fn description(&self) -> &'static str;
+    fn input_schema(&self) -> &'static str;
+    fn output_schema(&self) -> &'static str;
+    async fn execute(&self, session: Arc<dyn ImapSession>, state: &mut McpPortState, params: Value) -> Result<Value, JsonRpcError>;
+}
 
 // Macro for deserializing params within tool execute methods
 macro_rules! deserialize_params {
@@ -12,129 +31,162 @@ macro_rules! deserialize_params {
         serde_json::from_value::< $param_struct >($params_val.clone())
             .map_err(|e| {
                 let err_msg = format!("Invalid parameters: {}", e);
-                McpPortError::InvalidParams(err_msg)
+                JsonRpcError::invalid_params(err_msg)
             })
     }};
 }
 
-// --- Tool Definitions using the Generic Macro Arm (Simplified Invocation) ---
+// --- Define Tool Structs Explicitly ---
+pub struct McpListFoldersTool {
+    session_factory: Arc<ImapSessionFactory>,
+}
 
-mcp_tool!(McpListFoldersTool<C>, "imap/listFolders", "Lists all folders.", "{}", "{}");
+pub struct McpCreateFolderTool {
+    session_factory: Arc<ImapSessionFactory>,
+}
 
-mcp_tool!(McpCreateFolderTool<C>, "imap/createFolder", "Creates a new IMAP folder.", "{}", "{}");
+pub struct McpDeleteFolderTool {
+    session_factory: Arc<ImapSessionFactory>,
+}
 
-mcp_tool!(McpDeleteFolderTool<C>, "imap/deleteFolder", "Deletes an IMAP folder.", "{}", "{}");
+pub struct McpRenameFolderTool {
+    session_factory: Arc<ImapSessionFactory>,
+}
 
-mcp_tool!(McpRenameFolderTool<C>, "imap/renameFolder", "Renames an IMAP folder.", "{}", "{}");
+pub struct McpSelectFolderTool {
+    session_factory: Arc<ImapSessionFactory>,
+}
 
-mcp_tool!(McpSelectFolderTool<C>, "imap/selectFolder", "Selects a folder.", "{}", "{}");
+pub struct McpSearchEmailsTool {
+    session_factory: Arc<ImapSessionFactory>,
+}
 
-mcp_tool!(McpSearchEmailsTool<C>, "imap/searchEmails", "Searches emails.", "{}", "{}");
+pub struct McpFetchEmailsTool {
+    session_factory: Arc<ImapSessionFactory>,
+}
 
-mcp_tool!(McpFetchEmailsTool<C>, "imap/fetchEmails", "Fetches emails by UID.", "{}", "{}");
+pub struct McpMoveEmailTool {
+    session_factory: Arc<ImapSessionFactory>,
+}
 
-mcp_tool!(McpMoveEmailTool<C>, "imap/moveEmails", "Moves emails by UID.", "{}", "{}");
+pub struct McpStoreFlagsTool {
+    session_factory: Arc<ImapSessionFactory>,
+}
 
-mcp_tool!(McpStoreFlagsTool<C>, "imap/storeFlags", "Stores flags for emails.", "{}", "{}");
+pub struct McpAppendEmailTool {
+    session_factory: Arc<ImapSessionFactory>,
+}
 
-mcp_tool!(McpAppendEmailTool<C>, "imap/appendEmail", "Appends an email.", "{}", "{}");
+pub struct McpExpungeFolderTool { session_factory: Arc<ImapSessionFactory> }
 
-mcp_tool!(McpExpungeFolderTool<C>, "imap/expungeFolder", "Expunges folder.", "{}", "{}");
+// --- Implement new() for each struct ---
+impl McpListFoldersTool { pub fn new(session_factory: Arc<ImapSessionFactory>) -> Self { Self { session_factory } } }
+impl McpCreateFolderTool { pub fn new(session_factory: Arc<ImapSessionFactory>) -> Self { Self { session_factory } } }
+impl McpDeleteFolderTool { pub fn new(session_factory: Arc<ImapSessionFactory>) -> Self { Self { session_factory } } }
+impl McpRenameFolderTool { pub fn new(session_factory: Arc<ImapSessionFactory>) -> Self { Self { session_factory } } }
+impl McpSelectFolderTool { pub fn new(session_factory: Arc<ImapSessionFactory>) -> Self { Self { session_factory } } }
+impl McpSearchEmailsTool { pub fn new(session_factory: Arc<ImapSessionFactory>) -> Self { Self { session_factory } } }
+impl McpFetchEmailsTool { pub fn new(session_factory: Arc<ImapSessionFactory>) -> Self { Self { session_factory } } }
+impl McpMoveEmailTool { pub fn new(session_factory: Arc<ImapSessionFactory>) -> Self { Self { session_factory } } }
+impl McpStoreFlagsTool { pub fn new(session_factory: Arc<ImapSessionFactory>) -> Self { Self { session_factory } } }
+impl McpAppendEmailTool { pub fn new(session_factory: Arc<ImapSessionFactory>) -> Self { Self { session_factory } } }
+impl McpExpungeFolderTool { pub fn new(session_factory: Arc<ImapSessionFactory>) -> Self { Self { session_factory } } }
 
 // --- Implement McpTool::execute for each struct --- 
 #[async_trait]
-impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpListFoldersTool<C> {
+impl McpTool for McpListFoldersTool {
     fn name(&self) -> &'static str { "imap/listFolders" } 
     fn description(&self) -> &'static str { "Lists all folders." }
     fn input_schema(&self) -> &'static str { "{}" } 
     fn output_schema(&self) -> &'static str { "{}" }
     
-    async fn execute(&self, _params: Value) -> Result<Value, McpPortError> {
-        let folders = self.imap_client.list_folders().await?;
-        Ok(::serde_json::json!({ "folders": folders }))
+    async fn execute(&self, session: Arc<dyn ImapSession>, _state: &mut McpPortState, _params: Value) -> Result<Value, JsonRpcError> {
+        let folders = session.list_folders().await.map_err(JsonRpcError::from_imap_error)?;
+        Ok(json!(folders))
     }
 }
 
 #[async_trait]
-impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpCreateFolderTool<C> {
+impl McpTool for McpCreateFolderTool {
     fn name(&self) -> &'static str { "imap/createFolder" }
     fn description(&self) -> &'static str { "Creates a new IMAP folder." }
     fn input_schema(&self) -> &'static str { "{}" }
     fn output_schema(&self) -> &'static str { "{}" }
 
-    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+    async fn execute(&self, session: Arc<dyn ImapSession>, _state: &mut McpPortState, params: Value) -> Result<Value, JsonRpcError> { 
         #[derive(::serde::Deserialize)] struct CreateFolderParams { name: String }
         let p: CreateFolderParams = deserialize_params!(params, CreateFolderParams)?;
-        if p.name.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder name cannot be empty".into())); }
+        if p.name.trim().is_empty() { return Err(JsonRpcError::invalid_params("Folder name cannot be empty")); }
         let full_folder_name = if p.name.eq_ignore_ascii_case("INBOX") { p.name.clone() } else { format!("INBOX.{}", p.name) };
-        self.imap_client.create_folder(&full_folder_name).await?;
-        Ok(::serde_json::json!({ "message": "Folder created", "name": full_folder_name }))
+        session.create_folder(&full_folder_name).await.map_err(JsonRpcError::from_imap_error)?;
+        Ok(json!({ "message": "Folder created", "name": full_folder_name }))
     }
 }
 
 #[async_trait]
-impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpExpungeFolderTool<C> {
+impl McpTool for McpExpungeFolderTool {
     fn name(&self) -> &'static str { "imap/expungeFolder" }
     fn description(&self) -> &'static str { "Expunges folder." }
     fn input_schema(&self) -> &'static str { "{}" }
     fn output_schema(&self) -> &'static str { "{}" }
 
-    async fn execute(&self, _params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
-        self.imap_client.expunge().await?;
-        Ok(::serde_json::json!({ "message": "Expunge successful" }))
+    async fn execute(&self, session: Arc<dyn ImapSession>, _state: &mut McpPortState, _params: Value) -> Result<Value, JsonRpcError> { 
+        session.expunge().await.map_err(JsonRpcError::from_imap_error)?;
+        Ok(json!({ "message": "Expunge successful" }))
     }
 }
 
 // --- Add missing impl blocks --- 
 #[async_trait]
-impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpDeleteFolderTool<C> {
+impl McpTool for McpDeleteFolderTool {
     fn name(&self) -> &'static str { "imap/deleteFolder" }
     fn description(&self) -> &'static str { "Deletes an IMAP folder." }
     fn input_schema(&self) -> &'static str { "{}" } 
     fn output_schema(&self) -> &'static str { "{}" }
 
-    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+    async fn execute(&self, session: Arc<dyn ImapSession>, _state: &mut McpPortState, params: Value) -> Result<Value, JsonRpcError> { 
         #[derive(::serde::Deserialize)] struct DeleteFolderParams { name: String }
         let p: DeleteFolderParams = deserialize_params!(params, DeleteFolderParams)?;
-        if p.name.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder name cannot be empty".into())); }
+        if p.name.trim().is_empty() { return Err(JsonRpcError::invalid_params("Folder name cannot be empty")); }
         let full_folder_name = if p.name.eq_ignore_ascii_case("INBOX") { p.name.clone() } else { format!("INBOX.{}", p.name) };
-        self.imap_client.delete_folder(&full_folder_name).await?;
-        Ok(::serde_json::json!({ "message": "Folder deleted", "name": full_folder_name }))
+        session.delete_folder(&full_folder_name).await.map_err(JsonRpcError::from_imap_error)?;
+        Ok(json!({ "message": "Folder deleted", "name": full_folder_name }))
     }
 }
 
 #[async_trait]
-impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpRenameFolderTool<C> {
+impl McpTool for McpRenameFolderTool {
     fn name(&self) -> &'static str { "imap/renameFolder" }
     fn description(&self) -> &'static str { "Renames an IMAP folder." }
     fn input_schema(&self) -> &'static str { "{}" }
     fn output_schema(&self) -> &'static str { "{}" }
 
-    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+    async fn execute(&self, session: Arc<dyn ImapSession>, _state: &mut McpPortState, params: Value) -> Result<Value, JsonRpcError> { 
         #[derive(::serde::Deserialize)] struct RenameFolderParams { from_name: String, to_name: String }
         let p: RenameFolderParams = deserialize_params!(params, RenameFolderParams)?;
-        if p.from_name.trim().is_empty() || p.to_name.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder names cannot be empty".into())); }
+        if p.from_name.trim().is_empty() || p.to_name.trim().is_empty() { return Err(JsonRpcError::invalid_params("Folder names cannot be empty")); }
         let full_from_name = if p.from_name.eq_ignore_ascii_case("INBOX") { p.from_name.clone() } else { format!("INBOX.{}", p.from_name) };
         let full_to_name = if p.to_name.eq_ignore_ascii_case("INBOX") { p.to_name.clone() } else { format!("INBOX.{}", p.to_name) };
-        self.imap_client.rename_folder(&full_from_name, &full_to_name).await?;
-        Ok(::serde_json::json!({ "message": "Folder renamed", "from_name": full_from_name, "to_name": full_to_name }))
+        session.rename_folder(&full_from_name, &full_to_name).await.map_err(JsonRpcError::from_imap_error)?;
+        Ok(json!({ "message": "Folder renamed", "from_name": full_from_name, "to_name": full_to_name }))
     }
 }
 
 #[async_trait]
-impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpSelectFolderTool<C> {
+impl McpTool for McpSelectFolderTool {
     fn name(&self) -> &'static str { "imap/selectFolder" }
     fn description(&self) -> &'static str { "Selects a folder." }
     fn input_schema(&self) -> &'static str { "{}" }
     fn output_schema(&self) -> &'static str { "{}" }
 
-    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+    async fn execute(&self, session: Arc<dyn ImapSession>, state: &mut McpPortState, params: Value) -> Result<Value, JsonRpcError> { 
         #[derive(::serde::Deserialize)] struct SelectFolderParams { name: String }
         let p: SelectFolderParams = deserialize_params!(params, SelectFolderParams)?;
-        if p.name.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder name cannot be empty".into())); }
+        if p.name.trim().is_empty() { return Err(JsonRpcError::invalid_params("Folder name cannot be empty")); }
         let full_folder_name = if p.name.eq_ignore_ascii_case("INBOX") { p.name.clone() } else { format!("INBOX.{}", p.name) };
-        let mailbox_info = self.imap_client.select_folder(&full_folder_name).await?;
-        Ok(::serde_json::json!({ 
+        let mailbox_info = session.select_folder(&full_folder_name).await.map_err(JsonRpcError::from_imap_error)?;
+        state.selected_folder = Some(full_folder_name.clone());
+        Ok(json!({ 
             "folder_name": full_folder_name,
             "mailbox_info": mailbox_info
         }))
@@ -142,165 +194,110 @@ impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpSelectFolderTool
 }
 
 #[async_trait]
-impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpSearchEmailsTool<C> {
+impl McpTool for McpSearchEmailsTool {
     fn name(&self) -> &'static str { "imap/searchEmails" }
     fn description(&self) -> &'static str { "Searches emails." }
     fn input_schema(&self) -> &'static str { "{}" }
     fn output_schema(&self) -> &'static str { "{}" }
 
-    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
-        #[derive(::serde::Deserialize)] struct SearchEmailsParams { criteria: crate::imap::types::SearchCriteria }
+    async fn execute(&self, session: Arc<dyn ImapSession>, state: &mut McpPortState, params: Value) -> Result<Value, JsonRpcError> { 
+        let folder_name = state.selected_folder.as_ref().ok_or_else(|| JsonRpcError::internal_error("Folder must be selected first"))?;
+        #[derive(::serde::Deserialize)] struct SearchEmailsParams { criteria: SearchCriteria }
         let p: SearchEmailsParams = deserialize_params!(params, SearchEmailsParams)?;
-        let uids = self.imap_client.search_emails(p.criteria).await?;
-        Ok(::serde_json::json!({ "uids": uids }))
+        let uids = session.search_emails(&p.criteria).await.map_err(JsonRpcError::from_imap_error)?;
+        Ok(json!({ "uids": uids }))
     }
 }
 
 #[async_trait]
-impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpFetchEmailsTool<C> {
+impl McpTool for McpFetchEmailsTool {
     fn name(&self) -> &'static str { "imap/fetchEmails" }
     fn description(&self) -> &'static str { "Fetches emails by UID." }
     fn input_schema(&self) -> &'static str { "{}" }
     fn output_schema(&self) -> &'static str { "{}" }
 
-    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
-        #[derive(::serde::Deserialize)] struct FetchEmailsParams { uids: Vec<u32>, fetch_body: Option<bool> }
+    async fn execute(&self, session: Arc<dyn ImapSession>, state: &mut McpPortState, params: Value) -> Result<Value, JsonRpcError> { 
+        let folder_name = state.selected_folder.as_ref().ok_or_else(|| JsonRpcError::internal_error("Folder must be selected first"))?;
+        #[derive(::serde::Deserialize)] struct FetchEmailsParams { uids: Vec<u32>, fetch_body: Option<bool>, limit: Option<u32> }
         let p: FetchEmailsParams = deserialize_params!(params, FetchEmailsParams)?;
-        if p.uids.is_empty() { return Err(McpPortError::InvalidParams("UID list cannot be empty".into())); }
+        if p.uids.is_empty() { return Err(JsonRpcError::invalid_params("UID list cannot be empty")); }
         let fetch_body = p.fetch_body.unwrap_or(false);
-        let emails = self.imap_client.fetch_emails(p.uids, fetch_body).await?;
-        Ok(::serde_json::to_value(emails).map_err(|e| McpPortError::ToolError(format!("Serialization Error: {}", e)))?)
+        let limit = p.limit.unwrap_or(100); // Use a default limit
+        let criteria = SearchCriteria::UidSet(p.uids); // Create UidSet criteria
+        let emails = session.fetch_emails(&criteria, limit, fetch_body).await.map_err(JsonRpcError::from_imap_error)?;
+        Ok(serde_json::to_value(emails).map_err(|e| JsonRpcError::internal_error(format!("Serialization Error: {}", e)))?)
     }
 }
 
 #[async_trait]
-impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpMoveEmailTool<C> {
+impl McpTool for McpMoveEmailTool {
     fn name(&self) -> &'static str { "imap/moveEmails" }
     fn description(&self) -> &'static str { "Moves emails by UID." }
     fn input_schema(&self) -> &'static str { "{}" }
     fn output_schema(&self) -> &'static str { "{}" }
 
-    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
+    async fn execute(&self, session: Arc<dyn ImapSession>, state: &mut McpPortState, params: Value) -> Result<Value, JsonRpcError> { 
         #[derive(::serde::Deserialize)] 
-        struct MoveEmailParams {
-            uids: Vec<u32>, 
-            destination_folder: String,
-            source_folder: String,
-        }
+        struct MoveEmailParams { uids: Vec<u32>, destination_folder: String }
         let p: MoveEmailParams = deserialize_params!(params, MoveEmailParams)?;
-        if p.uids.is_empty() { return Err(McpPortError::InvalidParams("UID list cannot be empty".into())); }
-        if p.destination_folder.trim().is_empty() { return Err(McpPortError::InvalidParams("Destination folder cannot be empty".into())); }
-        if p.source_folder.trim().is_empty() { return Err(McpPortError::ImapRequiresFolderSelection("Source folder missing in params".into())); }
+        if p.uids.is_empty() { return Err(JsonRpcError::invalid_params("UID list cannot be empty")); }
+        if p.destination_folder.trim().is_empty() { return Err(JsonRpcError::invalid_params("Destination folder cannot be empty")); }
 
         let full_destination_folder = if p.destination_folder.eq_ignore_ascii_case("INBOX") { p.destination_folder.clone() } else { format!("INBOX.{}", p.destination_folder) };
+        let source_folder = state.selected_folder.as_ref().ok_or_else(|| JsonRpcError::internal_error("Source folder not selected in state"))?.clone();
 
-        self.imap_client.move_email(&p.source_folder, p.uids.clone(), &full_destination_folder).await?;
-        Ok(::serde_json::json!({ "message": "Emails moved", "uids": p.uids, "destination_folder": full_destination_folder, "source_folder": p.source_folder }))
+        session.move_email(&source_folder, p.uids.clone(), &full_destination_folder).await.map_err(JsonRpcError::from_imap_error)?;
+        Ok(json!({ "message": "Emails moved", "uids": p.uids, "source_folder": source_folder, "destination_folder": full_destination_folder }))
     }
 }
 
 #[async_trait]
-impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpStoreFlagsTool<C> {
+impl McpTool for McpStoreFlagsTool {
     fn name(&self) -> &'static str { "imap/storeFlags" }
     fn description(&self) -> &'static str { "Stores flags for emails." }
     fn input_schema(&self) -> &'static str { "{}" }
     fn output_schema(&self) -> &'static str { "{}" }
 
-    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
-        #[derive(::serde::Deserialize)] struct StoreFlagsParams { uids: Vec<u32>, operation: crate::imap::types::FlagOperation, flags: crate::imap::types::Flags }
+    async fn execute(&self, session: Arc<dyn ImapSession>, state: &mut McpPortState, params: Value) -> Result<Value, JsonRpcError> { 
+        let folder_name = state.selected_folder.as_ref().ok_or_else(|| JsonRpcError::internal_error("Folder must be selected first"))?;
+        #[derive(::serde::Deserialize)] struct StoreFlagsParams { uids: Vec<u32>, operation: FlagOperation, flags: Flags }
         let p: StoreFlagsParams = deserialize_params!(params, StoreFlagsParams)?;
-        if p.uids.is_empty() { return Err(McpPortError::InvalidParams("UID list cannot be empty".into())); }
-        if p.flags.items.is_empty() { return Err(McpPortError::InvalidParams("Flags list cannot be empty".into())); }
+        if p.uids.is_empty() { return Err(JsonRpcError::invalid_params("UID list cannot be empty")); }
+        if p.flags.is_empty() { return Err(JsonRpcError::invalid_params("Flags list cannot be empty")); }
         
-        // Convert FlagOperation to StoreOperation
         let store_op = match p.operation {
-            crate::imap::types::FlagOperation::Add => crate::imap::session::StoreOperation::Add,
-            crate::imap::types::FlagOperation::Remove => crate::imap::session::StoreOperation::Remove,
-            crate::imap::types::FlagOperation::Set => crate::imap::session::StoreOperation::Set,
+            FlagOperation::Add => StoreOperation::Add,
+            FlagOperation::Remove => StoreOperation::Remove,
+            FlagOperation::Set => StoreOperation::Set,
         };
-        // Convert Flags struct to Vec<String>
-        let flags_vec: Vec<String> = p.flags.items.iter().map(|f| f.clone()).collect();
-
-        self.imap_client.store_flags(p.uids, store_op, flags_vec).await?;
-        Ok(::serde_json::json!({ "message": "Flags stored successfully" }))
+        session.store_flags(p.uids.clone(), store_op, p.flags.items).await.map_err(JsonRpcError::from_imap_error)?;
+        Ok(json!({ "message": "Flags stored successfully" }))
     }
 }
 
 #[async_trait]
-impl<C: ImapClientTrait + Send + Sync + 'static> McpTool for McpAppendEmailTool<C> {
+impl McpTool for McpAppendEmailTool {
     fn name(&self) -> &'static str { "imap/appendEmail" }
     fn description(&self) -> &'static str { "Appends an email." }
     fn input_schema(&self) -> &'static str { "{}" }
     fn output_schema(&self) -> &'static str { "{}" }
 
-    async fn execute(&self, params: ::serde_json::Value) -> Result<::serde_json::Value, McpPortError> { 
-        #[derive(::serde::Deserialize)] struct AppendEmailParams { folder: String, email: crate::imap::types::AppendEmailPayload }
+    async fn execute(&self, session: Arc<dyn ImapSession>, _state: &mut McpPortState, params: Value) -> Result<Value, JsonRpcError> { 
+        #[derive(::serde::Deserialize)] 
+        struct AppendEmailParams { folder: String, content: String, flags: Option<Flags>, date: Option<DateTime<Utc>> }
         let p: AppendEmailParams = deserialize_params!(params, AppendEmailParams)?;
-        if p.folder.trim().is_empty() { return Err(McpPortError::InvalidParams("Folder name cannot be empty".into())); }
+        if p.folder.trim().is_empty() { return Err(JsonRpcError::invalid_params("Folder name cannot be empty")); }
+        if p.content.trim().is_empty() { return Err(JsonRpcError::invalid_params("Content cannot be empty")); }
+
+        let bytes = general_purpose::STANDARD.decode(&p.content)
+            .map_err(|e| JsonRpcError::invalid_params(format!("Invalid base64 content: {}", e)))?;
         
         let full_folder_name = if p.folder.eq_ignore_ascii_case("INBOX") { p.folder.clone() } else { format!("INBOX.{}", p.folder) };
+        
+        session.append(&full_folder_name, bytes).await.map_err(JsonRpcError::from_imap_error)?;
 
-        // Convert the email content string to bytes
-        let email_bytes: Vec<u8> = p.email.content.into_bytes();
-
-        // TODO: Consider how flags (p.email.flags) should be handled by the append command.
-        // The underlying async-imap `append` command might need flags separately.
-        // For now, just passing the email content bytes.
-        self.imap_client.append(&full_folder_name, email_bytes).await?;
-        Ok(::serde_json::json!({ "message": "Email appended", "folder": full_folder_name }))
+        Ok(json!({ "message": "Email appended successfully", "folder": full_folder_name }))
     }
-}
-
-// --- Restore McpPortError Enum Definition --- 
-#[derive(Debug, Error)]
-pub enum McpPortError {
-    #[error("Tool execution failed: {0}")]
-    ToolError(String),
-    #[error("Resource access failed: {0}")]
-    ResourceError(String),
-    #[error("Invalid parameters: {0}")]
-    InvalidParams(String),
-    #[error("Not implemented: {0}")]
-    NotImplemented(String),
-    #[error("Internal error: {message}")]
-    InternalError { message: String },
-
-    // --- IMAP Specific Errors ---
-    #[error("IMAP Connection Error: {0}")]
-    ImapConnectionError(String),
-    #[error("IMAP Authentication Error: {0}")]
-    ImapAuthenticationError(String),
-    #[error("IMAP Folder Not Found: {0}")]
-    ImapFolderNotFound(String),
-    #[error("IMAP Folder Already Exists: {0}")]
-    ImapFolderExists(String),
-    #[error("IMAP Email Not Found: {0}")]
-    ImapEmailNotFound(String),
-    #[error("IMAP Operation Failed: {0}")]
-    ImapOperationFailed(String),
-    #[error("IMAP Invalid Criteria: {0}")]
-    ImapInvalidCriteria(String),
-    #[error("IMAP Requires Folder Selection: {0}")]
-    ImapRequiresFolderSelection(String),
-}
-
-/// Defines a capability or action that can be executed via MCP.
-#[async_trait]
-pub trait McpTool: Send + Sync {
-    /// The unique name identifying this tool.
-    fn name(&self) -> &'static str;
-    
-    /// A brief description of what the tool does.
-    fn description(&self) -> &'static str;
-    
-    /// Input schema description (e.g., JSON schema string)
-    fn input_schema(&self) -> &'static str;
-    
-    /// Output schema description (e.g., JSON schema string)
-    fn output_schema(&self) -> &'static str;
-    
-    /// Execute the tool with the given parameters
-    async fn execute(&self, params: Value) -> Result<Value, McpPortError>;
 }
 
 /// Defines a resource whose state can be read via MCP.
@@ -313,76 +310,29 @@ pub trait McpResource: Send + Sync {
     fn description(&self) -> &str;
 
     /// Reads the current state of the resource.
-    async fn read(&self) -> Result<Value, McpPortError>;
+    async fn read(&self) -> Result<Value, JsonRpcError>;
 }
 
-pub fn create_mcp_tool_registry<C: ImapClientTrait + Send + Sync + 'static>(imap_client: Arc<C>) -> Arc<HashMap<String, Arc<dyn McpTool>>> {
+pub fn create_mcp_tool_registry(session_factory: Arc<ImapSessionFactory>) -> Arc<HashMap<String, Arc<dyn McpTool>>> {
     let mut tool_registry: HashMap<String, Arc<dyn McpTool>> = HashMap::new();
     
-    // Instantiate the generic tool structs. The ::new method generated by the generic
-    // mcp_tool! arm expects Arc<C>, which matches imap_client.clone().
     let tools: Vec<Arc<dyn McpTool>> = vec![
-        Arc::new(McpListFoldersTool::<C>::new(imap_client.clone())),
-        Arc::new(McpCreateFolderTool::<C>::new(imap_client.clone())),
-        Arc::new(McpDeleteFolderTool::<C>::new(imap_client.clone())),
-        Arc::new(McpRenameFolderTool::<C>::new(imap_client.clone())),
-        Arc::new(McpSelectFolderTool::<C>::new(imap_client.clone())),
-        Arc::new(McpSearchEmailsTool::<C>::new(imap_client.clone())),
-        Arc::new(McpFetchEmailsTool::<C>::new(imap_client.clone())),
-        Arc::new(McpMoveEmailTool::<C>::new(imap_client.clone())),
-        Arc::new(McpStoreFlagsTool::<C>::new(imap_client.clone())),
-        Arc::new(McpAppendEmailTool::<C>::new(imap_client.clone())),
-        Arc::new(McpExpungeFolderTool::<C>::new(imap_client.clone())),
+        Arc::new(McpListFoldersTool::new(session_factory.clone())),
+        Arc::new(McpCreateFolderTool::new(session_factory.clone())),
+        Arc::new(McpDeleteFolderTool::new(session_factory.clone())),
+        Arc::new(McpRenameFolderTool::new(session_factory.clone())),
+        Arc::new(McpSelectFolderTool::new(session_factory.clone())),
+        Arc::new(McpSearchEmailsTool::new(session_factory.clone())),
+        Arc::new(McpFetchEmailsTool::new(session_factory.clone())),
+        Arc::new(McpMoveEmailTool::new(session_factory.clone())),
+        Arc::new(McpStoreFlagsTool::new(session_factory.clone())),
+        Arc::new(McpAppendEmailTool::new(session_factory.clone())),
+        Arc::new(McpExpungeFolderTool::new(session_factory.clone())),
     ];
+    
     for tool in tools {
         tool_registry.insert(tool.name().to_string(), tool);
     }
+    
     Arc::new(tool_registry)
-}
-
-// Implement From<ImapError> for McpPortError
-impl From<ImapError> for McpPortError {
-    fn from(err: ImapError) -> Self {
-        log::warn!("Converting IMAP Error to MCP Port Error: {:?}", err);
-        match err {
-            ImapError::Connection(m) => McpPortError::ImapConnectionError(m),
-            ImapError::Tls(m) => McpPortError::ImapConnectionError(m), // Map TLS also to ConnectionError for MCP
-            ImapError::Auth(m) => McpPortError::ImapAuthenticationError(m),
-            ImapError::Parse(m) => McpPortError::ToolError(format!("IMAP Parse Error: {}", m)), // Maybe map to InvalidParams? Or ToolError?
-            ImapError::BadResponse(m) => McpPortError::ToolError(format!("IMAP Bad Response: {}", m)),
-            ImapError::Mailbox(m) => McpPortError::ImapFolderNotFound(m), // Assuming mailbox errors usually mean not found
-            ImapError::Fetch(m) => McpPortError::ImapEmailNotFound(m), // Assuming fetch errors often relate to not found UIDs
-            ImapError::Append(m) => McpPortError::ImapOperationFailed(m),
-            ImapError::Operation(m) => McpPortError::ImapOperationFailed(m),
-            ImapError::Command(m) => McpPortError::InvalidParams(m), // Command errors often due to bad params
-            ImapError::Config(m) => McpPortError::InternalError { message: format!("IMAP Config Error: {}", m) },
-            ImapError::Io(m) => McpPortError::ImapConnectionError(format!("IMAP IO Error: {}", m)),
-            ImapError::Internal(m) => McpPortError::InternalError { message: format!("IMAP Internal Error: {}", m) },
-            ImapError::EnvelopeNotFound => McpPortError::ImapEmailNotFound("Envelope data missing in fetch response".to_string()),
-            
-            // Add mappings for the new variants
-            ImapError::FolderNotFound(m) => McpPortError::ImapFolderNotFound(m),
-            ImapError::FolderExists(m) => McpPortError::ImapFolderExists(m),
-            ImapError::RequiresFolderSelection(m) => McpPortError::ImapRequiresFolderSelection(m),
-            ImapError::ConnectionError(m) => McpPortError::ImapConnectionError(m),
-            ImapError::AuthenticationError(m) => McpPortError::ImapAuthenticationError(m),
-            ImapError::EmailNotFound(uids) => McpPortError::ImapEmailNotFound(format!("UID(s) {:?} not found", uids)),
-            ImapError::OperationFailed(m) => McpPortError::ImapOperationFailed(m),
-            ImapError::InvalidCriteria(c) => McpPortError::ImapInvalidCriteria(format!("Invalid search criteria: {:?}", c)),
-            ImapError::FolderNotSelected => McpPortError::ImapRequiresFolderSelection("Operation requires folder selection".to_string()),
-            ImapError::ParseError(m) => McpPortError::ToolError(format!("IMAP Parse Error: {}", m)),
-            // SessionError needs careful handling. Extract underlying info if possible.
-            ImapError::SessionError(e) => {
-                // Try to provide a more specific error based on the underlying async_imap::error::Error
-                match e {
-                    async_imap::error::Error::ConnectionLost => McpPortError::ImapConnectionError("Connection Lost".to_string()),
-                    async_imap::error::Error::Parse(p_err) => McpPortError::ToolError(format!("IMAP Parse Error: {}", p_err)),
-                    async_imap::error::Error::No(s) | async_imap::error::Error::Bad(s) => McpPortError::ImapOperationFailed(s),
-                    async_imap::error::Error::Io(io_err) => McpPortError::ImapConnectionError(format!("IO Error: {}", io_err)),
-                    // Handle other async_imap errors as specifically as possible, or fallback
-                    _ => McpPortError::ImapOperationFailed(format!("Underlying IMAP Session Error: {}", e))
-                }
-            }
-        }
-    }
 } 

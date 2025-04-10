@@ -1,6 +1,7 @@
 use async_trait::async_trait;
 use serde::{Serialize, Deserialize};
-use crate::dashboard::api::errors::ApiError;
+use thiserror::Error;
+use crate::api::rest::ApiError as RestApiError;
 
 pub mod openai;
 pub mod openrouter;
@@ -24,9 +25,29 @@ pub trait AiProvider: Send + Sync {
     /// # Returns
     ///
     /// A `Result` containing the AI's response text (`String`) or an `ApiError`.
-    async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, ApiError>;
+    async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError>;
 }
 
 // Re-export the provider implementations for easier access
 pub use openai::OpenAiAdapter;
-pub use openrouter::OpenRouterAdapter; 
+pub use openrouter::OpenRouterAdapter;
+
+// --- Mock Provider Implementation ---
+#[derive(Debug, Default)]
+pub struct MockAiProvider;
+
+#[async_trait]
+impl AiProvider for MockAiProvider {
+    async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError> {
+        if let Some(last_message) = messages.last() {
+            if last_message.role == "user" {
+                return Ok(format!("Mock response to: {}", last_message.content));
+            }
+        }
+        Ok("This is a mock AI response.".to_string())
+    }
+}
+
+// --- Comment out mock module as it doesn't exist --- 
+// mod mock; 
+// pub use mock::MockAiProvider; 

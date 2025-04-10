@@ -3,7 +3,7 @@ use serde::{Serialize, Deserialize};
 // Stats Types
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardStats {
-    pub active_imap_connections: usize,
+    pub active_dashboard_sse_clients: usize,
     pub requests_per_minute: f64,
     pub average_response_time_ms: f64,
     pub system_health: SystemHealth,

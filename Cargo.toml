@@ -25,7 +25,7 @@ async-trait = "0.1"
 actix-web = "4"
 actix-rt = "2"
 # Add actix-web-lab for SSE
-actix-web-lab = "0.20" 
+actix-web-lab = "0.20"
 # Add actix-files for serving static files
 actix-files = "0.6"
 
@@ -75,6 +75,8 @@ base64 = "0.21"
 sysinfo = "0.30" # For system metrics
 rand = "0.8" # For random number generation in example metrics
 reqwest = { version = "0.12", features = ["json"] }
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", branch = "main" } # Use the MCP SDK
+async-native-tls = "0.5.0"
 
 [dev-dependencies]
 # Remove reqwest native-tls feature if not needed
@@ -93,6 +95,7 @@ serial_test = "3.1.1"
 itertools = "0.12" # Add itertools dependency
 lazy_static = "1.4" # For static regex patterns in SSE tests
 regex = "1" # For parsing SSE events
+mockall = "0.12.1" # Add mockall
 
 [features]
 default = []
