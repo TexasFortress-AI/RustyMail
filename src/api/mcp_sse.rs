@@ -1,16 +1,17 @@
 use actix_web::{
-    web::{self, Bytes, Data, Path, Responder, get},
+    web::{self, Bytes, Data, Path, Responder, get, App, HttpServer},
     Error as ActixError, HttpRequest, HttpResponse,
 };
 use actix_web_lab::sse::{self, Sse, Event};
 use futures_util::stream::{Stream, StreamExt};
-use tokio::time::{Duration};
+use tokio::time::{Duration, Instant};
 use tokio::sync::{
     Mutex as TokioMutex,
     RwLock,
-    mpsc
+    mpsc,
+    broadcast::{self, Receiver}
 };
-use std::sync::{Arc};
+use std::sync::Arc;
 use std::collections::HashMap;
 use std::convert::Infallible;
 use uuid::Uuid;
@@ -20,18 +21,18 @@ use crate::{
     mcp::{
         handler::McpHandler,
         types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError},
+        error_codes::ErrorCode,
     },
 };
 use log::{debug, error, info, warn};
 use serde::Serialize;
-use serde_json::{self, json};
-use tokio::sync::broadcast;
-use tokio::sync::broadcast::Receiver;
-use tokio::time::{Duration, Instant};
-use actix_web::web::App;
-use actix_web::web::HttpServer;
-use futures::StreamExt;
-use serde_json::Value;
+use serde_json::{self, json, Value};
+use crate::imap::{
+    AsyncImapOps,
+    types::{Email, Folder, MailboxInfo},
+    error::ImapError
+};
+use crate::api::sse::SseState;
 use crate::mcp::{
     ErrorCode,
     PARSE_ERROR,
@@ -81,12 +82,6 @@ use crate::imap::{
     MailboxInfo,
     ImapError
 };
-
-use crate::api::sse::SseState;
-use crate::imap::session::AsyncImapOps;
-use crate::imap::types::{Email, Folder, MailboxInfo};
-use crate::mcp::error_codes::ErrorCode;
-use crate::mcp::types::{JsonRpcRequest, JsonRpcError};
 
 #[derive(Debug, Serialize)]
 struct SseCommandPayload {

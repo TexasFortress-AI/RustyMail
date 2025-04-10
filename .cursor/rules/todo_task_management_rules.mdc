@@ -1,0 +1,49 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Cursor IDE Rules for To-Do Checklist Management
+
+When working on tasks related to the `/.todo_checklist.md` Markdown file, follow these instructions:
+
+1. **Task Focus**:
+   - Identify and work on the next unchecked checkbox in `/todo_checklist.md`.
+   - Do not skip tasks or work on other items unless explicitly instructed by the user.
+   - If no unchecked tasks are available or the next task is unclear, ask the user for clarification.
+
+2. **Task Execution**:
+   - Perform the task associated with the next checkbox.
+   - Ensure all tests related to the task pass before marking it complete. If tests fail, debug and resolve issues first.
+   - Do not proceed to mark a task complete if tests are failing.
+
+3. **Checklist Updates**:
+   - Upon completing a task, update `/.todo_checklist.md` by:
+     - Marking the corresponding checkbox as complete (e.g., change `[ ]` to `[x]`).
+     - Saving the updated file.
+   - Do not modify other parts of the checklist unless necessary for the task.
+
+4. **Task Logging**:
+   - At the bottom of `/todo_checklist.md`, append a log entry for the completed task including:
+     - A brief description of what was done.
+     - The time taken to complete the task (in minutes or hours, estimated or actual).
+     - Any interesting takeaways, lessons learned, or potential issues to be aware of (e.g., dependencies, edge cases, or warnings).
+   - Keep the log concise, typically 2-3 sentences.
+   - Example log format:
+     ```
+     ## Task Log
+     - **Completed**: [Task Description]
+     - **Time Taken**: [Time]
+     - **Notes**: [Takeaways, lessons, or issues]
+     ```
+
+5. **General Guidelines**:
+   - If the task involves code changes, verify that all changes align with the project’s coding standards and pass any existing tests.
+   - If clarification is needed (e.g., ambiguous task, missing context), prompt the user with specific questions rather than making assumptions.
+   - Do not generate or edit files unrelated to the current task unless explicitly requested.
+
+6. **Error Handling**:
+   - If the `/.todo_checklist.md` file is missing or malformed, notify the user and suggest creating or correcting it.
+   - If tests are not defined but required, ask the user how to proceed (e.g., write new tests or skip).
+
+These rules ensure consistent task management and adherence to the project’s workflow.
