@@ -8,8 +8,8 @@ use std::sync::Arc;
 
 // Async runtime
 use tokio::{
-    // Removed unused async IO imports as std::io is used in the sync run loop
-    // io::{AsyncBufReadExt, AsyncWriteExt},
+    // Import necessary IO traits
+    io::{AsyncBufReadExt, AsyncWriteExt},
     sync::Mutex as TokioMutex, // Renamed for clarity
     runtime::Runtime, // Needed for spawn_mcp_stdio_server
 };

@@ -18,7 +18,7 @@ use std::{
     collections::HashMap,
 };
 use uuid::Uuid;
-use log::{error, info, debug};
+use log::{error, info, debug, warn};
 use serde::Serialize;
 use serde_json::{self, Value};
 

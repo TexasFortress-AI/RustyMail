@@ -77,6 +77,7 @@ rand = "0.8" # For random number generation in example metrics
 reqwest = { version = "0.12", features = ["json"] }
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", branch = "main" } # Use the MCP SDK
 async-native-tls = "0.5.0"
+tracing = "0.1.41"
 
 [dev-dependencies]
 # Remove reqwest native-tls feature if not needed

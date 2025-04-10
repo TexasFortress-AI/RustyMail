@@ -2919,6 +2919,7 @@ dependencies = [
  "tokio-rustls",
  "tokio-stream",
  "tokio-util",
+ "tracing",
  "urlencoding",
  "uuid",
 ]
