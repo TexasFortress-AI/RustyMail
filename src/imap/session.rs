@@ -55,21 +55,210 @@ pub type Flag = ImapTypesFlag;
 const DEFAULT_MAILBOX_DELIMITER: char = '/';
 
 /// Trait defining asynchronous IMAP operations, abstracted over the specific IMAP client library implementation.
+/// 
+/// This trait provides a high-level interface for common IMAP operations, hiding the complexity
+/// of the underlying IMAP protocol and client implementation details. It ensures thread-safe
+/// operations through the `Send + Sync` bounds.
+/// 
+/// # Examples
+/// 
+/// ```rust
+/// use rusty_mail::imap::session::AsyncImapOps;
+/// use rusty_mail::imap::error::ImapError;
+/// 
+/// async fn example(session: &mut impl AsyncImapOps) -> Result<(), ImapError> {
+///     // Login to the IMAP server
+///     session.login("username", "password").await?;
+///     
+///     // List all folders
+///     let folders = session.list_folders().await?;
+///     
+///     // Select a folder and get its info
+///     let info = session.select_folder("INBOX").await?;
+///     
+///     // Search for emails
+///     let uids = session.search_emails("ALL").await?;
+///     
+///     // Fetch specific emails
+///     let emails = session.fetch_emails(&uids).await?;
+///     
+///     Ok(())
+/// }
+/// ```
 #[async_trait]
 pub trait AsyncImapOps: Send + Sync {
+    /// Authenticates with the IMAP server using the provided credentials.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `username` - The username for authentication
+    /// * `password` - The password for authentication
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ImapError` if authentication fails or the connection is lost.
     async fn login(&mut self, username: &str, password: &str) -> Result<(), ImapError>;
+
+    /// Logs out from the IMAP server and closes the connection.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ImapError` if the logout command fails or the connection is lost.
     async fn logout(&mut self) -> Result<(), ImapError>;
+
+    /// Lists all available folders in the mailbox.
+    /// 
+    /// # Returns
+    /// 
+    /// A vector of `Folder` structs containing folder names and delimiters.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ImapError` if the LIST command fails or the connection is lost.
     async fn list_folders(&mut self) -> Result<Vec<Folder>, ImapError>;
+
+    /// Creates a new folder with the specified name.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `name` - The name of the folder to create
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ImapError` if the CREATE command fails, the folder already exists,
+    /// or the connection is lost.
     async fn create_folder(&mut self, name: &str) -> Result<(), ImapError>;
+
+    /// Deletes a folder with the specified name.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `name` - The name of the folder to delete
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ImapError` if the DELETE command fails, the folder doesn't exist,
+    /// or the connection is lost.
     async fn delete_folder(&mut self, name: &str) -> Result<(), ImapError>;
+
+    /// Renames a folder from one name to another.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `old_name` - The current name of the folder
+    /// * `new_name` - The new name for the folder
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ImapError` if the RENAME command fails, the source folder doesn't exist,
+    /// the target folder already exists, or the connection is lost.
     async fn rename_folder(&mut self, old_name: &str, new_name: &str) -> Result<(), ImapError>;
+
+    /// Selects a folder and returns its information.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `name` - The name of the folder to select
+    /// 
+    /// # Returns
+    /// 
+    /// A `MailboxInfo` struct containing information about the selected folder.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ImapError` if the SELECT command fails, the folder doesn't exist,
+    /// or the connection is lost.
     async fn select_folder(&mut self, name: &str) -> Result<MailboxInfo, ImapError>;
+
+    /// Searches for emails matching the specified criteria.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `criteria` - The search criteria in IMAP format (e.g., "ALL", "UNSEEN", "FROM user@example.com")
+    /// 
+    /// # Returns
+    /// 
+    /// A vector of UIDs for the matching emails.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ImapError` if the SEARCH command fails or the connection is lost.
     async fn search_emails(&mut self, criteria: &str) -> Result<Vec<u32>, ImapError>;
+
+    /// Fetches the specified emails by their UIDs.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `uids` - A slice of UIDs for the emails to fetch
+    /// 
+    /// # Returns
+    /// 
+    /// A vector of `Email` structs containing the fetched email data.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ImapError` if the FETCH command fails or the connection is lost.
     async fn fetch_emails(&mut self, uids: &[u32]) -> Result<Vec<Email>, ImapError>;
+
+    /// Fetches the raw message content for a specific email.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `uid` - The UID of the email to fetch
+    /// 
+    /// # Returns
+    /// 
+    /// The raw message content as a vector of bytes.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ImapError` if the FETCH command fails or the connection is lost.
     async fn fetch_raw_message(&mut self, uid: u32) -> Result<Vec<u8>, ImapError>;
+
+    /// Moves an email to a different folder.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `uid` - The UID of the email to move
+    /// * `target_folder` - The name of the destination folder
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ImapError` if the MOVE command fails, the email doesn't exist,
+    /// the target folder doesn't exist, or the connection is lost.
     async fn move_email(&mut self, uid: u32, target_folder: &str) -> Result<(), ImapError>;
+
+    /// Stores flags for a specific email.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `uid` - The UID of the email
+    /// * `flags` - The flags to store in IMAP format (e.g., "+FLAGS (\Seen)")
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ImapError` if the STORE command fails or the connection is lost.
     async fn store_flags(&mut self, uid: u32, flags: &str) -> Result<(), ImapError>;
+
+    /// Appends an email to a folder.
+    /// 
+    /// # Arguments
+    /// 
+    /// * `folder` - The name of the folder to append to
+    /// * `content` - The raw email content as bytes
+    /// * `flags` - The flags to set on the appended message in IMAP format
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ImapError` if the APPEND command fails, the folder doesn't exist,
+    /// or the connection is lost.
     async fn append(&mut self, folder: &str, content: &[u8], flags: &str) -> Result<(), ImapError>;
+
+    /// Expunges (permanently removes) deleted emails from the current folder.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ImapError` if the EXPUNGE command fails or the connection is lost.
     async fn expunge(&mut self) -> Result<(), ImapError>;
 }
 
