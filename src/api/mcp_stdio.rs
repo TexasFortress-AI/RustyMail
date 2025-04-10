@@ -1,16 +1,21 @@
-//! Handles MCP communication over stdin/stdout.
+//! Handles MCP (Mail Control Protocol) communication over standard input/output.
+//! This module provides a simple, line-based JSON-RPC 2.0 transport mechanism
+//! suitable for command-line tools or inter-process communication.
 
 // Standard library imports
 use std::io::{self, BufRead, Write};
+use std::sync::Arc;
 
 // Async runtime
 use tokio::{
-    io::{AsyncBufReadExt, AsyncWriteExt},
-    sync::Mutex,
+    // Removed unused async IO imports as std::io is used in the sync run loop
+    // io::{AsyncBufReadExt, AsyncWriteExt},
+    sync::Mutex as TokioMutex, // Renamed for clarity
+    runtime::Runtime, // Needed for spawn_mcp_stdio_server
 };
 
 // Serialization
-use serde_json::{self, json};
+use serde_json::{self, json, Value}; // Import Value
 
 // Sync primitives
 use std::sync::Arc;
@@ -18,88 +23,179 @@ use std::sync::Arc;
 // Logging
 use tracing::{debug, error, info, warn};
 
-// MCP types
+// Use re-exported MCP types and traits
 use crate::mcp::{
-    types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError},
-    error_codes::{
-        ErrorCode,
-        PARSE_ERROR,
-        INTERNAL_ERROR,
-    },
-    handler::McpHandler,
+    McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError,
+    ErrorCode, // Re-exported from error_codes
+    McpHandler, // Re-exported from handler
 };
 
-// IMAP types
-use crate::imap::ImapSessionFactory;
+// IMAP types (Remove if session factory is not used directly here)
+// use crate::imap::ImapSessionFactory;
 
-use crate::mcp_port::create_mcp_tool_registry;
+// Remove potentially outdated import
+// use crate::mcp_port::create_mcp_tool_registry;
 
-// --- McpStdioAdapter Logic ---
+// --- McpStdioServer Logic ---
 
+/// Implements an MCP server that communicates over standard input and standard output.
+///
+/// It reads JSON-RPC request objects (one per line) from stdin,
+/// processes them using the provided `McpHandler`, and writes JSON-RPC response
+/// objects (one per line) to stdout.
 pub struct McpStdioServer {
+    /// The shared MCP request handler responsible for executing the requested methods.
     mcp_handler: Arc<dyn McpHandler>,
-    port_state: Arc<tokio::sync::Mutex<McpPortState>>,
+    /// The shared state specific to this stdio communication channel.
+    port_state: Arc<TokioMutex<McpPortState>>,
 }
 
 impl McpStdioServer {
-    pub fn new(mcp_handler: Arc<dyn McpHandler>, port_state: Arc<tokio::sync::Mutex<McpPortState>>) -> Self {
+    /// Creates a new `McpStdioServer`.
+    ///
+    /// # Arguments
+    ///
+    /// * `mcp_handler` - An `Arc` pointing to the shared `McpHandler` implementation.
+    /// * `port_state` - An `Arc<Mutex<McpPortState>>` holding the state for this stdio session.
+    pub fn new(mcp_handler: Arc<dyn McpHandler>, port_state: Arc<TokioMutex<McpPortState>>) -> Self {
         Self {
             mcp_handler,
             port_state,
         }
     }
 
+    /// Runs the main loop of the stdio server.
+    ///
+    /// This function blocks the current thread, continuously reading lines from stdin,
+    /// attempting to parse them as `JsonRpcRequest` objects, handling them using the
+    /// `mcp_handler`, and writing the resulting `JsonRpcResponse` back to stdout.
+    ///
+    /// It handles basic JSON parsing errors by sending a JSON-RPC ParseError response.
+    /// Other errors during handling are converted to appropriate `JsonRpcError` responses
+    /// by the `mcp_handler` or the underlying logic.
+    ///
+    /// The loop terminates when stdin reaches EOF.
+    ///
+    /// # Returns
+    ///
+    /// An `io::Result<()>` indicating success or an I/O error during reading/writing.
     pub async fn run(&self) -> io::Result<()> {
-        let stdin = io::stdin();
-        let mut reader = io::BufReader::new(stdin);
-        let mut stdout = io::stdout();
+        info!("Starting MCP stdio server loop...");
+        // Use Tokio async stdin/stdout for better integration with async handler
+        let mut reader = tokio::io::BufReader::new(tokio::io::stdin());
+        let mut writer = tokio::io::BufWriter::new(tokio::io::stdout());
         let mut line = String::new();
 
         loop {
             line.clear();
-            if reader.read_line(&mut line)? == 0 {
-                break;
-            }
-
-            let request: JsonRpcRequest = match serde_json::from_str(&line) {
-                Ok(req) => req,
-                Err(e) => {
-                    let error_response = JsonRpcResponse {
-                        jsonrpc: "2.0".to_string(),
-                        id: None,
-                        result: None,
-                        error: Some(JsonRpcError {
-                            code: PARSE_ERROR,
-                            message: format!("Failed to parse request: {}", e),
-                            data: None,
-                        }),
-                    };
-                    serde_json::to_writer(&mut stdout, &error_response)?;
-                    stdout.write_all(b"\n")?;
-                    stdout.flush()?;
-                    continue;
+            // Read line asynchronously
+            match reader.read_line(&mut line).await {
+                Ok(0) => {
+                    info!("MCP stdio stdin reached EOF. Exiting.");
+                    break; // EOF
                 }
-            };
+                Ok(_) => {
+                    // Process the line
+                    debug!("Received MCP stdio line: {}", line.trim());
+                    let response_json_value = match serde_json::from_str::<Value>(&line) {
+                        Ok(json_req_value) => {
+                            // Successfully parsed JSON, pass to handler
+                            self.mcp_handler.handle_request(self.port_state.clone(), json_req_value).await
+                        }
+                        Err(e) => {
+                            // Failed to parse JSON, create a ParseError response
+                            error!("Failed to parse MCP stdio request: {}. Line: {}", e, line.trim());
+                            let error_response = JsonRpcResponse::parse_error();
+                            // Serialize the error response to Value for consistent handling
+                            serde_json::to_value(error_response)
+                                .unwrap_or_else(|serde_err| {
+                                    error!("Failed to serialize ParseError response: {}", serde_err);
+                                    json!({ // Fallback basic JSON error
+                                        "jsonrpc": "2.0",
+                                        "error": {"code": ErrorCode::ParseError as i32, "message": "Parse error"},
+                                        "id": null
+                                    })
+                                })
+                        }
+                    };
 
-            let response = self.mcp_handler.handle_request(self.port_state.clone(), request).await;
-            serde_json::to_writer(&mut stdout, &response)?;
-            stdout.write_all(b"\n")?;
-            stdout.flush()?;
+                    // Serialize the final response (success or error) back to JSON string
+                    match serde_json::to_string(&response_json_value) {
+                        Ok(response_line) => {
+                            debug!("Sending MCP stdio response: {}", response_line);
+                            if let Err(e) = writer.write_all(response_line.as_bytes()).await {
+                                error!("Failed to write response to stdout: {}", e);
+                                break; // Stop if we can't write
+                            }
+                            if let Err(e) = writer.write_all(b"\n").await {
+                                error!("Failed to write newline to stdout: {}", e);
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            // This should ideally not happen if JsonRpcResponse serialization is correct
+                            error!("Failed to serialize final MCP response: {}", e);
+                            let internal_error = JsonRpcResponse::error(
+                                response_json_value.get("id").cloned(), // Try to get ID from failed value
+                                JsonRpcError::internal_error(format!("Failed to serialize response: {}", e))
+                            );
+                            if let Ok(err_line) = serde_json::to_string(&internal_error) {
+                                let _ = writer.write_all(err_line.as_bytes()).await; // Ignore error
+                                let _ = writer.write_all(b"\n").await; // Ignore error
+                            }
+                        }
+                    }
+
+                    // Flush the writer to ensure the line is sent immediately
+                    if let Err(e) = writer.flush().await {
+                        error!("Failed to flush stdout: {}", e);
+                        break;
+                    }
+                }
+                Err(e) => {
+                    error!("Error reading from stdin: {}", e);
+                    break; // Exit on read error
+                }
+            }
         }
 
+        info!("MCP stdio server loop finished.");
         Ok(())
     }
 }
 
-pub fn spawn_mcp_stdio_server(session_factory: crate::imap::ImapSessionFactory) -> io::Result<()> {
-    let mcp_handler = Arc::new(session_factory);
-    let port_state = Arc::new(tokio::sync::Mutex::new(McpPortState::default()));
+/// Spawns and runs the MCP stdio server in a new Tokio runtime.
+///
+/// This function is intended as a convenient entry point for starting the stdio server.
+/// It creates the necessary handler and state and blocks until the server exits.
+///
+/// # Arguments
+///
+/// * `mcp_handler` - The `McpHandler` implementation to use for processing requests.
+///
+/// # Returns
+///
+/// An `io::Result<()>` indicating success or failure in running the server runtime.
+pub fn spawn_mcp_stdio_server(mcp_handler: Arc<dyn McpHandler>) -> io::Result<()> {
+    info!("Spawning MCP stdio server runtime...");
+    let port_state = Arc::new(TokioMutex::new(McpPortState::default()));
     let server = McpStdioServer::new(mcp_handler, port_state);
 
-    tokio::runtime::Runtime::new()?.block_on(server.run())
+    // Create a runtime to block on the server's execution
+    let runtime = Runtime::new()?;
+    runtime.block_on(async {
+        if let Err(e) = server.run().await {
+            error!("MCP stdio server encountered an error: {}", e);
+        }
+    });
+    info!("MCP stdio server runtime finished.");
+    Ok(())
 }
 
-// --- Unit Tests for McpStdioAdapter ---
+// --- Unit Tests --- 
+// Tests are currently commented out or limited because testing stdin/stdout interaction
+// requires more complex setup (e.g., redirecting streams or refactoring `run` 
+// to accept generic AsyncRead/AsyncWrite traits).
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,101 +203,81 @@ mod tests {
     use std::sync::Arc;
     use async_trait::async_trait;
     use crate::mcp::types::McpPortState;
-    // Unused imports removed below:
-    // use crate::mcp::handler::{McpHandler, MockMcpHandler};
-    // use std::io::Cursor;
-    // use tokio::io::{DuplexStream, duplex, AsyncReadExt, AsyncWriteExt, BufReader, BufWriter};
-    // use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
-    // use tokio::sync::Mutex as TokioMutex;
-    // use log::warn; // Keep warn for commented out tests
+    use tokio::sync::Mutex as TokioMutex;
+    // mockall needed if MockMcpHandler is used
+    use mockall::{automock, predicate::*};
 
-    // Helper to run the adapter with mocked streams
-    // NOTE: This helper is currently broken because StdioAdapter::run() uses stdin/stdout directly.
-    //       Refactoring run() to accept Reader/Writer traits is needed for this test approach.
+    // Mock the handler for testing
+    #[automock]
+    #[async_trait]
+    impl McpHandler for MockMcpHandler { // Assuming mockall generated MockMcpHandler
+        async fn handle_request(&self, state: Arc<TokioMutex<McpPortState>>, json_req: Value) -> Value {
+            // Default mock implementation - echo request or return fixed response
+            self.handle_request(state, json_req).await
+        }
+    }
+
+    // Basic test to check server creation
+    #[test]
+    fn test_stdio_server_creation() {
+        let mock_handler = Arc::new(MockMcpHandler::new());
+        let port_state = Arc::new(TokioMutex::new(McpPortState::default()));
+        let _server = McpStdioServer::new(mock_handler, port_state);
+        // Assert something simple, e.g., server creation doesn't panic
+        assert!(true);
+    }
+
+    // TODO: Add tests using tokio::io::duplex or similar for stdin/stdout mocking
+    //       This requires McpStdioServer::run to be refactored to accept generic readers/writers.
+
+    /* Example structure for a future test using mocked IO */
     /*
-    async fn run_adapter_with_streams(
-        adapter: StdioAdapter, 
-        input_data: &[u8],
-    ) -> Vec<u8> { 
-        let (client_stream, server_stream) = duplex(1024);
+    #[tokio::test]
+    async fn test_stdio_valid_request_response() {
+        let (mut client_stdin, server_stdout) = tokio::io::duplex(1024);
+        let (server_stdin, mut client_stdout) = tokio::io::duplex(1024);
 
-        // Write input data to the server side
-        let input_handle = tokio::spawn(async move {
-            let mut input_cursor = Cursor::new(input_data);
-            let (_server_reader, mut server_writer) = tokio::io::split(server_stream);
-            tokio::io::copy(&mut input_cursor, &mut server_writer).await.expect("Input copy failed");
-            drop(server_writer);
+        let mut mock_handler = MockMcpHandler::new();
+        mock_handler.expect_handle_request()
+            .times(1)
+            .returning(|_state, req| {
+                // Simple echo handler for testing
+                let id = req.get("id").cloned();
+                let resp = JsonRpcResponse::success(id, req);
+                async move { serde_json::to_value(resp).unwrap() }.boxed()
+            });
+
+        let handler_arc = Arc::new(mock_handler);
+        let port_state = Arc::new(TokioMutex::new(McpPortState::default()));
+        let server = McpStdioServer::new(handler_arc, port_state);
+
+        // Spawn the server task with the mocked IO
+        let server_handle = tokio::spawn(async move {
+            // This requires run to be refactored!
+            // server.run_with_io(server_stdin, server_stdout).await 
         });
 
-        // Run the adapter with the client side IO (this needs refactoring in StdioAdapter)
-        let adapter_handle = tokio::spawn(async move {
-             let (server_reader, server_writer) = tokio::io::split(client_stream); 
-             let buf_reader = BufReader::new(server_reader.compat());
-             let buf_writer = BufWriter::new(server_writer.compat_write());
-             // adapter.run_with_io(buf_reader, buf_writer).await; // Needs refactoring
-             warn!("StdioAdapter tests using run_adapter_with_streams are disabled due to IO handling.");
-        });
+        // Client side: send request
+        let request = json!({ "jsonrpc": "2.0", "method": "test", "id": 1 });
+        let request_line = serde_json::to_string(&request).unwrap() + "\n";
+        client_stdin.write_all(request_line.as_bytes()).await.unwrap();
+        client_stdin.flush().await.unwrap();
 
-        // Read output data from the client side
-        let output_handle = tokio::spawn(async move {
-            let (mut client_reader, _client_writer) = tokio::io::split(client_stream); 
-            let mut output_buf = Vec::new();
-            client_reader.read_to_end(&mut output_buf).await.expect("Read output failed");
-            output_buf
-        });
+        // Client side: read response
+        let mut response_buf = String::new();
+        let mut reader = tokio::io::BufReader::new(client_stdout);
+        reader.read_line(&mut response_buf).await.unwrap();
 
-        // Wait for tasks to complete
-        input_handle.await.expect("Input task panicked");
-        adapter_handle.await.expect("Adapter task panicked");
-        let output_bytes = output_handle.await.expect("Output task panicked");
+        // Assert response
+        let response_val: Value = serde_json::from_str(&response_buf).unwrap();
+        assert_eq!(response_val["id"], 1);
+        assert!(response_val["result"].is_object());
+        assert_eq!(response_val["result"]["method"], "test");
 
-        output_bytes
-    }
-    */
-
-    /* // Commenting out tests that rely on the broken helper
-    #[tokio::test]
-    async fn test_stdio_adapter_valid_request() {
-        // ... test logic using run_adapter_with_streams ...
-    }
-    
-    #[tokio::test]
-    async fn test_stdio_adapter_multiple_requests() {
-        // ... test logic using run_adapter_with_streams ...
-    }
-    
-    #[tokio::test]
-    async fn test_stdio_adapter_invalid_json() {
-        // ... test logic using run_adapter_with_streams ...
-    }
-    
-    #[tokio::test]
-    async fn test_stdio_adapter_handler_error() {
-        // ... test logic using run_adapter_with_streams ...
+        // Clean up server task (optional)
+        // server_handle.abort();
     }
     */
 }
 
-// --- McpToolExecParams and similar structs are removed as direct calls are no longer needed ---
-// They were primarily for a different architecture where stdio adapter called specific handlers.
-// Now, the adapter uses the generic McpTool trait and the tool registry.
-
-// --- Removed handle_tool_exec, handle_select_folder, handle_move_emails ---
-// These functions are superseded by the logic within McpStdioAdapter::handle_request
-// ... other param structs ...
-// ... other param structs ...
-// ... other param structs ...
-// ... other param structs ...
-// ... other param structs ...
-// ... other param structs ...
-// ... other param structs ...
-
-// Define legacy error codes locally if they are needed here
-mod error_codes {
-    pub const IMAP_CONNECTION_ERROR: i32 = -32000;
-    pub const IMAP_AUTH_ERROR: i32 = -32001;
-    pub const FOLDER_NOT_FOUND: i32 = -32002;
-    pub const FOLDER_EXISTS: i32 = -32003;
-    pub const EMAIL_NOT_FOUND: i32 = -32004;
-    pub const IMAP_OPERATION_FAILED: i32 = -32010;
-}
+// Removed legacy local error codes module - use crate::mcp::error_codes

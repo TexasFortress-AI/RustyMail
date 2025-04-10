@@ -6,31 +6,108 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::fmt;
 
-// Custom Email struct (ensure it's public)
+/// Represents an email message in the IMAP system.
+///
+/// This struct encapsulates all the essential information about an email message,
+/// including its unique identifier, flags, metadata, and content.
+///
+/// # Examples
+///
+/// ```rust
+/// use chrono::Utc;
+/// use rustymail::imap::types::{Email, Envelope, Address};
+///
+/// let email = Email {
+///     uid: 42,
+///     flags: vec!["\\Seen".to_string(), "\\Flagged".to_string()],
+///     internal_date: Some(Utc::now()),
+///     envelope: Some(Envelope {
+///         subject: Some("Hello".to_string()),
+///         from: vec![Address {
+///             name: Some("Alice".to_string()),
+///             mailbox: Some("alice".to_string()),
+///             host: Some("example.com".to_string()),
+///         }],
+///         to: vec![],
+///         cc: vec![],
+///         bcc: vec![],
+///         reply_to: vec![],
+///         date: None,
+///         in_reply_to: None,
+///         message_id: None,
+///     }),
+///     body: Some(b"Hello, world!".to_vec()),
+/// };
+/// ```
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Email {
+    /// Unique identifier for the email in the current folder
     pub uid: u32,
+    /// List of IMAP flags associated with the email
     pub flags: Vec<String>,
+    /// Internal date when the email was received by the server
     pub internal_date: Option<DateTime<Utc>>,
+    /// Email envelope containing metadata like subject, sender, recipients
     pub envelope: Option<Envelope>,
+    /// Raw email body content
     pub body: Option<Vec<u8>>,
 }
 
-// Custom Folder struct (ensure it's public)
+/// Represents an IMAP folder (mailbox) in the email system.
+///
+/// A folder is a container for emails, organized hierarchically with a delimiter
+/// character separating folder levels.
+///
+/// # Examples
+///
+/// ```rust
+/// use rustymail::imap::types::Folder;
+///
+/// let folder = Folder {
+///     name: "INBOX".to_string(),
+///     delimiter: Some("/".to_string()),
+/// };
+/// ```
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Folder {
+    /// Name of the folder
     pub name: String,
+    /// Character used to separate folder levels in the hierarchy
     pub delimiter: Option<String>,
 }
 
 /// Represents information about a selected mailbox.
+///
+/// This struct contains metadata about a mailbox after it has been selected,
+/// including its name, hierarchy delimiter, attributes, and message counts.
+///
+/// # Examples
+///
+/// ```rust
+/// use rustymail::imap::types::MailboxInfo;
+///
+/// let mailbox = MailboxInfo {
+///     name: "INBOX".to_string(),
+///     delimiter: Some('/'),
+///     attributes: vec!["\\Noinferiors".to_string()],
+///     exists: 42,
+///     recent: 5,
+///     unseen: Some(10),
+/// };
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MailboxInfo {
+    /// Name of the mailbox
     pub name: String,
+    /// Character used to separate mailbox levels in the hierarchy
     pub delimiter: Option<char>,
+    /// List of mailbox attributes (e.g., \\Noinferiors, \\Noselect)
     pub attributes: Vec<String>,
+    /// Total number of messages in the mailbox
     pub exists: u32,
+    /// Number of recent messages
     pub recent: u32,
+    /// Number of unseen messages
     pub unseen: Option<u32>,
 }
 
@@ -203,24 +280,78 @@ pub enum UnsolicitedResponse {
     FetchFlags { uid: u32, flags: Vec<String> },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Envelope {
-    pub date: Option<String>,
-    pub subject: Option<String>,
-    pub from: Vec<Address>,
-    pub to: Vec<Address>,
-    pub cc: Vec<Address>,
-    pub bcc: Vec<Address>,
-    pub reply_to: Vec<Address>,
-    pub in_reply_to: Option<String>,
-    pub message_id: Option<String>,
+/// Represents an email address in the IMAP system.
+///
+/// This struct contains the components of an email address, including
+/// the display name, mailbox, and host parts.
+///
+/// # Examples
+///
+/// ```rust
+/// use rustymail::imap::types::Address;
+///
+/// let address = Address {
+///     name: Some("Alice Smith".to_string()),
+///     mailbox: Some("alice".to_string()),
+///     host: Some("example.com".to_string()),
+/// };
+/// ```
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Address {
+    /// Display name of the email address owner
+    pub name: Option<String>,
+    /// Mailbox part of the email address
+    pub mailbox: Option<String>,
+    /// Host part of the email address
+    pub host: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Address {
-    pub name: Option<String>,
-    pub mailbox: Option<String>,
-    pub host: Option<String>,
+/// Represents the envelope of an email message.
+///
+/// The envelope contains metadata about an email message, including
+/// its subject, sender, recipients, and various identifiers.
+///
+/// # Examples
+///
+/// ```rust
+/// use rustymail::imap::types::{Envelope, Address};
+///
+/// let envelope = Envelope {
+///     date: Some("2024-01-01T12:00:00Z".to_string()),
+///     subject: Some("Hello".to_string()),
+///     from: vec![Address {
+///         name: Some("Alice".to_string()),
+///         mailbox: Some("alice".to_string()),
+///         host: Some("example.com".to_string()),
+///     }],
+///     to: vec![],
+///     cc: vec![],
+///     bcc: vec![],
+///     reply_to: vec![],
+///     in_reply_to: Some("<message-id@example.com>".to_string()),
+///     message_id: Some("<unique-id@example.com>".to_string()),
+/// };
+/// ```
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct Envelope {
+    /// Date when the message was sent
+    pub date: Option<String>,
+    /// Subject of the message
+    pub subject: Option<String>,
+    /// List of sender addresses
+    pub from: Vec<Address>,
+    /// List of primary recipient addresses
+    pub to: Vec<Address>,
+    /// List of carbon copy recipient addresses
+    pub cc: Vec<Address>,
+    /// List of blind carbon copy recipient addresses
+    pub bcc: Vec<Address>,
+    /// List of reply-to addresses
+    pub reply_to: Vec<Address>,
+    /// Message-ID of the message this one is in reply to
+    pub in_reply_to: Option<String>,
+    /// Unique message identifier
+    pub message_id: Option<String>,
 }
 
 impl Email {
