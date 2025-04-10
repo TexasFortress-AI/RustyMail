@@ -27,26 +27,22 @@ use urlencoding;
 use uuid::Uuid;
 
 use crate::{
-    api::rest::AppState,
     imap::{
         error::ImapError,
-        session::{
-            ImapSession, ImapSessionFactory,
-        },
+        ImapSession, ImapSessionFactory,
         types::{
             AppendEmailPayload, FlagOperation, Flags, Folder, Email, MailboxInfo, ModifyFlagsPayload, 
             SearchCriteria, StoreOperation,
         },
     },
     mcp::{
-        handler::McpHandler,
-        types::{JsonRpcResponse, McpPortState},
+        McpHandler, McpPortState, JsonRpcResponse, JsonRpcRequest, JsonRpcError,
     },
+    api::sse::SseState,
+    dashboard::services::DashboardState,
 };
 
 use async_imap::error::Error as AsyncImapError;
-
-use crate::api::mcp::types::{JsonRpcRequest, JsonRpcError};
 
 /// Represents errors that can occur within the REST API layer.
 ///

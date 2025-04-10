@@ -6,6 +6,7 @@ pub mod config;
 pub mod dashboard;
 pub mod imap;
 pub mod mcp;
+pub mod transport;
 pub mod mcp_port;
 
 // Re-export key types for convenience
@@ -28,7 +29,6 @@ pub mod prelude {
         handler::McpHandler,
         types::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, McpPortState},
     };
-    pub use crate::mcp_port::McpPortError;
 
     // Common Libs
     pub use log::{debug, error, info, trace, warn};

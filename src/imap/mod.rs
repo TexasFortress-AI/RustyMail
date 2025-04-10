@@ -27,7 +27,5 @@ pub type ImapSessionFactory = Arc<
         + Sync,
 >;
 
-// pub use client::ImapClient; // Unused
-// pub use error::ImapError; // Unused
-// pub use session::{ImapSession, TlsImapSession}; // Unused
+pub use session::ImapSession; // Re-export the trait
 // pub use types::{Email, Folder, SearchCriteria}; // Unused 
