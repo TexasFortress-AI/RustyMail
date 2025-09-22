@@ -83,7 +83,49 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         self.session.list_folders().await
     }
 
-    // ... other convenience methods ...
+    pub async fn create_folder(&self, name: &str) -> Result<(), ImapError> {
+        self.session.create_folder(name).await
+    }
+
+    pub async fn delete_folder(&self, name: &str) -> Result<(), ImapError> {
+        self.session.delete_folder(name).await
+    }
+
+    pub async fn rename_folder(&self, old_name: &str, new_name: &str) -> Result<(), ImapError> {
+        self.session.rename_folder(old_name, new_name).await
+    }
+
+    pub async fn select_folder(&self, name: &str) -> Result<(), ImapError> {
+        self.session.select_folder(name).await
+    }
+
+    pub async fn search_emails(&self, criteria: &str) -> Result<Vec<u32>, ImapError> {
+        self.session.search_emails(criteria).await
+    }
+
+    pub async fn fetch_emails(&self, uids: &[u32]) -> Result<Vec<crate::imap::types::Email>, ImapError> {
+        self.session.fetch_emails(uids).await
+    }
+
+    pub async fn move_email(&self, uid: u32, from_folder: &str, to_folder: &str) -> Result<(), ImapError> {
+        self.session.move_email(uid, from_folder, to_folder).await
+    }
+
+    pub async fn store_flags(&self, uids: &[u32], operation: crate::imap::types::FlagOperation, flags: &[String]) -> Result<(), ImapError> {
+        self.session.store_flags(uids, operation, flags).await
+    }
+
+    pub async fn append(&self, folder: &str, content: &[u8], flags: &[String]) -> Result<(), ImapError> {
+        self.session.append(folder, content, flags).await
+    }
+
+    pub async fn fetch_raw_message(&self, uid: u32) -> Result<Vec<u8>, ImapError> {
+        self.session.fetch_raw_message(uid).await
+    }
+
+    pub async fn expunge(&self) -> Result<(), ImapError> {
+        self.session.expunge().await
+    }
 }
 
 /// Establishes a TLS-encrypted IMAP connection.
@@ -104,7 +146,7 @@ pub async fn connect(
     // Establish Tokio TCP connection
     let tcp_stream = tokio::time::timeout(timeout, TokioTcpStream::connect(addr))
         .await
-        .map_err(|_| ImapError::Timeout)??; 
+        .map_err(|_| ImapError::Timeout("Connection timed out".to_string()))??; 
 
     // Setup TLS connector
     let mut tls_builder = TlsConnector::builder();
@@ -119,7 +161,7 @@ pub async fn connect(
     // Perform TLS handshake with timeout
     let tls_stream = tokio::time::timeout(timeout, tls_connector.connect(server, tcp_stream))
         .await
-        .map_err(|_| ImapError::Timeout)?
+        .map_err(|_| ImapError::Timeout("Operation timed out".to_string()))?
         .map_err(|e| ImapError::Tls(e.to_string()))?;
 
     info!("TLS connection established");
@@ -131,7 +173,7 @@ pub async fn connect(
     // Lock the client for the connect call
     let session = tokio::time::timeout(timeout, client.connect())
         .await
-        .map_err(|_| ImapError::Timeout)?
+        .map_err(|_| ImapError::Timeout("Operation timed out".to_string()))?
         .map_err(|e| ImapError::Connection(format!("Failed to start session: {}", e)))?;
     
     info!("IMAP session established");
@@ -142,7 +184,7 @@ pub async fn connect(
     // But login is called on the async-imap Session, not our wrapper yet.
     tokio::time::timeout(timeout, session.login(username, password))
         .await
-        .map_err(|_| ImapError::Timeout)?
+        .map_err(|_| ImapError::Timeout("Operation timed out".to_string()))?
         .map_err(ImapError::from)?;
     
     info!("IMAP login successful for user: {}", username);

@@ -56,15 +56,18 @@ pub enum ImapError {
     
     #[error("Parse error: {0}")]
     Parse(String),
-    
+
     #[error("Bad response: {0}")]
     BadResponse(String),
+
+    #[error("Missing data: {0}")]
+    MissingData(String),
     
     #[error("Internal error: {0}")]
     Internal(String),
     
-    #[error("Operation timed out")]
-    Timeout,
+    #[error("Operation timed out: {0}")]
+    Timeout(String),
     
     #[error("Unknown error: {0}")]
     Unknown(String),

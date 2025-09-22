@@ -48,6 +48,7 @@ use tokio_util::compat::TokioAsyncReadCompatExt;
 use tokio_native_tls;
 use tokio_native_tls::native_tls;
 use tokio_native_tls::TlsConnector;
+use tokio::sync::Mutex as TokioMutex;
 
 // Type aliases
 pub type TlsCompatibleStream = tokio_util::compat::Compat<tokio_native_tls::TlsStream<TokioTcpStream>>;
@@ -117,25 +118,83 @@ impl AsyncImapSessionWrapper {
             session: Arc::new(TokioMutex::new(session)),
         }
     }
+
+    pub async fn connect(
+        server: &str,
+        port: u16,
+        username: Arc<String>,
+        password: Arc<String>
+    ) -> Result<Self, ImapError> {
+        // Create TLS connector
+        let tls_builder = native_tls::TlsConnector::builder();
+        let tls = tls_builder
+            .build()
+            .map_err(|e| ImapError::Tls(e.to_string()))?;
+        let tls_connector = TlsConnector::from(tls);
+
+        // Connect to server via TCP
+        let addr = format!("{}:{}", server, port);
+        let tcp_stream = TokioTcpStream::connect(&addr)
+            .await
+            .map_err(|e| ImapError::Connection(e.to_string()))?;
+
+        // Perform TLS handshake
+        let tls_stream = tls_connector
+            .connect(server, tcp_stream)
+            .await
+            .map_err(|e| ImapError::Tls(e.to_string()))?;
+
+        // Convert to compatible stream type
+        let compat_stream = tls_stream.compat();
+
+        // Create IMAP client and login
+        let client = async_imap::Client::new(compat_stream);
+        let mut session = client
+            .login(&*username, &*password)
+            .await
+            .map_err(|e| {
+                // Handle the error part of the Result
+                match e {
+                    async_imap::error::Error::No(msg) | async_imap::error::Error::Bad(msg) => {
+                        ImapError::Auth(format!("Login failed: {}", msg))
+                    }
+                    _ => ImapError::Auth(format!("Login failed: {:?}", e))
+                }
+            })?;
+
+        Ok(Self::new(session))
+    }
 }
 
 #[async_trait]
 impl AsyncImapOps for AsyncImapSessionWrapper {
     // Acquire lock in each method before calling the inner session method
-    async fn login(&self, username: &str, password: &str) -> Result<(), ImapError> {
-        let mut session_guard = self.session.lock().await; // Acquire lock
-        session_guard.login(username, password).await // Call method on guard
+    async fn login(&self, _username: &str, _password: &str) -> Result<(), ImapError> {
+        // Login is already done during connect, so this is a no-op
+        // The session is already authenticated
+        Ok(())
     }
 
     async fn logout(&self) -> Result<(), ImapError> {
         let mut session_guard = self.session.lock().await;
-        session_guard.logout().await
+        session_guard.logout().await.map_err(ImapError::from)?;
+        Ok(())
     }
 
     async fn list_folders(&self) -> Result<Vec<String>, ImapError> {
         let mut session_guard = self.session.lock().await;
-        // Assuming list_folders on TlsImapSession now takes &mut self
-        session_guard.list_folders().await 
+        // Use the IMAP LIST command to get all folders
+        let folders = session_guard
+            .list(None, Some("*"))
+            .await
+            .map_err(ImapError::from)?;
+
+        let folder_names: Vec<String> = folders
+            .into_iter()
+            .map(|folder| folder.name().to_string())
+            .collect();
+
+        Ok(folder_names)
     }
 
     async fn create_folder(&self, name: &str) -> Result<(), ImapError> {
@@ -211,11 +270,26 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
 
     async fn append(&self, folder: &str, content: &[u8], flags: &[String]) -> Result<(), ImapError> {
         let mut session_guard = self.session.lock().await;
-        let flag_refs: Vec<&str> = flags.iter().map(|s| s.as_str()).collect();
-        // append needs &mut
-        session_guard.append(folder, flag_refs, content)
+        // Convert String flags to async_imap Flag types
+        let imap_flags: Vec<Flag> = flags
+            .iter()
+            .filter_map(|f| {
+                match f.as_str() {
+                    "\\Seen" => Some(Flag::Seen),
+                    "\\Answered" => Some(Flag::Answered),
+                    "\\Flagged" => Some(Flag::Flagged),
+                    "\\Deleted" => Some(Flag::Deleted),
+                    "\\Draft" => Some(Flag::Draft),
+                    _ => None, // Skip unknown flags
+                }
+            })
+            .collect();
+
+        // The append method takes the mailbox name and content
+        session_guard.append(folder, content)
             .await
-            .map_err(ImapError::from)
+            .map_err(ImapError::from)?;
+        Ok(())
     }
 
     async fn fetch_raw_message(&self, uid: u32) -> Result<Vec<u8>, ImapError> {
@@ -313,29 +387,5 @@ pub fn create_imap_factory(
     }))
 }
 
-impl AsyncImapSession {
-    pub async fn connect(
-        server: &str,
-        port: u16,
-        username: Arc<String>,
-        password: Arc<String>
-    ) -> Result<Self, ImapError> {
-        let addr = format!("{}:{}", server, port);
-        let stream = TokioTcpStream::connect(&addr).await?;
-        let tls = TlsConnector::new()?;
-        let tls_stream = tls.connect(server, stream).await?;
-        let client = async_imap::Client::new(tls_stream);
-        
-        let session = client
-            .login(&*username, &*password)
-            .await
-            .map_err(|e| ImapError::Auth(format!("Login failed: {}", e)))?;
-
-        Ok(Self {
-            session: Arc::new(Mutex::new(session)),
-            selected_folder: Arc::new(Mutex::new(None)),
-        })
-    }
-}
-
-use crate::prelude::*;
+// Note: Removed dead AsyncImapSession implementation
+// All IMAP functionality is now in AsyncImapSessionWrapper
