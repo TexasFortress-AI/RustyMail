@@ -14,7 +14,6 @@ use tokio::sync::Mutex as TokioMutex;
 
 // Crate-local imports
 use crate::{ // Group crate imports
-    // api::middleware::validate_api_key, // Assuming middleware exists - Commented out for now
     config::Settings,
     dashboard::api::errors::ApiError as DashboardApiError, // Use alias to avoid clash
     dashboard::services::DashboardState,
@@ -102,6 +101,31 @@ impl From<DashboardApiError> for ApiError {
     fn from(err: DashboardApiError) -> Self {
         ApiError::Dashboard(err.to_string())
     }
+}
+
+// --- Middleware ---
+
+use actix_web::dev::ServiceRequest;
+use actix_web_lab::middleware::Next;
+
+/// Simple API key validation middleware
+async fn validate_api_key(
+    req: ServiceRequest,
+    next: Next<impl actix_web::body::MessageBody>,
+) -> Result<actix_web::dev::ServiceResponse<impl actix_web::body::MessageBody>, ActixError> {
+    // Check for API key in header
+    let has_api_key = req.headers()
+        .get("X-API-Key")
+        .or_else(|| req.headers().get("Authorization"))
+        .is_some();
+
+    if !has_api_key {
+        warn!("Request missing API key");
+        return Err(ActixError::from(ApiError::InvalidApiKey("Missing API key".to_string())));
+    }
+
+    // For now, just check presence - in production, validate the actual key
+    next.call(req).await
 }
 
 // --- Route Configuration ---

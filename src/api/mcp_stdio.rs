@@ -29,7 +29,8 @@ use crate::{ // Group crate imports
     config::Settings,
     mcp::{ // Import necessary MCP types
         handler::McpHandler,
-        types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError, ErrorCode},
+        types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError},
+        ErrorCode,
     },
     session_manager::SessionManager, // Assuming this is used
 };

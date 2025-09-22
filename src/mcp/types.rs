@@ -24,6 +24,8 @@ pub const CODE_IMAP_INVALID_FLAG: i64 = ErrorCode::ImapInvalidFlag as i64;
 pub const CODE_IMAP_INVALID_SEARCH_CRITERIA: i64 = ErrorCode::ImapInvalidSearchCriteria as i64;
 pub const CODE_IMAP_BAD_RESPONSE: i64 = ErrorCode::ImapBadResponse as i64;
 pub const CODE_IMAP_TIMEOUT_ERROR: i64 = ErrorCode::ImapTimeoutError as i64;
+pub const CODE_IMAP_COMMAND_ERROR: i64 = ErrorCode::ImapCommandError as i64;
+pub const CODE_IMAP_INVALID_MAILBOX: i64 = ErrorCode::ImapInvalidMailbox as i64;
 pub const CODE_IMAP_PARSE_ERROR: i64 = -32020; // Custom code for IMAP parse errors
 pub const CODE_IMAP_IO_ERROR: i64 = -32021; // Custom code for IMAP IO errors
 pub const CODE_IMAP_TLS_ERROR: i64 = -32022; // Custom code for IMAP TLS errors
@@ -345,8 +347,8 @@ impl From<ImapError> for JsonRpcError {
             ImapError::Auth(msg) => 
                 Self::server_error(CODE_IMAP_AUTH_ERROR, format!("Authentication error: {}", msg)),
                 
-            ImapError::Timeout => 
-                Self::server_error(CODE_IMAP_TIMEOUT_ERROR, "Operation timed out".to_string()),
+            ImapError::Timeout(msg) =>
+                Self::server_error(CODE_IMAP_TIMEOUT_ERROR, format!("Timeout: {}", msg)),
                 
             ImapError::InvalidMailbox(msg) => 
                 Self::server_error(CODE_IMAP_INVALID_MAILBOX, format!("Invalid mailbox: {}", msg)),

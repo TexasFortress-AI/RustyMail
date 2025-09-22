@@ -9,6 +9,7 @@
 //! distinct roles of `sse.rs` and `mcp_sse.rs` might be needed.
 
 use actix::prelude::*;
+use actix::Context as ActorContext;
 use actix_web::{
     web::{self, Data, Payload},
     Error as ActixError, HttpRequest, HttpResponse,
@@ -37,7 +38,8 @@ use crate::{
     config::Settings,
     mcp::{
         handler::McpHandler,
-        types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError, ErrorCode},
+        types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError},
+        ErrorCode,
     },
     session_manager::SessionManager,
 };
@@ -144,7 +146,7 @@ impl SseState {
 }
 
 impl Actor for SseState {
-    type Context = Context<Self>;
+    type Context = ActorContext<Self>;
 
     fn started(&mut self, ctx: &mut Self::Context) {
         info!("SseState actor started");
