@@ -76,7 +76,7 @@
         "dependencies": [
           1
         ],
-        "status": "in-progress",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -115,7 +115,7 @@
               "2.3"
             ],
             "details": "Audit all type annotations and import statements in the three modules. Correct any mismatches, missing imports, or incorrect type usage to ensure compatibility and successful compilation.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run cargo check and cargo build to verify that all type and import-related errors are resolved across the modules."
           },
           {
@@ -126,7 +126,7 @@
               "2.4"
             ],
             "details": "Run cargo check and cargo build on the entire project. Ensure that all core modules compile without errors and that all previous issues are resolved.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run cargo check and cargo build. Confirm zero compilation errors and that all modules are properly integrated."
           }
         ]
@@ -1220,7 +1220,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-22T16:13:09.480Z",
+      "updated": "2025-09-22T16:52:55.233Z",
       "description": "Tasks for master context"
     }
   }

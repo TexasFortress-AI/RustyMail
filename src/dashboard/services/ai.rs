@@ -26,12 +26,20 @@ struct Conversation {
     last_activity: chrono::DateTime<chrono::Utc>,
 }
 
-// #[derive(Debug)] // Removed Debug derive
-#[derive(Debug)]
 pub struct AiService {
     conversations: RwLock<HashMap<String, Conversation>>,
     providers: HashMap<String, Arc<dyn AiProvider>>,
     mock_mode: bool, // Flag to force mock responses
+}
+
+impl std::fmt::Debug for AiService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AiService")
+            .field("conversations_count", &self.conversations.try_read().map(|g| g.len()).unwrap_or(0))
+            .field("providers_count", &self.providers.len())
+            .field("mock_mode", &self.mock_mode)
+            .finish()
+    }
 }
 
 // Define AI Service Error

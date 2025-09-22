@@ -44,13 +44,24 @@ pub struct SseSession {
     sender: mpsc::Sender<sse::Event>,
 }
 
-#[derive(Debug)]
 pub struct McpSseState {
     sessions: HashMap<String, SseSession>,
     hb_interval: Duration,
     client_timeout: Duration,
     mcp_handler: Arc<dyn McpHandler>,
     port_state: Arc<TokioMutex<McpPortState>>,
+}
+
+impl std::fmt::Debug for McpSseState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("McpSseState")
+            .field("sessions", &self.sessions.len())
+            .field("hb_interval", &self.hb_interval)
+            .field("client_timeout", &self.client_timeout)
+            .field("has_mcp_handler", &true)
+            .field("has_port_state", &true)
+            .finish()
+    }
 }
 
 impl McpSseState {
@@ -237,6 +248,15 @@ impl McpSseState {
     }
 }
 
+// Internal messages for WebSocket actor
+#[derive(Message)]
+#[rtype(result = "()")]
+struct WsText(String);
+
+#[derive(Message)]
+#[rtype(result = "()")]
+struct WsClose;
+
 pub async fn mcp_sse_handler(
     req: HttpRequest,
     stream: Payload,
@@ -247,11 +267,12 @@ pub async fn mcp_sse_handler(
     let session_id = Uuid::new_v4().to_string();
     let state_addr = state_addr.get_ref().clone();
 
-    ws::start_with_addr(state_addr, WsSession { id: session_id }, &req, stream)
+    ws::start(WsSession { id: session_id, state_addr }, &req, stream)
 }
 
 struct WsSession {
     id: String,
+    state_addr: Addr<McpSseState>,
 }
 
 impl Actor for WsSession {
@@ -262,25 +283,51 @@ impl Actor for WsSession {
         let addr = ctx.address();
         let (tx, rx) = mpsc::channel(100);
         
-        ctx.state().do_send(Connect { id: self.id.clone(), sender: tx });
+        self.state_addr.do_send(Connect { id: self.id.clone(), sender: tx });
 
-        ctx.spawn(async move {
-            let mut rx_stream = ReceiverStream::new(rx);
-            while let Some(event) = rx_stream.next().await {
-                 match serde_json::to_string(&event) {
-                     Ok(text) => addr.text(text),
-                     Err(e) => error!("Failed to serialize SSE event for WS: {}", e),
-                 }
+        // Spawn a future that will handle incoming SSE events
+        let id_clone = self.id.clone();
+        ctx.spawn(
+            async move {
+                let mut rx_stream = ReceiverStream::new(rx);
+                while let Some(event) = rx_stream.next().await {
+                    match serde_json::to_string(&event) {
+                        Ok(text) => {
+                            // Send the text message to the actor
+                            addr.do_send(WsText(text));
+                        }
+                        Err(e) => error!("Failed to serialize SSE event for WS: {}", e),
+                    }
+                }
+                info!("SSE forwarder task finished for {}", id_clone);
+                // Signal the actor to close
+                addr.do_send(WsClose);
             }
-            info!("SSE forwarder task finished for {}", self.id);
-            addr.close(None);
-        }.into_actor(self));
+            .into_actor(self),
+        );
     }
 
     fn stopping(&mut self, ctx: &mut Self::Context) -> Running {
         info!("WebSocket session stopping for SSE: {}", self.id);
-        ctx.state().do_send(Disconnect { id: self.id.clone() });
+        self.state_addr.do_send(Disconnect { id: self.id.clone() });
         Running::Stop
+    }
+}
+
+impl Handler<WsText> for WsSession {
+    type Result = ();
+
+    fn handle(&mut self, msg: WsText, ctx: &mut Self::Context) -> Self::Result {
+        ctx.text(msg.0);
+    }
+}
+
+impl Handler<WsClose> for WsSession {
+    type Result = ();
+
+    fn handle(&mut self, _: WsClose, ctx: &mut Self::Context) -> Self::Result {
+        ctx.close(None);
+        ctx.stop();
     }
 }
 
@@ -292,7 +339,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                 match serde_json::from_str::<JsonRpcRequest>(&text) {
                     Ok(request) => {
                         let session_id = self.id.clone();
-                        ctx.state()
+                        self.state_addr.clone()
                            .send(IncomingRequest { session_id, request })
                            .into_actor(self)
                            .then(|res, _act, ws_ctx| {
@@ -321,10 +368,10 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
             }
             Ok(ws::Message::Ping(msg)) => {
                 ctx.pong(&msg);
-                ctx.state().do_send(Heartbeat { id: self.id.clone() });
+                self.state_addr.do_send(Heartbeat { id: self.id.clone() });
             }
             Ok(ws::Message::Pong(_)) => {
-                ctx.state().do_send(Heartbeat { id: self.id.clone() });
+                self.state_addr.do_send(Heartbeat { id: self.id.clone() });
             }
             Ok(ws::Message::Close(reason)) => {
                 ctx.close(reason);

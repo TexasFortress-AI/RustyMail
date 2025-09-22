@@ -68,6 +68,9 @@ pub enum ApiError {
 
     #[error("Invalid API Key: {0}")]
     InvalidApiKey(String),
+
+    #[error("AI Provider Error: {0}")]
+    AiProviderError(String),
 }
 
 impl ResponseError for ApiError {
@@ -76,7 +79,7 @@ impl ResponseError for ApiError {
             ApiError::Unauthorized | ApiError::InvalidApiKey(_) => StatusCode::UNAUTHORIZED,
             ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
             ApiError::NotFound(_) => StatusCode::NOT_FOUND,
-            ApiError::Imap(_) | ApiError::Mcp(_) | ApiError::InternalError(_) | ApiError::Dashboard(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::Imap(_) | ApiError::Mcp(_) | ApiError::InternalError(_) | ApiError::Dashboard(_) | ApiError::AiProviderError(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 

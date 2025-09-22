@@ -180,15 +180,15 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
     async fn list_folders(&self) -> Result<Vec<String>, ImapError> {
         let mut session_guard = self.session.lock().await;
         // Use the IMAP LIST command to get all folders
-        let folders = session_guard
+        let mut folders_stream = session_guard
             .list(None, Some("*"))
             .await
             .map_err(ImapError::from)?;
 
-        let folder_names: Vec<String> = folders
-            .into_iter()
-            .map(|folder| folder.name().to_string())
-            .collect();
+        let mut folder_names = Vec::new();
+        while let Some(folder_result) = folders_stream.try_next().await.map_err(ImapError::from)? {
+            folder_names.push(folder_result.name().to_string());
+        }
 
         Ok(folder_names)
     }

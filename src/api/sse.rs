@@ -59,13 +59,24 @@ impl ClientState {
     }
 }
 
-#[derive(Debug)]
 pub struct SseState {
     sessions: HashMap<String, mpsc::Sender<sse::Event>>,
     hb_interval: Duration,
     client_timeout: Duration,
     mcp_handler: Arc<dyn McpHandler>,
     port_state: Arc<TokioMutex<McpPortState>>,
+}
+
+impl std::fmt::Debug for SseState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SseState")
+            .field("sessions", &self.sessions.len())
+            .field("hb_interval", &self.hb_interval)
+            .field("client_timeout", &self.client_timeout)
+            .field("has_mcp_handler", &true)
+            .field("has_port_state", &true)
+            .finish()
+    }
 }
 
 impl SseState {
@@ -79,7 +90,7 @@ impl SseState {
         }
     }
 
-    fn heartbeat(&self, ctx: &mut Context<'_>) {
+    fn heartbeat(&mut self, ctx: &mut ActorContext<Self>) {
         ctx.run_interval(self.hb_interval, |act, ctx_inner| {
             let mut dead_sessions = Vec::new();
             for (id, client_sender) in &act.sessions {
@@ -164,7 +175,7 @@ pub async fn sse_handler(
     let sse_stream = Sse::from_stream(stream)
         .with_keep_alive(Duration::from_secs(15));
 
-    Ok(sse_stream.respond_to(&req))
+    Ok(sse_stream.into_response())
 }
 
 async fn broadcast_update(state: Data<Arc<TokioMutex<SseState>>>, message: &str) {

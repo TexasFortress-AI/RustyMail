@@ -8,7 +8,7 @@ use std::{
 };
 
 // Async runtime and utilities
-use async_native_tls::TlsConnector as AsyncTlsConnector; // Corrected import
+use tokio_native_tls::TlsConnector as TokioTlsConnector;
 // use async_imap::error::Error as AsyncImapNativeError; // Unused
 // use async_trait::async_trait; // Unused
 // use futures_util::stream::StreamExt; // Not directly used here, but used by async_imap::Client::connect
@@ -17,7 +17,7 @@ use log::{info}; // Keep used logs
 
 // TLS and crypto
 // use rustls::{ClientConfig, RootCertStore}; // Unused
-use native_tls::{TlsConnector, TlsConnectorBuilder};
+use native_tls::TlsConnector;
 use tokio::net::TcpStream as TokioTcpStream;
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
@@ -141,23 +141,22 @@ pub async fn connect(
         .map_err(|_| ImapError::Timeout("Connection timed out".to_string()))??; 
 
     // Setup TLS connector
-    let mut tls_builder = TlsConnector::builder();
-    // Convert native-tls builder directly to async-native-tls connector
-    // AsyncTlsConnector::from expects TlsConnectorBuilder, not TlsConnector
-    let tls_connector = AsyncTlsConnector::from(tls_builder);
+    let tls_builder = TlsConnector::builder();
+    let native_tls_connector = tls_builder.build()
+        .map_err(|e| ImapError::Tls(format!("Failed to build TLS connector: {}", e)))?;
+    let tls_connector = TokioTlsConnector::from(native_tls_connector);
 
-    // Perform TLS handshake with timeout
-    // Use .compat() to convert tokio's AsyncRead/Write to futures' AsyncRead/Write
-    let tls_stream = tokio::time::timeout(timeout, tls_connector.connect(server, tcp_stream.compat()))
+    // Perform TLS handshake with timeout (tokio_native_tls works with tokio's AsyncRead/Write)
+    let tls_stream = tokio::time::timeout(timeout, tls_connector.connect(server, tcp_stream))
         .await
         .map_err(|_| ImapError::Timeout("Operation timed out".to_string()))?
         .map_err(|e| ImapError::Tls(e.to_string()))?;
 
     info!("TLS connection established");
 
-    // Build IMAP client with the TLS stream (already has compat wrapper from tcp_stream.compat())
+    // Build IMAP client with the TLS stream wrapped in compat for async-imap
     // The client itself is the unauthenticated session - no need to call connect
-    let unauthenticated_session = AsyncImapInternalClient::new(tls_stream);
+    let unauthenticated_session = AsyncImapInternalClient::new(tls_stream.compat());
     
     info!("IMAP session established");
 
@@ -165,7 +164,7 @@ pub async fn connect(
     let authenticated_session = tokio::time::timeout(timeout, unauthenticated_session.login(username, password))
         .await
         .map_err(|_| ImapError::Timeout("Login timed out".to_string()))?
-        .map_err(ImapError::from)?;
+        .map_err(|(err, _client)| ImapError::from(err))?;
 
     info!("IMAP login successful for user: {}", username);
 
