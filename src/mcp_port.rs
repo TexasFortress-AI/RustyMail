@@ -133,9 +133,21 @@ impl McpToolRegistry {
 pub async fn list_folders_tool(
     session: Arc<dyn AsyncImapOps>,
     _state: Arc<TokioMutex<McpPortState>>,
-    _params: Option<Value>,
+    params: Option<Value>,
 ) -> Result<Value, JsonRpcError> { // Use Value/JsonRpcError
-    let folders = session.list_folders().await.map_err(JsonRpcError::from)?;
+    let folders = session.list_folders().await.map_err(|e| {
+        // Create error with structured details including operation context
+        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("list_folders".to_string()));
+        // Add params to the error data if available
+        if let Some(p) = params.as_ref() {
+            if let Some(data) = error.data.as_mut() {
+                if let Some(obj) = data.as_object_mut() {
+                    obj.insert("params".to_string(), p.clone());
+                }
+            }
+        }
+        error
+    })?;
     Ok(serde_json::to_value(folders).map_err(|e| JsonRpcError::internal_error(e.to_string()))?)
 }
 

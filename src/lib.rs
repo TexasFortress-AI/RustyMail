@@ -4,6 +4,7 @@
 pub mod api;
 pub mod config;
 pub mod dashboard;
+pub mod error;
 pub mod imap;
 pub mod mcp;
 pub mod transport;

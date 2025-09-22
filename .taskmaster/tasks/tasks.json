@@ -279,7 +279,7 @@
         "dependencies": [
           3
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -287,7 +287,7 @@
             "description": "Establish the set of standard and custom error codes to be used, ensuring alignment with the JSON-RPC 2.0 specification and PRD requirements.",
             "dependencies": [],
             "details": "Document error codes from -32700 to -32099, including their meanings and usage scenarios. Reference the official specification for standard codes such as Parse error, Invalid Request, Method not found, Invalid params, and Internal error.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Review error code definitions for completeness and accuracy. Validate against the JSON-RPC 2.0 specification."
           },
           {
@@ -298,7 +298,7 @@
               "5.1"
             ],
             "details": "Analyze async-imap error types and associate each with a corresponding JSON-RPC error code. Document the mapping for maintainability and future updates.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test IMAP operations to trigger each error variant and verify correct JSON-RPC error code assignment."
           },
           {
@@ -310,7 +310,7 @@
               "5.2"
             ],
             "details": "Design and enforce a consistent error response schema, including required fields such as code, message, and optional data. Ensure all interfaces serialize errors identically.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Send error-inducing requests to each interface and verify that error responses match the standardized format."
           },
           {
@@ -321,7 +321,7 @@
               "5.3"
             ],
             "details": "Extend the error 'data' field to include operation-specific context, making debugging and client-side handling easier. Define a schema for structured error details.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Trigger errors in various operational contexts and verify that error responses contain accurate and useful contextual information."
           },
           {
@@ -332,7 +332,7 @@
               "5.4"
             ],
             "details": "Develop comprehensive test cases for error scenarios in REST, MCP stdio, and MCP SSE. Confirm that errors are propagated with correct codes and structured details from origin to client.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Execute end-to-end tests for each operation type, simulating error conditions and verifying error propagation and response accuracy."
           }
         ]
@@ -1220,7 +1220,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-22T17:43:33.973Z",
+      "updated": "2025-09-22T17:56:07.353Z",
       "description": "Tasks for master context"
     }
   }
