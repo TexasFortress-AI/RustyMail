@@ -1,0 +1,157 @@
+{
+	"meta": {
+		"generatedAt": "2025-09-22T13:52:40.656Z",
+		"tasksAnalyzed": 18,
+		"totalTasks": 18,
+		"analysisCount": 18,
+		"thresholdScore": 5,
+		"projectName": "Taskmaster",
+		"usedResearch": false
+	},
+	"complexityAnalysis": [
+		{
+			"taskId": 1,
+			"taskTitle": "Remove imap-types dependency completely",
+			"complexityScore": 4,
+			"recommendedSubtasks": 5,
+			"expansionPrompt": "Break down the systematic removal of imap-types dependency: 1) Remove from Cargo.toml, 2) Find and eliminate all imap-types imports across 80+ Rust files, 3) Replace imap-types types with async-imap equivalents in client.rs and session.rs, 4) Update type conversions and error handling, 5) Verify compilation succeeds",
+			"reasoning": "Medium complexity. The codebase has imap-types imported in client.rs and defined in Cargo.toml. Simple find-and-replace task but requires careful verification across the codebase to ensure no missed references."
+		},
+		{
+			"taskId": 2,
+			"taskTitle": "Fix compilation errors in core modules",
+			"complexityScore": 3,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Address specific compilation errors: 1) Fix missing lifetime specifier in api/sse.rs Context type around line 80-90, 2) Add missing validate_api_key function in api/rest.rs (referenced but not implemented), 3) Add missing Mutex import in imap/session.rs, 4) Run cargo check to verify all fixes",
+			"reasoning": "Low-medium complexity. These are specific, well-defined compilation errors that can be systematically addressed. The sse.rs file shows the Context usage, rest.rs has the missing function reference, and session.rs needs the import."
+		},
+		{
+			"taskId": 3,
+			"taskTitle": "Consolidate IMAP client to async-imap only",
+			"complexityScore": 6,
+			"recommendedSubtasks": 7,
+			"expansionPrompt": "Refactor IMAP client architecture: 1) Update client.rs to use only async-imap types, 2) Remove dual-library type conversion functions, 3) Standardize AsyncImapSessionWrapper pattern in session.rs, 4) Update connection handling in client.rs lines 90-155, 5) Map async-imap errors to domain errors, 6) Update all IMAP operations to use async-imap exclusively, 7) Test connection lifecycle and operations",
+			"reasoning": "Medium-high complexity. Based on the client.rs code analysis, there's significant dual-library usage with both imap-types and async-imap. The connection logic is already complex with TLS handling, and consolidating to a single library requires careful refactoring of type systems and error handling."
+		},
+		{
+			"taskId": 4,
+			"taskTitle": "Implement atomic IMAP operations",
+			"complexityScore": 7,
+			"recommendedSubtasks": 8,
+			"expansionPrompt": "Design atomic IMAP command sequences: 1) Research IMAP atomic operation patterns, 2) Implement SELECT-COPY-STORE-EXPUNGE sequence for moves, 3) Add transaction-like error handling with rollback, 4) Track folder selection state in AsyncImapSessionWrapper, 5) Implement operation state management, 6) Add concurrent access protection, 7) Create atomic operation tests, 8) Verify ACID properties in error scenarios",
+			"reasoning": "High complexity. Requires deep IMAP protocol knowledge and implementing transaction-like semantics over a stateless protocol. Complex state management and error handling with rollback mechanisms."
+		},
+		{
+			"taskId": 5,
+			"taskTitle": "Standardize JSON-RPC 2.0 error handling",
+			"complexityScore": 5,
+			"recommendedSubtasks": 6,
+			"expansionPrompt": "Implement comprehensive error system: 1) Define error code ranges (-32700 to -32099) following JSON-RPC 2.0 spec, 2) Create error mapping from async-imap errors to JSON-RPC codes, 3) Implement consistent error response format across REST/MCP interfaces, 4) Add structured error details with operation context, 5) Update existing error handling in rest.rs and mcp modules, 6) Test error propagation through all interface layers",
+			"reasoning": "Medium complexity. The codebase already has some error handling structure in rest.rs and mcp modules, but needs standardization and mapping from IMAP errors to JSON-RPC format. Requires touching multiple interface layers."
+		},
+		{
+			"taskId": 6,
+			"taskTitle": "Complete core IMAP operations implementation",
+			"complexityScore": 8,
+			"recommendedSubtasks": 10,
+			"expansionPrompt": "Implement comprehensive IMAP operations: 1) Complete folder listing with hierarchical structure, 2) Implement server-side search using async-imap search methods, 3) Add message fetching with MIME part handling, 4) Complete atomic move operations with guarantees, 5) Implement delete operations with proper flag handling, 6) Add EXPUNGE operations, 7) Create integration tests for each operation, 8) Test with multiple IMAP server types (Gmail, Outlook), 9) Optimize for performance requirements (<500ms folder list, <200ms email fetch), 10) Add comprehensive error handling for each operation",
+			"reasoning": "High complexity. This is a comprehensive implementation task covering multiple complex IMAP operations. Each operation has its own complexities (MIME parsing, search syntax, atomic operations) and needs thorough testing with different server implementations."
+		},
+		{
+			"taskId": 7,
+			"taskTitle": "Implement connection pooling and session management",
+			"complexityScore": 7,
+			"recommendedSubtasks": 8,
+			"expansionPrompt": "Build robust connection management: 1) Design connection pool using Arc<TokioMutex<>> pattern, 2) Implement session lifecycle tracking and cleanup, 3) Add connection health checking mechanisms, 4) Implement automatic reconnection logic, 5) Add session timeout handling, 6) Support concurrent session handling up to 100+ connections, 7) Create connection leak prevention, 8) Add performance monitoring and load testing for concurrent connections",
+			"reasoning": "High complexity. Connection pooling in async Rust with proper lifecycle management, health checking, and support for 100+ concurrent connections is complex. Requires sophisticated state management and error recovery."
+		},
+		{
+			"taskId": 8,
+			"taskTitle": "Migrate to official MCP Rust SDK",
+			"complexityScore": 6,
+			"recommendedSubtasks": 7,
+			"expansionPrompt": "Replace custom MCP implementation with official SDK: 1) Remove custom MCP transport implementations in legacy.rs, 2) Integrate rmcp dependency from rust-sdk (already in Cargo.toml), 3) Study official SDK patterns and API, 4) Update service definitions using SDK tooling, 5) Migrate stdio transport to use SDK patterns, 6) Migrate SSE transport to use SDK patterns, 7) Ensure backward compatibility with existing MCP clients and test integration",
+			"reasoning": "Medium-high complexity. The rmcp dependency is already added to Cargo.toml, and there's existing custom implementation in legacy.rs. Migration requires understanding the official SDK API and ensuring backward compatibility with existing integrations."
+		},
+		{
+			"taskId": 9,
+			"taskTitle": "Complete REST API implementation",
+			"complexityScore": 6,
+			"recommendedSubtasks": 8,
+			"expansionPrompt": "Finish REST API development: 1) Complete remaining REST endpoints for folder operations, 2) Implement email search, fetch, move, and delete endpoints, 3) Add API key authentication middleware (validate_api_key function missing), 4) Add request validation and rate limiting, 5) Implement proper HTTP status codes following REST conventions, 6) Create comprehensive OpenAPI/Swagger documentation, 7) Add end-to-end tests for all endpoints, 8) Performance test under load conditions",
+			"reasoning": "Medium-high complexity. The REST API structure exists in rest.rs but missing key components like authentication middleware and complete endpoint implementation. Requires web development expertise and comprehensive testing."
+		},
+		{
+			"taskId": 10,
+			"taskTitle": "Implement dashboard backend services",
+			"complexityScore": 5,
+			"recommendedSubtasks": 6,
+			"expansionPrompt": "Complete dashboard backend functionality: 1) Complete metrics collection service using sysinfo crate, 2) Implement client management service for tracking active connections, 3) Add configuration service for runtime settings, 4) Create SSE event broadcasting system for real-time updates, 5) Implement system health monitoring, 6) Test metrics accuracy and SSE broadcasting with multiple clients",
+			"reasoning": "Medium complexity. Dashboard services are well-defined system monitoring tasks. The sysinfo crate simplifies metrics collection, but real-time SSE broadcasting and client tracking adds complexity."
+		},
+		{
+			"taskId": 11,
+			"taskTitle": "Build and integrate dashboard frontend",
+			"complexityScore": 4,
+			"recommendedSubtasks": 5,
+			"expansionPrompt": "Complete frontend integration: 1) Build React frontend using Vite in frontend/rustymail-app-main/ directory, 2) Configure build output for production, 3) Integrate static files with Actix backend using actix-files middleware, 4) Configure SSE EventSource connections for real-time updates, 5) Test frontend build process and backend integration across different browsers",
+			"reasoning": "Medium complexity. The React frontend already exists with comprehensive component structure visible in the frontend directory. Main work is build configuration and backend integration rather than developing from scratch."
+		},
+		{
+			"taskId": 12,
+			"taskTitle": "Implement real-time SSE updates for dashboard",
+			"complexityScore": 5,
+			"recommendedSubtasks": 6,
+			"expansionPrompt": "Complete SSE implementation: 1) Finish SSE implementation in dashboard/api/sse.rs, 2) Add event broadcasting for metrics updates and client connections, 3) Implement proper SSE connection lifecycle management, 4) Add event filtering and subscription management, 5) Ensure browser reconnection handling, 6) Test SSE stability under network conditions and with multiple concurrent clients",
+			"reasoning": "Medium complexity. SSE implementation exists in the codebase with basic structure, but needs completion of event broadcasting and robust connection management. Browser compatibility and reconnection logic adds complexity."
+		},
+		{
+			"taskId": 13,
+			"taskTitle": "Set up RIG framework for AI integration",
+			"complexityScore": 3,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Initialize AI integration framework: 1) Add RIG dependency to Cargo.toml, 2) Configure OpenAI and OpenRouter providers in dashboard/services/ai/ modules, 3) Set up LLM model selection and API key management, 4) Create provider abstraction layer and test connectivity with configured providers",
+			"reasoning": "Low-medium complexity. Basic setup task for adding AI framework. The dashboard/services/ai/ directory structure already exists, simplifying integration work."
+		},
+		{
+			"taskId": 14,
+			"taskTitle": "Implement natural language to MCP conversion",
+			"complexityScore": 6,
+			"recommendedSubtasks": 7,
+			"expansionPrompt": "Build NLP to MCP pipeline: 1) Design natural language processing pipeline using RIG, 2) Create prompt templates for common email operations ('show unread emails', 'emails from sender', 'move emails to folder'), 3) Implement intent recognition and mapping to MCP method calls, 4) Add conversation context tracking for follow-up queries, 5) Create query parsing and validation, 6) Test natural language understanding with various query formats, 7) Verify correct MCP operation mapping and context maintenance",
+			"reasoning": "Medium-high complexity. Requires NLP expertise, prompt engineering, and deep understanding of MCP operations. Context management for conversations adds significant complexity."
+		},
+		{
+			"taskId": 15,
+			"taskTitle": "Build chatbot UI integration",
+			"complexityScore": 4,
+			"recommendedSubtasks": 5,
+			"expansionPrompt": "Complete chatbot interface: 1) Extend existing ChatbotPanel.tsx component with full conversation interface, 2) Add message history and conversation state management, 3) Implement typing indicators and response streaming, 4) Connect to backend AI service via SSE or WebSocket, 5) Add conversation export and history features, and test UI responsiveness",
+			"reasoning": "Medium complexity. ChatbotPanel.tsx already exists in the frontend, providing a foundation. Main work involves extending functionality and connecting to backend services rather than building from scratch."
+		},
+		{
+			"taskId": 16,
+			"taskTitle": "Create comprehensive test suite",
+			"complexityScore": 8,
+			"recommendedSubtasks": 12,
+			"expansionPrompt": "Implement full testing strategy: 1) Create unit tests for all IMAP operations using mock servers, 2) Set up mock IMAP server infrastructure, 3) Implement integration tests using real IMAP adapters for Gmail, 4) Add integration tests for Outlook servers, 5) Add integration tests for standard IMAP servers, 6) Create end-to-end tests covering complete user workflows through REST interface, 7) Create end-to-end tests for MCP interface workflows, 8) Set up performance benchmarks for concurrent connection handling, 9) Achieve >90% code coverage across all modules, 10) Test all error scenarios and edge cases, 11) Implement performance tests meeting requirements (<500ms folder list, <200ms email fetch, 100+ concurrent connections), 12) Set up continuous testing infrastructure",
+			"reasoning": "High complexity. Comprehensive testing across multiple interfaces, server types, and performance requirements. The existing test structure shows unit, integration, and e2e directories, but extensive work needed for complete coverage and performance testing."
+		},
+		{
+			"taskId": 17,
+			"taskTitle": "Configure CI/CD pipeline",
+			"complexityScore": 5,
+			"recommendedSubtasks": 6,
+			"expansionPrompt": "Set up automated development pipeline: 1) Configure GitHub Actions or similar CI/CD system, 2) Set up automated testing on multiple Rust versions and platforms, 3) Add security scanning and dependency vulnerability checks, 4) Configure automated releases with proper semantic versioning, 5) Add Docker image building and container registry publishing, 6) Test CI/CD pipeline with pull requests and verify deployment automation",
+			"reasoning": "Medium complexity. Standard DevOps task but requires expertise in CI/CD systems, Docker containerization, and security scanning. Multi-platform Rust compilation adds some complexity."
+		},
+		{
+			"taskId": 18,
+			"taskTitle": "Create deployment documentation and tooling",
+			"complexityScore": 3,
+			"recommendedSubtasks": 4,
+			"expansionPrompt": "Complete deployment resources: 1) Create deployment guides for standalone binary, Docker, and Kubernetes, 2) Document all configuration options and environment variables, 3) Create deployment scripts and Docker Compose files, 4) Add monitoring, logging configuration examples, and security best practices documentation",
+			"reasoning": "Low-medium complexity. Documentation and scripting task. Straightforward but requires thorough coverage of different deployment scenarios and operational concerns."
+		}
+	]
+}

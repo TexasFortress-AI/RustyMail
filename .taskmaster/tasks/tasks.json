@@ -1,0 +1,1227 @@
+{
+  "master": {
+    "tasks": [
+      {
+        "id": 1,
+        "title": "Remove imap-types dependency completely",
+        "description": "Eliminate all imap-types imports and dependencies from the codebase to use async-imap exclusively",
+        "details": "Remove imap-types from Cargo.toml dependencies. Search for all imports of imap-types throughout the codebase and remove them. Replace any imap-types usage with equivalent async-imap types. Update all type conversions to use async-imap types directly. This is critical foundation work that must be completed before any other IMAP operations can be stabilized.",
+        "testStrategy": "Verify compilation succeeds after removal. Run cargo check to ensure no remaining imap-types references. Test that all existing IMAP operations still function with async-imap only.",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Remove imap-types from Cargo.toml and workspace configuration",
+            "description": "Delete the imap-types dependency from Cargo.toml and any workspace-level configuration files to prevent further compilation or usage.",
+            "dependencies": [],
+            "details": "Edit Cargo.toml and any related workspace files to remove all references to imap-types, ensuring it is no longer fetched or built.",
+            "status": "pending",
+            "testStrategy": "Run cargo check to confirm that imap-types is no longer present in the dependency graph."
+          },
+          {
+            "id": 2,
+            "title": "Identify and remove all imap-types imports in the codebase",
+            "description": "Search for and delete all import statements and use declarations referencing imap-types throughout the codebase.",
+            "dependencies": [
+              "1.1"
+            ],
+            "details": "Perform a global search for 'imap_types' and remove all related use statements, module imports, and explicit references.",
+            "status": "pending",
+            "testStrategy": "Run cargo check to ensure no unresolved import errors related to imap-types remain."
+          },
+          {
+            "id": 3,
+            "title": "Replace imap-types usages with async-imap equivalents",
+            "description": "Refactor all code that previously used imap-types types, functions, or constants to use the corresponding async-imap types and APIs.",
+            "dependencies": [
+              "1.2"
+            ],
+            "details": "Map each imap-types usage to its async-imap equivalent, updating type annotations, function calls, and logic as needed for compatibility.",
+            "status": "pending",
+            "testStrategy": "Ensure all replaced code compiles and passes existing tests for IMAP operations."
+          },
+          {
+            "id": 4,
+            "title": "Update type conversions and interfaces to use async-imap types directly",
+            "description": "Modify all type conversions, trait implementations, and public interfaces to use async-imap types instead of imap-types.",
+            "dependencies": [
+              "1.3"
+            ],
+            "details": "Review all type conversions, trait bounds, and public API signatures to ensure they reference only async-imap types, updating documentation as necessary.",
+            "status": "pending",
+            "testStrategy": "Run cargo check and cargo test to verify type correctness and interface stability."
+          },
+          {
+            "id": 5,
+            "title": "Verify removal and functionality with async-imap only",
+            "description": "Confirm that the codebase builds, runs, and passes all tests using only async-imap, with no remaining imap-types references.",
+            "dependencies": [
+              "1.4"
+            ],
+            "details": "Perform a final audit for any lingering imap-types references, then run all tests and IMAP operations to ensure full functionality.",
+            "status": "pending",
+            "testStrategy": "Run cargo check, cargo build, and the full test suite. Manually test IMAP operations if necessary to confirm correct async-imap integration."
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "title": "Fix compilation errors in core modules",
+        "description": "Resolve current compilation errors in sse.rs, rest.rs, and session.rs",
+        "details": "Fix missing lifetime specifier in api/sse.rs Context type. Resolve missing validate_api_key function in api/rest.rs. Add missing Mutex import in imap/session.rs. Ensure all modules compile successfully with proper type annotations and imports.",
+        "testStrategy": "Run cargo check and cargo build to verify all compilation errors are resolved. Ensure no remaining type errors or missing imports.",
+        "priority": "high",
+        "dependencies": [
+          1
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Fix missing lifetime specifier in api/sse.rs Context type",
+            "description": "Add the required lifetime specifier to the Context type definition in api/sse.rs to resolve compilation errors related to borrowed references.",
+            "dependencies": [],
+            "details": "Identify all struct and function signatures in api/sse.rs that use references without explicit lifetimes. Add appropriate lifetime annotations (e.g., <'a>) to both struct definitions and function signatures as needed.",
+            "status": "pending",
+            "testStrategy": "Run cargo check and cargo build to verify that lifetime-related compilation errors are resolved in api/sse.rs."
+          },
+          {
+            "id": 2,
+            "title": "Implement missing validate_api_key function in api/rest.rs",
+            "description": "Define and implement the validate_api_key function in api/rest.rs to resolve missing function compilation errors.",
+            "dependencies": [],
+            "details": "Review all usages of validate_api_key in api/rest.rs. Implement the function with correct signature and logic, ensuring it matches expected usage throughout the module.",
+            "status": "pending",
+            "testStrategy": "Run cargo check and cargo build to confirm that all references to validate_api_key compile successfully and the function behaves as expected."
+          },
+          {
+            "id": 3,
+            "title": "Add missing Mutex import in imap/session.rs",
+            "description": "Import the Mutex type in imap/session.rs to resolve missing import compilation errors.",
+            "dependencies": [],
+            "details": "Identify all usages of Mutex in imap/session.rs. Add the necessary import statement (e.g., use std::sync::Mutex or use tokio::sync::Mutex) at the top of the file.",
+            "status": "pending",
+            "testStrategy": "Run cargo check and cargo build to ensure that Mutex is correctly imported and all related compilation errors are resolved."
+          },
+          {
+            "id": 4,
+            "title": "Review and correct type annotations and imports in all core modules",
+            "description": "Ensure all type annotations and imports are correct in sse.rs, rest.rs, and session.rs to prevent further compilation errors.",
+            "dependencies": [
+              "2.1",
+              "2.2",
+              "2.3"
+            ],
+            "details": "Audit all type annotations and import statements in the three modules. Correct any mismatches, missing imports, or incorrect type usage to ensure compatibility and successful compilation.",
+            "status": "pending",
+            "testStrategy": "Run cargo check and cargo build to verify that all type and import-related errors are resolved across the modules."
+          },
+          {
+            "id": 5,
+            "title": "Verify successful compilation of all core modules",
+            "description": "Confirm that sse.rs, rest.rs, and session.rs compile successfully with no errors after fixes.",
+            "dependencies": [
+              "2.4"
+            ],
+            "details": "Run cargo check and cargo build on the entire project. Ensure that all core modules compile without errors and that all previous issues are resolved.",
+            "status": "pending",
+            "testStrategy": "Run cargo check and cargo build. Confirm zero compilation errors and that all modules are properly integrated."
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "title": "Consolidate IMAP client to async-imap only",
+        "description": "Refactor all IMAP client code to use async-imap exclusively, removing any dual-library patterns",
+        "details": "Update src/imap/client.rs to use only async-imap types and methods. Remove all type conversion functions between libraries. Standardize on AsyncImapSessionWrapper pattern. Ensure all IMAP operations (connect, authenticate, select, search, fetch, move, delete) work through async-imap only. Update error handling to map async-imap errors to domain errors.",
+        "testStrategy": "Create unit tests for each IMAP operation using async-imap. Test connection lifecycle, authentication, and basic operations. Verify error handling covers all async-imap error variants.",
+        "priority": "high",
+        "dependencies": [
+          1,
+          2
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Refactor IMAP client to use async-imap types and methods exclusively",
+            "description": "Update all IMAP client code in src/imap/client.rs to use only async-imap types and methods, removing any usage of other IMAP libraries.",
+            "dependencies": [],
+            "details": "Replace all existing IMAP operations (connect, authenticate, select, search, fetch, move, delete) with their async-imap equivalents. Ensure all code paths utilize async-imap's API and data structures.",
+            "status": "pending",
+            "testStrategy": "Verify all IMAP operations compile and run using async-imap only. Run unit tests for each operation to confirm correct behavior."
+          },
+          {
+            "id": 2,
+            "title": "Remove dual-library patterns and type conversion functions",
+            "description": "Eliminate any code that supports multiple IMAP libraries or converts between their types.",
+            "dependencies": [
+              "3.1"
+            ],
+            "details": "Delete all type conversion functions and dual-library abstractions. Ensure only async-imap types are present in the codebase.",
+            "status": "pending",
+            "testStrategy": "Search for and remove all conversion functions and dual-library references. Confirm no compilation errors related to missing types or conversions."
+          },
+          {
+            "id": 3,
+            "title": "Standardize on AsyncImapSessionWrapper pattern",
+            "description": "Refactor session management to consistently use the AsyncImapSessionWrapper abstraction for all IMAP operations.",
+            "dependencies": [
+              "3.1"
+            ],
+            "details": "Update all session handling code to use AsyncImapSessionWrapper. Ensure that all IMAP commands are executed through this wrapper.",
+            "status": "pending",
+            "testStrategy": "Test session lifecycle (connect, authenticate, logout) using the wrapper. Confirm all operations function correctly through the standardized pattern."
+          },
+          {
+            "id": 4,
+            "title": "Update error handling to map async-imap errors to domain errors",
+            "description": "Refactor error handling logic to convert async-imap errors into the application's domain-specific error types.",
+            "dependencies": [
+              "3.1"
+            ],
+            "details": "Identify all places where async-imap errors are returned or handled. Implement mapping logic to translate these errors to domain errors used throughout the application.",
+            "status": "pending",
+            "testStrategy": "Trigger various IMAP errors (e.g., connection failure, authentication error) and verify they are correctly mapped and handled in the application."
+          },
+          {
+            "id": 5,
+            "title": "Comprehensively test all IMAP operations using async-imap",
+            "description": "Develop and execute unit tests for each IMAP operation to ensure correct functionality and error handling with async-imap.",
+            "dependencies": [
+              "3.2",
+              "3.3",
+              "3.4"
+            ],
+            "details": "Write tests covering connect, authenticate, select, search, fetch, move, and delete operations. Include tests for error scenarios and edge cases.",
+            "status": "pending",
+            "testStrategy": "Run all tests and confirm that each IMAP operation works as expected and that error handling is robust."
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "title": "Implement atomic IMAP operations",
+        "description": "Ensure all email operations follow atomic patterns (select → copy → delete → expunge)",
+        "details": "Implement atomic move operations using IMAP command sequence: SELECT source folder, COPY messages to destination, STORE delete flag on source messages, EXPUNGE to remove. Ensure all operations maintain ACID properties. Add proper error handling and rollback mechanisms. Track folder selection state in AsyncImapSessionWrapper.",
+        "testStrategy": "Test atomic operations with mock IMAP server. Verify partial failures are handled correctly. Test concurrent access scenarios. Ensure no message loss during operations.",
+        "priority": "high",
+        "dependencies": [
+          3
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design atomic IMAP move operation sequence",
+            "description": "Define the precise IMAP command sequence for atomic move operations, ensuring compliance with IMAP4rev1/IMAP4rev2 standards and ACID properties.",
+            "dependencies": [],
+            "details": "Specify the order and logic for SELECT, COPY, STORE (delete flag), and EXPUNGE commands. Ensure the sequence prevents message loss and maintains consistency.",
+            "status": "pending",
+            "testStrategy": "Review against IMAP RFCs and test with mock IMAP server for standards compliance."
+          },
+          {
+            "id": 2,
+            "title": "Implement error handling and rollback mechanisms",
+            "description": "Develop robust error detection and rollback logic to maintain atomicity and consistency in case of partial failures during IMAP operations.",
+            "dependencies": [
+              "4.1"
+            ],
+            "details": "Ensure that any failure in the command sequence triggers rollback or compensating actions to restore the previous state and prevent data corruption.",
+            "status": "pending",
+            "testStrategy": "Simulate failures at each step and verify that rollback restores original state without message loss."
+          },
+          {
+            "id": 3,
+            "title": "Track folder selection state in AsyncImapSessionWrapper",
+            "description": "Add logic to accurately track and manage the selected folder state within AsyncImapSessionWrapper to support atomic operations.",
+            "dependencies": [
+              "4.1"
+            ],
+            "details": "Ensure the session wrapper maintains correct folder context across concurrent and sequential operations, preventing state mismatches.",
+            "status": "pending",
+            "testStrategy": "Test concurrent and sequential operations to verify correct folder state tracking and transitions."
+          },
+          {
+            "id": 4,
+            "title": "Integrate ACID property enforcement for IMAP operations",
+            "description": "Implement mechanisms to guarantee atomicity, consistency, isolation, and durability for all IMAP move operations.",
+            "dependencies": [
+              "4.2",
+              "4.3"
+            ],
+            "details": "Use transaction-like logic to ensure operations are all-or-nothing, isolated from other concurrent actions, and changes are durable.",
+            "status": "pending",
+            "testStrategy": "Test concurrent access scenarios and verify that operations are isolated and durable under load."
+          },
+          {
+            "id": 5,
+            "title": "Develop comprehensive test suite for atomic IMAP operations",
+            "description": "Create automated tests to validate atomicity, error handling, rollback, ACID compliance, and folder state tracking for IMAP operations.",
+            "dependencies": [
+              "4.4"
+            ],
+            "details": "Include tests for partial failures, concurrent access, and edge cases to ensure reliability and correctness.",
+            "status": "pending",
+            "testStrategy": "Run tests against mock and real IMAP servers, verify no message loss or corruption, and ensure all ACID properties are maintained."
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "title": "Standardize JSON-RPC 2.0 error handling",
+        "description": "Implement comprehensive error handling with proper JSON-RPC 2.0 error codes across all interfaces",
+        "details": "Define error code ranges from -32700 to -32099 as specified in PRD. Map async-imap errors to appropriate JSON-RPC error codes. Implement consistent error response format across REST, MCP stdio, and MCP SSE interfaces. Add structured error details with operation context.",
+        "testStrategy": "Test error scenarios for each operation type. Verify error codes match JSON-RPC 2.0 specification. Test error propagation through all interface layers.",
+        "priority": "medium",
+        "dependencies": [
+          3
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Define JSON-RPC 2.0 Error Code Ranges and Meanings",
+            "description": "Establish the set of standard and custom error codes to be used, ensuring alignment with the JSON-RPC 2.0 specification and PRD requirements.",
+            "dependencies": [],
+            "details": "Document error codes from -32700 to -32099, including their meanings and usage scenarios. Reference the official specification for standard codes such as Parse error, Invalid Request, Method not found, Invalid params, and Internal error.",
+            "status": "pending",
+            "testStrategy": "Review error code definitions for completeness and accuracy. Validate against the JSON-RPC 2.0 specification."
+          },
+          {
+            "id": 2,
+            "title": "Map async-imap Errors to JSON-RPC Error Codes",
+            "description": "Create a mapping from async-imap error variants to appropriate JSON-RPC 2.0 error codes, ensuring all IMAP-related errors are represented correctly.",
+            "dependencies": [
+              "5.1"
+            ],
+            "details": "Analyze async-imap error types and associate each with a corresponding JSON-RPC error code. Document the mapping for maintainability and future updates.",
+            "status": "pending",
+            "testStrategy": "Test IMAP operations to trigger each error variant and verify correct JSON-RPC error code assignment."
+          },
+          {
+            "id": 3,
+            "title": "Implement Consistent Error Response Format Across All Interfaces",
+            "description": "Standardize the structure of error responses for REST, MCP stdio, and MCP SSE interfaces to ensure uniformity and compliance with JSON-RPC 2.0.",
+            "dependencies": [
+              "5.1",
+              "5.2"
+            ],
+            "details": "Design and enforce a consistent error response schema, including required fields such as code, message, and optional data. Ensure all interfaces serialize errors identically.",
+            "status": "pending",
+            "testStrategy": "Send error-inducing requests to each interface and verify that error responses match the standardized format."
+          },
+          {
+            "id": 4,
+            "title": "Add Structured Error Details with Operation Context",
+            "description": "Enhance error responses by including structured details about the failed operation, such as context, parameters, and relevant metadata.",
+            "dependencies": [
+              "5.3"
+            ],
+            "details": "Extend the error 'data' field to include operation-specific context, making debugging and client-side handling easier. Define a schema for structured error details.",
+            "status": "pending",
+            "testStrategy": "Trigger errors in various operational contexts and verify that error responses contain accurate and useful contextual information."
+          },
+          {
+            "id": 5,
+            "title": "Verify Error Handling and Propagation Across All Layers",
+            "description": "Test and validate error handling mechanisms to ensure correct error propagation and code assignment throughout all interface layers.",
+            "dependencies": [
+              "5.4"
+            ],
+            "details": "Develop comprehensive test cases for error scenarios in REST, MCP stdio, and MCP SSE. Confirm that errors are propagated with correct codes and structured details from origin to client.",
+            "status": "pending",
+            "testStrategy": "Execute end-to-end tests for each operation type, simulating error conditions and verifying error propagation and response accuracy."
+          }
+        ]
+      },
+      {
+        "id": 6,
+        "title": "Complete core IMAP operations implementation",
+        "description": "Finish implementation of all IMAP operations: list, search, fetch, move, delete with proper async-imap integration",
+        "details": "Complete folder listing with hierarchical structure support. Implement server-side search using async-imap search methods. Add message fetching with MIME part handling. Complete move operations with atomic guarantees. Implement delete operations with proper flag handling and expunge.",
+        "testStrategy": "Create comprehensive integration tests for each operation. Test with multiple IMAP server types (Gmail, Outlook, standard). Verify performance meets requirements (<500ms for folder list, <200ms per email fetch).",
+        "priority": "high",
+        "dependencies": [
+          4,
+          5
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement hierarchical folder listing",
+            "description": "Develop and integrate folder listing functionality that supports hierarchical structures, correctly handling IMAP hierarchy separators and folder tree traversal.",
+            "dependencies": [],
+            "details": "Use async-imap methods to retrieve the full folder tree, detect and apply the correct hierarchy separator, and represent folders in a nested structure. Ensure compatibility with various IMAP servers that may use different separator characters.",
+            "status": "pending",
+            "testStrategy": "Test with IMAP servers using different hierarchy separators (e.g., '.', '/'). Verify correct folder nesting and performance (<500ms for folder list)."
+          },
+          {
+            "id": 2,
+            "title": "Implement server-side search operations",
+            "description": "Integrate async-imap search methods to enable efficient server-side searching of messages within folders.",
+            "dependencies": [
+              "6.1"
+            ],
+            "details": "Support a range of IMAP search criteria (e.g., subject, sender, date). Ensure search queries are executed asynchronously and results are mapped to message identifiers.",
+            "status": "pending",
+            "testStrategy": "Run integration tests for various search queries across multiple IMAP servers. Measure search latency and validate result accuracy."
+          },
+          {
+            "id": 3,
+            "title": "Implement message fetching with MIME part handling",
+            "description": "Develop message fetch functionality that retrieves full messages and parses MIME parts, supporting attachments and multi-part content.",
+            "dependencies": [
+              "6.2"
+            ],
+            "details": "Use async-imap fetch methods to retrieve message headers, bodies, and attachments. Parse MIME structure to expose all parts, ensuring correct handling of encodings and nested multiparts.",
+            "status": "pending",
+            "testStrategy": "Fetch messages with various MIME structures from different servers. Validate correct parsing and extraction of all parts. Ensure fetch time is <200ms per email."
+          },
+          {
+            "id": 4,
+            "title": "Implement atomic move operations",
+            "description": "Enable atomic moving of messages between folders using async-imap, ensuring no message loss or duplication.",
+            "dependencies": [
+              "6.3"
+            ],
+            "details": "Use IMAP MOVE command where supported, or fallback to COPY+DELETE with transaction-like guarantees. Handle edge cases such as partial failures and ensure consistency.",
+            "status": "pending",
+            "testStrategy": "Move messages between folders under normal and failure scenarios. Verify atomicity and absence of duplicates or lost messages."
+          },
+          {
+            "id": 5,
+            "title": "Implement delete operations with flag handling and expunge",
+            "description": "Develop message deletion functionality that sets appropriate IMAP flags and performs expunge to permanently remove messages.",
+            "dependencies": [
+              "6.4"
+            ],
+            "details": "Set the \\Deleted flag on messages and execute EXPUNGE to remove them. Ensure correct handling of flag updates and server responses.",
+            "status": "pending",
+            "testStrategy": "Delete messages and verify they are removed after expunge. Test with different IMAP servers to ensure consistent behavior."
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "title": "Implement connection pooling and session management",
+        "description": "Add proper connection pooling with session lifecycle tracking and cleanup",
+        "details": "Implement connection pool using Arc<TokioMutex<>> pattern. Track active sessions with proper lifecycle management. Add connection health checking and automatic reconnection. Implement session timeout handling and cleanup on disconnection. Support concurrent session handling up to 100+ connections.",
+        "testStrategy": "Test connection pool under load with 100+ concurrent connections. Verify session cleanup prevents connection leaks. Test reconnection logic under network failures.",
+        "priority": "medium",
+        "dependencies": [
+          6
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design and implement connection pool using Arc<TokioMutex<>>",
+            "description": "Create a connection pool structure that leverages Arc<TokioMutex<>> to safely share and manage connections across asynchronous tasks.",
+            "dependencies": [],
+            "details": "Define the pool data structure, initialize it, and ensure thread-safe access for concurrent session handling up to 100+ connections.",
+            "status": "pending",
+            "testStrategy": "Test pool initialization and concurrent access with simulated connection requests. Verify thread safety and pool scalability."
+          },
+          {
+            "id": 2,
+            "title": "Implement active session tracking and lifecycle management",
+            "description": "Track active sessions within the pool, managing their creation, usage, and cleanup throughout their lifecycle.",
+            "dependencies": [
+              "7.1"
+            ],
+            "details": "Integrate session state tracking into the pool, ensuring sessions are registered on creation and properly removed on termination or timeout.",
+            "status": "pending",
+            "testStrategy": "Simulate session creation and termination. Verify accurate session counts and proper cleanup after session end."
+          },
+          {
+            "id": 3,
+            "title": "Add connection health checking and automatic reconnection logic",
+            "description": "Monitor the health of pooled connections and implement automatic reconnection for failed or unhealthy connections.",
+            "dependencies": [
+              "7.1"
+            ],
+            "details": "Periodically check connection status, mark unhealthy connections, and trigger reconnection routines as needed.",
+            "status": "pending",
+            "testStrategy": "Inject connection failures and verify health checks detect issues and reconnection logic restores connectivity."
+          },
+          {
+            "id": 4,
+            "title": "Implement session timeout handling and cleanup on disconnection",
+            "description": "Detect session inactivity or disconnection and perform timely cleanup to prevent resource leaks.",
+            "dependencies": [
+              "7.2"
+            ],
+            "details": "Set session timeout thresholds, monitor activity, and remove sessions that exceed timeout or disconnect unexpectedly.",
+            "status": "pending",
+            "testStrategy": "Simulate idle and disconnected sessions. Confirm timeout triggers cleanup and no lingering resources remain."
+          },
+          {
+            "id": 5,
+            "title": "Support concurrent session handling for 100+ connections",
+            "description": "Ensure the connection pool and session management system can efficiently handle 100 or more concurrent sessions.",
+            "dependencies": [
+              "7.1",
+              "7.2",
+              "7.3",
+              "7.4"
+            ],
+            "details": "Optimize pool and session logic for high concurrency, stress test with 100+ simultaneous connections, and tune for performance.",
+            "status": "pending",
+            "testStrategy": "Run load tests with 100+ concurrent sessions. Measure throughput, latency, and verify no connection or session leaks."
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "title": "Migrate to official MCP Rust SDK",
+        "description": "Replace custom MCP implementations with the official rust-sdk from modelcontextprotocol",
+        "details": "Remove custom MCP transport implementations in src/mcp/adapters/legacy.rs. Integrate rmcp dependency from rust-sdk. Update service definitions using SDK tooling. Migrate stdio and SSE transports to use official SDK patterns. Ensure backward compatibility with existing MCP clients.",
+        "testStrategy": "Test MCP stdio interface with various clients. Verify SSE transport works with dashboard. Test backward compatibility with existing MCP integrations.",
+        "priority": "high",
+        "dependencies": [
+          6
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Remove legacy MCP transport implementations",
+            "description": "Delete all custom MCP transport code from src/mcp/adapters/legacy.rs to eliminate legacy implementations.",
+            "dependencies": [],
+            "details": "Identify and remove all custom transport logic, ensuring no references remain in the codebase.",
+            "status": "pending",
+            "testStrategy": "Run existing MCP-related tests to confirm no regressions or broken references after removal."
+          },
+          {
+            "id": 2,
+            "title": "Integrate official rmcp dependency from rust-sdk",
+            "description": "Add the official rmcp crate from the modelcontextprotocol/rust-sdk repository to the project dependencies.",
+            "dependencies": [
+              "8.1"
+            ],
+            "details": "Update Cargo.toml to include rmcp with required features (e.g., server, transport-io, macros). Ensure all builds and dependency resolutions succeed.",
+            "status": "pending",
+            "testStrategy": "Build the project and verify that rmcp is correctly linked and available for use."
+          },
+          {
+            "id": 3,
+            "title": "Update service definitions using SDK tooling",
+            "description": "Refactor service definitions to use rmcp macros and types, replacing custom protocol logic.",
+            "dependencies": [
+              "8.2"
+            ],
+            "details": "Leverage rmcp-macros for tool/service implementation. Replace manual serialization/deserialization with SDK-provided types.",
+            "status": "pending",
+            "testStrategy": "Generate and inspect service code. Run unit tests to verify correct request/response handling."
+          },
+          {
+            "id": 4,
+            "title": "Migrate stdio and SSE transports to official SDK patterns",
+            "description": "Refactor stdio and SSE transport layers to use rmcp's official transport modules and async patterns.",
+            "dependencies": [
+              "8.3"
+            ],
+            "details": "Replace legacy transport code with rmcp's transport::stdio and transport::websocket modules. Ensure async/await usage aligns with SDK requirements.",
+            "status": "pending",
+            "testStrategy": "Test stdio and SSE transports with various MCP clients and the dashboard to confirm correct operation."
+          },
+          {
+            "id": 5,
+            "title": "Ensure backward compatibility with existing MCP clients",
+            "description": "Validate that all MCP interfaces remain compatible with current clients after migration.",
+            "dependencies": [
+              "8.4"
+            ],
+            "details": "Test all supported transports and service endpoints with legacy clients. Address any protocol or behavioral regressions.",
+            "status": "pending",
+            "testStrategy": "Run integration tests with existing MCP clients and verify seamless operation across all supported features."
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "title": "Complete REST API implementation",
+        "description": "Finish REST API endpoints with proper error handling, authentication, and documentation",
+        "details": "Complete all REST endpoints for folder operations, email search, fetch, move, and delete. Implement API key authentication middleware. Add request validation and rate limiting. Create comprehensive OpenAPI/Swagger documentation. Ensure RESTful conventions with proper HTTP status codes.",
+        "testStrategy": "Create end-to-end tests for all REST endpoints. Test authentication and authorization. Verify API documentation matches implementation. Performance test under load.",
+        "priority": "medium",
+        "dependencies": [
+          7,
+          8
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement Folder and Email REST Endpoints",
+            "description": "Develop all REST API endpoints for folder operations and email actions including search, fetch, move, and delete, ensuring adherence to RESTful conventions and proper HTTP status codes.",
+            "dependencies": [],
+            "details": "Endpoints must use clear, noun-based resource names, appropriate HTTP methods (GET, POST, PUT, DELETE), and logical nesting for related resources. Ensure all endpoints return consistent JSON responses and use plural nouns for collections.",
+            "status": "pending",
+            "testStrategy": "Create end-to-end tests for each endpoint covering all CRUD operations, including edge cases and error scenarios."
+          },
+          {
+            "id": 2,
+            "title": "Implement API Key Authentication Middleware",
+            "description": "Develop middleware to authenticate API requests using API keys passed in request headers, rejecting unauthorized requests.",
+            "dependencies": [
+              "9.1"
+            ],
+            "details": "Use the 'x-api-key' header for API key validation. Ensure middleware is applied to all protected endpoints and returns appropriate error responses for missing or invalid keys.",
+            "status": "pending",
+            "testStrategy": "Test authentication with valid and invalid API keys, and verify unauthorized requests are blocked."
+          },
+          {
+            "id": 3,
+            "title": "Add Request Validation and Rate Limiting",
+            "description": "Integrate request validation for all endpoints and implement rate limiting to prevent abuse.",
+            "dependencies": [
+              "9.1",
+              "9.2"
+            ],
+            "details": "Validate request payloads and parameters using a schema validation library. Apply rate limiting middleware to restrict the number of requests per API key or IP address within a defined time window.",
+            "status": "pending",
+            "testStrategy": "Test with valid and invalid payloads, and simulate high request volumes to verify rate limiting enforcement."
+          },
+          {
+            "id": 4,
+            "title": "Implement Comprehensive Error Handling",
+            "description": "Ensure all endpoints handle errors gracefully, returning standardized error responses and appropriate HTTP status codes.",
+            "dependencies": [
+              "9.1",
+              "9.2",
+              "9.3"
+            ],
+            "details": "Define a consistent error response format. Map common error scenarios (validation errors, authentication failures, resource not found, server errors) to correct HTTP status codes (e.g., 400, 401, 404, 500).",
+            "status": "pending",
+            "testStrategy": "Test all endpoints for error scenarios and verify error responses and status codes match documentation."
+          },
+          {
+            "id": 5,
+            "title": "Generate and Maintain OpenAPI/Swagger Documentation",
+            "description": "Create and update comprehensive OpenAPI/Swagger documentation for all REST endpoints, including authentication, request/response schemas, and error codes.",
+            "dependencies": [
+              "9.1",
+              "9.2",
+              "9.3",
+              "9.4"
+            ],
+            "details": "Document all endpoints, parameters, authentication requirements, and error responses. Ensure documentation is interactive and kept in sync with implementation.",
+            "status": "pending",
+            "testStrategy": "Verify documentation accuracy by comparing with implemented endpoints and using tools to validate the OpenAPI schema."
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "title": "Implement dashboard backend services",
+        "description": "Complete dashboard backend with metrics, client management, and configuration services",
+        "details": "Complete metrics collection service using sysinfo crate. Implement client management service to track active connections and user agents. Add configuration service for runtime settings. Create SSE event broadcasting system for real-time updates. Implement system health monitoring.",
+        "testStrategy": "Test metrics collection accuracy and performance. Verify client tracking across different interfaces. Test SSE event broadcasting with multiple clients.",
+        "priority": "medium",
+        "dependencies": [
+          7
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Complete Metrics Collection Service",
+            "description": "Implement a service to collect and expose system metrics using the sysinfo crate.",
+            "dependencies": [],
+            "details": "Use the sysinfo crate to gather CPU, memory, and disk statistics. Ensure the service can periodically refresh and provide up-to-date metrics for the dashboard backend.",
+            "status": "pending",
+            "testStrategy": "Test metrics collection accuracy and performance under various system loads. Validate data freshness and correctness."
+          },
+          {
+            "id": 2,
+            "title": "Implement Client Management Service",
+            "description": "Develop a service to track active client connections and user agent information.",
+            "dependencies": [],
+            "details": "Maintain a registry of connected clients, recording connection status and user agent strings. Provide APIs to query and manage client sessions.",
+            "status": "pending",
+            "testStrategy": "Verify client tracking across different interfaces and simulate multiple concurrent connections to ensure accurate session management."
+          },
+          {
+            "id": 3,
+            "title": "Add Configuration Service for Runtime Settings",
+            "description": "Create a configuration management service to handle runtime settings for the dashboard backend.",
+            "dependencies": [],
+            "details": "Allow dynamic retrieval and updating of configuration parameters without requiring service restarts. Support validation and persistence of settings.",
+            "status": "pending",
+            "testStrategy": "Test configuration updates at runtime and ensure changes are reflected immediately. Validate error handling for invalid configurations."
+          },
+          {
+            "id": 4,
+            "title": "Create SSE Event Broadcasting System",
+            "description": "Implement a Server-Sent Events (SSE) system for real-time event broadcasting to dashboard clients.",
+            "dependencies": [],
+            "details": "Broadcast updates for metrics, client connections, and configuration changes. Ensure efficient event delivery and support for multiple concurrent clients.",
+            "status": "pending",
+            "testStrategy": "Test SSE event broadcasting with multiple clients, including event delivery reliability and reconnection handling."
+          },
+          {
+            "id": 5,
+            "title": "Implement System Health Monitoring",
+            "description": "Develop a health monitoring component to track and report the status of backend services and system resources.",
+            "dependencies": [],
+            "details": "Monitor service uptime, resource usage, and error rates. Provide health check endpoints and integrate with alerting mechanisms if thresholds are breached.",
+            "status": "pending",
+            "testStrategy": "Simulate service failures and resource exhaustion to verify health monitoring accuracy and alerting functionality."
+          }
+        ]
+      },
+      {
+        "id": 11,
+        "title": "Build and integrate dashboard frontend",
+        "description": "Build the React dashboard frontend and integrate with backend services",
+        "details": "Build the existing React frontend located in frontend/rustymail-app-main/ using Vite build system. Integrate built static files with Actix backend using actix-files middleware. Configure SSE EventSource connections for real-time updates. Implement stats display, client list, and configuration panels using existing React components.",
+        "testStrategy": "Test frontend build process. Verify static file serving from backend. Test real-time updates via SSE connection. Cross-browser compatibility testing.",
+        "priority": "medium",
+        "dependencies": [
+          10
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Build React frontend using Vite",
+            "description": "Compile and optimize the existing React dashboard located in frontend/rustymail-app-main/ using the Vite build system.",
+            "dependencies": [],
+            "details": "Ensure all React components are properly structured and the build output is generated in the expected directory for integration.",
+            "status": "pending",
+            "testStrategy": "Run Vite build and verify successful compilation with no errors. Check output files for completeness."
+          },
+          {
+            "id": 2,
+            "title": "Integrate built static files with Actix backend",
+            "description": "Serve the compiled React static files from the Actix backend using actix-files middleware.",
+            "dependencies": [
+              "11.1"
+            ],
+            "details": "Configure Actix to correctly route requests for frontend assets and ensure static files are accessible via the backend server.",
+            "status": "pending",
+            "testStrategy": "Access dashboard via backend endpoint and verify all static assets load correctly in the browser."
+          },
+          {
+            "id": 3,
+            "title": "Configure SSE EventSource connections for real-time updates",
+            "description": "Set up Server-Sent Events (SSE) connections between the React frontend and Actix backend to enable real-time dashboard updates.",
+            "dependencies": [
+              "11.2"
+            ],
+            "details": "Implement EventSource logic in React and ensure backend endpoints broadcast events as expected.",
+            "status": "pending",
+            "testStrategy": "Trigger backend events and verify real-time updates appear in the dashboard UI without page reloads."
+          },
+          {
+            "id": 4,
+            "title": "Implement stats display, client list, and configuration panels",
+            "description": "Develop and connect the dashboard panels for stats, client list, and configuration using existing React components.",
+            "dependencies": [
+              "11.3"
+            ],
+            "details": "Ensure each panel fetches and displays data from backend services, updating in real time via SSE where applicable.",
+            "status": "pending",
+            "testStrategy": "Verify each panel displays correct data, updates in real time, and handles loading/error states gracefully."
+          },
+          {
+            "id": 5,
+            "title": "Perform cross-browser and integration testing",
+            "description": "Test the complete dashboard frontend and backend integration across major browsers for compatibility and reliability.",
+            "dependencies": [
+              "11.4"
+            ],
+            "details": "Check for UI consistency, static file serving, SSE reliability, and correct operation of all dashboard panels.",
+            "status": "pending",
+            "testStrategy": "Run manual and automated tests in Chrome, Firefox, Edge, and Safari. Validate all dashboard features and real-time updates."
+          }
+        ]
+      },
+      {
+        "id": 12,
+        "title": "Implement real-time SSE updates for dashboard",
+        "description": "Add Server-Sent Events for real-time dashboard updates with proper connection management",
+        "details": "Complete SSE implementation in dashboard/api/sse.rs. Add event broadcasting for metrics updates, client connections/disconnections, and system status changes. Implement proper SSE connection lifecycle management. Add event filtering and subscription management. Ensure browser reconnection handling.",
+        "testStrategy": "Test SSE connection stability under various network conditions. Verify event delivery and filtering. Test multiple concurrent SSE clients. Browser reconnection testing.",
+        "priority": "medium",
+        "dependencies": [
+          11
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Implement SSE Endpoint and Event Broadcasting",
+            "description": "Develop the SSE endpoint in dashboard/api/sse.rs and implement logic to broadcast events for metrics updates, client connections/disconnections, and system status changes.",
+            "dependencies": [],
+            "details": "Set up the SSE endpoint with correct HTTP headers and ensure it can send events in the required format. Integrate event broadcasting for all relevant dashboard updates.",
+            "status": "pending",
+            "testStrategy": "Verify the endpoint streams events correctly by simulating updates and checking client reception."
+          },
+          {
+            "id": 2,
+            "title": "Manage SSE Connection Lifecycle",
+            "description": "Implement robust connection lifecycle management for SSE clients, including handling new connections, disconnections, and resource cleanup.",
+            "dependencies": [
+              "12.1"
+            ],
+            "details": "Track active client connections, handle disconnects gracefully, and ensure server resources are released when clients disconnect.",
+            "status": "pending",
+            "testStrategy": "Test connection and disconnection scenarios, ensuring no resource leaks and proper cleanup."
+          },
+          {
+            "id": 3,
+            "title": "Implement Event Filtering and Subscription Management",
+            "description": "Allow clients to subscribe to specific event types and filter the events they receive based on their preferences.",
+            "dependencies": [
+              "12.1"
+            ],
+            "details": "Design a subscription mechanism where clients can specify which event categories they want to receive, and filter outgoing events accordingly.",
+            "status": "pending",
+            "testStrategy": "Test with multiple clients subscribing to different event types and verify correct event delivery."
+          },
+          {
+            "id": 4,
+            "title": "Handle Browser Reconnection and Event Replay",
+            "description": "Ensure the SSE implementation supports automatic browser reconnection and, if possible, event replay for missed updates.",
+            "dependencies": [
+              "12.2",
+              "12.3"
+            ],
+            "details": "Implement logic to detect client reconnections, use the 'Last-Event-ID' header if provided, and resend missed events as needed.",
+            "status": "pending",
+            "testStrategy": "Simulate network interruptions and browser reloads, verifying that clients reconnect and receive missed events."
+          },
+          {
+            "id": 5,
+            "title": "Comprehensive Testing and Validation",
+            "description": "Test the SSE system under various network conditions, with multiple concurrent clients, and validate event delivery, filtering, and reconnection.",
+            "dependencies": [
+              "12.4"
+            ],
+            "details": "Develop and execute test cases covering connection stability, event filtering, concurrent clients, and reconnection scenarios.",
+            "status": "pending",
+            "testStrategy": "Run automated and manual tests to ensure reliability, correctness, and performance of the SSE implementation."
+          }
+        ]
+      },
+      {
+        "id": 13,
+        "title": "Set up RIG framework for AI integration",
+        "description": "Initialize RIG framework and configure LLM providers for natural language processing",
+        "details": "Add RIG dependency to Cargo.toml. Configure OpenAI and OpenRouter providers in dashboard/services/ai/ modules. Set up LLM model selection and API key management. Create provider abstraction layer for multiple LLM services. Initialize conversation context management system.",
+        "testStrategy": "Test LLM provider connectivity and authentication. Verify model response parsing. Test provider failover mechanisms.",
+        "priority": "low",
+        "dependencies": [
+          9
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add RIG framework dependency and initialize core modules",
+            "description": "Integrate the RIG framework into the Rust project by adding the required dependency to Cargo.toml and initializing the core modules necessary for LLM operations.",
+            "dependencies": [],
+            "details": "Update Cargo.toml to include the 'rig-core' crate. Ensure all required features (e.g., async, provider support) are enabled. Initialize RIG modules in the project entry point.",
+            "status": "pending",
+            "testStrategy": "Verify successful compilation and that RIG modules can be imported and instantiated without errors."
+          },
+          {
+            "id": 2,
+            "title": "Configure OpenAI and OpenRouter LLM providers",
+            "description": "Set up and configure OpenAI and OpenRouter as LLM providers within the RIG framework, ensuring API keys and environment variables are correctly managed.",
+            "dependencies": [
+              "13.1"
+            ],
+            "details": "Implement provider configuration in dashboard/services/ai/. Store and load API keys securely using environment variables or a secrets manager. Validate provider connectivity.",
+            "status": "pending",
+            "testStrategy": "Test provider authentication and ensure both OpenAI and OpenRouter can return valid model responses."
+          },
+          {
+            "id": 3,
+            "title": "Implement LLM model selection and API key management UI",
+            "description": "Develop a user interface for selecting LLM models and managing API keys for different providers within the dashboard.",
+            "dependencies": [
+              "13.2"
+            ],
+            "details": "Add UI components for model selection and secure API key input/storage. Ensure changes propagate to backend configuration.",
+            "status": "pending",
+            "testStrategy": "Verify that users can select models and update API keys, and that these changes are reflected in provider behavior."
+          },
+          {
+            "id": 4,
+            "title": "Create provider abstraction layer for multi-provider support",
+            "description": "Design and implement an abstraction layer that allows seamless switching and failover between multiple LLM providers.",
+            "dependencies": [
+              "13.2"
+            ],
+            "details": "Define traits or interfaces for provider operations. Implement logic for routing requests and handling provider-specific errors. Support dynamic provider selection.",
+            "status": "pending",
+            "testStrategy": "Test abstraction by switching providers at runtime and simulating provider failures to verify failover mechanisms."
+          },
+          {
+            "id": 5,
+            "title": "Initialize conversation context management system",
+            "description": "Set up a system to manage conversation state and context for multi-turn interactions with LLMs.",
+            "dependencies": [
+              "13.4"
+            ],
+            "details": "Implement context storage and retrieval mechanisms. Integrate with provider abstraction to maintain conversation history and context across requests.",
+            "status": "pending",
+            "testStrategy": "Test multi-turn conversations for correct context retention and ensure context is correctly passed to LLM providers."
+          }
+        ]
+      },
+      {
+        "id": 14,
+        "title": "Implement natural language to MCP conversion",
+        "description": "Create pipeline to convert natural language queries into MCP operations",
+        "details": "Implement natural language processing pipeline using RIG. Create prompt templates for email operations like 'show unread emails', 'emails from sender', 'move emails to folder'. Map natural language intents to specific MCP method calls. Add conversation context tracking for follow-up queries.",
+        "testStrategy": "Test natural language understanding with various query formats. Verify correct MCP operation mapping. Test conversation context maintenance across multiple queries.",
+        "priority": "low",
+        "dependencies": [
+          13
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design RIG-based NLP Pipeline Architecture",
+            "description": "Define the overall architecture for a natural language processing pipeline using Retrieval Interleaved Generation (RIG) to convert user queries into MCP operations.",
+            "dependencies": [],
+            "details": "Specify the flow from user input to MCP method invocation, including integration points for RIG, data retrieval, and response generation. Ensure the design supports dynamic retrieval and generation cycles for accurate intent mapping.",
+            "status": "pending",
+            "testStrategy": "Review architecture diagrams and perform design walkthroughs to ensure all required components and data flows are addressed."
+          },
+          {
+            "id": 2,
+            "title": "Develop Prompt Templates for Email Operations",
+            "description": "Create and validate prompt templates for common email-related natural language queries such as 'show unread emails', 'emails from sender', and 'move emails to folder'.",
+            "dependencies": [
+              "14.1"
+            ],
+            "details": "Design prompt templates that guide the RIG model to extract relevant entities and actions from user queries, ensuring coverage of all supported MCP email operations.",
+            "status": "pending",
+            "testStrategy": "Test prompt templates with a variety of user query phrasings and verify correct extraction of intent and parameters."
+          },
+          {
+            "id": 3,
+            "title": "Implement Intent Recognition and MCP Method Mapping",
+            "description": "Develop logic to map extracted natural language intents and entities to specific MCP method calls.",
+            "dependencies": [
+              "14.2"
+            ],
+            "details": "Use the outputs from the RIG pipeline and prompt templates to identify user intent and required parameters, then translate these into the corresponding MCP API calls.",
+            "status": "pending",
+            "testStrategy": "Test with diverse queries to ensure correct mapping to MCP methods and validate with unit tests for each supported operation."
+          },
+          {
+            "id": 4,
+            "title": "Integrate Conversation Context Tracking",
+            "description": "Add mechanisms to track and utilize conversation context for handling follow-up queries and maintaining state across interactions.",
+            "dependencies": [
+              "14.3"
+            ],
+            "details": "Implement context management to retain relevant information from previous queries, enabling accurate interpretation of ambiguous or follow-up requests.",
+            "status": "pending",
+            "testStrategy": "Simulate multi-turn conversations and verify that context is correctly maintained and utilized for subsequent queries."
+          },
+          {
+            "id": 5,
+            "title": "End-to-End Testing and Validation",
+            "description": "Conduct comprehensive testing of the entire pipeline, including natural language understanding, MCP mapping, and context tracking.",
+            "dependencies": [
+              "14.4"
+            ],
+            "details": "Test the system with a wide range of query formats and conversation scenarios to ensure robust performance and correct operation mapping.",
+            "status": "pending",
+            "testStrategy": "Perform integration tests, user acceptance tests, and edge case evaluations to confirm end-to-end functionality and reliability."
+          }
+        ]
+      },
+      {
+        "id": 15,
+        "title": "Build chatbot UI integration",
+        "description": "Add chatbot interface to dashboard with conversation management",
+        "details": "Extend existing ChatbotPanel.tsx component with full conversation interface. Add message history and conversation state management. Implement typing indicators and response streaming. Connect to backend AI service via SSE or WebSocket. Add conversation export and history features.",
+        "testStrategy": "Test chatbot UI responsiveness and conversation flow. Verify message persistence and history. Test real-time response streaming.",
+        "priority": "low",
+        "dependencies": [
+          12,
+          14
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Extend ChatbotPanel.tsx with Full Conversation Interface",
+            "description": "Enhance the existing ChatbotPanel.tsx component to support a complete conversation UI, including user input, message display, and basic interaction elements.",
+            "dependencies": [],
+            "details": "Add input fields, send button, and message rendering logic. Ensure clear separation of user and AI messages with appropriate styling and layout.",
+            "status": "pending",
+            "testStrategy": "Verify UI renders correctly, user can send messages, and both user and AI messages are displayed with correct styles."
+          },
+          {
+            "id": 2,
+            "title": "Implement Message History and Conversation State Management",
+            "description": "Develop logic to persist and manage message history and conversation state within the UI component.",
+            "dependencies": [
+              "15.1"
+            ],
+            "details": "Use React state management to store messages and maintain conversation context. Ensure messages persist across component updates and support multi-turn conversations.",
+            "status": "pending",
+            "testStrategy": "Test that message history is retained during session, supports scrolling, and updates correctly with new messages."
+          },
+          {
+            "id": 3,
+            "title": "Add Typing Indicators and Response Streaming",
+            "description": "Integrate real-time typing indicators and implement streaming of AI responses for improved user experience.",
+            "dependencies": [
+              "15.2"
+            ],
+            "details": "Show typing indicator when AI is generating a response. Stream partial responses from backend and update UI incrementally.",
+            "status": "pending",
+            "testStrategy": "Verify typing indicator appears during response generation and streamed responses are displayed smoothly in the chat."
+          },
+          {
+            "id": 4,
+            "title": "Connect Chatbot UI to Backend AI Service via SSE/WebSocket",
+            "description": "Establish real-time communication between the chatbot UI and backend AI service using Server-Sent Events (SSE) or WebSocket.",
+            "dependencies": [
+              "15.3"
+            ],
+            "details": "Implement connection logic to backend, handle incoming messages, errors, and reconnections. Ensure compatibility with streaming and conversation management.",
+            "status": "pending",
+            "testStrategy": "Test backend connectivity, message delivery, error handling, and reconnection scenarios. Validate streaming works end-to-end."
+          },
+          {
+            "id": 5,
+            "title": "Implement Conversation Export and History Features",
+            "description": "Add functionality to export conversation history and provide access to past conversations within the UI.",
+            "dependencies": [
+              "15.4"
+            ],
+            "details": "Enable users to download or copy conversation transcripts. Provide UI for browsing and retrieving previous chat sessions.",
+            "status": "pending",
+            "testStrategy": "Test export feature for accuracy and format. Verify history browsing and retrieval works as expected."
+          }
+        ]
+      },
+      {
+        "id": 16,
+        "title": "Create comprehensive test suite",
+        "description": "Implement unit, integration, and end-to-end tests covering all functionality",
+        "details": "Create unit tests for all IMAP operations using mock servers. Implement integration tests using real IMAP adapters for Gmail, Outlook, and standard servers. Add end-to-end tests covering complete user workflows through REST and MCP interfaces. Set up performance benchmarks for concurrent connection handling.",
+        "testStrategy": "Achieve >90% code coverage. Test all error scenarios and edge cases. Performance tests must meet requirements: <500ms folder list, <200ms email fetch, 100+ concurrent connections.",
+        "priority": "high",
+        "dependencies": [
+          15
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Develop unit tests for IMAP operations using mock servers",
+            "description": "Create unit tests for all IMAP protocol operations by leveraging mock server frameworks or in-memory fakes to simulate IMAP server behavior.",
+            "dependencies": [],
+            "details": "Utilize libraries such as ImapEngine's FakeMailbox or similar mock implementations to test all IMAP commands and error scenarios in isolation from real servers.",
+            "status": "pending",
+            "testStrategy": "Achieve >90% code coverage for IMAP operation logic. Validate all error paths and edge cases using mock objects."
+          },
+          {
+            "id": 2,
+            "title": "Implement integration tests with real IMAP adapters",
+            "description": "Write integration tests that interact with real IMAP adapters for Gmail, Outlook, and standard IMAP servers to verify protocol compliance and adapter correctness.",
+            "dependencies": [],
+            "details": "Configure test environments with real credentials or test accounts for each provider. Ensure tests cover authentication, folder listing, message retrieval, and error handling.",
+            "status": "pending",
+            "testStrategy": "Verify all supported IMAP operations succeed and fail as expected against each provider. Ensure adapter-specific edge cases are covered."
+          },
+          {
+            "id": 3,
+            "title": "Create end-to-end tests for user workflows via REST and MCP interfaces",
+            "description": "Design and implement end-to-end tests that simulate complete user workflows through both REST and MCP interfaces, covering typical and edge-case scenarios.",
+            "dependencies": [],
+            "details": "Automate user scenarios such as login, folder navigation, message actions, and error recovery. Ensure tests span the full stack from API to IMAP backend.",
+            "status": "pending",
+            "testStrategy": "Validate that all user workflows function correctly and that errors are surfaced appropriately through both interfaces."
+          },
+          {
+            "id": 4,
+            "title": "Set up performance benchmarks for concurrent IMAP connection handling",
+            "description": "Establish automated performance tests to measure system behavior under high concurrency, focusing on connection handling and response times.",
+            "dependencies": [],
+            "details": "Simulate 100+ concurrent IMAP connections and measure key operations such as folder listing and email fetch. Use load testing tools to automate benchmarks.",
+            "status": "pending",
+            "testStrategy": "Ensure performance requirements are met: <500ms for folder list, <200ms for email fetch, and stable operation with 100+ concurrent connections."
+          },
+          {
+            "id": 5,
+            "title": "Integrate test automation and reporting into CI/CD pipeline",
+            "description": "Automate execution of all test suites and performance benchmarks within the CI/CD pipeline, and generate comprehensive test coverage and performance reports.",
+            "dependencies": [
+              "16.1",
+              "16.2",
+              "16.3",
+              "16.4"
+            ],
+            "details": "Configure CI/CD to run unit, integration, end-to-end, and performance tests on each commit. Aggregate results and enforce quality gates based on coverage and performance metrics.",
+            "status": "pending",
+            "testStrategy": "Verify all tests run automatically on each pipeline execution. Ensure failures and regressions are reported and block deployments if quality thresholds are not met."
+          }
+        ]
+      },
+      {
+        "id": 17,
+        "title": "Configure CI/CD pipeline",
+        "description": "Set up continuous integration and deployment with automated testing and releases",
+        "details": "Configure GitHub Actions or similar CI/CD system. Set up automated testing on multiple Rust versions and platforms. Add security scanning and dependency vulnerability checks. Configure automated releases with proper versioning. Add Docker image building and container registry publishing.",
+        "testStrategy": "Test CI/CD pipeline with pull requests. Verify automated testing runs successfully. Test release automation and artifact publishing.",
+        "priority": "medium",
+        "dependencies": [
+          16
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Set up CI/CD workflow configuration",
+            "description": "Create and configure the main CI/CD workflow file using GitHub Actions or a similar system to orchestrate all pipeline steps.",
+            "dependencies": [],
+            "details": "Define the workflow triggers (e.g., on push, pull request, or release), set up environment variables, and ensure the workflow file is placed in the correct directory (e.g., .github/workflows/ci.yml).",
+            "status": "pending",
+            "testStrategy": "Verify that the workflow triggers correctly on code pushes and pull requests by observing workflow runs in the repository."
+          },
+          {
+            "id": 2,
+            "title": "Implement automated testing across Rust versions and platforms",
+            "description": "Configure jobs to build and test the project on multiple Rust toolchains (stable, beta, nightly) and supported operating systems (Linux, macOS, Windows).",
+            "dependencies": [
+              "17.1"
+            ],
+            "details": "Use a build matrix to run tests on all specified Rust versions and platforms. Ensure that failures in any matrix entry fail the overall job.",
+            "status": "pending",
+            "testStrategy": "Commit code changes and confirm that tests run and pass on all configured toolchains and platforms."
+          },
+          {
+            "id": 3,
+            "title": "Integrate security scanning and dependency vulnerability checks",
+            "description": "Add steps to the workflow for automated security analysis and dependency vulnerability scanning.",
+            "dependencies": [
+              "17.1"
+            ],
+            "details": "Use tools such as cargo-audit or third-party GitHub Actions to scan for known vulnerabilities in dependencies and report issues in the workflow output.",
+            "status": "pending",
+            "testStrategy": "Intentionally introduce a vulnerable dependency and verify that the workflow detects and reports the issue."
+          },
+          {
+            "id": 4,
+            "title": "Configure automated releases with semantic versioning",
+            "description": "Set up workflow steps to automate versioning and release creation, including publishing release artifacts.",
+            "dependencies": [
+              "17.1",
+              "17.2",
+              "17.3"
+            ],
+            "details": "Use release automation tools or GitHub Actions to increment versions, generate changelogs, and publish releases to the appropriate registry (e.g., crates.io).",
+            "status": "pending",
+            "testStrategy": "Trigger a release workflow and verify that a new release is created with correct versioning and artifacts."
+          },
+          {
+            "id": 5,
+            "title": "Add Docker image build and container registry publishing",
+            "description": "Extend the workflow to build Docker images and publish them to a container registry (e.g., Docker Hub or GitHub Container Registry).",
+            "dependencies": [
+              "17.1",
+              "17.2",
+              "17.3",
+              "17.4"
+            ],
+            "details": "Define Docker build steps, tag images with release versions, and authenticate with the target registry for publishing.",
+            "status": "pending",
+            "testStrategy": "Trigger a workflow run and verify that the Docker image is built and published to the configured registry with the correct tags."
+          }
+        ]
+      },
+      {
+        "id": 18,
+        "title": "Create deployment documentation and tooling",
+        "description": "Document deployment procedures and create deployment automation tools",
+        "details": "Create deployment guides for standalone binary, Docker, and Kubernetes. Document configuration options and environment variables. Create deployment scripts and Docker Compose files. Add monitoring and logging configuration examples. Document security best practices and TLS setup.",
+        "testStrategy": "Test deployment procedures on clean environments. Verify documentation completeness and accuracy. Test deployment automation scripts.",
+        "priority": "low",
+        "dependencies": [
+          17
+        ],
+        "status": "pending",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Draft Deployment Guides for All Supported Environments",
+            "description": "Create comprehensive deployment guides for standalone binary, Docker, and Kubernetes environments, including step-by-step instructions and prerequisites.",
+            "dependencies": [],
+            "details": "Ensure each guide covers environment setup, installation steps, and troubleshooting tips tailored to the target audience.",
+            "status": "pending",
+            "testStrategy": "Review guides for completeness and clarity. Test each deployment procedure in a clean environment to verify accuracy."
+          },
+          {
+            "id": 2,
+            "title": "Document Configuration Options and Environment Variables",
+            "description": "List and explain all configuration options and environment variables required or supported by the application.",
+            "dependencies": [
+              "18.1"
+            ],
+            "details": "Provide default values, usage examples, and descriptions for each option. Highlight required versus optional settings.",
+            "status": "pending",
+            "testStrategy": "Validate documentation by configuring deployments using only the documented options. Ensure all variables are covered and examples are functional."
+          },
+          {
+            "id": 3,
+            "title": "Develop Deployment Automation Scripts and Docker Compose Files",
+            "description": "Create and document scripts and Docker Compose files to automate deployment for supported environments.",
+            "dependencies": [
+              "18.1",
+              "18.2"
+            ],
+            "details": "Scripts should cover installation, configuration, and startup. Docker Compose files must be annotated and support common use cases.",
+            "status": "pending",
+            "testStrategy": "Test automation scripts and Compose files in isolated environments. Confirm they produce working deployments as described."
+          },
+          {
+            "id": 4,
+            "title": "Add Monitoring and Logging Configuration Examples",
+            "description": "Provide example configurations for integrating monitoring and logging solutions with the deployment.",
+            "dependencies": [
+              "18.3"
+            ],
+            "details": "Include sample configuration files and instructions for popular monitoring and logging tools. Explain how to enable, customize, and verify monitoring and logging.",
+            "status": "pending",
+            "testStrategy": "Deploy with provided examples and verify that monitoring and logging data is collected and accessible as documented."
+          },
+          {
+            "id": 5,
+            "title": "Document Security Best Practices and TLS Setup",
+            "description": "Write detailed documentation on security best practices, including TLS/SSL setup and secure configuration recommendations.",
+            "dependencies": [
+              "18.2",
+              "18.3"
+            ],
+            "details": "Cover certificate management, environment hardening, and secure defaults. Provide step-by-step TLS setup instructions for each deployment method.",
+            "status": "pending",
+            "testStrategy": "Follow documentation to set up secure deployments. Validate that security controls and TLS are correctly implemented and functional."
+          }
+        ]
+      }
+    ],
+    "metadata": {
+      "created": "2025-09-22T13:45:57.433Z",
+      "updated": "2025-09-22T13:45:57.433Z",
+      "description": "Tasks for master context"
+    }
+  }
+}
