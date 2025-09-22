@@ -165,7 +165,7 @@ async fn get_session(state: &AppState, req: &HttpRequest) -> Result<Arc<ImapClie
         .and_then(|hv| hv.to_str().ok())
         .ok_or(ApiError::Unauthorized)?;
 
-    state.session_manager.get_session(api_key)
+    state.session_manager.as_ref().get_session(api_key)
         .await
         .map_err(|e| ApiError::InternalError(format!("Failed to get session: {}", e)))
 }
@@ -251,7 +251,7 @@ async fn modify_flags(state: Data<AppState>, req: HttpRequest, payload: Json<Mod
     let session = get_session(&state, &req).await?;
     let uids = &payload.uids;
     let operation = payload.operation.clone(); // Clone operation
-    let flags_to_modify: Vec<String> = payload.flags.iter().map(|f| f.to_string()).collect(); // Convert flags to Vec<String>
+    let flags_to_modify: Vec<String> = payload.flags.items.iter().map(|f| f.to_string()).collect(); // Convert flags to Vec<String>
 
     session.store_flags(uids, operation, &flags_to_modify).await?; // Pass Vec<String>
     Ok(HttpResponse::Ok().finish())
@@ -279,10 +279,11 @@ async fn append_email(state: Data<AppState>, req: HttpRequest, path: Path<String
     info!("Handling POST /folders/{}/emails/append", folder_name);
     let session = get_session(&state, &req).await?;
     // Decode base64 content
+    use base64::Engine;
     let content = base64::engine::general_purpose::STANDARD
-        .decode(&payload.content_base64)
+        .decode(&payload.content)
         .map_err(|e| ApiError::BadRequest(format!("Invalid base64 content: {}", e)))?;
-    let flags: Vec<String> = payload.flags.iter().map(|f| f.to_string()).collect(); // Convert flags
+    let flags: Vec<String> = payload.flags.items.iter().map(|f| f.to_string()).collect(); // Convert flags
 
     session.append(&folder_name, &content, &flags).await?;
     Ok(HttpResponse::Created().finish())
