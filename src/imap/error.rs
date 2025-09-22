@@ -61,13 +61,34 @@ pub enum ImapError {
 
     #[error("Missing data: {0}")]
     MissingData(String),
-    
+
+    #[error("No message bodies found")]
+    NoBodies,
+
+    #[error("No envelope found")]
+    NoEnvelope,
+
+    #[error("Operation failed: {0}")]
+    OperationFailed(String),
+
     #[error("Internal error: {0}")]
     Internal(String),
-    
+
     #[error("Operation timed out: {0}")]
     Timeout(String),
-    
+
+    #[error("I/O error: {0}")]
+    Io(String),
+
+    #[error("Encoding error: {0}")]
+    Encoding(String),
+
+    #[error("Validation error: {0}")]
+    Validation(String),
+
+    #[error("Other error: {0}")]
+    Other(String),
+
     #[error("Unknown error: {0}")]
     Unknown(String),
 }

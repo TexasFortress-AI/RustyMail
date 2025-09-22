@@ -109,7 +109,7 @@ impl McpSseState {
                 return;
             }
         };
-        let event = sse::Event::Data(sse::Data::new(&event_data));
+        let event = sse::Event::Data(sse::Data::new(event_data));
         
         for session in self.sessions.values() {
             if let Err(e) = session.sender.send(event.clone()).await {
@@ -124,26 +124,19 @@ impl McpSseState {
             Ok(v) => v,
             Err(e) => {
                 error!("Failed to serialize request to JSON: {}", e);
-                return Some(JsonRpcResponse::error(None, JsonRpcError::parse_error(e.to_string())));
+                return Some(JsonRpcResponse::error(None, JsonRpcError::server_error(ErrorCode::ParseError as i64, e.to_string())));
             }
         };
 
-        let session_id_arc = Arc::new(session_id.to_string());
         let port_state_clone = self.port_state.clone();
-        
-        match self.mcp_handler.handle_request(session_id_arc, request_json, port_state_clone).await {
-            Ok(Some(response_value)) => {
-                match serde_json::from_value(response_value) {
-                    Ok(resp) => Some(resp),
-                    Err(e) => {
-                        error!("Failed to deserialize MCP response: {}", e);
-                        Some(JsonRpcResponse::error(None, JsonRpcError::internal_error(e.to_string())))
-                    }
-                }
-            }
-            Ok(None) => None,
-            Err(json_rpc_error) => {
-                 Some(JsonRpcResponse::error(None, json_rpc_error))
+
+        // TODO: Session ID needs to be handled differently - perhaps stored in state
+        let response_value = self.mcp_handler.handle_request(port_state_clone, request_json).await;
+        match serde_json::from_value(response_value) {
+            Ok(resp) => Some(resp),
+            Err(e) => {
+                error!("Failed to deserialize MCP response: {}", e);
+                Some(JsonRpcResponse::error(None, JsonRpcError::server_error(ErrorCode::InternalError as i64, e.to_string())))
             }
         }
     }
@@ -228,25 +221,17 @@ impl McpSseState {
             Ok(v) => v,
             Err(e) => {
                 error!("Failed to serialize request to JSON: {}", e);
-                return Some(JsonRpcResponse::error(None, JsonRpcError::parse_error(e.to_string())));
+                return Some(JsonRpcResponse::error(None, JsonRpcError::server_error(ErrorCode::ParseError as i64, e.to_string())));
             }
         };
 
-        let session_id_arc = Arc::new(session_id.to_string());
-        
-        match mcp_handler.handle_request(session_id_arc, request_json, port_state).await {
-            Ok(Some(response_value)) => {
-                match serde_json::from_value(response_value) {
-                    Ok(resp) => Some(resp),
-                    Err(e) => {
-                        error!("Failed to deserialize MCP response: {}", e);
-                        Some(JsonRpcResponse::error(None, JsonRpcError::internal_error(e.to_string())))
-                    }
-                }
-            }
-            Ok(None) => None,
-            Err(json_rpc_error) => {
-                 Some(JsonRpcResponse::error(None, json_rpc_error))
+        // TODO: Session ID needs to be handled differently - perhaps stored in state
+        let response_value = mcp_handler.handle_request(port_state, request_json).await;
+        match serde_json::from_value(response_value) {
+            Ok(resp) => Some(resp),
+            Err(e) => {
+                error!("Failed to deserialize MCP response: {}", e);
+                Some(JsonRpcResponse::error(None, JsonRpcError::server_error(ErrorCode::InternalError as i64, e.to_string())))
             }
         }
     }
@@ -327,7 +312,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                     }
                     Err(e) => {
                         warn!("Failed to parse incoming WS message as JsonRpcRequest: {}. Text: {}", e, text);
-                         let err_resp = JsonRpcResponse::error(None, JsonRpcError::parse_error(e.to_string()));
+                         let err_resp = JsonRpcResponse::error(None, JsonRpcError::server_error(ErrorCode::ParseError as i64, e.to_string()));
                          if let Ok(err_str) = serde_json::to_string(&err_resp) {
                              ctx.text(err_str);
                          }

@@ -33,7 +33,11 @@ pub enum ErrorCode {
     ImapInvalidSearchCriteria = -32009,
     ImapBadResponse = -32010,
     ImapTimeoutError = -32011,
-    
+    ImapCommandError = -32012,
+    ImapInvalidMailbox = -32013,
+    ImapOperationFailed = -32014,
+    ImapMessageError = -32015,
+
     // MCP-specific error codes
     McpInvalidRequest = -32050,
     McpInvalidParams = -32051,
@@ -74,7 +78,11 @@ impl ErrorCode {
             ErrorCode::ImapInvalidSearchCriteria => "IMAP: Invalid search criteria",
             ErrorCode::ImapBadResponse => "IMAP: Bad response",
             ErrorCode::ImapTimeoutError => "IMAP: Operation timed out",
-            
+            ErrorCode::ImapCommandError => "IMAP: Command error",
+            ErrorCode::ImapInvalidMailbox => "IMAP: Invalid mailbox",
+            ErrorCode::ImapOperationFailed => "IMAP: Operation failed",
+            ErrorCode::ImapMessageError => "IMAP: Message error",
+
             // MCP-specific error messages
             ErrorCode::McpInvalidRequest => "MCP: Invalid request",
             ErrorCode::McpInvalidParams => "MCP: Invalid parameters",

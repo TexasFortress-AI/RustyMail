@@ -111,7 +111,8 @@ pub async fn run_stdio_service(
                     Some(Err(LinesCodecError::MaxLineLengthExceeded)) => {
                         error!("Line exceeded maximum length");
                         // ID is likely unknown if line is too long, send None
-                        let err_resp = JsonRpcResponse::error(None, JsonRpcError::invalid_request(
+                        let err_resp = JsonRpcResponse::error(None, JsonRpcError::server_error(
+                            ErrorCode::InvalidRequest as i64,
                             "Input line exceeded maximum allowed length".to_string()
                         ));
                         if let Ok(err_str) = serde_json::to_string(&err_resp) {

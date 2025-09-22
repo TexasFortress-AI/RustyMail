@@ -142,47 +142,35 @@ pub async fn connect(
 
     // Setup TLS connector
     let mut tls_builder = TlsConnector::builder();
-    // Build the native TLS connector first
-    let tls_connector_builder = tls_builder.build()
-        .map_err(|e| ImapError::Tls(format!("Failed to build TLS connector: {}", e)))?;
-
-    // Convert native-tls builder to async-native-tls connector
-    // This should work since From<TlsConnectorBuilder> is implemented for AsyncTlsConnector
-    let tls_connector = AsyncTlsConnector::from(tls_connector_builder);
+    // Convert native-tls builder directly to async-native-tls connector
+    // AsyncTlsConnector::from expects TlsConnectorBuilder, not TlsConnector
+    let tls_connector = AsyncTlsConnector::from(tls_builder);
 
     // Perform TLS handshake with timeout
-    let tls_stream = tokio::time::timeout(timeout, tls_connector.connect(server, tcp_stream))
+    // Use .compat() to convert tokio's AsyncRead/Write to futures' AsyncRead/Write
+    let tls_stream = tokio::time::timeout(timeout, tls_connector.connect(server, tcp_stream.compat()))
         .await
         .map_err(|_| ImapError::Timeout("Operation timed out".to_string()))?
         .map_err(|e| ImapError::Tls(e.to_string()))?;
 
     info!("TLS connection established");
 
-    // Build IMAP client with the TLS stream compatible wrapper
-    let client = AsyncImapInternalClient::new(tls_stream.compat());
-
-    // Start session and handle greeting/unsolicited responses
-    // Lock the client for the connect call
-    let session = tokio::time::timeout(timeout, client.connect())
-        .await
-        .map_err(|_| ImapError::Timeout("Operation timed out".to_string()))?
-        .map_err(|e| ImapError::Connection(format!("Failed to start session: {}", e)))?;
+    // Build IMAP client with the TLS stream (already has compat wrapper from tcp_stream.compat())
+    // The client itself is the unauthenticated session - no need to call connect
+    let unauthenticated_session = AsyncImapInternalClient::new(tls_stream);
     
     info!("IMAP session established");
 
-    // Login with timeout (using the obtained session)
-    // Note: Session methods might need mutable access, but connect/login are often &self
-    // If login needs &mut, we can't use TlsImapSession directly here.
-    // But login is called on the async-imap Session, not our wrapper yet.
-    tokio::time::timeout(timeout, session.login(username, password))
+    // Login with timeout (login returns the authenticated session)
+    let authenticated_session = tokio::time::timeout(timeout, unauthenticated_session.login(username, password))
         .await
-        .map_err(|_| ImapError::Timeout("Operation timed out".to_string()))?
+        .map_err(|_| ImapError::Timeout("Login timed out".to_string()))?
         .map_err(ImapError::from)?;
-    
+
     info!("IMAP login successful for user: {}", username);
 
-    // Wrap the TlsImapSession in our mutex wrapper
-    let wrapped_session = AsyncImapSessionWrapper::new(session);
+    // Wrap the authenticated session in our mutex wrapper
+    let wrapped_session = AsyncImapSessionWrapper::new(authenticated_session);
 
     // Create our client using the wrapped session
     Ok(ImapClient::new(wrapped_session))

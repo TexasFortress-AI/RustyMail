@@ -30,8 +30,7 @@ use crate::{ // Group crate imports
         handler::McpHandler,
         types::{McpPortState, JsonRpcResponse, JsonRpcRequest, JsonRpcError}, // Remove McpCommand/Result if unused here
     },
-    session_manager::SessionManager, // Assuming this manages sessions
-    // Remove unused imports like Uuid, HashMap, Future, if they aren't needed
+    session_manager::{SessionManager, SessionManagerTrait}, // Import both the struct and trait
 };
 
 // Define AppState struct *once*
@@ -66,12 +65,15 @@ pub enum ApiError {
 
     #[error("Dashboard Error: {0}")]
     Dashboard(String),
+
+    #[error("Invalid API Key: {0}")]
+    InvalidApiKey(String),
 }
 
 impl ResponseError for ApiError {
     fn status_code(&self) -> StatusCode {
         match self {
-            ApiError::Unauthorized => StatusCode::UNAUTHORIZED,
+            ApiError::Unauthorized | ApiError::InvalidApiKey(_) => StatusCode::UNAUTHORIZED,
             ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
             ApiError::NotFound(_) => StatusCode::NOT_FOUND,
             ApiError::Imap(_) | ApiError::Mcp(_) | ApiError::InternalError(_) | ApiError::Dashboard(_) => StatusCode::INTERNAL_SERVER_ERROR,
@@ -212,8 +214,12 @@ async fn select_folder(state: Data<AppState>, req: HttpRequest, path: Path<Strin
     let folder_name = path.into_inner();
     info!("Handling POST /folders/{}/select", folder_name);
     let session = get_session(&state, &req).await?;
-    let mailbox_info: MailboxInfo = session.select_folder(&folder_name).await?; // Assuming select_folder returns MailboxInfo
-    Ok(HttpResponse::Ok().json(mailbox_info))
+    session.select_folder(&folder_name).await?;
+    // TODO: Return actual mailbox info when available
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "selected": folder_name,
+        "status": "ok"
+    })))
 }
 
 #[get("/folders/{folder_name}/emails")]
@@ -302,7 +308,10 @@ async fn expunge_folder(state: Data<AppState>, req: HttpRequest, path: Path<Stri
 // --- Main Server Setup (Optional, if this is the main entry point) ---
 
 pub async fn run_server(settings: Settings, mcp_handler: Arc<dyn McpHandler>, session_manager: Arc<SessionManager>, dashboard_state: Option<Arc<TokioMutex<DashboardState>>>) -> std::io::Result<()> {
-    let bind_address = settings.interface.rest_bind_address();
+    // Get the REST config and construct bind address
+    let rest_config = settings.rest.as_ref()
+        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "REST config not found"))?;
+    let bind_address = format!("{}:{}", rest_config.host, rest_config.port);
     info!("Starting REST API server at {}", bind_address);
 
     let app_state = Data::new(AppState {

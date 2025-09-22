@@ -123,7 +123,7 @@ impl SdkMcpAdapter {
 
     /// Temporary constructor that creates a new adapter with a placeholder factory
     /// until the proper factory can be injected
-    pub fn new() -> Result<Self, Box<dyn std::error::Error>> {
+    pub fn new_placeholder() -> Result<Self, Box<dyn std::error::Error>> {
         info!("Initializing SdkMcpAdapter with placeholder factory...");
         // This is a placeholder. In production, a real factory should be provided.
         Ok(Self { 
@@ -137,7 +137,7 @@ impl SdkMcpAdapter {
 
     // Helper to get an IMAP session using the factory stored in the adapter.
     // Changed error type to JsonRpcError.
-    async fn get_session(&self) -> Result<ImapClient, JsonRpcError> {
+    async fn get_session(&self) -> Result<ImapClient<crate::imap::session::AsyncImapSessionWrapper>, JsonRpcError> {
         info!("SDK Adapter: Getting IMAP session via factory.");
         self.session_factory.create_session()
             .await
