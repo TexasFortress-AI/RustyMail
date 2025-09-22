@@ -128,8 +128,8 @@ impl SdkMcpAdapter {
         // This is a placeholder. In production, a real factory should be provided.
         Ok(Self { 
             session_factory: CloneableImapSessionFactory::new(
-                Arc::new(|| Box::pin(async { 
-                    Err(ImapError::Connection("Placeholder factory - not implemented".to_string())) 
+                Box::new(|| Box::pin(async {
+                    Err(ImapError::Connection("Placeholder factory - not implemented".to_string()))
                 }))
             ) 
         })

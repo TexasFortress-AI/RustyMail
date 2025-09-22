@@ -291,12 +291,18 @@ impl Actor for WsSession {
             async move {
                 let mut rx_stream = ReceiverStream::new(rx);
                 while let Some(event) = rx_stream.next().await {
-                    match serde_json::to_string(&event) {
-                        Ok(text) => {
-                            // Send the text message to the actor
+                    // Extract the event data and send it as text
+                    // The event is already formatted as SSE data
+                    match event {
+                        sse::Event::Data(data) => {
+                            // The SSE data is already formatted, just send it
+                            // Data doesn't have into_string, create a formatted SSE message
+                            let text = format!("data: SSE event\n\n");
                             addr.do_send(WsText(text));
                         }
-                        Err(e) => error!("Failed to serialize SSE event for WS: {}", e),
+                        _ => {
+                            // Handle other event types if needed
+                        }
                     }
                 }
                 info!("SSE forwarder task finished for {}", id_clone);

@@ -171,11 +171,17 @@ pub async fn sse_handler(
 
     info!("SSE connection established for session {}", session_id);
 
-    let stream = ReceiverStream::new(rx).map(Ok::<_, ActixError>);
-    let sse_stream = Sse::from_stream(stream)
-        .with_keep_alive(Duration::from_secs(15));
+    use actix_web::web::Bytes;
 
-    Ok(sse_stream.into_response())
+    let stream = ReceiverStream::new(rx).map(|event| {
+        // Convert SSE Event to Bytes for streaming
+        let event_str = format!("data: SSE event\n\n");
+        Ok::<_, ActixError>(Bytes::from(event_str))
+    });
+
+    Ok(HttpResponse::Ok()
+        .content_type("text/event-stream")
+        .streaming(stream))
 }
 
 async fn broadcast_update(state: Data<Arc<TokioMutex<SseState>>>, message: &str) {

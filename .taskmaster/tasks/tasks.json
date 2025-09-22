@@ -142,7 +142,7 @@
           1,
           2
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -150,7 +150,7 @@
             "description": "Update all IMAP client code in src/imap/client.rs to use only async-imap types and methods, removing any usage of other IMAP libraries.",
             "dependencies": [],
             "details": "Replace all existing IMAP operations (connect, authenticate, select, search, fetch, move, delete) with their async-imap equivalents. Ensure all code paths utilize async-imap's API and data structures.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify all IMAP operations compile and run using async-imap only. Run unit tests for each operation to confirm correct behavior."
           },
           {
@@ -161,7 +161,7 @@
               "3.1"
             ],
             "details": "Delete all type conversion functions and dual-library abstractions. Ensure only async-imap types are present in the codebase.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Search for and remove all conversion functions and dual-library references. Confirm no compilation errors related to missing types or conversions."
           },
           {
@@ -172,7 +172,7 @@
               "3.1"
             ],
             "details": "Update all session handling code to use AsyncImapSessionWrapper. Ensure that all IMAP commands are executed through this wrapper.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test session lifecycle (connect, authenticate, logout) using the wrapper. Confirm all operations function correctly through the standardized pattern."
           },
           {
@@ -183,7 +183,7 @@
               "3.1"
             ],
             "details": "Identify all places where async-imap errors are returned or handled. Implement mapping logic to translate these errors to domain errors used throughout the application.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Trigger various IMAP errors (e.g., connection failure, authentication error) and verify they are correctly mapped and handled in the application."
           },
           {
@@ -196,7 +196,7 @@
               "3.4"
             ],
             "details": "Write tests covering connect, authenticate, select, search, fetch, move, and delete operations. Include tests for error scenarios and edge cases.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run all tests and confirm that each IMAP operation works as expected and that error handling is robust."
           }
         ]
@@ -1220,7 +1220,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-22T16:52:55.233Z",
+      "updated": "2025-09-22T17:31:21.131Z",
       "description": "Tasks for master context"
     }
   }

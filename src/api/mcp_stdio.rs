@@ -154,12 +154,15 @@ async fn handle_mcp_request(mcp_handler: &dyn McpHandler, port_state: Arc<TokioM
     
     // Handle the request with the MCP handler
     let response_val = mcp_handler.handle_request(port_state, request_json).await;
-    
+
     // Construct the JSON-RPC response based on the handler's result
-    // Assuming handle_request now returns Result<Value, JsonRpcError>
-    match response_val {
-        Ok(result_val) => Some(JsonRpcResponse::success(id, result_val)),
-        Err(rpc_error) => Some(JsonRpcResponse::error(id, rpc_error)),
+    // The handler returns a Value which should be a complete JSON-RPC response
+    match serde_json::from_value::<JsonRpcResponse>(response_val) {
+        Ok(response) => Some(response),
+        Err(e) => Some(JsonRpcResponse::error(id, JsonRpcError::server_error(
+            ErrorCode::InternalError as i64,
+            format!("Failed to deserialize response: {}", e)
+        ))),
     }
 }
 

@@ -2,7 +2,7 @@ use actix_web::{web, App, HttpServer};
 use rustymail::config::Settings;
 // Remove direct ImapClient import if only used for connect check, keep if factory needs it explicitly
 // use rustymail::imap::ImapClient; 
-use rustymail::api::rest::{AppState, configure_rest_service, ImapSessionFactory}; // Add ImapSessionFactory
+use rustymail::api::rest::{AppState, configure_rest_service};
 use std::sync::Arc;
 use dotenvy::dotenv;
 use log::{info, error, warn};
@@ -12,30 +12,20 @@ use log::{info, error, warn};
 use rustymail::mcp::handler::McpHandler;
 use rustymail::mcp::adapters::sdk::SdkMcpAdapter;
 // --- End imports ---
-// --- Replace SseAdapter with configure_sse_service ---
-// use rustymail::api::mcp_sse::SseAdapter;
-use rustymail::api::mcp_sse::{SseState, configure_sse_service}; // Import the function
-// --- End replace ---
+// SSE imports - will need to implement mcp_sse module
 use tokio::sync::Mutex as TokioMutex;
 use env_logger;
 use rustymail::dashboard;
-use rustymail::dashboard::api::SseManager; // Keep for dashboard
+use rustymail::dashboard::api::SseManager;
 // --- Add imports for factory --- 
 use rustymail::imap::client::ImapClient; // Needed for the factory closure
 use std::future::Future;
 use std::pin::Pin;
 // --- End imports for factory --- 
-use crate::api::rest::start_rest_api_server;
-// use crate::dashboard::start_dashboard_server;
-use rustymail::api::rest::start_rest_api;
-use rustymail::api::sse::start_sse_server;
-use rustymail::imap::client::connect as connect_imap;
-use rustymail::mcp::adapters::stdio::run_stdio_handler;
-use rustymail::mcp::handler::{JsonRpcHandler}; // Add JsonRpcHandler
-use rustymail::mcp_port::create_mcp_tool_registry;
-use rustymail::ImapClientFactory;
+// Remove non-existent imports
+// use rustymail::mcp::adapters::stdio::run_stdio_handler;
+// use rustymail::mcp::handler::JsonRpcHandler;
 use rustymail::prelude::*; // Import many common types
-use rustymail::prelude::CloneableImapSessionFactory;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -63,7 +53,7 @@ async fn main() -> std::io::Result<()> {
 
     // --- Perform initial IMAP connection check --- (Optional but good for validation)
     info!("Performing initial IMAP connection check...");
-    match ImapClient::connect(
+    match ImapClient::<AsyncImapSessionWrapper>::connect(
         &settings.imap_host,
         settings.imap_port,
         &settings.imap_user,
@@ -72,7 +62,7 @@ async fn main() -> std::io::Result<()> {
         Ok(client) => {
             info!("Initial IMAP connection successful. Logging out...");
             // Use try_logout to avoid panicking if logout fails
-            if let Err(logout_err) = client.try_logout().await {
+            if let Err(logout_err) = client.logout().await {
                  warn!("Failed to logout after initial connection check: {:?}", logout_err);
             }
         }
@@ -82,13 +72,14 @@ async fn main() -> std::io::Result<()> {
         }
     }
 
-    // --- Create IMAP Session Factory --- 
+    // --- Create IMAP Session Factory ---
+    use futures_util::future::BoxFuture;
     let imap_settings = settings.clone(); // Clone settings needed for the factory
-    let raw_imap_session_factory: ImapSessionFactory = Arc::new(move || {
+    let raw_imap_session_factory: Box<dyn Fn() -> BoxFuture<'static, Result<ImapClient<AsyncImapSessionWrapper>, ImapError>> + Send + Sync> = Box::new(move || {
         let settings_clone = imap_settings.clone(); // Clone again for the async block
         Box::pin(async move {
             info!("ImapSessionFactory: Creating new IMAP session..."); // Add log
-            let client = ImapClient::connect(
+            let client = ImapClient::<AsyncImapSessionWrapper>::connect(
                 &settings_clone.imap_host,
                 settings_clone.imap_port,
                 &settings_clone.imap_user,
@@ -112,17 +103,23 @@ async fn main() -> std::io::Result<()> {
     // --- Create MCP Handler --- 
     // TODO: Implement SdkMcpAdapter::new properly
     let mcp_handler: Arc<dyn McpHandler> = Arc::new(
-        SdkMcpAdapter::new()
-            .expect("SdkMcpAdapter initialization failed - rmcp SDK integration needed")
+        SdkMcpAdapter::new_placeholder()
+            .expect("SdkMcpAdapter initialization failed")
     );
     info!("MCP Handler (SdkMcpAdapter) created.");
 
-    // --- Create Shared State --- 
-    let sse_state = Arc::new(TokioMutex::new(SseState::new()));
-    info!("SSE shared state initialized.");
+    // --- Create Shared State (SSE not implemented yet) ---
+    // let sse_state = Arc::new(TokioMutex::new(SseState::new()));
+    // info!("SSE shared state initialized.");
 
-    // --- Create AppState --- 
-    let app_state = AppState::new(imap_session_factory.clone(), mcp_handler.clone(), sse_state.clone());
+    // --- Create AppState manually (no new method) ---
+    let session_manager = Arc::new(SessionManager::new(Arc::new(settings.clone())));
+    let app_state = AppState {
+        settings: Arc::new(settings.clone()),
+        mcp_handler: mcp_handler.clone(),
+        session_manager: session_manager.clone(),
+        dashboard_state: None, // Will be set later
+    };
     info!("Application state initialized.");
 
     // --- Dashboard Setup (remains largely the same, but might need factory later) --- 
@@ -166,9 +163,9 @@ async fn main() -> std::io::Result<()> {
     let server = HttpServer::new(move || {
         let mut app = App::new()
             // --- Register updated state --- 
-            .app_data(web::Data::new(app_state.clone()))        // Core AppState (handler, factory, sse_state)
+            .app_data(web::Data::new(app_state.clone()))        // Core AppState (handler, factory)
             .app_data(web::Data::new(imap_session_factory.clone())) // Pass factory directly for REST handlers
-            .app_data(web::Data::new(sse_state.clone()))        // Pass SseState for MCP SSE handlers
+            // .app_data(web::Data::new(sse_state.clone()))     // SSE not implemented yet
             // --- End updated state --- 
             .app_data(config.clone())                             // Dashboard config
             .app_data(dashboard_state.clone())                  // Dashboard state
@@ -177,7 +174,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(dashboard::api::middleware::Metrics) 
             // Configure routes
             .configure(configure_rest_service)                // RustyMail REST API
-            .configure(configure_sse_service)                 // RustyMail MCP SSE API
+            // .configure(configure_sse_service)              // SSE not implemented yet
             .configure(|cfg| dashboard::api::init_routes(cfg)); // Dashboard API routes
 
         // Serve static dashboard files (logic remains the same)

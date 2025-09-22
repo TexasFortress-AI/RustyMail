@@ -145,16 +145,16 @@ impl AsyncImapSessionWrapper {
 
         // Create IMAP client and login
         let client = async_imap::Client::new(compat_stream);
-        let mut session = client
+        let session = client
             .login(&*username, &*password)
             .await
-            .map_err(|e| {
-                // Handle the error part of the Result
-                match e {
+            .map_err(|(err, _client)| {
+                // Handle the error part of the Result - login returns (Error, Client) on failure
+                match err {
                     async_imap::error::Error::No(msg) | async_imap::error::Error::Bad(msg) => {
                         ImapError::Auth(format!("Login failed: {}", msg))
                     }
-                    _ => ImapError::Auth(format!("Login failed: {:?}", e))
+                    _ => ImapError::Auth(format!("Login failed: {:?}", err))
                 }
             })?;
 
@@ -248,20 +248,20 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
     async fn store_flags(&self, uids: &[u32], operation: FlagOperation, flags: &[String]) -> Result<(), ImapError> {
         let mut session_guard = self.session.lock().await;
         let sequence = uids.iter().map(|uid| uid.to_string()).collect::<Vec<_>>().join(",");
-        let flag_refs: Vec<&str> = flags.iter().map(|s| s.as_str()).collect();
+
+        // Build the store command with flags
+        let flags_str = flags.join(" ");
         let op_str = match operation {
-            FlagOperation::Add => "+FLAGS",
-            FlagOperation::Remove => "-FLAGS",
-            FlagOperation::Set => "FLAGS",
+            FlagOperation::Add => format!("+FLAGS ({})", flags_str),
+            FlagOperation::Remove => format!("-FLAGS ({})", flags_str),
+            FlagOperation::Set => format!("FLAGS ({})", flags_str),
         };
 
-        // uid_store needs &mut
-        session_guard.uid_store(&sequence, op_str, &flag_refs)
-            .await?
-            .try_collect::<Vec<_>>()
-            .await
-            .map(|_| ()) 
-            .map_err(ImapError::from)
+        // uid_store takes sequence and the full command
+        let mut stream = session_guard.uid_store(&sequence, &op_str).await?;
+        let result = stream.try_collect::<Vec<_>>().await;
+        drop(session_guard); // Explicitly drop the guard after consuming the stream
+        result.map(|_| ()).map_err(ImapError::from)
     }
 
     async fn append(&self, folder: &str, content: &[u8], flags: &[String]) -> Result<(), ImapError> {
@@ -308,12 +308,10 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
     async fn expunge(&self) -> Result<(), ImapError> {
         let mut session_guard = self.session.lock().await;
         // expunge needs &mut
-        session_guard.expunge()
-            .await?
-            .try_collect::<Vec<_>>() 
-            .await
-            .map(|_| ())
-            .map_err(ImapError::from)
+        let mut stream = session_guard.expunge().await?;
+        let result = stream.try_collect::<Vec<_>>().await;
+        drop(session_guard); // Explicitly drop the guard after consuming the stream
+        result.map(|_| ()).map_err(ImapError::from)
     }
 }
 
@@ -373,10 +371,9 @@ pub fn create_imap_factory(
             // Create IMAP client and login
             let client = async_imap::Client::new(compat_stream);
             let session = client
-                .login(&username, &password)
+                .login(&*username, &*password)
                 .await
-                .map_err(|e| ImapError::Auth(e.to_string()))?
-                .0;
+                .map_err(|(err, _client)| ImapError::Auth(err.to_string()))?;
 
             Ok(session)
         })

@@ -301,16 +301,16 @@ fn map_imap_err_to_mcp(err: &ImapError) -> (i64, String) {
             (ErrorCode::ImapConnectionError as i64, format!("Connection error: {}", msg)),
         ImapError::Auth(msg) => 
             (ErrorCode::ImapAuthError as i64, format!("Authentication error: {}", msg)),
-        ImapError::Parse(msg) => 
-            (ErrorCode::ImapParseError as i64, format!("Parse error: {}", msg)),
-        ImapError::Validation(msg) => 
-            (ErrorCode::ImapValidationError as i64, format!("Validation error: {}", msg)),
+        ImapError::Parse(msg) =>
+            (ErrorCode::ParseError as i64, format!("Parse error: {}", msg)),
+        ImapError::Validation(msg) =>
+            (ErrorCode::InvalidParams as i64, format!("Validation error: {}", msg)),
         ImapError::Command(msg) => 
             (ErrorCode::ImapCommandError as i64, format!("Command error: {}", msg)),
         ImapError::InvalidCriteria(crit) => 
             (ErrorCode::ImapInvalidSearchCriteria as i64, format!("Invalid search criteria: {}", crit)),
-        ImapError::Timeout(msg) => 
-            (ErrorCode::ImapTimeout as i64, format!("Timeout: {}", msg)),
+        ImapError::Timeout(msg) =>
+            (ErrorCode::InternalError as i64, format!("Timeout: {}", msg)),
         ImapError::NoBodies => 
             (ErrorCode::ImapMessageError as i64, "No message bodies found".to_string()),
         ImapError::NoEnvelope => 
@@ -323,8 +323,11 @@ fn map_imap_err_to_mcp(err: &ImapError) -> (i64, String) {
             (ErrorCode::ImapFolderNotFound as i64, format!("Folder not found: {}", folder)),
         ImapError::InvalidMailbox(msg) => 
             (ErrorCode::ImapFolderNotFound as i64, format!("Invalid mailbox: {}", msg)),
-        ImapError::Other(msg) => 
+        ImapError::Other(msg) =>
             (ErrorCode::UnknownError as i64, format!("Unknown error: {}", msg)),
+        // Catch-all for any other variants
+        _ =>
+            (ErrorCode::InternalError as i64, "Internal IMAP error".to_string()),
     }
 }
 
@@ -398,8 +401,23 @@ impl From<ImapError> for JsonRpcError {
             ImapError::BadResponse(msg) => 
                 Self::server_error(CODE_IMAP_BAD_RESPONSE, format!("Bad response: {}", msg)),
                 
-            ImapError::Internal(msg) => 
+            ImapError::Internal(msg) =>
                 Self::server_error(CODE_IMAP_INTERNAL_ERROR, format!("Internal error: {}", msg)),
+
+            ImapError::NoBodies =>
+                Self::server_error(-32001, "No message bodies found".to_string()),
+
+            ImapError::NoEnvelope =>
+                Self::server_error(-32001, "No envelope found".to_string()),
+
+            ImapError::OperationFailed(msg) =>
+                Self::server_error(CODE_IMAP_OPERATION_FAILED, format!("Operation failed: {}", msg)),
+
+            ImapError::Validation(msg) =>
+                Self::server_error(CODE_IMAP_VALIDATION_ERROR, format!("Validation error: {}", msg)),
+
+            ImapError::Other(msg) =>
+                Self::server_error(CODE_IMAP_UNKNOWN_ERROR, format!("Other error: {}", msg)),
         }
     }
 }

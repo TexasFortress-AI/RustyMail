@@ -11,8 +11,8 @@ pub mod errors;
 pub mod middleware;
 
 // Re-export main types needed elsewhere
-// pub use routes::configure as init_routes; // Unused
-// pub use sse::SseManager; // Unused
+pub use routes::configure as init_routes;
+pub use sse::SseManager;
 
 // The init function previously here is no longer needed, 
 // its logic moved to main.rs

@@ -88,8 +88,7 @@ impl ResponseError for ApiError {
         HttpResponse::build(self.status_code())
             .json(JsonRpcError::server_error(
                 self.status_code().as_u16() as i64, // Use status code as error code
-                self.to_string(), // Use the error message
-                None,
+                self.to_string() // Use the error message
             ))
     }
 }

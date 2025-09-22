@@ -64,11 +64,14 @@ impl LegacyMcpHandler {
                 let session_result = self.session_factory.create_session().await;
 
                 let session = match session_result {
-                    Ok(s) => Arc::new(TokioMutex::new(s)) as Arc<TokioMutex<dyn AsyncImapOps>>,
+                    Ok(client) => {
+                        // Extract the Arc-wrapped session from ImapClient
+                        client.session_arc() as Arc<dyn AsyncImapOps>
+                    },
                     Err(imap_err) => {
                         error!("LegacyMcpHandler: Failed to create IMAP session for tool '{}': {:?}", method, imap_err);
                         let jsonrpc_err = JsonRpcError::from(imap_err);
-                        return create_jsonrpc_error_response(request_id, jsonrpc_err.code, jsonrpc_err.message);
+                        return create_jsonrpc_error_response(request_id, jsonrpc_err.code as i32, jsonrpc_err.message);
                     }
                 };
 
@@ -88,14 +91,14 @@ impl LegacyMcpHandler {
                     }
                     Err(jsonrpc_err) => {
                         error!("Tool '{}' failed: {:?}", method, jsonrpc_err);
-                        create_jsonrpc_error_response(request_id, jsonrpc_err.code, jsonrpc_err.message)
+                        create_jsonrpc_error_response(request_id, jsonrpc_err.code as i32, jsonrpc_err.message)
                     }
                 }
             }
             None => {
                 warn!("Method not found: {}", method);
                 let err = JsonRpcError::method_not_found();
-                create_jsonrpc_error_response(request_id, err.code, err.message)
+                create_jsonrpc_error_response(request_id, err.code as i32, err.message)
             }
         }
     }
@@ -118,7 +121,13 @@ impl McpHandler for LegacyMcpHandler {
             Ok(v) => v,
             Err(e) => {
                 error!("LegacyAdapter: Failed to serialize response: {}", e);
-                json!(JsonRpcResponse::internal_error("Failed to serialize response"))
+                json!(JsonRpcResponse::error(
+                    None,
+                    JsonRpcError::server_error(
+                        ErrorCode::InternalError as i64,
+                        "Failed to serialize response".to_string()
+                    )
+                ))
             }
 
         }

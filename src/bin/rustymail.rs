@@ -13,9 +13,9 @@ use std::process::exit;
 // use actix_web::{web, App, HttpServer, Responder, HttpResponse};
 // --- Add imports for registry ---
 use rustymail::mcp_port::create_mcp_tool_registry;
-// Remove unused McpStdioAdapter import
+// Remove unused imports
 // use rustymail::api::mcp_stdio::McpStdioAdapter;
-use rustymail::api::mcp_sse::SseState;
+// use rustymail::api::mcp_sse::SseState;  // Not implemented yet
 use tokio::sync::Mutex as TokioMutex;
 
 #[actix_web::main]
@@ -37,7 +37,8 @@ async fn main() -> std::io::Result<()> {
     let pass = &config.imap_pass;
 
     // Call connect and handle the Result directly
-    let imap_client_result = ImapClient::connect(host, port, user, pass).await;
+    use rustymail::prelude::AsyncImapSessionWrapper;
+    let imap_client_result = ImapClient::<AsyncImapSessionWrapper>::connect(host, port, user, pass).await;
 
     let imap_client = match imap_client_result {
         Ok(client) => {
@@ -50,27 +51,33 @@ async fn main() -> std::io::Result<()> {
         }
     };
 
-    // --- Create Tool Registry ---
-    let session_factory = Arc::new(move || {
-        let client = imap_client.clone();
-        async move { Ok(client) as Result<Arc<dyn ImapSession>, rustymail::imap::error::ImapError> }
-    });
-    let tool_registry = create_mcp_tool_registry(session_factory);
-    info!("MCP Tool Registry created (for rustymail binary).");
+    // --- Create Tool Registry (disabled for now) ---
+    // Tool registry creation needs to be updated for new architecture
+    // let tool_registry = create_mcp_tool_registry(...);
+    info!("Tool Registry creation disabled - needs update.");
 
-    // --- Initialize SSE State --- 
-    let sse_state = Arc::new(TokioMutex::new(SseState::new()));
-    info!("SSE State initialized.");
+    // --- Initialize SSE State (disabled for now) ---
+    // let sse_state = Arc::new(TokioMutex::new(SseState::new()));
+    // info!("SSE State initialized.");
 
     // --- Start REST Server Directly (if configured) ---
-    if let Some(rest_config) = config.rest {
+    if let Some(ref rest_config) = config.rest {
         if !rest_config.enabled { 
              error!("REST server is configured but not enabled in rustymail binary. Exiting.");
              exit(1);
         }
         info!("Starting REST server directly on {}:{}...", rest_config.host, rest_config.port);
-        // Pass the Arc<ImapClient> clone AND the tool_registry clone AND sse_state clone
-        match run_rest_server(rest_config.clone(), imap_client.clone(), tool_registry.clone(), sse_state.clone()).await {
+        // Need to create MCP handler and session manager for the server
+        use rustymail::mcp::adapters::sdk::SdkMcpAdapter;
+        use rustymail::session_manager::SessionManager;
+
+        let mcp_handler: Arc<dyn rustymail::mcp::handler::McpHandler> = Arc::new(
+            SdkMcpAdapter::new_placeholder()
+                .expect("Failed to create MCP adapter")
+        );
+        let session_manager = Arc::new(SessionManager::new(Arc::new(config.clone())));
+
+        match run_rest_server(config.clone(), mcp_handler, session_manager, None).await {
             Ok(_) => info!("REST server finished."),
             Err(e) => error!("REST server failed: {}", e),
         }

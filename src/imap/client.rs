@@ -70,6 +70,11 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         &self.session
     }
 
+    /// Returns the Arc-wrapped session for sharing across threads/tasks
+    pub fn session_arc(&self) -> Arc<T> {
+        self.session.clone()
+    }
+
     // Add convenience methods here that delegate to self.session
     pub async fn list_folders(&self) -> Result<Vec<String>, ImapError> {
         self.session.list_folders().await
@@ -117,6 +122,10 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
 
     pub async fn expunge(&self) -> Result<(), ImapError> {
         self.session.expunge().await
+    }
+
+    pub async fn logout(&self) -> Result<(), ImapError> {
+        self.session.logout().await
     }
 }
 

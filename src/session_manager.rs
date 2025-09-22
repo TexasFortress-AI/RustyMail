@@ -90,7 +90,7 @@ impl SessionManagerTrait for SessionManager {
     ) -> SessionResult<Arc<ManagedClient>> {
         info!("Creating new IMAP session for API key");
         
-        let client = ImapClient::connect(server, port, username, password).await?;
+        let client = ImapClient::<AsyncImapSessionWrapper>::connect(server, port, username, password).await?;
         let client = Arc::new(client);
         
         let mut sessions = self.sessions.lock().await;
