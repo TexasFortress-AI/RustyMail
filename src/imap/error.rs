@@ -1,8 +1,7 @@
 use std::error::Error as StdError;
 use thiserror::Error;
 use async_imap::error::Error as AsyncImapError;
-use imap_types::error::ValidationError as FlagValidationError;
-use imap_types::flag;
+// imap_types imports removed
 use std::fmt;
 use async_imap;
 use tokio_native_tls;
@@ -98,11 +97,7 @@ impl From<std::io::Error> for ImapError {
     }
 }
 
-impl From<flag::ValidationError> for ImapError {
-    fn from(err: flag::ValidationError) -> Self {
-        ImapError::Flag(err.to_string())
-    }
-}
+// Removed imap_types flag::ValidationError conversion
 
 
 

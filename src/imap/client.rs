@@ -21,15 +21,7 @@ use native_tls::{TlsConnector, TlsConnectorBuilder};
 use tokio::net::TcpStream as TokioTcpStream;
 use tokio_util::compat::TokioAsyncReadCompatExt;
 
-// IMAP types (imap-types crate)
-use imap_types::{
-    // command::{Command, CommandBody as ImapCommandBody}, // Unused
-    // fetch::Attribute as FetchAttribute, // Unresolved and Unused
-    // flag::{Flag as ImapFlag, StoreOperation as ImapStoreOperation}, // StoreOperation unresolved and unused
-    // response::{Capability, Status as ResponseStatus}, // Unused
-    // sequence::SequenceSet, // Unused
-    // status::StatusDataItem, // Unused
-};
+// IMAP types (imap-types crate) - REMOVED: All imports were unused
 
 // Local types
 use crate::imap::{

@@ -13,9 +13,7 @@ use async_imap::types::{
     Mailbox as AsyncImapMailbox,
 };
 use chrono::{DateTime, Utc};
-use imap_types::{ 
-    core::{NString}, 
-}; 
+// imap_types removed - NString was unused 
 use serde::{Deserialize, Serialize};
 // use thiserror::Error; // Unused
 

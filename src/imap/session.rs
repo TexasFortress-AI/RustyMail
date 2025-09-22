@@ -29,11 +29,7 @@ use async_imap::{
     Session as AsyncImapSession,
 };
 
-use imap_types::{
-    // fetch::Attribute, // Likely unused
-    flag::Flag as ImapTypesFlag,
-    core::{NString, IString, Quoted},
-};
+// imap_types imports removed - all were unused
 
 // Local types
 use crate::imap::client::ImapClient; // Correct path for ImapClient
