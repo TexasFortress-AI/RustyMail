@@ -219,7 +219,7 @@
             "description": "Define the precise IMAP command sequence for atomic move operations, ensuring compliance with IMAP4rev1/IMAP4rev2 standards and ACID properties.",
             "dependencies": [],
             "details": "Specify the order and logic for SELECT, COPY, STORE (delete flag), and EXPUNGE commands. Ensure the sequence prevents message loss and maintains consistency.",
-            "status": "pending",
+            "status": "in-progress",
             "testStrategy": "Review against IMAP RFCs and test with mock IMAP server for standards compliance."
           },
           {
@@ -1220,7 +1220,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-22T17:31:21.131Z",
+      "updated": "2025-09-22T17:36:51.417Z",
       "description": "Tasks for master context"
     }
   }

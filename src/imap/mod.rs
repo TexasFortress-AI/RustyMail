@@ -2,6 +2,7 @@
 
 // Public Interface for the IMAP module
 
+pub mod atomic;
 pub mod client;
 pub mod error;
 pub mod session;

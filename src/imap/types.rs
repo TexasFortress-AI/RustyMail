@@ -218,7 +218,7 @@ impl fmt::Display for SearchCriteria {
 // --- New Types for Added Features ---
 
 /// Represents the operation to perform on flags.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FlagOperation {
     Add,
     Remove,

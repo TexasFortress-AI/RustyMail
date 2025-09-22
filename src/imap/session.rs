@@ -98,6 +98,9 @@ pub trait AsyncImapOps: Send + Sync + Debug {
 
     /// Permanently removes messages marked with the \Deleted flag
     async fn expunge(&self) -> Result<(), ImapError>;
+
+    /// Copy messages to another folder (for atomic operations)
+    async fn copy_messages(&self, uids: &[u32], to_folder: &str) -> Result<(), ImapError>;
 }
 
 // Wrapper definition using Arc<Mutex<...>>
@@ -105,6 +108,8 @@ pub trait AsyncImapOps: Send + Sync + Debug {
 pub struct AsyncImapSessionWrapper {
     // Wrap the session in Arc<Mutex> for interior mutability
     session: Arc<TokioMutex<TlsImapSession>>,
+    // Track currently selected folder for atomic operations
+    current_folder: Arc<TokioMutex<Option<String>>>,
 }
 
 impl AsyncImapSessionWrapper {
@@ -112,6 +117,7 @@ impl AsyncImapSessionWrapper {
         Self {
             // Create the Arc<Mutex<>> here
             session: Arc::new(TokioMutex::new(session)),
+            current_folder: Arc::new(TokioMutex::new(None)),
         }
     }
 
@@ -159,6 +165,30 @@ impl AsyncImapSessionWrapper {
             })?;
 
         Ok(Self::new(session))
+    }
+
+    /// Get the currently selected folder
+    pub async fn current_folder(&self) -> Option<String> {
+        let folder_guard = self.current_folder.lock().await;
+        folder_guard.clone()
+    }
+
+    /// Ensure a specific folder is selected (optimization to avoid redundant SELECTs)
+    pub async fn ensure_folder_selected(&self, folder: &str) -> Result<(), ImapError> {
+        let current = self.current_folder().await;
+
+        if current.as_deref() != Some(folder) {
+            // Need to select the folder
+            let mut session_guard = self.session.lock().await;
+            session_guard.select(folder).await.map_err(ImapError::from)?;
+            drop(session_guard);
+
+            // Update tracked state
+            let mut folder_guard = self.current_folder.lock().await;
+            *folder_guard = Some(folder.to_string());
+        }
+
+        Ok(())
     }
 }
 
@@ -210,7 +240,12 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
 
     async fn select_folder(&self, name: &str) -> Result<(), ImapError> {
         let mut session_guard = self.session.lock().await;
-        session_guard.select(name).await.map(|_| ()).map_err(ImapError::from)
+        session_guard.select(name).await.map(|_| ()).map_err(ImapError::from)?;
+
+        // Update tracked folder state
+        let mut folder_guard = self.current_folder.lock().await;
+        *folder_guard = Some(name.to_string());
+        Ok(())
     }
 
     async fn search_emails(&self, criteria: &str) -> Result<Vec<u32>, ImapError> {
@@ -236,13 +271,63 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
     }
 
     async fn move_email(&self, uid: u32, from_folder: &str, to_folder: &str) -> Result<(), ImapError> {
+        // Atomic move operation following IMAP best practices
+        // Sequence: SELECT source → COPY to dest → STORE \Deleted → EXPUNGE
+
         let mut session_guard = self.session.lock().await;
-        // Select might modify session state, needs &mut
+
+        // Step 1: Select source folder
         session_guard.select(from_folder).await.map_err(ImapError::from)?;
-        
+
+        // Update tracked folder state
+        {
+            let mut folder_guard = self.current_folder.lock().await;
+            *folder_guard = Some(from_folder.to_string());
+        }
+
         let sequence = uid.to_string();
-        // uid_mv also likely needs &mut
-        session_guard.uid_mv(&sequence, to_folder).await.map_err(ImapError::from)
+
+        // Step 2: Try MOVE command first (RFC 6851) - more efficient if supported
+        match session_guard.uid_mv(&sequence, to_folder).await {
+            Ok(_) => {
+                // MOVE succeeded - atomic operation complete
+                return Ok(());
+            }
+            Err(e) => {
+                // MOVE not supported or failed, fallback to COPY+DELETE+EXPUNGE
+                debug!("MOVE command failed, falling back to COPY+DELETE: {:?}", e);
+            }
+        }
+
+        // Fallback: Traditional atomic move sequence
+        // Step 3: Copy message to destination
+        session_guard.uid_copy(&sequence, to_folder)
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to copy message: {}", e)))?;
+
+        // Step 4: Mark original as deleted
+        let mut store_stream = session_guard.uid_store(&sequence, "+FLAGS (\\Deleted)")
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to mark as deleted: {}", e)))?;
+
+        // Consume the store stream
+        let _store_results: Vec<_> = store_stream
+            .try_collect()
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to process store results: {}", e)))?;
+
+        // Step 5: Expunge to remove deleted messages
+        let mut expunge_stream = session_guard.expunge()
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to expunge: {}", e)))?;
+
+        // Consume the expunge stream
+        let _expunge_results: Vec<_> = expunge_stream
+            .try_collect()
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to process expunge results: {}", e)))?;
+
+        Ok(())
     }
 
     async fn store_flags(&self, uids: &[u32], operation: FlagOperation, flags: &[String]) -> Result<(), ImapError> {
@@ -312,6 +397,18 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
         let result = stream.try_collect::<Vec<_>>().await;
         drop(session_guard); // Explicitly drop the guard after consuming the stream
         result.map(|_| ()).map_err(ImapError::from)
+    }
+
+    async fn copy_messages(&self, uids: &[u32], to_folder: &str) -> Result<(), ImapError> {
+        let mut session_guard = self.session.lock().await;
+        let sequence = uids.iter().map(|uid| uid.to_string()).collect::<Vec<_>>().join(",");
+
+        // Use uid_copy to copy messages to destination folder
+        session_guard.uid_copy(&sequence, to_folder)
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to copy messages: {}", e)))?;
+
+        Ok(())
     }
 }
 
