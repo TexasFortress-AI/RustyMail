@@ -1,0 +1,448 @@
+# Overview
+RustyMail is a high-performance, type-safe IMAP API server written in Rust that provides multiple interfaces (REST, MCP stdio, MCP SSE) for accessing email functionality. It solves the problem of needing a robust, unified middleware layer for email operations that can work across multiple transport protocols. The target audience includes developers building email-integrated applications who need a reliable, performant, and extensible IMAP interface. RustyMail is valuable because it provides a single, well-tested solution that abstracts the complexity of IMAP operations while offering modern interfaces like real-time streaming and AI-powered natural language interactions.
+
+# Core Features
+
+## Multiple API Interfaces
+- What it does: Provides three different ways to interact with IMAP servers - REST API, MCP stdio (command-line JSON-RPC), and MCP SSE (Server-Sent Events for real-time)
+- Why it's important: Different applications have different integration needs - some need simple REST, others need real-time streaming, and command-line tools need stdio
+- How it works: A unified IMAP client core with adapters for each interface type, all sharing the same underlying functionality
+
+## Real-time Dashboard with SSE
+- What it does: Web-based monitoring dashboard showing live statistics, connected clients, and system health
+- Why it's important: Operators need visibility into system performance and active connections for troubleshooting and monitoring
+- How it works: Dashboard connects via SSE to receive real-time updates, displays metrics using React components with charts and tables
+
+## AI-Powered Natural Language Interface
+- What it does: Allows users to interact with email using natural language queries like "How many unread emails do I have?" or "Show me emails from John"
+- Why it's important: Makes email operations accessible to non-technical users and speeds up common tasks
+- How it works: RIG integration with LLM providers (OpenAI/OpenRouter) to process natural language, convert to MCP operations, and return conversational responses
+
+## Comprehensive IMAP Operations
+- What it does: Full support for folder management, email search, fetching, moving, and flag operations
+- Why it's important: Applications need complete email functionality, not just basic read operations
+- How it works: Async Rust implementation wrapping IMAP protocol with proper session management and connection pooling
+
+## Type-Safe Error Handling
+- What it does: Provides detailed, structured error responses with proper error codes for all failure scenarios
+- Why it's important: Developers need to handle errors gracefully and provide meaningful feedback to users
+- How it works: Comprehensive error type system with mappings between IMAP errors and API-specific error formats
+
+# User Experience
+
+## User Personas
+
+### API Developer (Primary)
+- Needs to integrate email functionality into their application
+- Wants reliable, well-documented API with good error messages
+- Values performance and type safety
+- Prefers having multiple interface options
+
+### System Administrator
+- Needs to monitor email server connections and performance
+- Wants real-time visibility into system health
+- Values comprehensive logging and metrics
+- Needs troubleshooting tools
+
+### End User (via Chatbot)
+- Wants to check email without learning technical commands
+- Prefers conversational interactions
+- Values quick responses to common queries
+- Needs helpful error messages when things go wrong
+
+## Key User Flows
+
+### Developer Integration Flow
+1. Choose appropriate interface (REST/stdio/SSE)
+2. Configure authentication and connection settings
+3. Make API calls to perform email operations
+4. Handle responses and errors appropriately
+5. Monitor performance via dashboard
+
+### Administrator Monitoring Flow
+1. Access web dashboard
+2. View real-time connection statistics
+3. Check system health metrics
+4. Review connected client list
+5. Investigate issues using logs
+
+### End User Chat Flow
+1. Open chatbot interface
+2. Type natural language query
+3. Receive conversational response
+4. Ask follow-up questions with context maintained
+5. Perform email operations through conversation
+
+## UI/UX Considerations
+
+### Dashboard Design (Steve Jobs-inspired)
+- Minimalist interface with focus on clarity
+- Clean typography and generous whitespace
+- Subtle animations for state changes
+- Monochromatic base with selective color accents
+- Responsive design for mobile access
+
+### API Design
+- RESTful conventions for familiarity
+- Consistent JSON structure across all interfaces
+- Comprehensive documentation with examples
+- Predictable error formats
+- Version stability guarantees
+
+# Technical Architecture
+
+## System Components
+
+### Core IMAP Client (async-imap based)
+- MUST use async-imap as sole IMAP client library
+- MUST wrap async-imap types in domain types for abstraction
+- MUST use tokio runtime for all async operations
+- MUST implement session lifecycle: connect → authenticate → operate → logout
+- MUST track session state in AsyncImapSessionWrapper
+- MUST implement atomic operations using IMAP command sequences
+- MUST support TLS/SSL via async-imap's TLS features
+- MUST handle timeouts at operation level
+- MUST NOT expose async-imap types directly in public APIs
+
+### API Layer
+- REST API built with Actix-web
+- MCP stdio implementation with JSON-RPC 2.0
+- MCP SSE with real-time event streaming
+- Shared business logic across all interfaces
+
+### Dashboard Backend
+- Metrics collection service
+- Client management service
+- Configuration service
+- AI service with provider abstraction
+- SSE event broadcasting system
+
+### Dashboard Frontend
+- React with TypeScript and Vite
+- Tailwind CSS with shadcn/ui components
+- React Query for data fetching
+- Real-time updates via EventSource API
+- Recharts for data visualization
+
+## Data Models
+
+### Email Model
+- UID, subject, from, to, date
+- Flags (seen, answered, flagged, deleted)
+- Body structure with MIME parts
+- Headers collection
+
+### Folder Model
+- Name, delimiter, attributes
+- Message count, recent count
+- Hierarchical structure support
+
+### Session Model
+- Connection state and credentials
+- Active operations tracking
+- Metrics and performance data
+
+### Dashboard Models
+- Stats (connections, requests, performance)
+- Client info (ID, IP, user agent, activity)
+- Configuration (server settings, adapters)
+- Chat messages and context
+
+## APIs and Integrations
+
+### External Integrations
+- IMAP servers (Gmail, Outlook, GoDaddy, etc.)
+- OpenAI/OpenRouter for AI features
+- RIG for LLM orchestration
+
+### Internal APIs
+- REST endpoints for CRUD operations
+- JSON-RPC methods for MCP interfaces
+- SSE events for real-time updates
+- WebSocket potential for bidirectional chat
+
+## Infrastructure Requirements
+
+### Runtime Dependencies
+- Rust 1.70+ with async runtime
+- Node.js for frontend build
+- SSL/TLS libraries
+- IMAP server access
+
+### Deployment Options
+- Standalone binary deployment
+- Docker container
+- Kubernetes for scaling
+- Cloud platforms (AWS, GCP, Azure)
+
+# Development Roadmap
+
+## MVP Requirements
+
+### Phase 1: Fix Critical Architecture Issues
+- MUST remove all imap-types dependencies and imports from codebase
+- MUST consolidate exclusively on async-imap for all IMAP client operations
+- MUST create domain abstraction layer using async-imap types only
+- MUST remove all type conversions between async-imap and imap-types
+- MUST simplify session management to single AsyncImapSessionWrapper pattern
+- MUST eliminate confusing factory type aliases (ImapSessionFactory, ImapClientFactory)
+- MUST standardize error handling with JSON-RPC 2.0 compliant error codes
+- MUST implement atomic operation guarantees (select → copy → delete → expunge)
+
+### Phase 2: Complete Core Functionality
+- Finish all IMAP operations (list, search, fetch, move, delete)
+- Implement proper connection pooling
+- Add comprehensive error handling
+- Create integration tests for core operations
+- Document all public APIs
+
+### Phase 3: MCP SDK Migration
+- Integrate official rust-sdk from modelcontextprotocol
+- Migrate custom transport implementations
+- Update service definitions using SDK tooling
+- Ensure backward compatibility
+- Test all MCP interfaces thoroughly
+
+### Phase 4: Dashboard Implementation
+- Set up React frontend with all required libraries
+- Implement stats display with real-time updates
+- Create client list with pagination
+- Add configuration display panel
+- Implement SSE connection for live updates
+- Build and integrate frontend with backend
+
+### Phase 5: AI Chatbot Integration
+- Set up RIG framework
+- Configure LLM providers (OpenAI/OpenRouter)
+- Implement natural language processing pipeline
+- Create MCP tool definitions for LLM
+- Build conversation context management
+- Add chatbot UI to dashboard
+- Test conversation flows
+
+### Phase 6: Testing and Quality
+- Create comprehensive unit test suite
+- Implement integration tests for all interfaces
+- Add end-to-end tests with mock IMAP
+- Set up performance benchmarks
+- Configure CI/CD pipeline
+- Document all features
+
+## Future Enhancements
+
+### Advanced Email Features
+- Email composition and sending
+- Attachment handling and preview
+- Advanced search with filters
+- Folder synchronization
+- Offline support with caching
+
+### Dashboard Enhancements
+- Historical metrics storage and graphs
+- Advanced analytics and reporting
+- Alert system for issues
+- User authentication and roles
+- Export capabilities for metrics
+
+### AI Capabilities
+- Multiple LLM model support
+- Custom training on email patterns
+- Automated categorization
+- Smart reply suggestions
+- Email summarization
+
+### Integration Features
+- OAuth support for Gmail/Outlook
+- Webhook support for events
+- GraphQL API option
+- Plugin system for extensions
+- Migration tools from other systems
+
+# Logical Dependency Chain
+
+## Foundation (Must be completed first)
+1. MUST remove imap-types completely - all operations depend on single type system
+2. MUST implement domain abstraction over async-imap - isolates library specifics
+3. MUST standardize error handling - required for reliable operation
+4. MUST simplify session management - eliminate factory confusion
+
+## Core Functionality (Builds on foundation)
+1. Complete all IMAP operations - required for any interface to work
+2. Implement connection pooling - needed for performance
+3. Create comprehensive tests - ensures stability
+
+## Interface Layer (Depends on core)
+1. Migrate to official MCP SDK - standardizes protocol implementation
+2. Complete REST API - simplest interface to test
+3. Implement MCP stdio - command-line interface
+4. Add MCP SSE - real-time streaming interface
+
+## User-Facing Features (Requires working interfaces)
+1. Dashboard backend services - metrics, clients, config
+2. Dashboard frontend - visible progress for users
+3. Real-time SSE updates - enhanced user experience
+4. AI chatbot - natural language interface
+
+## Quality and Polish
+1. Comprehensive testing - ensures production readiness
+2. Performance optimization - improves user experience
+3. Documentation - enables adoption
+4. Deployment tooling - simplifies operations
+
+# Risks and Mitigations
+
+## Technical Challenges
+
+### IMAP Library Consolidation to async-imap
+- Risk: Removing imap-types may reveal missing functionality in async-imap
+- Mitigation: MUST audit all imap-types usage before removal
+- Mitigation: MUST create domain types that wrap async-imap types
+- Risk: Type conversions throughout codebase will need complete removal
+- Mitigation: MUST use compiler errors to find all conversion points
+- Mitigation: MUST NOT attempt gradual migration - remove imap-types completely
+
+### Performance Under Load
+- Risk: System may not handle many concurrent connections efficiently
+- Mitigation: Implement connection pooling early
+- Mitigation: Add rate limiting and backpressure mechanisms
+- Mitigation: Design for horizontal scaling from the start
+
+### Browser Compatibility
+- Risk: Dashboard may not work correctly across all browsers
+- Mitigation: Use well-tested libraries (React, Tailwind)
+- Mitigation: Test on multiple browsers during development
+- Mitigation: Provide fallbacks for advanced features
+
+## Figuring Out the MVP
+
+### Scope Creep
+- Risk: Adding too many features before core is stable
+- Mitigation: Strictly follow dependency chain
+- Mitigation: Release early versions for feedback
+- Mitigation: Focus on one interface at a time
+
+### Integration Complexity
+- Risk: Different IMAP servers behave differently
+- Mitigation: Start with mock IMAP for development
+- Mitigation: Test against multiple real servers
+- Mitigation: Document server-specific quirks
+
+## Resource Constraints
+
+### Development Time
+- Risk: Refactoring may take longer than estimated
+- Mitigation: Fix critical issues first
+- Mitigation: Use existing libraries where possible
+- Mitigation: Parallelize independent work streams
+
+### Testing Resources
+- Risk: Need multiple IMAP accounts for testing
+- Mitigation: Use mock IMAP for most tests
+- Mitigation: Share test accounts across team
+- Mitigation: Automate test environment setup
+
+# Appendix
+
+## Critical Implementation Rules (from .clinerules/.cursorrules)
+
+### Development Guidelines
+- Only modify code directly relevant to specific requests
+- Never use placeholders in code (always complete implementations)
+- Provide complete PLAN with REASONING before changes
+- Break problems into smaller steps
+
+### IMAP Operation Requirements (MUST)
+- MUST use async-imap exclusively for all IMAP operations
+- MUST NOT use imap-types under any circumstances
+- MUST implement atomic move: select → copy → delete → expunge
+- MUST verify folder existence before any folder operation
+- MUST use server-side search via async-imap search methods
+- MUST NOT perform client-side filtering of emails
+- MUST track folder selection state in AsyncImapSessionWrapper
+- MUST use STORE command for atomic flag operations
+- MUST handle all async-imap error variants completely
+
+### Interface Implementation Requirements (MUST/AVOID)
+- MUST use actix-web for REST endpoints
+- AVOID using POST for read operations or GET for mutations
+- MUST implement strict JSON-RPC 2.0 protocol for MCP
+- MUST map all errors to standard JSON-RPC error codes
+- MUST use SSE for one-way server push
+- AVOID WebSockets or long-polling implementations
+- MUST use Arc<TokioMutex<>> for shared IMAP client state
+- AVOID global mutable state or unsafe static variables
+
+### Testing Requirements (MUST/NEVER)
+- Unit tests: MAY use mock IMAP servers
+- Integration tests: MUST NEVER use mocks - only real IMAP adapters
+- MUST test atomic operation guarantees (ACID properties)
+- MUST verify session state transitions
+- MUST test concurrent session handling
+- MUST verify all async-imap error variants are handled
+- MUST test connection failure and recovery
+- MUST verify timeout handling
+
+### Session Management Requirements
+- Use factory pattern for session creation
+- Track session lifecycle properly
+- Handle cleanup on disconnection
+- Implement proper mutex patterns (Arc<TokioMutex<>>)
+
+## Research Findings
+
+### IMAP Protocol Considerations
+- Different servers implement IMAP differently (Gmail vs Outlook vs standard)
+- Some servers have rate limits that must be respected
+- Connection reuse is critical for performance
+- Proper logout prevents connection leaks
+
+### Performance Benchmarks
+- Target: Handle 100+ concurrent connections
+- Response time goal: <200ms for standard operations
+- Memory usage should be stable under load
+- Connection pool size affects performance significantly
+
+### Security Considerations
+- Never log passwords or sensitive data
+- Use TLS for all connections
+- Implement rate limiting to prevent abuse
+- Sanitize all user inputs
+- Consider OAuth for major providers
+
+## Technical Specifications
+
+### Error Code Ranges (JSON-RPC 2.0 Compliant)
+- -32700: Parse error
+- -32600: Invalid request
+- -32601: Method not found
+- -32602: Invalid params
+- -32603: Internal error
+- -32000: IMAP connection error
+- -32001: Authentication failure
+- -32002: Folder not found
+- -32003: Folder already exists
+- -32004: Email not found
+- -32010: IMAP operation failed
+- -32000 to -32099: IMAP-specific errors
+
+### API Versioning Strategy
+- Use URL versioning for REST (/api/v1/)
+- Include version in MCP initialization
+- Maintain backward compatibility for 2 versions
+- Deprecation notices 3 months in advance
+- Migration guides for breaking changes
+
+### Performance Requirements
+- Connection establishment: <2 seconds
+- Folder list retrieval: <500ms
+- Email fetch (headers): <200ms per email
+- Search operations: <5 seconds for large folders
+- Dashboard update frequency: 1-5 seconds
+
+### Monitoring Metrics
+- Active connection count
+- Requests per second by interface
+- Average response time by operation
+- Error rate by error type
+- Memory and CPU usage
+- Connection pool utilization

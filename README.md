@@ -46,7 +46,7 @@ cargo build --release
 
 ### Running
 
-- **REST API (default)**:
+- **REST API (default)** (port 9437):
   ```bash
   cargo run --release
   ```
@@ -65,16 +65,16 @@ cargo build --release
 
 ### REST API
 
-Server runs at `http://localhost:8080`
+Server runs at `http://localhost:9437`
 
 Example requests:
 
 ```bash
 # List folders
-curl -X GET http://localhost:8080/folders -H "Authorization: Basic $(echo -n 'user:pass' | base64)"
+curl -X GET http://localhost:9437/folders -H "Authorization: Basic $(echo -n 'user:pass' | base64)"
 
 # List emails in INBOX
-curl -X GET http://localhost:8080/emails/INBOX -H "Authorization: Basic $(echo -n 'user:pass' | base64)"
+curl -X GET http://localhost:9437/emails/INBOX -H "Authorization: Basic $(echo -n 'user:pass' | base64)"
 ```
 
 ### MCP Stdio
@@ -97,16 +97,18 @@ Start server:
 cargo run --release -- --mcp-sse
 ```
 
+Note: SSE endpoints are available on the same port as REST (9437)
+
 Connect:
 
 ```bash
-curl -N http://localhost:8081/api/v1/sse/connect
+curl -N http://localhost:9437/api/v1/sse/connect
 ```
 
 Send commands:
 
 ```bash
-curl -X POST http://localhost:8081/api/v1/sse/command \
+curl -X POST http://localhost:9437/api/v1/sse/command \
   -H "Content-Type: application/json" \
   -d '{"command":"imap/listFolders","params":{}}'
 ```
@@ -177,10 +179,10 @@ RustyMail implements the Model Context Protocol (MCP) over stdio and SSE.
 ### SSE Example (JavaScript)
 
 ```js
-const es = new EventSource('http://localhost:8081/api/v1/sse/connect');
+const es = new EventSource('http://localhost:9437/api/v1/sse/connect');
 es.onmessage = e => console.log('Received:', JSON.parse(e.data));
 
-fetch('http://localhost:8081/api/v1/sse/command', {
+fetch('http://localhost:9437/api/v1/sse/command', {
   method: 'POST',
   headers: {'Content-Type': 'application/json'},
   body: JSON.stringify({ command: 'imap/listFolders', params: {} })
@@ -202,11 +204,10 @@ IMAP_PASSWORD=your_password
 
 # REST API
 REST_HOST=0.0.0.0
-REST_PORT=8080
+REST_PORT=9437
 
-# MCP SSE
-SSE_HOST=0.0.0.0
-SSE_PORT=8081
+# SSE endpoints (shares same port as REST)
+# SSE is available at the same port as REST API
 
 # General
 LOG_LEVEL=info
@@ -255,7 +256,7 @@ To set up and build the dashboard:
 
 4. Access the dashboard at:
    ```
-   http://localhost:3000/dashboard
+   http://localhost:9439/dashboard
    ```
 
 ### Dashboard Development

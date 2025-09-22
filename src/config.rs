@@ -36,8 +36,16 @@ pub struct LogConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SseConfig {
+    pub enabled: bool,
+    pub host: String,
+    pub port: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardConfig {
     pub enabled: bool,
+    pub port: u16,
     pub path: Option<String>, // Path to static frontend files
 }
 
@@ -51,6 +59,7 @@ pub struct Settings {
     pub imap_pass: String,
     pub rest: Option<RestConfig>, // Use Option for potentially disabled sections
     pub mcp_stdio: Option<McpStdioConfig>,
+    pub sse: Option<SseConfig>, // SSE configuration
     pub dashboard: Option<DashboardConfig>, // Dashboard configuration
 }
 
@@ -67,11 +76,17 @@ impl Settings {
             
             // REST defaults
             .set_default("rest.host", "127.0.0.1")?
-            .set_default("rest.port", 3000)?
+            .set_default("rest.port", 9437)?  // Updated to match .env.example
             .set_default("rest.enabled", true)?
+
+            // SSE defaults
+            .set_default("sse.host", "127.0.0.1")?
+            .set_default("sse.port", 9438)?  // Updated to match .env.example
+            .set_default("sse.enabled", false)?
             
             // Dashboard defaults
             .set_default("dashboard.enabled", false)?
+            .set_default("dashboard.port", 9439)?  // Updated to match .env.example
             // Log defaults
             .set_default("log.level", "info")?;
         
@@ -98,20 +113,24 @@ impl Settings {
             ("REST_HOST", "rest.host"),
             ("REST_PORT", "rest.port"),
             ("REST_ENABLED", "rest.enabled"),
+            ("SSE_HOST", "sse.host"),
+            ("SSE_PORT", "sse.port"),
+            ("SSE_ENABLED", "sse.enabled"),
             ("DASHBOARD_ENABLED", "dashboard.enabled"),
+            ("DASHBOARD_PORT", "dashboard.port"),
             ("DASHBOARD_PATH", "dashboard.path"),
         ];
         
         for (env_var, config_path) in &env_vars {
             if let Ok(value) = env::var(env_var) {
                 // Handle special case for port which needs to be parsed to integer
-                if *env_var == "IMAP_PORT" || *env_var == "REST_PORT" {
+                if *env_var == "IMAP_PORT" || *env_var == "REST_PORT" || *env_var == "SSE_PORT" || *env_var == "DASHBOARD_PORT" {
                     if let Ok(port) = value.parse::<u16>() {
                         config_builder = config_builder.set_override(config_path, port)?;
                     } else {
                         warn!("Invalid port value in {}: {}", env_var, value);
                     }
-                } else if *env_var == "DASHBOARD_ENABLED" || *env_var == "REST_ENABLED" {
+                } else if *env_var == "DASHBOARD_ENABLED" || *env_var == "REST_ENABLED" || *env_var == "SSE_ENABLED" {
                     if let Ok(enabled) = value.parse::<bool>() {
                         config_builder = config_builder.set_override(config_path, enabled)?;
                     } else {
@@ -139,7 +158,17 @@ impl Default for RestConfig {
         Self {
             enabled: true,
             host: "127.0.0.1".to_string(),
-            port: 3000,
+            port: 9437,  // Updated to match .env.example
+        }
+    }
+}
+
+impl Default for SseConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            host: "127.0.0.1".to_string(),
+            port: 9438,  // Updated to match .env.example
         }
     }
 }
@@ -156,6 +185,7 @@ impl Default for DashboardConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            port: 9439,  // Updated to match .env.example
             path: None,
         }
     }
@@ -172,6 +202,7 @@ impl Default for Settings {
             imap_pass: String::new(),
             rest: Some(RestConfig::default()),
             mcp_stdio: Some(McpStdioConfig::default()),
+            sse: Some(SseConfig::default()),
             dashboard: Some(DashboardConfig::default()),
         }
     }
