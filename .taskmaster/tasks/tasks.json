@@ -219,7 +219,7 @@
             "description": "Define the precise IMAP command sequence for atomic move operations, ensuring compliance with IMAP4rev1/IMAP4rev2 standards and ACID properties.",
             "dependencies": [],
             "details": "Specify the order and logic for SELECT, COPY, STORE (delete flag), and EXPUNGE commands. Ensure the sequence prevents message loss and maintains consistency.",
-            "status": "in-progress",
+            "status": "done",
             "testStrategy": "Review against IMAP RFCs and test with mock IMAP server for standards compliance."
           },
           {
@@ -230,7 +230,7 @@
               "4.1"
             ],
             "details": "Ensure that any failure in the command sequence triggers rollback or compensating actions to restore the previous state and prevent data corruption.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Simulate failures at each step and verify that rollback restores original state without message loss."
           },
           {
@@ -241,7 +241,7 @@
               "4.1"
             ],
             "details": "Ensure the session wrapper maintains correct folder context across concurrent and sequential operations, preventing state mismatches.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test concurrent and sequential operations to verify correct folder state tracking and transitions."
           },
           {
@@ -253,7 +253,7 @@
               "4.3"
             ],
             "details": "Use transaction-like logic to ensure operations are all-or-nothing, isolated from other concurrent actions, and changes are durable.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test concurrent access scenarios and verify that operations are isolated and durable under load."
           },
           {
@@ -1220,7 +1220,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-22T17:36:51.417Z",
+      "updated": "2025-09-22T17:43:10.870Z",
       "description": "Tasks for master context"
     }
   }
