@@ -15,6 +15,7 @@ use rmcp::{
     ServerHandler,
     RoleServer,
 };
+use std::convert::TryInto;
 
 // Use our MCP types
 use crate::mcp::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError, McpHandler};
@@ -53,7 +54,7 @@ impl RustyMailService {
 
         let tool = self.tool_registry.get(&tool_name)
             .ok_or_else(|| ErrorData::new(
-                -32601, // Method not found error code
+                ErrorCode(-32601), // Method not found
                 format!("Tool '{}' not found", tool_name),
                 None
             ))?;
@@ -65,7 +66,7 @@ impl RustyMailService {
             Err(imap_err) => {
                 error!("Failed to create IMAP session for tool '{}': {:?}", tool_name, imap_err);
                 return Err(ErrorData::new(
-                    -32603, // Internal error code
+                    ErrorCode(-32603), // Internal error
                     format!("IMAP connection failed: {}", imap_err),
                     None
                 ));
@@ -78,11 +79,16 @@ impl RustyMailService {
         drop(state_guard);
 
         match result {
-            Ok(value) => Ok(CallToolResult::success(vec![Content::text(
-                serde_json::to_string_pretty(&value).unwrap_or_else(|_| "null".to_string())
-            )])),
+            Ok(value) => {
+                let text = serde_json::to_string_pretty(&value).unwrap_or_else(|_| "null".to_string());
+                let content = Content {
+                    raw: RawContent::Text(RawTextContent { text }),
+                    annotations: None,
+                };
+                Ok(CallToolResult::success(vec![content]))
+            },
             Err(err) => Err(ErrorData::new(
-                err.code,
+                ErrorCode(err.code as i32),
                 err.message,
                 err.data
             ))
@@ -92,17 +98,20 @@ impl RustyMailService {
 
 // Implement ServerHandler for the service
 impl ServerHandler for RustyMailService {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            name: "RustyMail MCP Server".to_string(),
-            version: "0.1.0".to_string(),
-            protocol_version: "0.1.0".to_string(),
+    fn get_info(&self) -> InitializeResult {
+        InitializeResult {
+            protocol_version: ProtocolVersion::default(),
             capabilities: ServerCapabilities {
                 tools: Some(ToolsCapability {
                     list_changed: None,
                 }),
                 ..Default::default()
             },
+            server_info: Implementation {
+                name: "RustyMail MCP Server".to_string(),
+                version: "0.1.0".to_string(),
+            },
+            instructions: Some("IMAP client with MCP interface for email operations".to_string()),
         }
     }
 
@@ -122,7 +131,7 @@ impl ServerHandler for RustyMailService {
         let items: Vec<Tool> = self.tool_registry.keys().map(|name| {
             Tool {
                 name: name.clone().into(),
-                description: Some(format!("IMAP tool: {}", name)),
+                description: Some(format!("IMAP tool: {}", name).into()),
                 input_schema: Arc::new(serde_json::Map::new()),
                 annotations: None,
             }
@@ -183,23 +192,20 @@ impl McpHandler for SdkMcpAdapter {
         *self.service.port_state.lock().await = state.lock().await.clone();
 
         // Handle the request using our legacy tool wrapper
-        let tool_request = CallToolRequestParam {
-            name: rpc_request.method.clone().into(),
-            arguments: rpc_request.params.and_then(|v| v.as_object().cloned()),
-        };
+        let params = rpc_request.params.clone();
 
         // Create a dummy context for the call
         // This is a workaround since we can't create RequestContext directly
         match self.service.execute_legacy_tool(
             rpc_request.method.clone(),
-            rpc_request.params
+            params
         ).await {
             Ok(result) => {
                 // Convert CallToolResult back to JsonRpcResponse
                 let result_value = if !result.content.is_empty() {
                     json!({
                         "content": result.content.iter().map(|c| match c {
-                            Content::Text(text_content) => json!({ "type": "text", "text": text_content.text }),
+                            Content { raw: RawContent::Text(RawTextContent { ref text }), .. } => json!({ "type": "text", "text": text }),
                             _ => json!(null),
                         }).collect::<Vec<_>>(),
                         "isError": result.is_error,
@@ -220,8 +226,8 @@ impl McpHandler for SdkMcpAdapter {
                 let error_response = JsonRpcResponse::error(
                     rpc_request.id,
                     JsonRpcError {
-                        code: err.code as i32,
-                        message: err.message.to_string(),
+                        code: -32603, // Internal error
+                        message: err.message.into_owned(),
                         data: err.data,
                     }
                 );
