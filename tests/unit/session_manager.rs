@@ -59,7 +59,7 @@ mod tests {
         
         // Test error case
         mock_manager.mock_create_session(
-            Err(SessionError::Creation(ImapError::ConnectionError("Test error".to_string())))
+            Err(SessionError::Creation(ImapError::Connection("Test error".to_string())))
         );
         let result = mock_manager.create_session("test-key", "user", "pass", "server", 143).await;
         assert!(matches!(result, Err(SessionError::Creation(_))));
@@ -84,19 +84,11 @@ mod tests {
         assert_eq!(mock_manager.remove_session_call_count(), 2);
     }
     
-    // Helper to create a mock client for testing
-    fn create_mock_client() -> Arc<ManagedClient> {
-        // We can't easily create a real ManagedClient for testing since it requires an actual IMAP connection
-        // Instead, we're using a small cheat by creating a dummy error
-        let err = SessionError::Access("Dummy client for test".to_string());
-        Arc::new(mockable_error_fn(err).unwrap_err())
-    }
-    
-    // This is a helper function that won't actually be called, but allows us to create the right error type
-    fn mockable_error_fn(_err: SessionError) -> SessionResult<ManagedClient> {
-        // This will never be called, we just use it to create a properly typed error
-        unimplemented!()
-    }
+    // Helper to create a mock client for testing - disabled since it requires real IMAP connection
+    // fn create_mock_client() -> Arc<ManagedClient> {
+    //     // This is complex to mock without major refactoring - skipping for now
+    //     unimplemented!("Mock client creation requires major refactoring")
+    // }
     
     // Real implementation tests - these would require actual IMAP credentials
     // so they're commented out and would need to be configured with real values

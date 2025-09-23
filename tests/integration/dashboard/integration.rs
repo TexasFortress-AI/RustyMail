@@ -190,8 +190,8 @@ mod dashboard_integration_tests {
 
         assert!(response.status().is_success());
         let clients: PaginatedClients = response.json().await.expect("Failed to parse clients");
-        assert!(clients.total >= 0);
-        assert!(clients.clients.len() <= clients.total as usize);
+        assert!(clients.pagination.total >= 0);
+        assert!(clients.clients.len() <= clients.pagination.total as usize);
 
         server.shutdown().await;
     }
@@ -205,6 +205,7 @@ mod dashboard_integration_tests {
         let client = reqwest::Client::new();
         let query = ChatbotQuery {
             query: "What is the current server status?".to_string(),
+            conversation_id: None,
         };
 
         let response = client
@@ -216,7 +217,7 @@ mod dashboard_integration_tests {
 
         assert!(response.status().is_success());
         let chatbot_response: ChatbotResponse = response.json().await.expect("Failed to parse chatbot response");
-        assert!(!chatbot_response.response.is_empty());
+        assert!(!chatbot_response.text.is_empty());
 
         server.shutdown().await;
     }

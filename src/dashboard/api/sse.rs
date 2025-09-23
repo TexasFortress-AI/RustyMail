@@ -259,18 +259,23 @@ pub async fn sse_handler(
     // Merge the event stream and heartbeat stream
     let stream = futures::stream::select(event_stream, heartbeat_interval);
 
-    // Spawn a task to register client with the client manager (non-blocking for handler)
+    // Register client with the client manager and use the same client_id
     let client_manager = Arc::clone(&state.client_manager);
     // Extract relevant info from request headers
     let user_agent = req.headers().get(actix_web::http::header::USER_AGENT).and_then(|h| h.to_str().ok()).map(String::from);
     let ip_address = req.peer_addr().map(|addr| addr.ip().to_string());
-    tokio::spawn(async move {
-        client_manager.register_client(
-            crate::dashboard::api::models::ClientType::Sse,
-            ip_address,
-            user_agent
-        ).await;
-    });
+
+    // Register client with the client manager (use async but don't spawn task to keep client_id)
+    // We need to overwrite the auto-generated client_id with the one from ClientManager
+    let managed_client_id = client_manager.register_client(
+        crate::dashboard::api::models::ClientType::Sse,
+        ip_address,
+        user_agent
+    ).await;
+
+    // Update SSE manager to use the managed client ID
+    sse_manager.remove_client(&client_id).await; // Remove the auto-generated one
+    sse_manager.register_client(managed_client_id.clone(), tx.clone()).await;
     
     // Return SSE streaming response
     Sse::from_stream(stream)
