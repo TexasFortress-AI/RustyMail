@@ -21,6 +21,7 @@ pub mod clients;
 pub mod config;
 pub mod events;
 pub mod event_integration;
+pub mod health;
 pub mod metrics;
 
 // Define or import error types if they exist
@@ -38,6 +39,7 @@ pub use clients::{ClientManager};
 pub use config::{ConfigService};
 pub use ai::{AiService};
 pub use events::{EventBus, DashboardEvent};
+pub use health::{HealthService, HealthReport, HealthStatus};
 
 // Import the types that were causing privacy issues directly from their source
 // Removed unresolved ImapConfiguration import
@@ -66,6 +68,7 @@ pub struct DashboardState {
     pub ai_service: Arc<AiService>,
     pub sse_manager: Arc<SseManager>,
     pub event_bus: Arc<EventBus>,
+    pub health_service: Option<Arc<HealthService>>,
     pub config: web::Data<Settings>,
     pub imap_session_factory: CloneableImapSessionFactory,
     pub connection_pool: Arc<ConnectionPool>,
@@ -101,6 +104,13 @@ pub fn init(
     sse_manager.set_event_bus(Arc::clone(&event_bus));
     let sse_manager = Arc::new(sse_manager);
 
+    // Create health service
+    let health_service = Arc::new(
+        HealthService::new()
+            .with_event_bus(Arc::clone(&event_bus))
+            .with_connection_pool(Arc::clone(&connection_pool))
+    );
+
     info!("Dashboard services initialized.");
 
     Data::new(DashboardState {
@@ -110,6 +120,7 @@ pub fn init(
         ai_service,
         sse_manager,
         event_bus,
+        health_service: Some(health_service),
         config, // Pass the web::Data<Settings>
         imap_session_factory,
         connection_pool,

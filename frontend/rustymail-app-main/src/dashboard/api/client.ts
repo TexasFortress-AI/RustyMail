@@ -1,86 +1,152 @@
 
-import { 
-  DashboardStats, 
-  ClientListResponse, 
+import {
+  DashboardStats,
+  ClientListResponse,
   ServerConfig,
   ChatbotQuery,
   ChatbotResponse
 } from '@/types';
-import { 
-  generateMockStats, 
-  generateMockClients, 
-  generateMockConfig,
-  handleChatbotQuery
-} from './mocks/data';
 
-// Simulate network latency
-const simulateNetworkDelay = () => {
-  return new Promise(resolve => setTimeout(resolve, Math.random() * 600 + 200));
-};
+// Base API URL - in production this would come from environment variables
+const API_BASE = '/api/dashboard';
 
-// Simulate random errors (about 5% of requests)
-const maybeFailRequest = () => {
-  if (Math.random() < 0.05) {
-    throw new Error('API request failed. Please try again.');
+// Utility function to handle API requests
+const apiRequest = async <T>(url: string, options?: RequestInit): Promise<T> => {
+  const response = await fetch(url, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
+    ...options,
+  });
+
+  if (!response.ok) {
+    throw new Error(`API request failed: ${response.status} ${response.statusText}`);
   }
+
+  return response.json();
 };
 
 export const apiClient = {
   // Get dashboard statistics
   getStats: async (): Promise<DashboardStats> => {
-    await simulateNetworkDelay();
-    maybeFailRequest();
-    return generateMockStats();
+    const data = await apiRequest<any>(`${API_BASE}/stats`);
+
+    // Transform backend data to frontend format
+    return {
+      activeConnections: data.active_dashboard_sse_clients || 0,
+      requestsPerMinute: data.requests_per_minute || 0,
+      averageResponseTime: data.average_response_time_ms || 0,
+      systemHealth: {
+        status: data.system_health?.status || 'unknown',
+        cpuUsage: Math.round(data.system_health?.cpu_usage || 0),
+        memoryUsage: Math.round(data.system_health?.memory_usage || 0),
+      },
+      requestRate: [
+        // Generate mock chart data for now since backend doesn't provide historical data yet
+        { timestamp: new Date(Date.now() - 120*60*1000), value: Math.max(0, data.requests_per_minute - 5) },
+        { timestamp: new Date(Date.now() - 60*60*1000), value: Math.max(0, data.requests_per_minute - 2) },
+        { timestamp: new Date(), value: data.requests_per_minute || 0 },
+      ],
+      lastUpdated: data.last_updated || new Date().toISOString(),
+    };
   },
 
   // Get client list with pagination and optional filtering
   getClients: async (page: number = 1, limit: number = 10, filter?: string): Promise<ClientListResponse> => {
-    await simulateNetworkDelay();
-    maybeFailRequest();
-    return generateMockClients(page, limit, filter);
+    const params = new URLSearchParams({
+      page: page.toString(),
+      limit: limit.toString(),
+    });
+
+    if (filter) {
+      params.append('filter', filter);
+    }
+
+    const data = await apiRequest<any>(`${API_BASE}/clients?${params}`);
+
+    // Transform backend data to frontend format
+    return {
+      clients: data.clients.map((client: any) => ({
+        id: client.id,
+        type: client.type,
+        ipAddress: client.ip_address,
+        userAgent: client.user_agent || 'Unknown',
+        connectedAt: client.connected_at,
+        lastActivity: client.last_activity,
+        status: client.status,
+      })),
+      pagination: {
+        total: data.pagination.total,
+        page: data.pagination.page,
+        limit: data.pagination.limit,
+        totalPages: data.pagination.total_pages,
+      },
+    };
   },
 
   // Get server configuration
   getConfig: async (): Promise<ServerConfig> => {
-    await simulateNetworkDelay();
-    maybeFailRequest();
-    return generateMockConfig();
+    const data = await apiRequest<any>(`${API_BASE}/config`);
+
+    // Transform backend data to frontend format
+    return {
+      activeAdapter: {
+        id: 'current',
+        name: `IMAP (${data.imap.host}:${data.imap.port})`,
+        type: 'imap',
+        host: data.imap.host,
+        port: data.imap.port,
+        username: data.imap.user,
+        isActive: true,
+      },
+      availableAdapters: [
+        {
+          id: 'current',
+          name: `IMAP (${data.imap.host}:${data.imap.port})`,
+          type: 'imap',
+          host: data.imap.host,
+          port: data.imap.port,
+          username: data.imap.user,
+          isActive: true,
+        }
+      ],
+      settings: {
+        dashboard: {
+          enabled: data.dashboard.enabled,
+          port: data.dashboard.port,
+        },
+        rest: {
+          enabled: data.rest.enabled,
+          host: data.rest.host,
+          port: data.rest.port,
+        }
+      }
+    };
   },
 
-  // Set active IMAP adapter
+  // Set active IMAP adapter - for now just return current config since backend doesn't support multiple adapters yet
   setActiveAdapter: async (adapterId: string): Promise<ServerConfig> => {
-    await simulateNetworkDelay();
-    maybeFailRequest();
-    
-    const config = generateMockConfig();
-    
-    // Find the adapter by ID and set it as active
-    const newActiveAdapter = config.availableAdapters.find(adapter => adapter.id === adapterId);
-    
-    if (!newActiveAdapter) {
-      throw new Error(`Adapter with ID ${adapterId} not found`);
-    }
-    
-    // Set the new adapter as active
-    config.activeAdapter = {
-      ...newActiveAdapter,
-      isActive: true
-    };
-    
-    // Update the adapter in the available adapters list
-    config.availableAdapters = config.availableAdapters.map(adapter => ({
-      ...adapter,
-      isActive: adapter.id === adapterId
-    }));
-    
-    return config;
+    // For now, just return the current config since backend doesn't support switching adapters yet
+    return apiClient.getConfig();
   },
 
   // Send query to chatbot
   queryChatbot: async (query: ChatbotQuery): Promise<ChatbotResponse> => {
-    await simulateNetworkDelay();
-    maybeFailRequest();
-    return handleChatbotQuery(query.query, query.conversation_id);
+    const response = await apiRequest<any>(`${API_BASE}/chatbot/query`, {
+      method: 'POST',
+      body: JSON.stringify({
+        query: query.query,
+        conversation_id: query.conversation_id,
+        context: query.context,
+      }),
+    });
+
+    return {
+      text: response.text,
+      conversationId: response.conversation_id,
+      followupSuggestions: response.followup_suggestions || [],
+    };
   }
 };
 
@@ -91,79 +157,84 @@ export const initEventSource = (
   onClientDisconnected: (data: any) => void,
   onSystemAlert: (data: any) => void
 ) => {
-  // In a real app, we'd connect to a real SSE endpoint
-  // For demo, we'll simulate events using setInterval
-  
-  // Simulate stats updates every 10 seconds
-  const statsInterval = setInterval(() => {
-    onStatsUpdated(generateMockStats());
-  }, 10000);
-  
-  // Simulate client connected events randomly (every 5-15 seconds)
-  const clientConnectInterval = setInterval(() => {
-    const clientId = `client-${Math.floor(Math.random() * 100) + 1000}`;
-    onClientConnected({
-      client: {
-        id: clientId,
-        type: ['SSE', 'API', 'Console'][Math.floor(Math.random() * 3)],
-        connectedAt: new Date().toISOString(),
-        status: 'Active',
-        lastActivity: new Date().toISOString(),
-        ipAddress: `192.168.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
-      }
-    });
-  }, Math.random() * 10000 + 5000);
-  
-  // Simulate client disconnected events randomly (every 7-20 seconds)
-  const clientDisconnectInterval = setInterval(() => {
-    const clientId = `client-${Math.floor(Math.random() * 100) + 1000}`;
-    onClientDisconnected({
-      client: {
-        id: clientId,
-        disconnectedAt: new Date().toISOString(),
-        reason: 'Client closed connection'
-      }
-    });
-  }, Math.random() * 13000 + 7000);
-  
-  // Simulate system alerts rarely (every 30-90 seconds)
-  const systemAlertInterval = setInterval(() => {
-    const alertTypes = ['info', 'warning', 'error'];
-    const alertType = alertTypes[Math.floor(Math.random() * alertTypes.length)];
-    const alertMessages = {
-      info: [
-        'System update completed successfully',
-        'New IMAP adapter version available',
-        'Cache optimization performed'
-      ],
-      warning: [
-        'High memory usage detected',
-        'Connection pool nearing capacity',
-        'Slow response time from IMAP server'
-      ],
-      error: [
-        'Failed to connect to IMAP server',
-        'Database connection timeout',
-        'Authentication service unreachable'
-      ]
-    };
-    
-    const message = alertMessages[alertType as keyof typeof alertMessages][
-      Math.floor(Math.random() * alertMessages[alertType as keyof typeof alertMessages].length)
-    ];
-    
-    onSystemAlert({
-      type: alertType,
-      message,
-      timestamp: new Date().toISOString()
-    });
-  }, Math.random() * 60000 + 30000);
-  
+  // Connect to the real SSE endpoint
+  const eventSource = new EventSource(`${API_BASE}/events`);
+
+  // Handle different event types
+  eventSource.addEventListener('welcome', (event) => {
+    console.log('SSE connected:', event.data);
+  });
+
+  eventSource.addEventListener('stats_update', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      // Transform backend data to frontend format (same as getStats)
+      const transformedData = {
+        activeConnections: data.active_dashboard_sse_clients || 0,
+        requestsPerMinute: data.requests_per_minute || 0,
+        averageResponseTime: data.average_response_time_ms || 0,
+        systemHealth: {
+          status: data.system_health?.status || 'unknown',
+          cpuUsage: Math.round(data.system_health?.cpu_usage || 0),
+          memoryUsage: Math.round(data.system_health?.memory_usage || 0),
+        },
+        requestRate: [
+          { timestamp: new Date(Date.now() - 120*60*1000), value: Math.max(0, data.requests_per_minute - 5) },
+          { timestamp: new Date(Date.now() - 60*60*1000), value: Math.max(0, data.requests_per_minute - 2) },
+          { timestamp: new Date(), value: data.requests_per_minute || 0 },
+        ],
+        lastUpdated: data.last_updated || new Date().toISOString(),
+      };
+      onStatsUpdated(transformedData);
+    } catch (e) {
+      console.error('Error parsing stats update:', e);
+    }
+  });
+
+  eventSource.addEventListener('client_connected', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      onClientConnected(data);
+    } catch (e) {
+      console.error('Error parsing client connected event:', e);
+    }
+  });
+
+  eventSource.addEventListener('client_disconnected', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      onClientDisconnected(data);
+    } catch (e) {
+      console.error('Error parsing client disconnected event:', e);
+    }
+  });
+
+  eventSource.addEventListener('system_alert', (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      onSystemAlert(data);
+    } catch (e) {
+      console.error('Error parsing system alert event:', e);
+    }
+  });
+
+  eventSource.addEventListener('error', (event) => {
+    console.error('SSE error:', event);
+  });
+
+  // Fallback: Fetch stats every 30 seconds as backup
+  const fallbackStatsInterval = setInterval(async () => {
+    try {
+      const stats = await apiClient.getStats();
+      onStatsUpdated(stats);
+    } catch (error) {
+      console.error('Error fetching stats fallback:', error);
+    }
+  }, 30000);
+
   // Return a cleanup function
   return () => {
-    clearInterval(statsInterval);
-    clearInterval(clientConnectInterval);
-    clearInterval(clientDisconnectInterval);
-    clearInterval(systemAlertInterval);
+    eventSource.close();
+    clearInterval(fallbackStatsInterval);
   };
 };

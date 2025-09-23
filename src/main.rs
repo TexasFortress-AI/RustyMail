@@ -52,7 +52,9 @@ async fn main() -> std::io::Result<()> {
     info!("IMAP config: host={}, port={}, user={}", settings.imap_host, settings.imap_port, settings.imap_user);
 
     // --- Perform initial IMAP connection check --- (Optional but good for validation)
-    info!("Performing initial IMAP connection check...");
+    // TEMPORARILY DISABLED: Skip IMAP connection check for dashboard testing
+    info!("Skipping initial IMAP connection check for dashboard testing...");
+    /*
     match ImapClient::<AsyncImapSessionWrapper>::connect(
         &settings.imap_host,
         settings.imap_port,
@@ -71,6 +73,7 @@ async fn main() -> std::io::Result<()> {
             return Err(std::io::Error::new(std::io::ErrorKind::Other, format!("IMAP connection failed: {:?}", e)));
         }
     }
+    */
 
     // --- Create IMAP Session Factory ---
     use futures_util::future::BoxFuture;
@@ -177,6 +180,16 @@ async fn main() -> std::io::Result<()> {
 
     // Start background metrics collection task (needs DashboardState)
     dashboard_state.metrics_service.start_background_collection(dashboard_state.clone());
+
+    // Start health monitoring service
+    if let Some(ref health_service) = dashboard_state.health_service {
+        Arc::clone(health_service).start_monitoring().await;
+        info!("Health monitoring service started");
+    }
+
+    // Start event publishers for dashboard integration
+    dashboard::services::event_integration::start_event_publishers(Arc::new(dashboard_state.as_ref().clone())).await;
+    info!("Event publishers started");
 
     // Create and initialize SSE manager for dashboard
     let sse_manager = Arc::new(SseManager::new(

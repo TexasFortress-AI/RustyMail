@@ -2,6 +2,7 @@ use actix_web::{web, Scope};
 use super::handlers;
 use super::sse;
 use super::config;
+use super::health;
 use log::info;
 
 pub fn configure_routes() -> Scope {
@@ -20,4 +21,7 @@ pub fn configure_routes() -> Scope {
 pub fn configure(cfg: &mut web::ServiceConfig) {
     info!("Configuring dashboard routes (/api/dashboard)");
     cfg.service(configure_routes());
+
+    // Add health check endpoints
+    health::configure_health_routes(cfg);
 }

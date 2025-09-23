@@ -10,6 +10,7 @@ pub mod handlers;
 pub mod errors;
 pub mod middleware;
 pub mod config;
+pub mod health;
 
 // Re-export main types needed elsewhere
 pub use routes::configure as init_routes;
