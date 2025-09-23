@@ -61,7 +61,7 @@ impl RustyMailService {
         // Create IMAP session
         let session_result = self.session_factory.create_session().await;
         let session = match session_result {
-            Ok(client) => Arc::new(client) as Arc<dyn crate::imap::session::AsyncImapOps>,
+            Ok(client) => client.session_arc(),
             Err(imap_err) => {
                 error!("Failed to create IMAP session for tool '{}': {:?}", tool_name, imap_err);
                 return Err(ErrorData::new(
@@ -98,7 +98,9 @@ impl ServerHandler for RustyMailService {
             version: "0.1.0".to_string(),
             protocol_version: "0.1.0".to_string(),
             capabilities: ServerCapabilities {
-                tools: Some(ToolsCapability::default()),
+                tools: Some(ToolsCapability {
+                    list_changed: None,
+                }),
                 ..Default::default()
             },
         }
@@ -122,6 +124,7 @@ impl ServerHandler for RustyMailService {
                 name: name.clone().into(),
                 description: Some(format!("IMAP tool: {}", name)),
                 input_schema: Arc::new(serde_json::Map::new()),
+                annotations: None,
             }
         }).collect();
 
@@ -196,7 +199,7 @@ impl McpHandler for SdkMcpAdapter {
                 let result_value = if !result.content.is_empty() {
                     json!({
                         "content": result.content.iter().map(|c| match c {
-                            Content::Text { text, .. } => json!({ "type": "text", "text": text }),
+                            Content::Text(text_content) => json!({ "type": "text", "text": text_content.text }),
                             _ => json!(null),
                         }).collect::<Vec<_>>(),
                         "isError": result.is_error,

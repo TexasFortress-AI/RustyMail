@@ -107,22 +107,32 @@ impl McpTool for DefaultMcpTool {
 }
 
 /// Registry for MCP tools.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct McpToolRegistry {
-    tools: HashMap<String, Box<dyn McpTool>>,
+    tools: Arc<HashMap<String, Arc<dyn McpTool>>>,
 }
 
 impl McpToolRegistry {
     pub fn new() -> Self {
-        Self { tools: HashMap::new() }
+        Self { tools: Arc::new(HashMap::new()) }
     }
 
     pub fn register<T: McpTool + 'static>(&mut self, name: &str, tool: T) {
-        self.tools.insert(name.to_string(), Box::new(tool));
+        Arc::get_mut(&mut self.tools)
+            .expect("Cannot modify shared registry")
+            .insert(name.to_string(), Arc::new(tool));
     }
 
-    pub fn get(&self, name: &str) -> Option<&Box<dyn McpTool>> {
-        self.tools.get(name)
+    pub fn get(&self, name: &str) -> Option<Arc<dyn McpTool>> {
+        self.tools.get(name).cloned()
+    }
+
+    pub fn keys(&self) -> impl Iterator<Item = &String> {
+        self.tools.keys()
+    }
+
+    pub fn into_arc(self) -> Arc<HashMap<String, Arc<dyn McpTool>>> {
+        self.tools
     }
 }
 

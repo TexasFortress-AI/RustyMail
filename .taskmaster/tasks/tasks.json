@@ -485,7 +485,7 @@
         "dependencies": [
           6
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -493,7 +493,7 @@
             "description": "Delete all custom MCP transport code from src/mcp/adapters/legacy.rs to eliminate legacy implementations.",
             "dependencies": [],
             "details": "Identify and remove all custom transport logic, ensuring no references remain in the codebase.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run existing MCP-related tests to confirm no regressions or broken references after removal."
           },
           {
@@ -504,7 +504,7 @@
               "8.1"
             ],
             "details": "Update Cargo.toml to include rmcp with required features (e.g., server, transport-io, macros). Ensure all builds and dependency resolutions succeed.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Build the project and verify that rmcp is correctly linked and available for use."
           },
           {
@@ -515,7 +515,7 @@
               "8.2"
             ],
             "details": "Leverage rmcp-macros for tool/service implementation. Replace manual serialization/deserialization with SDK-provided types.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Generate and inspect service code. Run unit tests to verify correct request/response handling."
           },
           {
@@ -526,7 +526,7 @@
               "8.3"
             ],
             "details": "Replace legacy transport code with rmcp's transport::stdio and transport::websocket modules. Ensure async/await usage aligns with SDK requirements.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test stdio and SSE transports with various MCP clients and the dashboard to confirm correct operation."
           },
           {
@@ -537,7 +537,7 @@
               "8.4"
             ],
             "details": "Test all supported transports and service endpoints with legacy clients. Address any protocol or behavioral regressions.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run integration tests with existing MCP clients and verify seamless operation across all supported features."
           }
         ]
@@ -1220,7 +1220,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-23T01:03:36.989Z",
+      "updated": "2025-09-23T01:26:54.726Z",
       "description": "Tasks for master context"
     }
   }
