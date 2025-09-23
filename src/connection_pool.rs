@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use futures::StreamExt;
 use log::{debug, error, info, warn};
 use thiserror::Error;
 use tokio::sync::{Mutex as TokioMutex, Semaphore, RwLock};
@@ -133,6 +134,9 @@ impl Drop for SessionHandle {
 #[async_trait]
 pub trait ConnectionFactory: Send + Sync {
     async fn create(&self) -> Result<Arc<ImapClient<AsyncImapSessionWrapper>>, ImapError>;
+
+    /// Validate that a connection is still healthy
+    async fn validate(&self, client: &Arc<ImapClient<AsyncImapSessionWrapper>>) -> bool;
 }
 
 /// Default factory implementation using connection parameters
@@ -164,6 +168,13 @@ impl ConnectionFactory for ImapConnectionFactory {
             &self.password,
         ).await?;
         Ok(Arc::new(client))
+    }
+
+    async fn validate(&self, _client: &Arc<ImapClient<AsyncImapSessionWrapper>>) -> bool {
+        // TODO: Implement proper connection validation
+        // For now, we'll rely on operations failing when connections are bad
+        // and the reconnection logic will handle it
+        true
     }
 }
 
@@ -382,27 +393,100 @@ impl ConnectionPool {
 
             sleep(self.config.health_check_interval).await;
 
-            let mut unhealthy_ids = Vec::new();
+            let mut to_check = Vec::new();
             {
-                let mut connections = self.connections.write().await;
-                for (id, conn) in connections.iter_mut() {
-                    // In a real implementation, we'd perform an actual health check
-                    // For now, mark connections older than 5 minutes as potentially unhealthy
-                    if conn.created_at.elapsed() > Duration::from_secs(300) && !conn.in_use {
-                        conn.is_healthy = false;
-                        unhealthy_ids.push(*id);
-                        debug!("Marked connection {} as unhealthy", id);
+                let connections = self.connections.read().await;
+                for (id, conn) in connections.iter() {
+                    // Only check connections that are available and haven't been checked recently
+                    if !conn.in_use && conn.last_used.elapsed() > Duration::from_secs(30) {
+                        to_check.push((*id, conn.client.clone()));
                     }
                 }
             }
 
-            // Remove unhealthy connections from available queue
+            let mut unhealthy_ids = Vec::new();
+            let mut to_reconnect = Vec::new();
+
+            // Perform actual health checks
+            for (id, client) in to_check {
+                if !self.factory.validate(&client).await {
+                    unhealthy_ids.push(id);
+                    to_reconnect.push(id);
+                    warn!("Connection {} failed health check", id);
+                } else {
+                    debug!("Connection {} passed health check", id);
+                }
+            }
+
+            // Mark connections as unhealthy
             if !unhealthy_ids.is_empty() {
-                let mut available = self.available.lock().await;
-                available.retain(|id| !unhealthy_ids.contains(id));
-                info!("Removed {} unhealthy connections from available queue", unhealthy_ids.len());
+                let mut connections = self.connections.write().await;
+                for id in &unhealthy_ids {
+                    if let Some(conn) = connections.get_mut(id) {
+                        conn.is_healthy = false;
+                    }
+                }
+            }
+
+            // Attempt to reconnect unhealthy connections
+            for id in to_reconnect {
+                tokio::spawn({
+                    let pool = Arc::clone(&self);
+                    async move {
+                        pool.reconnect(id).await;
+                    }
+                });
             }
         }
+    }
+
+    /// Attempt to reconnect a failed connection
+    async fn reconnect(&self, connection_id: Uuid) {
+        info!("Attempting to reconnect connection {}", connection_id);
+
+        // Remove the old connection
+        {
+            let mut connections = self.connections.write().await;
+            if let Some(old_conn) = connections.remove(&connection_id) {
+                if old_conn.in_use {
+                    warn!("Cannot reconnect in-use connection {}", connection_id);
+                    connections.insert(connection_id, old_conn);
+                    return;
+                }
+            }
+        }
+
+        // Remove from available queue
+        {
+            let mut available = self.available.lock().await;
+            available.retain(|&id| id != connection_id);
+        }
+
+        // Try to create a new connection
+        let max_retries = 3;
+        for attempt in 1..=max_retries {
+            match self.factory.create().await {
+                Ok(new_client) => {
+                    let mut new_conn = PooledConnection::new(new_client);
+                    new_conn.id = connection_id; // Reuse the same ID for tracking
+
+                    // Add the new connection
+                    self.connections.write().await.insert(connection_id, new_conn);
+                    self.available.lock().await.push_back(connection_id);
+
+                    info!("Successfully reconnected connection {} on attempt {}", connection_id, attempt);
+                    return;
+                }
+                Err(e) => {
+                    warn!("Reconnection attempt {} failed for connection {}: {}", attempt, connection_id, e);
+                    if attempt < max_retries {
+                        sleep(Duration::from_secs(2u64.pow(attempt))).await;
+                    }
+                }
+            }
+        }
+
+        error!("Failed to reconnect connection {} after {} attempts", connection_id, max_retries);
     }
 
     /// Shutdown the pool gracefully
@@ -484,6 +568,11 @@ mod tests {
         async fn create(&self) -> Result<Arc<ImapClient<AsyncImapSessionWrapper>>, ImapError> {
             // In real tests, we'd use a mock client
             Err(ImapError::Connection("Mock factory".to_string()))
+        }
+
+        async fn validate(&self, _client: &Arc<ImapClient<AsyncImapSessionWrapper>>) -> bool {
+            // Mock validation always returns true
+            true
         }
     }
 
