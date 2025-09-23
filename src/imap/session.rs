@@ -110,6 +110,15 @@ pub trait AsyncImapOps: Send + Sync + Debug {
 
     /// Batch move messages atomically from one folder to another
     async fn move_messages(&self, uids: &[u32], from_folder: &str, to_folder: &str) -> Result<(), ImapError>;
+
+    /// Mark messages as deleted (sets \Deleted flag)
+    async fn mark_as_deleted(&self, uids: &[u32]) -> Result<(), ImapError>;
+
+    /// Delete messages (mark as deleted and expunge)
+    async fn delete_messages(&self, uids: &[u32]) -> Result<(), ImapError>;
+
+    /// Undelete messages (removes \Deleted flag)
+    async fn undelete_messages(&self, uids: &[u32]) -> Result<(), ImapError>;
 }
 
 // Wrapper definition using Arc<Mutex<...>>
@@ -524,6 +533,51 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
 
         info!("Successfully moved {} messages from {} to {} using COPY+DELETE+EXPUNGE",
               uids.len(), from_folder, to_folder);
+        Ok(())
+    }
+
+    async fn mark_as_deleted(&self, uids: &[u32]) -> Result<(), ImapError> {
+        if uids.is_empty() {
+            return Ok(());
+        }
+
+        debug!("Marking {} messages as deleted", uids.len());
+
+        // Use the store_flags method to add the \Deleted flag
+        self.store_flags(uids, FlagOperation::Add, &[String::from("\\Deleted")]).await?;
+
+        info!("Successfully marked {} messages as deleted", uids.len());
+        Ok(())
+    }
+
+    async fn delete_messages(&self, uids: &[u32]) -> Result<(), ImapError> {
+        if uids.is_empty() {
+            return Ok(());
+        }
+
+        debug!("Deleting {} messages (mark as deleted + expunge)", uids.len());
+
+        // Step 1: Mark messages as deleted
+        self.mark_as_deleted(uids).await?;
+
+        // Step 2: Expunge to permanently remove deleted messages
+        self.expunge().await?;
+
+        info!("Successfully deleted {} messages permanently", uids.len());
+        Ok(())
+    }
+
+    async fn undelete_messages(&self, uids: &[u32]) -> Result<(), ImapError> {
+        if uids.is_empty() {
+            return Ok(());
+        }
+
+        debug!("Removing \\Deleted flag from {} messages", uids.len());
+
+        // Use the store_flags method to remove the \Deleted flag
+        self.store_flags(uids, FlagOperation::Remove, &[String::from("\\Deleted")]).await?;
+
+        info!("Successfully undeleted {} messages", uids.len());
         Ok(())
     }
 }

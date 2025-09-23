@@ -348,7 +348,7 @@
           4,
           5
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -378,7 +378,7 @@
               "6.2"
             ],
             "details": "Use async-imap fetch methods to retrieve message headers, bodies, and attachments. Parse MIME structure to expose all parts, ensuring correct handling of encodings and nested multiparts.",
-            "status": "in-progress",
+            "status": "done",
             "testStrategy": "Fetch messages with various MIME structures from different servers. Validate correct parsing and extraction of all parts. Ensure fetch time is <200ms per email."
           },
           {
@@ -389,7 +389,7 @@
               "6.3"
             ],
             "details": "Use IMAP MOVE command where supported, or fallback to COPY+DELETE with transaction-like guarantees. Handle edge cases such as partial failures and ensure consistency.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Move messages between folders under normal and failure scenarios. Verify atomicity and absence of duplicates or lost messages."
           },
           {
@@ -400,7 +400,7 @@
               "6.4"
             ],
             "details": "Set the \\Deleted flag on messages and execute EXPUNGE to remove them. Ensure correct handling of flag updates and server responses.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Delete messages and verify they are removed after expunge. Test with different IMAP servers to ensure consistent behavior."
           }
         ]
@@ -1220,7 +1220,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-23T00:31:09.233Z",
+      "updated": "2025-09-23T01:03:36.989Z",
       "description": "Tasks for master context"
     }
   }

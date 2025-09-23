@@ -340,6 +340,156 @@ pub async fn atomic_batch_move_tool(
     }))
 }
 
+/// Tool for marking messages as deleted (sets \Deleted flag but doesn't expunge)
+pub async fn mark_as_deleted_tool(
+    session: Arc<dyn AsyncImapOps>,
+    _state: Arc<TokioMutex<McpPortState>>,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
+
+    // Extract UIDs
+    let uids = if let Some(uids_array) = params.get("uids") {
+        if let Some(uids_vec) = uids_array.as_array() {
+            uids_vec.iter()
+                .filter_map(|v| v.as_u64().map(|u| u as u32))
+                .collect::<Vec<u32>>()
+        } else {
+            return Err(JsonRpcError::invalid_params("uids must be an array of numbers"));
+        }
+    } else {
+        return Err(JsonRpcError::invalid_params("uids parameter is required"));
+    };
+
+    if uids.is_empty() {
+        return Err(JsonRpcError::invalid_params("At least one UID must be provided"));
+    }
+
+    // Mark messages as deleted
+    session.mark_as_deleted(&uids).await.map_err(|e| {
+        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("mark_as_deleted".to_string()));
+        if let Some(data) = error.data.as_mut() {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("uids".to_string(), serde_json::to_value(&uids).unwrap_or_default());
+            }
+        }
+        error
+    })?;
+
+    Ok(json!({
+        "success": true,
+        "message": format!("Successfully marked {} messages as deleted", uids.len()),
+        "marked_uids": uids,
+        "note": "Messages are marked with \\Deleted flag but not yet expunged. Call expunge to permanently remove them."
+    }))
+}
+
+/// Tool for deleting messages permanently (marks as deleted and expunges)
+pub async fn delete_messages_tool(
+    session: Arc<dyn AsyncImapOps>,
+    _state: Arc<TokioMutex<McpPortState>>,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
+
+    // Extract UIDs
+    let uids = if let Some(uids_array) = params.get("uids") {
+        if let Some(uids_vec) = uids_array.as_array() {
+            uids_vec.iter()
+                .filter_map(|v| v.as_u64().map(|u| u as u32))
+                .collect::<Vec<u32>>()
+        } else {
+            return Err(JsonRpcError::invalid_params("uids must be an array of numbers"));
+        }
+    } else {
+        return Err(JsonRpcError::invalid_params("uids parameter is required"));
+    };
+
+    if uids.is_empty() {
+        return Err(JsonRpcError::invalid_params("At least one UID must be provided"));
+    }
+
+    // Delete messages permanently
+    session.delete_messages(&uids).await.map_err(|e| {
+        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("delete_messages".to_string()));
+        if let Some(data) = error.data.as_mut() {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("uids".to_string(), serde_json::to_value(&uids).unwrap_or_default());
+            }
+        }
+        error
+    })?;
+
+    Ok(json!({
+        "success": true,
+        "message": format!("Successfully deleted {} messages permanently", uids.len()),
+        "deleted_uids": uids,
+        "note": "Messages have been marked as deleted and expunged. This action cannot be undone."
+    }))
+}
+
+/// Tool for undeleting messages (removes \Deleted flag)
+pub async fn undelete_messages_tool(
+    session: Arc<dyn AsyncImapOps>,
+    _state: Arc<TokioMutex<McpPortState>>,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
+
+    // Extract UIDs
+    let uids = if let Some(uids_array) = params.get("uids") {
+        if let Some(uids_vec) = uids_array.as_array() {
+            uids_vec.iter()
+                .filter_map(|v| v.as_u64().map(|u| u as u32))
+                .collect::<Vec<u32>>()
+        } else {
+            return Err(JsonRpcError::invalid_params("uids must be an array of numbers"));
+        }
+    } else {
+        return Err(JsonRpcError::invalid_params("uids parameter is required"));
+    };
+
+    if uids.is_empty() {
+        return Err(JsonRpcError::invalid_params("At least one UID must be provided"));
+    }
+
+    // Undelete messages
+    session.undelete_messages(&uids).await.map_err(|e| {
+        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("undelete_messages".to_string()));
+        if let Some(data) = error.data.as_mut() {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("uids".to_string(), serde_json::to_value(&uids).unwrap_or_default());
+            }
+        }
+        error
+    })?;
+
+    Ok(json!({
+        "success": true,
+        "message": format!("Successfully undeleted {} messages", uids.len()),
+        "undeleted_uids": uids,
+        "note": "\\Deleted flag has been removed from these messages"
+    }))
+}
+
+/// Tool for expunging deleted messages (permanently removes messages marked with \Deleted)
+pub async fn expunge_tool(
+    session: Arc<dyn AsyncImapOps>,
+    _state: Arc<TokioMutex<McpPortState>>,
+    _params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    // Expunge all deleted messages in the current folder
+    session.expunge().await.map_err(|e| {
+        crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("expunge".to_string()))
+    })?;
+
+    Ok(json!({
+        "success": true,
+        "message": "Successfully expunged all messages marked as deleted",
+        "note": "All messages with \\Deleted flag have been permanently removed from the current folder"
+    }))
+}
+
 // Function to create and populate the registry
 pub fn create_mcp_tool_registry() -> McpToolRegistry {
     let mut registry = McpToolRegistry::new();
@@ -351,6 +501,10 @@ pub fn create_mcp_tool_registry() -> McpToolRegistry {
     registry.register("fetch_emails_with_mime", DefaultMcpTool::new("fetch_emails_with_mime", fetch_emails_with_mime_tool));
     registry.register("atomic_move_message", DefaultMcpTool::new("atomic_move_message", atomic_move_message_tool));
     registry.register("atomic_batch_move", DefaultMcpTool::new("atomic_batch_move", atomic_batch_move_tool));
+    registry.register("mark_as_deleted", DefaultMcpTool::new("mark_as_deleted", mark_as_deleted_tool));
+    registry.register("delete_messages", DefaultMcpTool::new("delete_messages", delete_messages_tool));
+    registry.register("undelete_messages", DefaultMcpTool::new("undelete_messages", undelete_messages_tool));
+    registry.register("expunge", DefaultMcpTool::new("expunge", expunge_tool));
     // ... register other tools like create_folder_tool, delete_folder_tool etc.
     // These tools will need to be defined similar to list_folders_tool
 
