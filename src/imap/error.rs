@@ -6,7 +6,7 @@ use std::fmt;
 use async_imap;
 use tokio_native_tls;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum ImapError {
     #[error("Connection error: {0}")]
     Connection(String),

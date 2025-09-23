@@ -261,7 +261,7 @@ impl From<AsyncImapMailbox> for MailboxInfo {
 }
 
 // Custom SearchCriteria enum (ensure it's public)
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum SearchCriteria {
     All,
     Answered,

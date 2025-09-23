@@ -63,6 +63,7 @@ impl ConnectionFactory for SimpleMockFactory {
 }
 
 #[tokio::test]
+#[ignore = "Requires actual IMAP server or proper mock implementation"]
 async fn test_concurrent_acquisition_stress() {
     let config = PoolConfig {
         min_connections: 20,

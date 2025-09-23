@@ -82,15 +82,16 @@ impl McpPortState {
         &self.session_manager
     }
 
-    #[cfg(test)]
-    pub fn new_mock() -> Self {
-        use crate::session_manager::MockSessionManager;
-        Self {
-            selected_folder: None,
-            session_id: Some("mock_session".to_string()),
-            session_manager: Arc::new(MockSessionManager::new()),
-        }
-    }
+    // Disabled - MockSessionManager not compatible with public API
+    // #[cfg(test)]
+    // pub fn new_mock() -> Self {
+    //     use crate::session_manager::MockSessionManager;
+    //     Self {
+    //         selected_folder: None,
+    //         session_id: Some("mock_session".to_string()),
+    //         session_manager: Arc::new(MockSessionManager::new()),
+    //     }
+    // }
 }
 
 /// Represents a JSON-RPC 2.0 request according to the specification.

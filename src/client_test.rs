@@ -18,8 +18,10 @@ mod tests {
 #[tokio::test]
 async fn test_config_loading() {
     // Test with default configuration
-    let config = Settings::new(None);
-    assert!(config.is_ok());
+    let config = Settings::default();
+    // Default config should have sensible defaults
+    assert!(!config.imap_host.is_empty());
+    assert!(config.imap_port > 0);
 
     // Test with invalid configuration
     let invalid_config = Settings::new(Some("invalid_path"));
@@ -29,7 +31,7 @@ async fn test_config_loading() {
 #[tokio::test]
 async fn test_imap_client_initialization() {
     // Create a mock configuration
-    let mut config = Settings::new(None).unwrap();
+    let mut config = Settings::default();
     config.imap_host = "localhost".to_string();
     config.imap_port = 143;
     config.imap_user = "test@example.com".to_string();
@@ -51,7 +53,7 @@ async fn test_imap_client_initialization() {
 #[tokio::test]
 async fn test_rest_server_configuration() {
     // Create a mock configuration
-    let mut config = Settings::new(None).unwrap();
+    let mut config = Settings::default();
     config.rest = Some(crate::config::RestConfig {
         enabled: true,
         host: "localhost".to_string(),

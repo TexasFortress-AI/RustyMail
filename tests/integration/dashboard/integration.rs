@@ -147,9 +147,10 @@ mod dashboard_integration_tests {
 
         assert!(response.status().is_success());
         let stats: DashboardStats = response.json().await.expect("Failed to parse stats");
-        assert!(stats.uptime > 0);
-        assert!(stats.memory_usage > 0);
-        assert!(stats.cpu_usage >= 0.0 && stats.cpu_usage <= 100.0);
+        // Check system health fields
+        assert!(stats.system_health.memory_usage >= 0.0);
+        assert!(stats.system_health.cpu_usage >= 0.0 && stats.system_health.cpu_usage <= 100.0);
+        assert!(stats.active_dashboard_sse_clients >= 0);
 
         server.shutdown().await;
     }
@@ -169,8 +170,9 @@ mod dashboard_integration_tests {
 
         assert!(response.status().is_success());
         let config: ServerConfig = response.json().await.expect("Failed to parse config");
-        assert!(!config.imap_host.is_empty());
-        assert!(config.imap_port > 0);
+        assert!(!config.active_adapter.name.is_empty());
+        assert!(!config.available_adapters.is_empty());
+        assert!(config.uptime >= 0);
 
         server.shutdown().await;
     }

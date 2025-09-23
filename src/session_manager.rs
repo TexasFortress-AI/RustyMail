@@ -13,7 +13,7 @@ use crate::imap::{ImapClient, ImapError, AsyncImapSessionWrapper};
 pub type SessionResult<T> = Result<T, SessionError>;
 
 /// Errors that can occur during session management
-#[derive(Debug, Error)]
+#[derive(Debug, Error, Clone)]
 pub enum SessionError {
     #[error("Session not found for API key")]
     NotFound,
