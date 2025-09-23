@@ -367,7 +367,7 @@
               "6.1"
             ],
             "details": "Support a range of IMAP search criteria (e.g., subject, sender, date). Ensure search queries are executed asynchronously and results are mapped to message identifiers.",
-            "status": "in-progress",
+            "status": "done",
             "testStrategy": "Run integration tests for various search queries across multiple IMAP servers. Measure search latency and validate result accuracy."
           },
           {
@@ -378,7 +378,7 @@
               "6.2"
             ],
             "details": "Use async-imap fetch methods to retrieve message headers, bodies, and attachments. Parse MIME structure to expose all parts, ensuring correct handling of encodings and nested multiparts.",
-            "status": "pending",
+            "status": "in-progress",
             "testStrategy": "Fetch messages with various MIME structures from different servers. Validate correct parsing and extraction of all parts. Ensure fetch time is <200ms per email."
           },
           {
@@ -1220,7 +1220,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-22T18:21:02.119Z",
+      "updated": "2025-09-23T00:31:09.233Z",
       "description": "Tasks for master context"
     }
   }

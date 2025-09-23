@@ -81,8 +81,11 @@ pub trait AsyncImapOps: Send + Sync + Debug {
     /// Selects a folder for subsequent operations
     async fn select_folder(&self, name: &str) -> Result<(), ImapError>;
     
-    /// Searches for emails matching the given criteria
+    /// Searches for emails matching the given criteria (string-based for backward compatibility)
     async fn search_emails(&self, criteria: &str) -> Result<Vec<u32>, ImapError>;
+
+    /// Searches for emails using structured search criteria
+    async fn search_emails_structured(&self, criteria: &SearchCriteria) -> Result<Vec<u32>, ImapError>;
     
     /// Fetches emails with the given UIDs
     async fn fetch_emails(&self, uids: &[u32]) -> Result<Vec<Email>, ImapError>;
@@ -104,6 +107,9 @@ pub trait AsyncImapOps: Send + Sync + Debug {
 
     /// Copy messages to another folder (for atomic operations)
     async fn copy_messages(&self, uids: &[u32], to_folder: &str) -> Result<(), ImapError>;
+
+    /// Batch move messages atomically from one folder to another
+    async fn move_messages(&self, uids: &[u32], from_folder: &str, to_folder: &str) -> Result<(), ImapError>;
 }
 
 // Wrapper definition using Arc<Mutex<...>>
@@ -290,6 +296,33 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
         Ok(sequence_set.into_iter().collect())
     }
 
+    async fn search_emails_structured(&self, criteria: &SearchCriteria) -> Result<Vec<u32>, ImapError> {
+        // Convert structured criteria to IMAP search string
+        let criteria_string = criteria.to_string();
+
+        // Validate criteria string before sending to server
+        if criteria_string.trim().is_empty() {
+            return Err(ImapError::InvalidCriteria("Empty search criteria".to_string()));
+        }
+
+        debug!("Executing IMAP search with criteria: {}", criteria_string);
+
+        let mut session_guard = self.session.lock().await;
+
+        // Execute the search on the server
+        let sequence_set = session_guard.search(&criteria_string)
+            .await
+            .map_err(|e| {
+                error!("IMAP search failed for criteria '{}': {}", criteria_string, e);
+                ImapError::InvalidCriteria(format!("Search failed: {}", e))
+            })?;
+
+        let results: Vec<u32> = sequence_set.into_iter().collect();
+
+        info!("IMAP search returned {} results for criteria: {}", results.len(), criteria_string);
+        Ok(results)
+    }
+
     async fn fetch_emails(&self, uids: &[u32]) -> Result<Vec<Email>, ImapError> {
         let mut session_guard = self.session.lock().await;
         let sequence = uids.iter().map(|uid| uid.to_string()).collect::<Vec<_>>().join(",");
@@ -442,6 +475,55 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
             .await
             .map_err(|e| ImapError::Other(format!("Failed to copy messages: {}", e)))?;
 
+        Ok(())
+    }
+
+    async fn move_messages(&self, uids: &[u32], from_folder: &str, to_folder: &str) -> Result<(), ImapError> {
+        if uids.is_empty() {
+            return Ok(());
+        }
+
+        // Ensure the source folder is selected
+        self.ensure_folder_selected(from_folder).await?;
+
+        let mut session_guard = self.session.lock().await;
+        let sequence = uids.iter().map(|uid| uid.to_string()).collect::<Vec<_>>().join(",");
+
+        // Try MOVE command first (RFC 6851) - more efficient for batch operations
+        match session_guard.uid_mv(&sequence, to_folder).await {
+            Ok(_) => {
+                debug!("Batch MOVE command succeeded for {} messages", uids.len());
+                return Ok(());
+            }
+            Err(e) => {
+                debug!("Batch MOVE command failed, falling back to COPY+DELETE+EXPUNGE: {:?}", e);
+            }
+        }
+
+        // Fallback: COPY+DELETE+EXPUNGE sequence for batch
+        // Step 1: Copy all messages to destination
+        session_guard.uid_copy(&sequence, to_folder)
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to copy messages: {}", e)))?;
+
+        // Step 2: Mark all as deleted
+        let mut store_stream = session_guard.uid_store(&sequence, "+FLAGS (\\Deleted)")
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to mark messages as deleted: {}", e)))?;
+
+        // Consume the store stream
+        let _store_results: Vec<_> = store_stream
+            .try_collect()
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to process store results: {}", e)))?;
+
+        drop(session_guard); // Release lock before expunge
+
+        // Step 3: Expunge to remove deleted messages
+        self.expunge().await?;
+
+        info!("Successfully moved {} messages from {} to {} using COPY+DELETE+EXPUNGE",
+              uids.len(), from_folder, to_folder);
         Ok(())
     }
 }

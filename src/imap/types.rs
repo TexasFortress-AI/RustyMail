@@ -23,7 +23,7 @@ use crate::imap::session::DEFAULT_MAILBOX_DELIMITER;
 /// Represents an email message in the IMAP system.
 ///
 /// This struct encapsulates all the essential information about an email message,
-/// including its unique identifier, flags, metadata, and content.
+/// including its unique identifier, flags, metadata, and MIME-parsed content.
 ///
 /// # Examples
 ///
@@ -51,6 +51,10 @@ use crate::imap::session::DEFAULT_MAILBOX_DELIMITER;
 ///         message_id: None,
 ///     }),
 ///     body: Some(b"Hello, world!".to_vec()),
+///     mime_parts: vec![],
+///     text_body: Some("Hello, world!".to_string()),
+///     html_body: None,
+///     attachments: vec![],
 /// };
 /// ```
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -65,6 +69,14 @@ pub struct Email {
     pub envelope: Option<Envelope>,
     /// Raw email body content as bytes
     pub body: Option<Vec<u8>>,
+    /// Parsed MIME parts of the email
+    pub mime_parts: Vec<MimePart>,
+    /// Plain text body content (extracted from MIME parts)
+    pub text_body: Option<String>,
+    /// HTML body content (extracted from MIME parts)
+    pub html_body: Option<String>,
+    /// List of attachments (extracted from MIME parts)
+    pub attachments: Vec<MimePart>,
 }
 
 /// Represents an IMAP folder (mailbox) in the email system.
@@ -244,7 +256,7 @@ impl From<AsyncImapMailbox> for MailboxInfo {
 }
 
 // Custom SearchCriteria enum (ensure it's public)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SearchCriteria {
     All,
     Answered,
@@ -294,16 +306,128 @@ impl fmt::Display for SearchCriteria {
             SearchCriteria::Before(date) => write!(f, "BEFORE {}", date.format("%d-%b-%Y")),
             SearchCriteria::On(date) => write!(f, "ON {}", date.format("%d-%b-%Y")),
             SearchCriteria::Since(date) => write!(f, "SINCE {}", date.format("%d-%b-%Y")),
-            SearchCriteria::Body(text) => write!(f, "BODY {}", text),
-            SearchCriteria::From(text) => write!(f, "FROM {}", text),
-            SearchCriteria::Subject(text) => write!(f, "SUBJECT {}", text),
-            SearchCriteria::Text(text) => write!(f, "TEXT {}", text),
-            SearchCriteria::To(text) => write!(f, "TO {}", text),
+            SearchCriteria::Body(text) => write!(f, "BODY \"{}\"", Self::escape_search_text(text)),
+            SearchCriteria::From(text) => write!(f, "FROM \"{}\"", Self::escape_search_text(text)),
+            SearchCriteria::Subject(text) => write!(f, "SUBJECT \"{}\"", Self::escape_search_text(text)),
+            SearchCriteria::Text(text) => write!(f, "TEXT \"{}\"", Self::escape_search_text(text)),
+            SearchCriteria::To(text) => write!(f, "TO \"{}\"", Self::escape_search_text(text)),
             SearchCriteria::Uid(uids) => write!(f, "UID {}", uids.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",")),
             SearchCriteria::And(criteria) => write!(f, "({})", criteria.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(" ")),
             SearchCriteria::Or(criteria) => write!(f, "(OR {})", criteria.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(" ")),
             SearchCriteria::Not(criterion) => write!(f, "NOT {}", criterion),
         }
+    }
+}
+
+impl SearchCriteria {
+    /// Escapes text for IMAP search queries
+    fn escape_search_text(text: &str) -> String {
+        // Escape quotes and backslashes in search text
+        text.replace('\\', "\\\\").replace('"', "\\\"")
+    }
+
+    /// Creates a compound AND search criteria
+    pub fn and(criteria: Vec<SearchCriteria>) -> Self {
+        SearchCriteria::And(criteria)
+    }
+
+    /// Creates a compound OR search criteria
+    pub fn or(criteria: Vec<SearchCriteria>) -> Self {
+        SearchCriteria::Or(criteria)
+    }
+
+    /// Creates a NOT search criteria
+    pub fn not(criterion: SearchCriteria) -> Self {
+        SearchCriteria::Not(Box::new(criterion))
+    }
+
+    /// Helper to create subject search
+    pub fn subject<S: Into<String>>(text: S) -> Self {
+        SearchCriteria::Subject(text.into())
+    }
+
+    /// Helper to create from search
+    pub fn from<S: Into<String>>(text: S) -> Self {
+        SearchCriteria::From(text.into())
+    }
+
+    /// Helper to create to search
+    pub fn to<S: Into<String>>(text: S) -> Self {
+        SearchCriteria::To(text.into())
+    }
+
+    /// Helper to create body search
+    pub fn body<S: Into<String>>(text: S) -> Self {
+        SearchCriteria::Body(text.into())
+    }
+
+    /// Helper to create text search (searches entire message)
+    pub fn text<S: Into<String>>(text: S) -> Self {
+        SearchCriteria::Text(text.into())
+    }
+
+    /// Helper to create date range search
+    pub fn date_range(since: DateTime<Utc>, before: DateTime<Utc>) -> Self {
+        SearchCriteria::And(vec![
+            SearchCriteria::Since(since),
+            SearchCriteria::Before(before),
+        ])
+    }
+}
+
+#[cfg(test)]
+mod search_tests {
+    use super::*;
+    use chrono::{TimeZone, Utc};
+
+    #[test]
+    fn test_search_criteria_display() {
+        // Test simple criteria
+        assert_eq!(SearchCriteria::All.to_string(), "ALL");
+        assert_eq!(SearchCriteria::Unseen.to_string(), "UNSEEN");
+        assert_eq!(SearchCriteria::Flagged.to_string(), "FLAGGED");
+
+        // Test text criteria with proper quoting
+        assert_eq!(SearchCriteria::Subject("test".to_string()).to_string(), "SUBJECT \"test\"");
+        assert_eq!(SearchCriteria::From("user@example.com".to_string()).to_string(), "FROM \"user@example.com\"");
+        assert_eq!(SearchCriteria::Body("hello world".to_string()).to_string(), "BODY \"hello world\"");
+
+        // Test text escaping
+        assert_eq!(SearchCriteria::Subject("test \"quoted\"".to_string()).to_string(), "SUBJECT \"test \\\"quoted\\\"\"");
+    }
+
+    #[test]
+    fn test_search_criteria_compound() {
+        let criteria = SearchCriteria::And(vec![
+            SearchCriteria::From("sender@example.com".to_string()),
+            SearchCriteria::Unseen,
+        ]);
+        assert_eq!(criteria.to_string(), "(FROM \"sender@example.com\" UNSEEN)");
+
+        let or_criteria = SearchCriteria::Or(vec![
+            SearchCriteria::Subject("urgent".to_string()),
+            SearchCriteria::Subject("important".to_string()),
+        ]);
+        assert_eq!(or_criteria.to_string(), "(OR SUBJECT \"urgent\" SUBJECT \"important\")");
+    }
+
+    #[test]
+    fn test_search_criteria_dates() {
+        let date = Utc.with_ymd_and_hms(2024, 1, 15, 0, 0, 0).unwrap();
+        assert_eq!(SearchCriteria::Since(date).to_string(), "SINCE 15-Jan-2024");
+        assert_eq!(SearchCriteria::Before(date).to_string(), "BEFORE 15-Jan-2024");
+    }
+
+    #[test]
+    fn test_search_criteria_helpers() {
+        assert_eq!(SearchCriteria::subject("test"), SearchCriteria::Subject("test".to_string()));
+        assert_eq!(SearchCriteria::from("user@example.com"), SearchCriteria::From("user@example.com".to_string()));
+
+        let and_criteria = SearchCriteria::and(vec![
+            SearchCriteria::Unseen,
+            SearchCriteria::subject("important"),
+        ]);
+        assert!(matches!(and_criteria, SearchCriteria::And(_)));
     }
 }
 
@@ -419,6 +543,99 @@ pub struct Address {
     pub host: Option<String>,
 }
 
+/// Represents a MIME part within an email message.
+///
+/// This struct represents a single part of a MIME multipart message,
+/// including its headers, content type, and body content.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MimePart {
+    /// Content-Type header information
+    pub content_type: ContentType,
+    /// Content-Transfer-Encoding (e.g., "7bit", "8bit", "binary", "quoted-printable", "base64")
+    pub content_transfer_encoding: Option<String>,
+    /// Content-Disposition (e.g., "inline", "attachment")
+    pub content_disposition: Option<ContentDisposition>,
+    /// Content-ID for referencing this part
+    pub content_id: Option<String>,
+    /// Content-Description
+    pub content_description: Option<String>,
+    /// Raw headers for this part
+    pub headers: HashMap<String, String>,
+    /// Decoded body content as bytes
+    pub body: Vec<u8>,
+    /// Text content if this part is text-based
+    pub text_content: Option<String>,
+    /// Child parts for multipart content
+    pub parts: Vec<MimePart>,
+}
+
+/// Represents a Content-Type header.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContentType {
+    /// Main type (e.g., "text", "image", "application")
+    pub main_type: String,
+    /// Sub type (e.g., "plain", "html", "jpeg", "pdf")
+    pub sub_type: String,
+    /// Parameters (e.g., charset=utf-8, boundary=xyz)
+    pub parameters: HashMap<String, String>,
+}
+
+impl ContentType {
+    /// Returns the full content type as a string (e.g., "text/plain")
+    pub fn mime_type(&self) -> String {
+        format!("{}/{}", self.main_type, self.sub_type)
+    }
+
+    /// Checks if this is a text content type
+    pub fn is_text(&self) -> bool {
+        self.main_type == "text"
+    }
+
+    /// Checks if this is a multipart content type
+    pub fn is_multipart(&self) -> bool {
+        self.main_type == "multipart"
+    }
+
+    /// Gets the charset parameter, defaulting to "utf-8" for text types
+    pub fn charset(&self) -> String {
+        self.parameters.get("charset")
+            .cloned()
+            .unwrap_or_else(|| {
+                if self.is_text() {
+                    "utf-8".to_string()
+                } else {
+                    "us-ascii".to_string()
+                }
+            })
+    }
+
+    /// Gets the boundary parameter for multipart types
+    pub fn boundary(&self) -> Option<&String> {
+        self.parameters.get("boundary")
+    }
+}
+
+/// Represents a Content-Disposition header.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContentDisposition {
+    /// Disposition type ("inline", "attachment", etc.)
+    pub disposition_type: String,
+    /// Parameters (e.g., filename="document.pdf")
+    pub parameters: HashMap<String, String>,
+}
+
+impl ContentDisposition {
+    /// Checks if this is an attachment
+    pub fn is_attachment(&self) -> bool {
+        self.disposition_type == "attachment"
+    }
+
+    /// Gets the filename parameter
+    pub fn filename(&self) -> Option<&String> {
+        self.parameters.get("filename")
+    }
+}
+
 impl Email {
     pub fn from_fetch(fetch: &Fetch) -> Result<Self, ImapError> {
         // Handle flags - fetch.flags() returns an iterator
@@ -442,12 +659,26 @@ impl Email {
             .and_then(|d| DateTime::parse_from_rfc2822(&d.to_string()).ok())
             .map(|dt| dt.with_timezone(&Utc));
 
+        // Get raw body content
+        let body = fetch.body().map(|b| b.to_vec());
+
+        // Parse MIME content if body is available
+        let (mime_parts, text_body, html_body, attachments) = if let Some(body_bytes) = &body {
+            Self::parse_mime_content(body_bytes)?
+        } else {
+            (Vec::new(), None, None, Vec::new())
+        };
+
         Ok(Self {
             uid: fetch.uid.unwrap_or(0),
             flags,
             internal_date,
             envelope,
-            body: None, // Body handling would go here
+            body,
+            mime_parts,
+            text_body,
+            html_body,
+            attachments,
         })
     }
 
@@ -459,6 +690,120 @@ impl Email {
             host: addr.host.as_ref().map(|s| String::from_utf8_lossy(s).to_string()),
         }
     }
+
+    /// Parses MIME content from raw email body
+    fn parse_mime_content(body_bytes: &[u8]) -> Result<(Vec<MimePart>, Option<String>, Option<String>, Vec<MimePart>), ImapError> {
+        use mail_parser::Message;
+
+        // Parse the email message
+        let message = Message::parse(body_bytes)
+            .ok_or_else(|| ImapError::Parse("Failed to parse email message".to_string()))?;
+
+        let mut mime_parts = Vec::new();
+        let mut text_body = None;
+        let mut html_body = None;
+        let mut attachments = Vec::new();
+
+        // Extract text and HTML bodies directly from the message
+        text_body = message.body_text(0).map(|s| s.to_string());
+        html_body = message.body_html(0).map(|s| s.to_string());
+
+        // Process attachments
+        for i in 0..message.attachment_count() {
+            if let Some(attachment) = message.attachment(i) {
+                let mime_part = Self::create_attachment_mime_part(attachment);
+                attachments.push(mime_part.clone());
+                mime_parts.push(mime_part);
+            }
+        }
+
+        Ok((mime_parts, text_body, html_body, attachments))
+    }
+
+    /// Create a MIME part from an attachment
+    fn create_attachment_mime_part(attachment: &mail_parser::MessagePart) -> MimePart {
+        use mail_parser::MimeHeaders;
+
+        // Get content type information
+        let content_type = if let Some(ct) = attachment.content_type() {
+            ContentType {
+                main_type: ct.c_type.to_string(),
+                sub_type: ct.c_subtype.as_ref().map(|s| s.to_string()).unwrap_or_else(|| "octet-stream".to_string()),
+                parameters: HashMap::new(), // TODO: Extract parameters from mail_parser::ContentType
+            }
+        } else {
+            ContentType {
+                main_type: "application".to_string(),
+                sub_type: "octet-stream".to_string(),
+                parameters: HashMap::new(),
+            }
+        };
+
+        // Get content disposition
+        let content_disposition = attachment.attachment_name()
+            .map(|name| ContentDisposition {
+                disposition_type: "attachment".to_string(),
+                parameters: {
+                    let mut params = HashMap::new();
+                    params.insert("filename".to_string(), name.to_string());
+                    params
+                },
+            });
+
+        // Get the body content
+        let body = attachment.contents().to_vec();
+
+        // Extract headers (simplified)
+        let mut headers = HashMap::new();
+        if let Some(name) = attachment.attachment_name() {
+            headers.insert("Content-Disposition".to_string(),
+                format!("attachment; filename=\"{}\"", name));
+        }
+
+        // Try to decode text content if it's a text type
+        let text_content = if content_type.is_text() {
+            String::from_utf8(body.clone()).ok()
+        } else {
+            None
+        };
+
+        MimePart {
+            content_type,
+            content_transfer_encoding: None, // Could be extracted from headers
+            content_disposition,
+            content_id: None, // Could be extracted from headers
+            content_description: None, // Could be extracted from headers
+            headers,
+            body,
+            text_content,
+            parts: Vec::new(), // Attachments don't have nested parts in this context
+        }
+    }
+
+    /// Parse content type from header string (simplified version)
+    fn parse_content_type_from_header(header: &str) -> ContentType {
+        let mut parts = header.split(';');
+        let mime_type = parts.next().unwrap_or("application/octet-stream").trim();
+        let mut type_parts = mime_type.split('/');
+        let main_type = type_parts.next().unwrap_or("application").to_string();
+        let sub_type = type_parts.next().unwrap_or("octet-stream").to_string();
+
+        let mut parameters = HashMap::new();
+        for param in parts {
+            if let Some((key, value)) = param.split_once('=') {
+                let key = key.trim().to_string();
+                let value = value.trim().trim_matches('"').to_string();
+                parameters.insert(key, value);
+            }
+        }
+
+        ContentType {
+            main_type,
+            sub_type,
+            parameters,
+        }
+    }
+
 }
 
 impl From<Fetch> for Email {
@@ -487,12 +832,26 @@ impl From<Fetch> for Email {
 
         let body = fetch.body().map(|b| b.to_vec());
 
+        // Parse MIME content if body is available
+        let (mime_parts, text_body, html_body, attachments) = if let Some(body_bytes) = &body {
+            Email::parse_mime_content(body_bytes).unwrap_or_else(|_| {
+                // If MIME parsing fails, return empty structures
+                (Vec::new(), None, None, Vec::new())
+            })
+        } else {
+            (Vec::new(), None, None, Vec::new())
+        };
+
         Self {
             uid,
             flags,
             internal_date,
             envelope,
             body,
+            mime_parts,
+            text_body,
+            html_body,
+            attachments,
         }
     }
 }

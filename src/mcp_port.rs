@@ -173,7 +173,172 @@ pub async fn list_folders_hierarchical_tool(
     Ok(serde_json::to_value(folders).map_err(|e| JsonRpcError::internal_error(e.to_string()))?)
 }
 
-// ... Implement other tools similarly, receiving state ...
+/// Tool for structured email search
+pub async fn search_emails_tool(
+    session: Arc<dyn AsyncImapOps>,
+    _state: Arc<TokioMutex<McpPortState>>,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let search_criteria = if let Some(p) = params {
+        // Try to deserialize search criteria from params
+        serde_json::from_value::<crate::imap::types::SearchCriteria>(p.clone())
+            .map_err(|e| JsonRpcError::invalid_params(format!("Invalid search criteria: {}", e)))?
+    } else {
+        // Default to All if no criteria provided
+        crate::imap::types::SearchCriteria::All
+    };
+
+    let message_ids = session.search_emails_structured(&search_criteria).await.map_err(|e| {
+        // Create error with structured details including operation context
+        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("search_emails".to_string()));
+        // Add search criteria to the error data
+        if let Some(data) = error.data.as_mut() {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("search_criteria".to_string(), serde_json::to_value(&search_criteria).unwrap_or_default());
+            }
+        }
+        error
+    })?;
+
+    Ok(serde_json::to_value(message_ids).map_err(|e| JsonRpcError::internal_error(e.to_string()))?)
+}
+
+/// Tool for fetching emails with MIME part handling
+pub async fn fetch_emails_with_mime_tool(
+    session: Arc<dyn AsyncImapOps>,
+    _state: Arc<TokioMutex<McpPortState>>,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    // Extract UIDs from params
+    let uids = if let Some(p) = params {
+        if let Some(uids_array) = p.get("uids") {
+            if let Some(uids_vec) = uids_array.as_array() {
+                uids_vec.iter()
+                    .filter_map(|v| v.as_u64().map(|u| u as u32))
+                    .collect::<Vec<u32>>()
+            } else {
+                return Err(JsonRpcError::invalid_params("uids must be an array of numbers"));
+            }
+        } else {
+            return Err(JsonRpcError::invalid_params("uids parameter is required"));
+        }
+    } else {
+        return Err(JsonRpcError::invalid_params("Parameters with uids are required"));
+    };
+
+    // Fetch emails with MIME parsing
+    let emails = session.fetch_emails(&uids).await.map_err(|e| {
+        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("fetch_emails".to_string()));
+        if let Some(data) = error.data.as_mut() {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("uids".to_string(), serde_json::to_value(&uids).unwrap_or_default());
+            }
+        }
+        error
+    })?;
+
+    Ok(serde_json::to_value(emails).map_err(|e| JsonRpcError::internal_error(e.to_string()))?)
+}
+
+/// Tool for atomic move operations (single message)
+pub async fn atomic_move_message_tool(
+    session: Arc<dyn AsyncImapOps>,
+    _state: Arc<TokioMutex<McpPortState>>,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
+
+    // Extract parameters
+    let uid = params.get("uid")
+        .and_then(|v| v.as_u64())
+        .map(|u| u as u32)
+        .ok_or_else(|| JsonRpcError::invalid_params("uid parameter is required as number"))?;
+
+    let from_folder = params.get("from_folder")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| JsonRpcError::invalid_params("from_folder parameter is required as string"))?;
+
+    let to_folder = params.get("to_folder")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| JsonRpcError::invalid_params("to_folder parameter is required as string"))?;
+
+    // Perform atomic move operation
+    session.move_email(uid, from_folder, to_folder).await.map_err(|e| {
+        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("atomic_move_message".to_string()));
+        if let Some(data) = error.data.as_mut() {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("uid".to_string(), serde_json::to_value(&uid).unwrap_or_default());
+                obj.insert("from_folder".to_string(), serde_json::Value::String(from_folder.to_string()));
+                obj.insert("to_folder".to_string(), serde_json::Value::String(to_folder.to_string()));
+            }
+        }
+        error
+    })?;
+
+    Ok(json!({
+        "success": true,
+        "message": format!("Successfully moved message UID {} from {} to {}", uid, from_folder, to_folder),
+        "uid": uid,
+        "from_folder": from_folder,
+        "to_folder": to_folder
+    }))
+}
+
+/// Tool for atomic batch move operations (multiple messages)
+pub async fn atomic_batch_move_tool(
+    session: Arc<dyn AsyncImapOps>,
+    _state: Arc<TokioMutex<McpPortState>>,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
+
+    // Extract UIDs
+    let uids = if let Some(uids_array) = params.get("uids") {
+        if let Some(uids_vec) = uids_array.as_array() {
+            uids_vec.iter()
+                .filter_map(|v| v.as_u64().map(|u| u as u32))
+                .collect::<Vec<u32>>()
+        } else {
+            return Err(JsonRpcError::invalid_params("uids must be an array of numbers"));
+        }
+    } else {
+        return Err(JsonRpcError::invalid_params("uids parameter is required"));
+    };
+
+    if uids.is_empty() {
+        return Err(JsonRpcError::invalid_params("At least one UID must be provided"));
+    }
+
+    let from_folder = params.get("from_folder")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| JsonRpcError::invalid_params("from_folder parameter is required as string"))?;
+
+    let to_folder = params.get("to_folder")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| JsonRpcError::invalid_params("to_folder parameter is required as string"))?;
+
+    // Use the efficient batch move method
+    session.move_messages(&uids, from_folder, to_folder).await.map_err(|e| {
+        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("atomic_batch_move".to_string()));
+        if let Some(data) = error.data.as_mut() {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("uids".to_string(), serde_json::to_value(&uids).unwrap_or_default());
+                obj.insert("from_folder".to_string(), serde_json::Value::String(from_folder.to_string()));
+                obj.insert("to_folder".to_string(), serde_json::Value::String(to_folder.to_string()));
+            }
+        }
+        error
+    })?;
+
+    Ok(json!({
+        "success": true,
+        "message": format!("Successfully moved {} messages from {} to {}",
+            uids.len(), from_folder, to_folder),
+        "moved_uids": uids,
+        "from_folder": from_folder,
+        "to_folder": to_folder
+    }))
+}
 
 // Function to create and populate the registry
 pub fn create_mcp_tool_registry() -> McpToolRegistry {
@@ -182,6 +347,10 @@ pub fn create_mcp_tool_registry() -> McpToolRegistry {
     // Register tools using the DefaultMcpTool::new constructor
     registry.register("list_folders", DefaultMcpTool::new("list_folders", list_folders_tool));
     registry.register("list_folders_hierarchical", DefaultMcpTool::new("list_folders_hierarchical", list_folders_hierarchical_tool));
+    registry.register("search_emails", DefaultMcpTool::new("search_emails", search_emails_tool));
+    registry.register("fetch_emails_with_mime", DefaultMcpTool::new("fetch_emails_with_mime", fetch_emails_with_mime_tool));
+    registry.register("atomic_move_message", DefaultMcpTool::new("atomic_move_message", atomic_move_message_tool));
+    registry.register("atomic_batch_move", DefaultMcpTool::new("atomic_batch_move", atomic_batch_move_tool));
     // ... register other tools like create_folder_tool, delete_folder_tool etc.
     // These tools will need to be defined similar to list_folders_tool
 

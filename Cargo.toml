@@ -73,6 +73,9 @@ urlencoding = "2.1"
 # Added base64 dependency
 base64 = "0.21"
 
+# MIME parsing
+mail-parser = "0.8"
+
 # Dashboard dependencies
 sysinfo = "0.30" # For system metrics
 rand = "0.8" # For random number generation in example metrics

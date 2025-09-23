@@ -24,6 +24,7 @@ pub mod prelude {
         types::{
             Address, AppendEmailPayload, Email, Envelope, FlagOperation, Flags,
             Folder, MailboxInfo, ModifyFlagsPayload, SearchCriteria,
+            MimePart, ContentType, ContentDisposition,
         },
         ImapSessionFactory, CloneableImapSessionFactory,
     };
