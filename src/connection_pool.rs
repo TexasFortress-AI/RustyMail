@@ -1,12 +1,14 @@
-use std::collections::VecDeque;
+use std::collections::{VecDeque, HashMap};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use log::{debug, error, info, warn};
 use thiserror::Error;
-use tokio::sync::{Mutex as TokioMutex, Semaphore};
+use tokio::sync::{Mutex as TokioMutex, Semaphore, RwLock};
 use tokio::time::sleep;
+use uuid::Uuid;
 
 use crate::imap::{ImapClient, ImapError, AsyncImapSessionWrapper};
 
@@ -51,22 +53,26 @@ impl Default for PoolConfig {
 }
 
 /// A pooled connection with metadata
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct PooledConnection {
+    id: Uuid,
     client: Arc<ImapClient<AsyncImapSessionWrapper>>,
     created_at: Instant,
     last_used: Instant,
     is_healthy: bool,
+    in_use: bool,
 }
 
 impl PooledConnection {
     fn new(client: Arc<ImapClient<AsyncImapSessionWrapper>>) -> Self {
         let now = Instant::now();
         Self {
+            id: Uuid::new_v4(),
             client,
             created_at: now,
             last_used: now,
             is_healthy: true,
+            in_use: false,
         }
     }
 
@@ -76,6 +82,50 @@ impl PooledConnection {
 
     fn is_expired(&self, idle_timeout: Duration) -> bool {
         self.last_used.elapsed() > idle_timeout
+    }
+
+    fn mark_in_use(&mut self) {
+        self.in_use = true;
+        self.touch();
+    }
+
+    fn mark_available(&mut self) {
+        self.in_use = false;
+        self.touch();
+    }
+}
+
+/// Session handle that ensures proper lifecycle management
+pub struct SessionHandle {
+    connection_id: Uuid,
+    client: Arc<ImapClient<AsyncImapSessionWrapper>>,
+    pool: Arc<ConnectionPool>,
+}
+
+impl SessionHandle {
+    fn new(connection_id: Uuid, client: Arc<ImapClient<AsyncImapSessionWrapper>>, pool: Arc<ConnectionPool>) -> Self {
+        Self {
+            connection_id,
+            client,
+            pool,
+        }
+    }
+
+    /// Get the underlying IMAP client
+    pub fn client(&self) -> &Arc<ImapClient<AsyncImapSessionWrapper>> {
+        &self.client
+    }
+}
+
+impl Drop for SessionHandle {
+    fn drop(&mut self) {
+        // Return connection to pool when handle is dropped
+        let pool = Arc::clone(&self.pool);
+        let connection_id = self.connection_id;
+
+        tokio::spawn(async move {
+            pool.release_connection(connection_id).await;
+        });
     }
 }
 
@@ -119,8 +169,10 @@ impl ConnectionFactory for ImapConnectionFactory {
 
 /// Connection pool implementation using Arc<TokioMutex<>>
 pub struct ConnectionPool {
-    /// Available connections
-    connections: Arc<TokioMutex<VecDeque<PooledConnection>>>,
+    /// All connections (both available and in-use)
+    connections: Arc<RwLock<HashMap<Uuid, PooledConnection>>>,
+    /// Queue of available connection IDs
+    available: Arc<TokioMutex<VecDeque<Uuid>>>,
     /// Factory for creating new connections
     factory: Arc<dyn ConnectionFactory>,
     /// Pool configuration
@@ -129,8 +181,11 @@ pub struct ConnectionPool {
     semaphore: Arc<Semaphore>,
     /// Flag to indicate if pool is shutting down
     is_shutting_down: Arc<TokioMutex<bool>>,
-    /// Active connection count
-    active_count: Arc<TokioMutex<usize>>,
+    /// Statistics
+    total_created: Arc<AtomicUsize>,
+    total_acquired: Arc<AtomicUsize>,
+    total_released: Arc<AtomicUsize>,
+    current_active: Arc<AtomicUsize>,
 }
 
 impl ConnectionPool {
@@ -138,12 +193,16 @@ impl ConnectionPool {
     pub fn new(factory: Arc<dyn ConnectionFactory>, config: PoolConfig) -> Arc<Self> {
         let semaphore = Arc::new(Semaphore::new(config.max_connections));
         let pool = Arc::new(Self {
-            connections: Arc::new(TokioMutex::new(VecDeque::new())),
+            connections: Arc::new(RwLock::new(HashMap::new())),
+            available: Arc::new(TokioMutex::new(VecDeque::new())),
             factory,
             config: config.clone(),
             semaphore,
             is_shutting_down: Arc::new(TokioMutex::new(false)),
-            active_count: Arc::new(TokioMutex::new(0)),
+            total_created: Arc::new(AtomicUsize::new(0)),
+            total_acquired: Arc::new(AtomicUsize::new(0)),
+            total_released: Arc::new(AtomicUsize::new(0)),
+            current_active: Arc::new(AtomicUsize::new(0)),
         });
 
         // Start background tasks
@@ -157,67 +216,113 @@ impl ConnectionPool {
             pool_clone.health_check_loop().await;
         });
 
+        // Pre-warm the pool with minimum connections
+        let pool_clone = Arc::clone(&pool);
+        tokio::spawn(async move {
+            for _ in 0..pool_clone.config.min_connections {
+                if let Err(e) = pool_clone.create_connection().await {
+                    warn!("Failed to pre-warm connection: {}", e);
+                }
+            }
+        });
+
         pool
     }
 
-    /// Acquire a connection from the pool
-    pub async fn acquire(&self) -> Result<Arc<ImapClient<AsyncImapSessionWrapper>>, PoolError> {
+    /// Create a new connection and add to pool
+    async fn create_connection(&self) -> Result<Uuid, PoolError> {
+        // Check semaphore
+        let _permit = self.semaphore.acquire().await
+            .map_err(|_| PoolError::PoolExhausted)?;
+
+        // Create new connection
+        let client = self.factory.create().await
+            .map_err(|e| PoolError::ConnectionFailed(e.to_string()))?;
+
+        let conn = PooledConnection::new(client);
+        let conn_id = conn.id;
+
+        // Add to connections map
+        self.connections.write().await.insert(conn_id, conn);
+
+        // Add to available queue
+        self.available.lock().await.push_back(conn_id);
+
+        self.total_created.fetch_add(1, Ordering::SeqCst);
+        info!("Created new connection {}", conn_id);
+
+        Ok(conn_id)
+    }
+
+    /// Acquire a session handle from the pool
+    pub async fn acquire(self: Arc<Self>) -> Result<SessionHandle, PoolError> {
         // Check if shutting down
         if *self.is_shutting_down.lock().await {
             return Err(PoolError::ShuttingDown);
         }
 
-        // Try to get an existing connection
-        let mut connections = self.connections.lock().await;
-        while let Some(mut conn) = connections.pop_front() {
-            if !conn.is_expired(self.config.idle_timeout) && conn.is_healthy {
-                conn.touch();
-                let client = conn.client.clone();
+        // Try to get an available connection
+        loop {
+            let conn_id = {
+                let mut available = self.available.lock().await;
+                available.pop_front()
+            };
 
-                // Track active connection
-                *self.active_count.lock().await += 1;
+            if let Some(conn_id) = conn_id {
+                let mut connections = self.connections.write().await;
+                if let Some(conn) = connections.get_mut(&conn_id) {
+                    // Check if connection is still valid
+                    if !conn.is_expired(self.config.idle_timeout) && conn.is_healthy {
+                        conn.mark_in_use();
+                        let client = conn.client.clone();
 
-                // Return connection to pool when done
-                let connections_clone = Arc::clone(&self.connections);
-                let active_count_clone = Arc::clone(&self.active_count);
-                let conn_wrapper = conn;
+                        self.total_acquired.fetch_add(1, Ordering::SeqCst);
+                        self.current_active.fetch_add(1, Ordering::SeqCst);
 
-                tokio::spawn(async move {
-                    // In a real implementation, we'd use a guard pattern here
-                    // For now, we'll just return the connection immediately
-                    connections_clone.lock().await.push_back(conn_wrapper);
-                    *active_count_clone.lock().await -= 1;
-                });
-
-                debug!("Acquired connection from pool");
-                return Ok(client);
+                        debug!("Acquired connection {} from pool", conn_id);
+                        return Ok(SessionHandle::new(conn_id, client, Arc::clone(&self)));
+                    } else {
+                        // Remove expired/unhealthy connection
+                        connections.remove(&conn_id);
+                        debug!("Removed expired/unhealthy connection {}", conn_id);
+                    }
+                }
+            } else {
+                // No available connections, try to create a new one
+                let total = self.connections.read().await.len();
+                if total < self.config.max_connections {
+                    match self.create_connection().await {
+                        Ok(new_conn_id) => {
+                            // Try to acquire the newly created connection
+                            continue;
+                        }
+                        Err(e) => {
+                            error!("Failed to create new connection: {}", e);
+                            return Err(e);
+                        }
+                    }
+                } else {
+                    warn!("Connection pool exhausted");
+                    return Err(PoolError::PoolExhausted);
+                }
             }
         }
-        drop(connections);
+    }
 
-        // No available connection, try to create a new one
-        let permit = self.semaphore.try_acquire();
-        if permit.is_err() {
-            warn!("Connection pool exhausted");
-            return Err(PoolError::PoolExhausted);
-        }
+    /// Release a connection back to the pool
+    async fn release_connection(&self, connection_id: Uuid) {
+        let mut connections = self.connections.write().await;
+        if let Some(conn) = connections.get_mut(&connection_id) {
+            conn.mark_available();
+            drop(connections); // Release write lock
 
-        // Create new connection
-        match self.factory.create().await {
-            Ok(client) => {
-                info!("Created new connection for pool");
-                *self.active_count.lock().await += 1;
+            self.available.lock().await.push_back(connection_id);
+            self.total_released.fetch_add(1, Ordering::SeqCst);
+            self.current_active.fetch_sub(1, Ordering::SeqCst);
 
-                // Store for reuse
-                let conn = PooledConnection::new(client.clone());
-                self.connections.lock().await.push_back(conn);
-
-                Ok(client)
-            }
-            Err(e) => {
-                error!("Failed to create connection: {}", e);
-                Err(PoolError::ConnectionFailed(e.to_string()))
-            }
+            debug!("Released connection {} back to pool", connection_id);
+        } else {
+            warn!("Attempted to release unknown connection {}", connection_id);
         }
     }
 
@@ -228,29 +333,42 @@ impl ConnectionPool {
                 break;
             }
 
-            let pool_size = self.connections.lock().await.len();
-            let active = *self.active_count.lock().await;
-            let total = pool_size + active;
+            let total_connections = self.connections.read().await.len();
+            let active = self.current_active.load(Ordering::SeqCst);
 
-            if total < self.config.min_connections {
-                let needed = self.config.min_connections - total;
+            if total_connections < self.config.min_connections {
+                let needed = self.config.min_connections - total_connections;
                 debug!("Pool below minimum, creating {} connections", needed);
 
                 for _ in 0..needed {
-                    if let Ok(client) = self.factory.create().await {
-                        let conn = PooledConnection::new(client);
-                        self.connections.lock().await.push_back(conn);
+                    if let Err(e) = self.create_connection().await {
+                        warn!("Failed to maintain minimum pool size: {}", e);
                     }
                 }
             }
 
             // Clean up expired connections
-            let mut connections = self.connections.lock().await;
-            connections.retain(|conn| {
-                !conn.is_expired(self.config.idle_timeout)
-            });
+            let mut expired_ids = Vec::new();
+            {
+                let connections = self.connections.read().await;
+                for (id, conn) in connections.iter() {
+                    if conn.is_expired(self.config.idle_timeout) && !conn.in_use {
+                        expired_ids.push(*id);
+                    }
+                }
+            }
 
-            drop(connections);
+            if !expired_ids.is_empty() {
+                let mut connections = self.connections.write().await;
+                let mut available = self.available.lock().await;
+
+                for id in expired_ids {
+                    connections.remove(&id);
+                    available.retain(|&conn_id| conn_id != id);
+                    debug!("Removed expired connection {}", id);
+                }
+            }
+
             sleep(Duration::from_secs(10)).await;
         }
     }
@@ -264,18 +382,26 @@ impl ConnectionPool {
 
             sleep(self.config.health_check_interval).await;
 
-            let mut connections = self.connections.lock().await;
-            for conn in connections.iter_mut() {
-                // In a real implementation, we'd perform an actual health check
-                // For now, we'll just mark connections older than 5 minutes as potentially unhealthy
-                if conn.created_at.elapsed() > Duration::from_secs(300) {
-                    conn.is_healthy = false;
-                    debug!("Marked connection as unhealthy");
+            let mut unhealthy_ids = Vec::new();
+            {
+                let mut connections = self.connections.write().await;
+                for (id, conn) in connections.iter_mut() {
+                    // In a real implementation, we'd perform an actual health check
+                    // For now, mark connections older than 5 minutes as potentially unhealthy
+                    if conn.created_at.elapsed() > Duration::from_secs(300) && !conn.in_use {
+                        conn.is_healthy = false;
+                        unhealthy_ids.push(*id);
+                        debug!("Marked connection {} as unhealthy", id);
+                    }
                 }
             }
 
-            // Remove unhealthy connections
-            connections.retain(|conn| conn.is_healthy);
+            // Remove unhealthy connections from available queue
+            if !unhealthy_ids.is_empty() {
+                let mut available = self.available.lock().await;
+                available.retain(|id| !unhealthy_ids.contains(id));
+                info!("Removed {} unhealthy connections from available queue", unhealthy_ids.len());
+            }
         }
     }
 
@@ -285,20 +411,43 @@ impl ConnectionPool {
         *self.is_shutting_down.lock().await = true;
 
         // Clear all connections
-        self.connections.lock().await.clear();
+        self.connections.write().await.clear();
+        self.available.lock().await.clear();
+
+        info!("Connection pool shutdown complete");
     }
 
     /// Get pool statistics
     pub async fn stats(&self) -> PoolStats {
-        let available = self.connections.lock().await.len();
-        let active = *self.active_count.lock().await;
+        let connections = self.connections.read().await;
+        let total = connections.len();
+        let active = self.current_active.load(Ordering::SeqCst);
+        let available = self.available.lock().await.len();
 
         PoolStats {
             available_connections: available,
             active_connections: active,
-            total_connections: available + active,
+            total_connections: total,
             max_connections: self.config.max_connections,
+            total_created: self.total_created.load(Ordering::SeqCst),
+            total_acquired: self.total_acquired.load(Ordering::SeqCst),
+            total_released: self.total_released.load(Ordering::SeqCst),
         }
+    }
+
+    /// Get detailed session information
+    pub async fn get_sessions(&self) -> Vec<SessionInfo> {
+        let connections = self.connections.read().await;
+        connections
+            .values()
+            .map(|conn| SessionInfo {
+                id: conn.id,
+                created_at: conn.created_at,
+                last_used: conn.last_used,
+                is_healthy: conn.is_healthy,
+                in_use: conn.in_use,
+            })
+            .collect()
     }
 }
 
@@ -309,6 +458,19 @@ pub struct PoolStats {
     pub active_connections: usize,
     pub total_connections: usize,
     pub max_connections: usize,
+    pub total_created: usize,
+    pub total_acquired: usize,
+    pub total_released: usize,
+}
+
+/// Information about a session
+#[derive(Debug, Clone)]
+pub struct SessionInfo {
+    pub id: Uuid,
+    pub created_at: Instant,
+    pub last_used: Instant,
+    pub is_healthy: bool,
+    pub in_use: bool,
 }
 
 #[cfg(test)]
