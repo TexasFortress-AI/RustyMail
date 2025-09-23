@@ -6,111 +6,135 @@ use crate::prelude::CloneableImapSessionFactory;
 use std::collections::HashMap;
 use tokio::sync::Mutex as TokioMutex;
 use serde_json::{Value, json};
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 
-// Declare mcp_port as a module
-// use crate::mcp_port; // Use the module
-
-// Import our McpTool trait and the updated registry creator
-// use crate::mcp_port::{McpTool, create_mcp_tool_registry};
-// Import McpTool from where it is currently defined (assuming crate::mcp::tool or similar)
-// TODO: Verify correct location of McpTool if it still exists
-
-// Use re-exported MCP types
-use crate::mcp::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError, McpHandler};
-// McpResult might need adjustment if it used McpPortError
-// type McpResult = Result<Value, McpPortError>; // Example old definition
-type McpResult = Result<Value, JsonRpcError>; // Use JsonRpcError
-
-// Import session factory type correctly
-// use crate::imap::ImapSessionFactory;
-// Import UnboundedSender correctly
-use tokio::sync::mpsc::UnboundedSender;
-use crate::imap::client::ImapClient;
-use crate::imap::error::ImapError;
-// Remove import of non-existent McpPortError
-// use crate::mcp_port::McpPortError; 
-
-// --- MCP SDK Integration --- 
-// Stub out or remove rmcp imports if the crate is not used
-/*
+// Import RMCP SDK types
 use rmcp::{
-    model::{Request as SdkRequest, Response as SdkResponse, Error as SdkError, Id as SdkId, ErrorCode as SdkErrorCode, ResponsePayload as SdkResponsePayload, MethodRegistry, ParamsSpec, Param},
-    server::{Server as SdkServer, ToolRegistry as SdkToolRegistry, Tool as SdkTool, Context as SdkContext, Error as SdkServerError, RpcToolError}, // Import RpcToolError
+    model::*,
+    service::RequestContext,
+    ServerHandler,
+    RoleServer,
 };
-*/
-// --- End MCP SDK Integration ---
 
-// Remove McpParams import
-// use rmcp::model::params::McpParams;
+// Use our MCP types
+use crate::mcp::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError, McpHandler};
+use crate::mcp_port::{McpTool, create_mcp_tool_registry};
 
-// --- Define SDK Context --- 
-#[derive(Clone)] // rmcp might require Context to be Clone
-pub struct RustyMailContext {
-    // State specific to this request/connection
-    pub port_state: McpPortState,
+// Import session types
+use tokio::sync::mpsc::UnboundedSender;
+use crate::imap::error::ImapError;
+
+// --- RustyMail Service Implementation ---
+#[derive(Clone)]
+pub struct RustyMailService {
+    // State specific to this service
+    pub port_state: Arc<TokioMutex<McpPortState>>,
     // Factory to create IMAP sessions on demand for tools
     pub session_factory: CloneableImapSessionFactory,
+    // Tool registry containing all our MCP tools
+    pub tool_registry: crate::mcp_port::McpToolRegistry,
 }
 
-// Implement the rmcp Context trait (if required by rmcp - assuming basic marker trait or similar)
-// impl SdkContext for RustyMailContext {}
-// --- End SDK Context ---
+impl RustyMailService {
+    pub fn new(session_factory: CloneableImapSessionFactory) -> Self {
+        let tool_registry = create_mcp_tool_registry();
+        info!("RustyMailService: Tool registry created");
 
-// --- Tool Wrapper --- 
-/// Wraps our McpTool to be compatible with rmcp::server::Tool
-// This wrapper needs adjustment if McpTool trait/location changed
-/*
-struct McpToolWrapper {
-    mcp_tool: Arc<dyn McpTool + Send + Sync>,
-}
-
-impl McpToolWrapper { 
-    fn name(&self) -> &str {
-        self.mcp_tool.name()
+        Self {
+            port_state: Arc::new(TokioMutex::new(McpPortState::default())),
+            session_factory,
+            tool_registry,
+        }
     }
 
-    async fn execute(&self, context: RustyMailContext, params: Option<Value>) -> Result<Option<Value>, JsonRpcError> { 
-        debug!("Executing MCP tool '{}' via SDK wrapper", self.mcp_tool.name());
-        
-        // Need mutable access to port_state if McpTool::execute requires it
-        let port_state_mutex = Arc::new(TokioMutex::new(context.port_state));
-        let mut state_guard = port_state_mutex.lock().await;
-        
-        let params_value = params.unwrap_or(Value::Null);
+    // Wrapper method to call legacy MCP tools through the new SDK
+    async fn execute_legacy_tool(&self, tool_name: String, params: Option<Value>) -> Result<CallToolResult, ErrorData> {
+        debug!("Executing legacy tool '{}' via SDK", tool_name);
 
-        // Get session using the factory from context
-        let imap_client_result = context.session_factory.create_session().await;
-           
-        let imap_client = match imap_client_result {
-             Ok(client) => client,
-             Err(imap_err) => {
-                 error!("Failed to create IMAP session for tool '{}': {}", self.name(), imap_err);
-                 return Err(JsonRpcError::from(imap_err)); // Map ImapError to JsonRpcError
-             }
-         };
-        
-        let session_arc = Arc::new(imap_client);
+        let tool = self.tool_registry.get(&tool_name)
+            .ok_or_else(|| ErrorData::new(
+                -32601, // Method not found error code
+                format!("Tool '{}' not found", tool_name),
+                None
+            ))?;
 
-        // Assuming McpTool::execute signature is: (Arc<ImapClient>, &mut McpPortState, Value)
-        match self.mcp_tool.execute(session_arc, &mut state_guard, params_value).await {
-            Ok(result) => Ok(Some(result)),
-            Err(jsonrpc_err) => {
-                error!("MCP tool '{}' execution failed: {}", self.mcp_tool.name(), jsonrpc_err);
-                Err(jsonrpc_err)
+        // Create IMAP session
+        let session_result = self.session_factory.create_session().await;
+        let session = match session_result {
+            Ok(client) => Arc::new(client) as Arc<dyn crate::imap::session::AsyncImapOps>,
+            Err(imap_err) => {
+                error!("Failed to create IMAP session for tool '{}': {:?}", tool_name, imap_err);
+                return Err(ErrorData::new(
+                    -32603, // Internal error code
+                    format!("IMAP connection failed: {}", imap_err),
+                    None
+                ));
             }
+        };
+
+        // Execute the tool
+        let mut state_guard = self.port_state.lock().await;
+        let result = tool.execute(session, &mut state_guard, params.unwrap_or(Value::Null)).await;
+        drop(state_guard);
+
+        match result {
+            Ok(value) => Ok(CallToolResult::success(vec![Content::text(
+                serde_json::to_string_pretty(&value).unwrap_or_else(|_| "null".to_string())
+            )])),
+            Err(err) => Err(ErrorData::new(
+                err.code,
+                err.message,
+                err.data
+            ))
         }
     }
 }
-*/
 
-/// Adapter implementing McpHandler using a potential external SDK (`rmcp`).
-/// Most SDK interaction is currently stubbed out.
-#[derive(Debug)]
+// Implement ServerHandler for the service
+impl ServerHandler for RustyMailService {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo {
+            name: "RustyMail MCP Server".to_string(),
+            version: "0.1.0".to_string(),
+            protocol_version: "0.1.0".to_string(),
+            capabilities: ServerCapabilities {
+                tools: Some(ToolsCapability::default()),
+                ..Default::default()
+            },
+        }
+    }
+
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParam,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, ErrorData> {
+        self.execute_legacy_tool(request.name.to_string(), request.arguments.and_then(|m| m.into_iter().next().map(|(_, v)| v))).await
+    }
+
+    async fn list_tools(
+        &self,
+        _request: Option<PaginatedRequestParam>,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, ErrorData> {
+        let items: Vec<Tool> = self.tool_registry.keys().map(|name| {
+            Tool {
+                name: name.clone().into(),
+                description: Some(format!("IMAP tool: {}", name)),
+                input_schema: Arc::new(serde_json::Map::new()),
+            }
+        }).collect();
+
+        Ok(ListToolsResult {
+            tools: items,
+            next_cursor: None,
+        })
+    }
+}
+
+/// Adapter implementing McpHandler using the official RMCP SDK
 pub struct SdkMcpAdapter {
-    // Stub out sdk_server if rmcp is not used
-    // sdk_server: Arc<SdkServer<RustyMailContext>>,
-    session_factory: CloneableImapSessionFactory, 
+    service: Arc<RustyMailService>,
 }
 
 impl SdkMcpAdapter {
@@ -118,7 +142,8 @@ impl SdkMcpAdapter {
     /// NOTE: Requires `CloneableImapSessionFactory` to be provided.
     pub fn new(session_factory: CloneableImapSessionFactory) -> Result<Self, Box<dyn std::error::Error>> {
         info!("Initializing SdkMcpAdapter...");
-        Ok(Self { session_factory })
+        let service = Arc::new(RustyMailService::new(session_factory));
+        Ok(Self { service })
     }
 
     /// Temporary constructor that creates a new adapter with a placeholder factory
@@ -126,68 +151,86 @@ impl SdkMcpAdapter {
     pub fn new_placeholder() -> Result<Self, Box<dyn std::error::Error>> {
         info!("Initializing SdkMcpAdapter with placeholder factory...");
         // This is a placeholder. In production, a real factory should be provided.
-        Ok(Self { 
-            session_factory: CloneableImapSessionFactory::new(
-                Box::new(|| Box::pin(async {
-                    Err(ImapError::Connection("Placeholder factory - not implemented".to_string()))
-                }))
-            ) 
-        })
-    }
-
-    // Helper to get an IMAP session using the factory stored in the adapter.
-    // Changed error type to JsonRpcError.
-    async fn get_session(&self) -> Result<ImapClient<crate::imap::session::AsyncImapSessionWrapper>, JsonRpcError> {
-        info!("SDK Adapter: Getting IMAP session via factory.");
-        self.session_factory.create_session()
-            .await
-            .map_err(JsonRpcError::from) // Map ImapError -> JsonRpcError
+        let factory = CloneableImapSessionFactory::new(
+            Box::new(|| Box::pin(async {
+                Err(ImapError::Connection("Placeholder factory - not implemented".to_string()))
+            }))
+        );
+        let service = Arc::new(RustyMailService::new(factory));
+        Ok(Self { service })
     }
 }
 
 #[async_trait]
 impl McpHandler for SdkMcpAdapter {
-    /// Handles an MCP request using the SDK adapter logic.
-    /// NOTE: This implementation is currently a placeholder.
-    async fn handle_request(&self, _state: Arc<TokioMutex<McpPortState>>, request: Value) -> Value { 
+    /// Handles an MCP request by delegating to the appropriate tool
+    async fn handle_request(&self, state: Arc<TokioMutex<McpPortState>>, request: Value) -> Value {
         // Ensure input is a valid JsonRpcRequest structure before processing
         let rpc_request: JsonRpcRequest = match serde_json::from_value(request.clone()) {
             Ok(req) => req,
             Err(e) => {
-                 error!("SDK Adapter: Received invalid JSON-RPC request object: {}", e);
-                 return serde_json::to_value(JsonRpcResponse::invalid_request()).unwrap_or(json!(null));
+                error!("SDK Adapter: Received invalid JSON-RPC request object: {}", e);
+                return serde_json::to_value(JsonRpcResponse::invalid_request()).unwrap_or(json!(null));
             }
         };
 
         info!("SDK Adapter: Handling MCP request method: {}", rpc_request.method);
-        
-        // TODO: Implement actual SDK interaction or tool execution logic here.
-        // This might involve: 
-        // 1. Creating the RustyMailContext
-        // 2. Finding the appropriate McpTool (if using the wrapper pattern)
-        // 3. Calling tool.execute or the relevant SDK function
-        // 4. Converting the result/error back to JsonRpcResponse format
 
-        // Placeholder error response for unimplemented handler
-        error!("SdkMcpAdapter handle_request is not implemented for method: {}", rpc_request.method);
-        let error_response = JsonRpcResponse::error(
-            rpc_request.id, // Use ID from parsed request
-            JsonRpcError::method_not_found()
-        );
-        serde_json::to_value(error_response).unwrap_or(json!(null))
+        // Update the service's state with the provided state
+        *self.service.port_state.lock().await = state.lock().await.clone();
+
+        // Handle the request using our legacy tool wrapper
+        let tool_request = CallToolRequestParam {
+            name: rpc_request.method.clone().into(),
+            arguments: rpc_request.params.and_then(|v| v.as_object().cloned()),
+        };
+
+        // Create a dummy context for the call
+        // This is a workaround since we can't create RequestContext directly
+        match self.service.execute_legacy_tool(
+            rpc_request.method.clone(),
+            rpc_request.params
+        ).await {
+            Ok(result) => {
+                // Convert CallToolResult back to JsonRpcResponse
+                let result_value = if !result.content.is_empty() {
+                    json!({
+                        "content": result.content.iter().map(|c| match c {
+                            Content::Text { text, .. } => json!({ "type": "text", "text": text }),
+                            _ => json!(null),
+                        }).collect::<Vec<_>>(),
+                        "isError": result.is_error,
+                    })
+                } else {
+                    json!(null)
+                };
+
+                let response = JsonRpcResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: rpc_request.id,
+                    result: Some(result_value),
+                    error: None,
+                };
+                serde_json::to_value(response).unwrap_or(json!(null))
+            }
+            Err(err) => {
+                let error_response = JsonRpcResponse::error(
+                    rpc_request.id,
+                    JsonRpcError {
+                        code: err.code as i32,
+                        message: err.message.to_string(),
+                        data: err.data,
+                    }
+                );
+                serde_json::to_value(error_response).unwrap_or(json!(null))
+            }
+        }
     }
 }
 
-// Remove commented out error mapping function
-/*
-fn map_mcp_error_to_sdk_error(mcp_err: mcp_port::McpError) -> RpcToolError {
-    // ... logic ...
-}
-*/ 
-
 /// State specifically for the SdkMcpAdapter if needed (e.g., for SSE integration).
 pub struct McpSdkState {
-    pub session_factory: CloneableImapSessionFactory, 
+    pub session_factory: CloneableImapSessionFactory,
     pub sse_tx: Option<UnboundedSender<String>>,
     pub mcp_state: Arc<TokioMutex<McpPortState>>,
-} 
+}
