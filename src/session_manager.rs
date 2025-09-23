@@ -118,6 +118,10 @@ impl Default for SessionManager {
     }
 }
 
+// Re-export MockSessionManager for tests
+#[cfg(test)]
+pub use mock::MockSessionManager;
+
 // Mock implementation for testing
 #[cfg(test)]
 pub mod mock {
@@ -239,7 +243,7 @@ pub mod mock {
             let response = self.create_session_response.lock().await;
             match &*response {
                 Some(Ok(client)) => Ok(client.clone()),
-                Some(Err(err)) => Err(SessionError::Creation(err.clone())),
+                Some(Err(_err)) => Err(SessionError::Creation(ImapError::Connection("Mock error".to_string()))),
                 None => Err(SessionError::NotFound),
             }
         }

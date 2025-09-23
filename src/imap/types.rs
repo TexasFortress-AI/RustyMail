@@ -154,28 +154,33 @@ impl Folder {
             folder_map.insert(full_path, folder);
         }
 
-        // Second pass: build hierarchy
+        // Second pass: build hierarchy by processing children first
         let mut root_folders = Vec::new();
-        let folder_names: Vec<String> = folder_map.keys().cloned().collect();
+        let mut sorted_names: Vec<String> = folder_map.keys().cloned().collect();
 
-        for folder_name in folder_names {
-            if let Some(mut folder) = folder_map.remove(&folder_name) {
-                if let Some(parent_path) = &folder.parent.clone() {
-                    // This is a child folder
+        // Sort by path depth (deeper paths first) to ensure children are processed before parents
+        sorted_names.sort_by_key(|path| {
+            let delim = folder_map.get(path).and_then(|f| f.delimiter.as_ref()).map(|s| s.as_str()).unwrap_or("/");
+            std::cmp::Reverse(path.matches(delim).count())
+        });
+
+        // Build hierarchy by moving children into their parents
+        for folder_name in sorted_names {
+            if let Some(folder) = folder_map.remove(&folder_name) {
+                if let Some(parent_path) = &folder.parent {
+                    // Try to add to parent
                     if let Some(parent) = folder_map.get_mut(parent_path) {
                         parent.children.push(folder);
-                    } else {
-                        // Parent doesn't exist, treat as root
-                        root_folders.push(folder);
+                        continue; // Successfully added to parent, don't add to roots
                     }
-                } else {
-                    // This is a root folder
-                    root_folders.push(folder);
+                    // Parent not found or already processed, will be a root
                 }
+                // No parent or parent not found - this is a root folder
+                root_folders.push(folder);
             }
         }
 
-        // Add any remaining folders (in case of circular references)
+        // Any remaining folders are also roots
         for (_, folder) in folder_map {
             root_folders.push(folder);
         }
