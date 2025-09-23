@@ -356,7 +356,7 @@
             "description": "Develop and integrate folder listing functionality that supports hierarchical structures, correctly handling IMAP hierarchy separators and folder tree traversal.",
             "dependencies": [],
             "details": "Use async-imap methods to retrieve the full folder tree, detect and apply the correct hierarchy separator, and represent folders in a nested structure. Ensure compatibility with various IMAP servers that may use different separator characters.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test with IMAP servers using different hierarchy separators (e.g., '.', '/'). Verify correct folder nesting and performance (<500ms for folder list)."
           },
           {
@@ -367,7 +367,7 @@
               "6.1"
             ],
             "details": "Support a range of IMAP search criteria (e.g., subject, sender, date). Ensure search queries are executed asynchronously and results are mapped to message identifiers.",
-            "status": "pending",
+            "status": "in-progress",
             "testStrategy": "Run integration tests for various search queries across multiple IMAP servers. Measure search latency and validate result accuracy."
           },
           {
@@ -1220,7 +1220,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-22T17:56:07.353Z",
+      "updated": "2025-09-22T18:21:02.119Z",
       "description": "Tasks for master context"
     }
   }

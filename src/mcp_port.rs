@@ -151,6 +151,28 @@ pub async fn list_folders_tool(
     Ok(serde_json::to_value(folders).map_err(|e| JsonRpcError::internal_error(e.to_string()))?)
 }
 
+/// Tool for listing folders with hierarchical structure
+pub async fn list_folders_hierarchical_tool(
+    session: Arc<dyn AsyncImapOps>,
+    _state: Arc<TokioMutex<McpPortState>>,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let folders = session.list_folders_hierarchical().await.map_err(|e| {
+        // Create error with structured details including operation context
+        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("list_folders_hierarchical".to_string()));
+        // Add params to the error data if available
+        if let Some(p) = params.as_ref() {
+            if let Some(data) = error.data.as_mut() {
+                if let Some(obj) = data.as_object_mut() {
+                    obj.insert("params".to_string(), p.clone());
+                }
+            }
+        }
+        error
+    })?;
+    Ok(serde_json::to_value(folders).map_err(|e| JsonRpcError::internal_error(e.to_string()))?)
+}
+
 // ... Implement other tools similarly, receiving state ...
 
 // Function to create and populate the registry
@@ -159,6 +181,7 @@ pub fn create_mcp_tool_registry() -> McpToolRegistry {
 
     // Register tools using the DefaultMcpTool::new constructor
     registry.register("list_folders", DefaultMcpTool::new("list_folders", list_folders_tool));
+    registry.register("list_folders_hierarchical", DefaultMcpTool::new("list_folders_hierarchical", list_folders_hierarchical_tool));
     // ... register other tools like create_folder_tool, delete_folder_tool etc.
     // These tools will need to be defined similar to list_folders_tool
 

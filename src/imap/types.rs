@@ -88,6 +88,98 @@ pub struct Folder {
     pub name: String,
     /// Character used to separate folder levels in the hierarchy
     pub delimiter: Option<String>,
+    /// Full path of the folder (e.g., "INBOX/Sent")
+    pub full_path: String,
+    /// Parent folder path (None for root folders)
+    pub parent: Option<String>,
+    /// Child folders (for hierarchical representation)
+    pub children: Vec<Folder>,
+    /// Whether this folder can be selected (contains messages)
+    pub selectable: bool,
+    /// Folder attributes from IMAP
+    pub attributes: Vec<String>,
+}
+
+impl Folder {
+    /// Creates a new folder with basic information
+    pub fn new(name: String, full_path: String, delimiter: Option<String>) -> Self {
+        Self {
+            name,
+            delimiter,
+            full_path,
+            parent: None,
+            children: Vec::new(),
+            selectable: true,
+            attributes: Vec::new(),
+        }
+    }
+
+    /// Creates a hierarchical folder tree from a flat list of folder paths
+    pub fn build_hierarchy(folder_paths: Vec<(String, Option<String>, Vec<String>)>) -> Vec<Folder> {
+        let mut folders: Vec<Folder> = Vec::new();
+        let mut folder_map = std::collections::HashMap::new();
+
+        // First pass: create all folders
+        for (full_path, delimiter, attributes) in folder_paths {
+            let delim = delimiter.as_deref().unwrap_or("/");
+            let parts: Vec<&str> = full_path.split(delim).collect();
+            let name = parts.last().unwrap_or(&full_path.as_str()).to_string();
+            let parent = if parts.len() > 1 {
+                Some(parts[..parts.len()-1].join(delim))
+            } else {
+                None
+            };
+
+            let folder = Folder {
+                name,
+                delimiter,
+                full_path: full_path.clone(),
+                parent,
+                children: Vec::new(),
+                selectable: !attributes.contains(&"\\Noselect".to_string()),
+                attributes,
+            };
+            folder_map.insert(full_path, folder);
+        }
+
+        // Second pass: build hierarchy
+        let mut root_folders = Vec::new();
+        let folder_names: Vec<String> = folder_map.keys().cloned().collect();
+
+        for folder_name in folder_names {
+            if let Some(mut folder) = folder_map.remove(&folder_name) {
+                if let Some(parent_path) = &folder.parent.clone() {
+                    // This is a child folder
+                    if let Some(parent) = folder_map.get_mut(parent_path) {
+                        parent.children.push(folder);
+                    } else {
+                        // Parent doesn't exist, treat as root
+                        root_folders.push(folder);
+                    }
+                } else {
+                    // This is a root folder
+                    root_folders.push(folder);
+                }
+            }
+        }
+
+        // Add any remaining folders (in case of circular references)
+        for (_, folder) in folder_map {
+            root_folders.push(folder);
+        }
+
+        root_folders.sort_by(|a, b| a.name.cmp(&b.name));
+        root_folders
+    }
+
+    /// Gets all folders in a flat list (depth-first traversal)
+    pub fn flatten(&self) -> Vec<&Folder> {
+        let mut result = vec![self];
+        for child in &self.children {
+            result.extend(child.flatten());
+        }
+        result
+    }
 }
 
 /// Represents information about a selected mailbox.

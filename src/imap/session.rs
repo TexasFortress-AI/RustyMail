@@ -63,8 +63,11 @@ pub trait AsyncImapOps: Send + Sync + Debug {
     /// Logs out the current session
     async fn logout(&self) -> Result<(), ImapError>;
 
-    /// Lists all folders in the mailbox
+    /// Lists all folders in the mailbox (returns flat list of folder names for backward compatibility)
     async fn list_folders(&self) -> Result<Vec<String>, ImapError>;
+
+    /// Lists all folders with hierarchical structure and metadata
+    async fn list_folders_hierarchical(&self) -> Result<Vec<crate::imap::types::Folder>, ImapError>;
     
     /// Creates a new folder with the given name
     async fn create_folder(&self, name: &str) -> Result<(), ImapError>;
@@ -221,6 +224,37 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
         }
 
         Ok(folder_names)
+    }
+
+    async fn list_folders_hierarchical(&self) -> Result<Vec<crate::imap::types::Folder>, ImapError> {
+        let mut session_guard = self.session.lock().await;
+
+        // Use the IMAP LIST command to get all folders with detailed information
+        let mut folders_stream = session_guard
+            .list(None, Some("*"))
+            .await
+            .map_err(ImapError::from)?;
+
+        let mut folder_data = Vec::new();
+
+        while let Some(folder_result) = folders_stream.try_next().await.map_err(ImapError::from)? {
+            let name = folder_result.name().to_string();
+
+            // Extract delimiter - async-imap Name struct should have delimiter info
+            let delimiter = folder_result.delimiter().map(|d| d.to_string());
+
+            // Extract attributes - convert flags to string attributes
+            let attributes: Vec<String> = folder_result.attributes()
+                .iter()
+                .map(|attr| format!("{:?}", attr)) // Convert attribute enum to string
+                .collect();
+
+            folder_data.push((name, delimiter, attributes));
+        }
+
+        // Build hierarchical structure
+        let hierarchy = crate::imap::types::Folder::build_hierarchy(folder_data);
+        Ok(hierarchy)
     }
 
     async fn create_folder(&self, name: &str) -> Result<(), ImapError> {
