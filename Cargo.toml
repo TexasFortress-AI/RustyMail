@@ -73,6 +73,10 @@ urlencoding = "2.1"
 # Added base64 dependency
 base64 = "0.21"
 
+# High-concurrency data structures
+dashmap = "5.5"
+crossbeam = "0.8"
+
 # MIME parsing
 mail-parser = "0.8"
 
@@ -90,12 +94,14 @@ native-tls = "0.2"
 
 [dev-dependencies]
 # Remove reqwest native-tls feature if not needed
-reqwest = { version = "0.12", features = ["json", "stream"] } 
+reqwest = { version = "0.12", features = ["json", "stream"] }
 urlencoding = "2.1" # For URL encoding folder names in E2E tests
 # Add actix-web for REST E2E tests
 actix-web = "4"
 # Add once_cell for Lazy static in tests (though may remove Lazy)
 once_cell = "1.19"
+# Add rand for stress testing
+rand = "0.8"
 # Add actix-http for testing utilities like Request type
 actix-http = "3"
 uuid = { version = "1", features = ["v4"] }

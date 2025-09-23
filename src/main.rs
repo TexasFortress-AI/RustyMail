@@ -96,7 +96,48 @@ async fn main() -> std::io::Result<()> {
     let imap_session_factory = CloneableImapSessionFactory::new(raw_imap_session_factory);
     info!("IMAP Session Factory created.");
 
-    // --- Create Tool Registry (REMOVED) --- 
+    // --- Create Connection Pool ---
+    use rustymail::connection_pool::{ConnectionPool, ConnectionFactory, PoolConfig};
+    use std::time::Duration;
+
+    // Create connection factory that uses our IMAP session factory
+    struct ImapConnectionFactory {
+        session_factory: CloneableImapSessionFactory,
+    }
+
+    #[async_trait::async_trait]
+    impl ConnectionFactory for ImapConnectionFactory {
+        async fn create(&self) -> Result<Arc<ImapClient<AsyncImapSessionWrapper>>, ImapError> {
+            let client = self.session_factory.create_session().await?;
+            Ok(Arc::new(client))
+        }
+
+        async fn validate(&self, client: &Arc<ImapClient<AsyncImapSessionWrapper>>) -> bool {
+            // Simple health check - try to perform a lightweight operation
+            // For now, assume healthy if connection exists
+            // In production, could do a NOOP command or check connection state
+            true
+        }
+    }
+
+    let pool_config = PoolConfig {
+        min_connections: 5,
+        max_connections: 50,
+        idle_timeout: Duration::from_secs(300), // 5 minutes
+        health_check_interval: Duration::from_secs(60), // 1 minute
+        acquire_timeout: Duration::from_secs(10),
+        max_session_duration: Duration::from_secs(3600), // 1 hour
+        max_concurrent_creations: 10,
+    };
+
+    let connection_factory = Arc::new(ImapConnectionFactory {
+        session_factory: imap_session_factory.clone(),
+    });
+
+    let connection_pool = ConnectionPool::new(connection_factory, pool_config);
+    info!("Connection Pool created with min={}, max={} connections", 5, 50);
+
+    // --- Create Tool Registry (REMOVED) ---
     // let tool_registry_rest = create_mcp_tool_registry(imap_client_rest.clone());
     // info!("MCP Tool Registry created.");
 
@@ -126,10 +167,12 @@ async fn main() -> std::io::Result<()> {
     let config = web::Data::new(settings.clone());
     info!("Dashboard configuration initialized.");
 
-    // Dashboard services initialization might eventually need the factory too,
-    // but keep as is for now if it only needs the basic client capabilities during init.
-    // If dashboard needs persistent sessions or factory, adjust its init function.
-    let dashboard_state = dashboard::services::init(config.clone(), imap_session_factory.clone());
+    // Dashboard services initialization with connection pool
+    let dashboard_state = dashboard::services::init(
+        config.clone(),
+        imap_session_factory.clone(),
+        connection_pool
+    );
     info!("Dashboard state initialized.");
 
     // Start background metrics collection task (needs DashboardState)

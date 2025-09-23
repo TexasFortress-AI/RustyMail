@@ -14,6 +14,7 @@ use actix_web::{web::Data};
 use tokio::sync::Mutex as TokioMutex;
 // Import CloneableImapSessionFactory from prelude
 use crate::prelude::CloneableImapSessionFactory;
+use crate::connection_pool::ConnectionPool;
 
 pub mod ai;
 pub mod clients;
@@ -63,12 +64,14 @@ pub struct DashboardState {
     pub sse_manager: Arc<SseManager>,
     pub config: web::Data<Settings>,
     pub imap_session_factory: CloneableImapSessionFactory,
+    pub connection_pool: Arc<ConnectionPool>,
 }
 
 // Initialize the services
 pub fn init(
     config: Data<crate::config::Settings>,
     imap_session_factory: CloneableImapSessionFactory,
+    connection_pool: Arc<ConnectionPool>,
 ) -> Data<DashboardState> {
     info!("Initializing dashboard services...");
 
@@ -94,9 +97,10 @@ pub fn init(
         client_manager,
         metrics_service,
         config_service,
-        ai_service, 
+        ai_service,
         sse_manager,
         config, // Pass the web::Data<Settings>
         imap_session_factory,
+        connection_pool,
     })
 }

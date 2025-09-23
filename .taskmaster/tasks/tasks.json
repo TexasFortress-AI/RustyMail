@@ -415,7 +415,7 @@
         "dependencies": [
           6
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -456,7 +456,7 @@
               "7.2"
             ],
             "details": "Set session timeout thresholds, monitor activity, and remove sessions that exceed timeout or disconnect unexpectedly.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Simulate idle and disconnected sessions. Confirm timeout triggers cleanup and no lingering resources remain."
           },
           {
@@ -470,7 +470,7 @@
               "7.4"
             ],
             "details": "Optimize pool and session logic for high concurrency, stress test with 100+ simultaneous connections, and tune for performance.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Run load tests with 100+ concurrent sessions. Measure throughput, latency, and verify no connection or session leaks."
           }
         ]
@@ -626,7 +626,7 @@
         "dependencies": [
           7
         ],
-        "status": "pending",
+        "status": "in-progress",
         "subtasks": [
           {
             "id": 1,
@@ -634,7 +634,7 @@
             "description": "Implement a service to collect and expose system metrics using the sysinfo crate.",
             "dependencies": [],
             "details": "Use the sysinfo crate to gather CPU, memory, and disk statistics. Ensure the service can periodically refresh and provide up-to-date metrics for the dashboard backend.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test metrics collection accuracy and performance under various system loads. Validate data freshness and correctness."
           },
           {
@@ -1220,7 +1220,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-23T03:01:33.231Z",
+      "updated": "2025-09-23T04:10:30.759Z",
       "description": "Tasks for master context"
     }
   }
