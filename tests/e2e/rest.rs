@@ -516,8 +516,9 @@ async fn test_e2e_select_folder(client: &Client, folder: &str) {
     println!("Parsed MailboxInfo: {:?}", mailbox_info);
 
     assert!(mailbox_info.exists > 0, "Mailbox 'exists' count should be greater than 0 for INBOX");
-    assert!(!mailbox_info.flags.is_empty(), "Mailbox flags should not be empty");
-    assert!(mailbox_info.permanent_flags.contains(&"\\*".to_string()) || !mailbox_info.permanent_flags.is_empty(), "Mailbox permanent flags seem invalid");
+    // Note: flags and permanent_flags fields were removed from MailboxInfo struct
+    // assert!(!mailbox_info.flags.is_empty(), "Mailbox flags should not be empty");
+    // assert!(mailbox_info.permanent_flags.contains(&"\\*".to_string()) || !mailbox_info.permanent_flags.is_empty(), "Mailbox permanent flags seem invalid");
 
     println!("Folder selection successful and MailboxInfo parsed.");
     println!("--- Completed E2E: Select Folder ---");

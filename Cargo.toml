@@ -38,6 +38,7 @@ serde_json = "1.0"
 # Configuration
 dotenvy = "0.15"
 config = { version = "0.14", features = ["toml"] }
+toml = "0.8"
 log = "0.4"
 env_logger = "0.11"
 
@@ -112,6 +113,7 @@ itertools = "0.12" # Add itertools dependency
 lazy_static = "1.4" # For static regex patterns in SSE tests
 regex = "1" # For parsing SSE events
 mockall = "0.12.1" # Add mockall
+tempfile = "3.8" # For temporary directories in tests
 
 [features]
 default = []

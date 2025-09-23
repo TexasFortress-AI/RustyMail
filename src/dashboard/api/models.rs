@@ -48,7 +48,7 @@ pub struct ClientInfo {
     pub user_agent: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum ClientType {
     Sse,
@@ -56,7 +56,7 @@ pub enum ClientType {
     Console,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "PascalCase")]
 pub enum ClientStatus {
     Active,

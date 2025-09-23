@@ -5,4 +5,6 @@ pub mod api;
 pub mod imap;
 pub mod transport;
 pub mod config;
-pub mod session_manager; 
+pub mod session_manager;
+pub mod dashboard_client_management;
+pub mod dashboard_config; 

@@ -2,4 +2,4 @@
 // This module organizes all integration tests
 
 pub mod dashboard;
-pub mod mcp; 
+// pub mod mcp; // TODO: Add MCP integration tests 

@@ -643,7 +643,7 @@
             "description": "Develop a service to track active client connections and user agent information.",
             "dependencies": [],
             "details": "Maintain a registry of connected clients, recording connection status and user agent strings. Provide APIs to query and manage client sessions.",
-            "status": "in-progress",
+            "status": "done",
             "testStrategy": "Verify client tracking across different interfaces and simulate multiple concurrent connections to ensure accurate session management."
           },
           {
@@ -652,7 +652,7 @@
             "description": "Create a configuration management service to handle runtime settings for the dashboard backend.",
             "dependencies": [],
             "details": "Allow dynamic retrieval and updating of configuration parameters without requiring service restarts. Support validation and persistence of settings.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test configuration updates at runtime and ensure changes are reflected immediately. Validate error handling for invalid configurations."
           },
           {
@@ -1220,7 +1220,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-23T06:41:40.048Z",
+      "updated": "2025-09-23T07:32:00.806Z",
       "description": "Tasks for master context"
     }
   }
