@@ -7,4 +7,5 @@ pub mod transport;
 pub mod config;
 pub mod session_manager;
 pub mod dashboard_client_management;
-pub mod dashboard_config; 
+pub mod dashboard_config;
+pub mod dashboard_events; 

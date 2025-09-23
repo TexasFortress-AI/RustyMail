@@ -19,6 +19,8 @@ use crate::connection_pool::ConnectionPool;
 pub mod ai;
 pub mod clients;
 pub mod config;
+pub mod events;
+pub mod event_integration;
 pub mod metrics;
 
 // Define or import error types if they exist
@@ -35,11 +37,12 @@ pub use metrics::{MetricsService};
 pub use clients::{ClientManager};
 pub use config::{ConfigService};
 pub use ai::{AiService};
+pub use events::{EventBus, DashboardEvent};
 
 // Import the types that were causing privacy issues directly from their source
 // Removed unresolved ImapConfiguration import
-use crate::dashboard::api::models::{ClientInfo, PaginatedClients, ChatbotQuery, ChatbotResponse, DashboardStats};
-use crate::dashboard::api::handlers::ClientQueryParams;
+// Removed unused imports: ClientInfo, PaginatedClients, ChatbotQuery, ChatbotResponse, DashboardStats
+// Removed unused import: ClientQueryParams
 // Removed unused ApiError import
 // use crate::api::rest::ApiError;
 use crate::config::Settings;
@@ -62,6 +65,7 @@ pub struct DashboardState {
     pub config_service: Arc<ConfigService>,
     pub ai_service: Arc<AiService>,
     pub sse_manager: Arc<SseManager>,
+    pub event_bus: Arc<EventBus>,
     pub config: web::Data<Settings>,
     pub imap_session_factory: CloneableImapSessionFactory,
     pub connection_pool: Arc<ConnectionPool>,
@@ -78,7 +82,7 @@ pub fn init(
     let metrics_interval_duration = Duration::from_secs(5); // Default to 5 seconds interval
     info!("Dashboard metrics interval: {} seconds", metrics_interval_duration.as_secs());
 
-    let http_client = Client::new();
+    let _http_client = Client::new(); // Unused for now
     let client_manager = Arc::new(ClientManager::new(metrics_interval_duration));
     let metrics_service = Arc::new(MetricsService::new(metrics_interval_duration)); // Pass interval duration, not client manager
     let config_service = Arc::new(ConfigService::new());
@@ -86,10 +90,16 @@ pub fn init(
     // Initialize AI Service (handle potential errors)
     let ai_service = Arc::new(AiService::new_mock()); // Use a mock service for now
 
-    let sse_manager = Arc::new(SseManager::new(
+    // Create event bus
+    let event_bus = Arc::new(EventBus::new());
+
+    // Create SSE manager and configure it with event bus
+    let mut sse_manager = SseManager::new(
         metrics_service.clone(),
         client_manager.clone(),
-    ));
+    );
+    sse_manager.set_event_bus(Arc::clone(&event_bus));
+    let sse_manager = Arc::new(sse_manager);
 
     info!("Dashboard services initialized.");
 
@@ -99,6 +109,7 @@ pub fn init(
         config_service,
         ai_service,
         sse_manager,
+        event_bus,
         config, // Pass the web::Data<Settings>
         imap_session_factory,
         connection_pool,

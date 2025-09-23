@@ -1,0 +1,6 @@
+
+interface = "mcp_stdio" # Override interface
+[imap]
+user = "custom_user" # Override user
+[rest]
+port = 9090 # Override port

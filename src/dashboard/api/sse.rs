@@ -13,6 +13,7 @@ use uuid::Uuid;
 use log::{info, debug, error, warn};
 use crate::dashboard::services::metrics::MetricsService;
 use crate::dashboard::services::clients::ClientManager;
+use crate::dashboard::services::events::{EventBus, DashboardEvent};
 use chrono::Utc;
 use tokio_stream::wrappers::{ReceiverStream, IntervalStream};
 use crate::dashboard::services::DashboardState;
@@ -36,6 +37,7 @@ pub struct SseManager {
     clients: Arc<RwLock<HashMap<String, SseClient>>>,
     metrics_service: Arc<MetricsService>,
     client_manager: Arc<ClientManager>,
+    event_bus: Option<Arc<EventBus>>,
 }
 
 impl SseManager {
@@ -44,7 +46,13 @@ impl SseManager {
             clients: Arc::new(RwLock::new(HashMap::new())),
             metrics_service,
             client_manager,
+            event_bus: None,
         }
+    }
+
+    // Set the event bus for event integration
+    pub fn set_event_bus(&mut self, event_bus: Arc<EventBus>) {
+        self.event_bus = Some(event_bus);
     }
     
     // Get the current count of active SSE clients
@@ -167,19 +175,108 @@ impl SseManager {
         self.broadcast(event).await;
     }
     
+    // Start listening to the event bus and forward events to SSE clients
+    pub async fn start_event_bus_listener(&self) {
+        if let Some(event_bus) = &self.event_bus {
+            let sse_manager = Arc::new(self.clone());
+            let mut subscription = event_bus.subscribe().await;
+
+            tokio::spawn(async move {
+                info!("Started event bus listener for SSE broadcasting");
+
+                while let Some(event) = subscription.recv().await {
+                    // Convert DashboardEvent to SseEvent
+                    let sse_event = match event {
+                        DashboardEvent::MetricsUpdated { stats, timestamp } => {
+                            let data = json!({
+                                "stats": stats,
+                                "timestamp": timestamp.to_rfc3339(),
+                            });
+                            SseEvent {
+                                event_type: "metrics_updated".to_string(),
+                                data: serde_json::to_string(&data).unwrap_or_default(),
+                            }
+                        },
+                        DashboardEvent::ClientConnected { client_id, client_type, ip_address, user_agent, timestamp } => {
+                            let data = json!({
+                                "clientId": client_id,
+                                "clientType": client_type,
+                                "ipAddress": ip_address,
+                                "userAgent": user_agent,
+                                "timestamp": timestamp.to_rfc3339(),
+                            });
+                            SseEvent {
+                                event_type: "client_connected".to_string(),
+                                data: serde_json::to_string(&data).unwrap_or_default(),
+                            }
+                        },
+                        DashboardEvent::ClientDisconnected { client_id, reason, timestamp } => {
+                            let data = json!({
+                                "clientId": client_id,
+                                "reason": reason,
+                                "timestamp": timestamp.to_rfc3339(),
+                            });
+                            SseEvent {
+                                event_type: "client_disconnected".to_string(),
+                                data: serde_json::to_string(&data).unwrap_or_default(),
+                            }
+                        },
+                        DashboardEvent::ConfigurationUpdated { section, changes, timestamp } => {
+                            let data = json!({
+                                "section": section,
+                                "changes": changes,
+                                "timestamp": timestamp.to_rfc3339(),
+                            });
+                            SseEvent {
+                                event_type: "configuration_updated".to_string(),
+                                data: serde_json::to_string(&data).unwrap_or_default(),
+                            }
+                        },
+                        DashboardEvent::SystemAlert { level, message, details, timestamp } => {
+                            let data = json!({
+                                "level": level,
+                                "message": message,
+                                "details": details,
+                                "timestamp": timestamp.to_rfc3339(),
+                            });
+                            SseEvent {
+                                event_type: "system_alert".to_string(),
+                                data: serde_json::to_string(&data).unwrap_or_default(),
+                            }
+                        },
+                        _ => {
+                            // For other events, use a generic format
+                            SseEvent {
+                                event_type: "dashboard_event".to_string(),
+                                data: serde_json::to_string(&event).unwrap_or_default(),
+                            }
+                        }
+                    };
+
+                    // Broadcast to all SSE clients
+                    sse_manager.broadcast(sse_event).await;
+                }
+
+                warn!("Event bus listener stopped - subscription ended");
+            });
+        } else {
+            warn!("Cannot start event bus listener - no event bus configured");
+        }
+    }
+
     // Start background task to broadcast stats periodically
     pub async fn start_stats_broadcast(&self, dashboard_state: web::Data<DashboardState>) {
         let sse_manager = Arc::new(self.clone());
-        
+
         // Start background task to broadcast stats every 5 seconds
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(5));
             loop {
                 interval.tick().await;
-                
+
                 // Get current stats
                 let stats = dashboard_state.metrics_service.get_current_stats().await;
-                
+
                 // Serialize to JSON
                 match serde_json::to_string(&stats) {
                     Ok(json) => {
@@ -196,7 +293,7 @@ impl SseManager {
                 }
             }
         });
-        
+
         info!("Started stats broadcast for SSE clients");
     }
 }
@@ -208,6 +305,7 @@ impl Clone for SseManager {
             clients: Arc::clone(&self.clients),
             metrics_service: Arc::clone(&self.metrics_service),
             client_manager: Arc::clone(&self.client_manager),
+            event_bus: self.event_bus.as_ref().map(Arc::clone),
         }
     }
 }
