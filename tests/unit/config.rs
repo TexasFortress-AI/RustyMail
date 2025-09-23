@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use rustymail::config::{Settings, InterfaceType};
     use std::env;
+    use std::path::Path;
 
     // Helper to create a dummy config file
     fn create_dummy_config(path: &str, content: &str) {
@@ -34,8 +35,8 @@ enabled = false
 
         assert!(matches!(settings.interface, InterfaceType::Rest));
         assert_eq!(settings.log.level, "info");
-        assert_eq!(settings.imap.host, "imap.example.com");
-        assert_eq!(settings.imap.user, "default_user");
+        assert_eq!(settings.imap_host, "imap.example.com");
+        assert_eq!(settings.imap_user, "default_user");
         assert_eq!(settings.rest.as_ref().unwrap().port, 8080);
         assert!(settings.mcp_stdio.as_ref().unwrap().enabled == false);
 
@@ -71,8 +72,8 @@ port = 9090 # Override port
         let settings = Settings::new(Some("config/custom.toml")).expect("Failed to load custom settings");
 
         assert!(matches!(settings.interface, InterfaceType::McpStdio));
-        assert_eq!(settings.imap.user, "custom_user"); // Overridden
-        assert_eq!(settings.imap.host, "imap.example.com"); // From default
+        assert_eq!(settings.imap_user, "custom_user"); // Overridden
+        assert_eq!(settings.imap_host, "imap.example.com"); // From default
         assert_eq!(settings.rest.as_ref().unwrap().port, 9090); // Overridden
         assert!(settings.mcp_stdio.is_none()); // Not defined in custom or default explicitly merged
 
@@ -101,8 +102,8 @@ pass = "default_pass"
         let settings = Settings::new(None).expect("Failed to load settings with env vars");
 
         assert!(matches!(settings.interface, InterfaceType::McpStdio));
-        assert_eq!(settings.imap.pass, "env_pass");
-        assert_eq!(settings.imap.user, "default_user");
+        assert_eq!(settings.imap_pass, "env_pass");
+        assert_eq!(settings.imap_user, "default_user");
         assert_eq!(settings.log.level, "debug");
 
         // Clean up env vars
