@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   Select,
   SelectContent,
@@ -25,6 +25,7 @@ const TopBar: React.FC = () => {
 
   // Local state for model search
   const [modelSearchQuery, setModelSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Filter models based on search query
   const filteredModels = useMemo(() => {
@@ -184,7 +185,7 @@ const TopBar: React.FC = () => {
                   disabled={setAiModelMutation.isPending || !aiProviders?.currentProvider}
                   data-testid="ai-model-selector"
                 >
-                  <SelectTrigger className="w-[200px] h-8">
+                  <SelectTrigger className="w-[280px] h-8">
                     <SelectValue placeholder="Select model" />
                   </SelectTrigger>
                   <SelectContent>
@@ -192,9 +193,16 @@ const TopBar: React.FC = () => {
                       <div className="relative">
                         <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input
+                          ref={searchInputRef}
                           placeholder="Search models..."
                           value={modelSearchQuery}
-                          onChange={(e) => setModelSearchQuery(e.target.value)}
+                          onChange={(e) => {
+                            // Use setTimeout to defer the state update
+                            const newValue = e.target.value;
+                            setTimeout(() => {
+                              setModelSearchQuery(newValue);
+                            }, 0);
+                          }}
                           className="pl-8 h-8"
                           autoFocus={false}
                         />
@@ -208,7 +216,7 @@ const TopBar: React.FC = () => {
                             value={model}
                             className="cursor-pointer"
                           >
-                            <div className="truncate max-w-[180px]" title={model}>
+                            <div className="truncate max-w-[250px]" title={model}>
                               {model}
                             </div>
                           </SelectItem>
@@ -233,13 +241,6 @@ const TopBar: React.FC = () => {
             )}
           </div>
 
-          {config && (
-            <div className="hidden md:flex text-xs text-muted-foreground">
-              <span className="px-2 py-1 rounded-md bg-primary/10">
-                {config.activeAdapter.name}
-              </span>
-            </div>
-          )}
 
           {aiProviders?.currentProvider && (
             <div className="hidden md:flex text-xs text-muted-foreground">

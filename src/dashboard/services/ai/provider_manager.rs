@@ -113,7 +113,7 @@ impl ProviderManager {
                 provider_type: ProviderType::Morpheus,
                 api_key: Some(api_key.clone()),
                 model: std::env::var("MORPHEUS_MODEL")
-                    .unwrap_or_else(|_| "llama-3.2-90b-vision-instruct".to_string()),
+                    .unwrap_or_else(|_| "LMR-Hermes-3-Llama-3.1-8B".to_string()),
                 max_tokens: std::env::var("MORPHEUS_MAX_TOKENS")
                     .ok()
                     .and_then(|v| v.parse().ok()),

@@ -3,15 +3,16 @@
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Serialize, Deserialize};
+use serde_json;
 use log::{debug, warn, error};
 use crate::dashboard::api::errors::ApiError;
 use super::{AiProvider, AiChatMessage}; // Import trait and common message struct
 use crate::api::errors::ApiError as RestApiError;
 
 // Morpheus API constants
-const MORPHEUS_API_BASE_URL: &str = "https://api.dev.mor.org/v1";
-const MORPHEUS_MODELS_URL: &str = "https://api.dev.mor.org/v1/models";
-const DEFAULT_MORPHEUS_MODEL: &str = "llama-3.2-90b-vision-instruct";
+const MORPHEUS_API_BASE_URL: &str = "https://api.dev.mor.org/api/v1";
+const MORPHEUS_MODELS_URL: &str = "https://api.dev.mor.org/api/v1/models";
+const DEFAULT_MORPHEUS_MODEL: &str = "LMR-Hermes-3-Llama-3.1-8B";
 
 // --- Morpheus Specific Request/Response Structs ---
 #[derive(Serialize)]
@@ -36,13 +37,19 @@ struct MorpheusChoice {
 
 #[derive(Deserialize, Debug)]
 struct MorpheusModelsResponse {
+    object: String,
     data: Vec<MorpheusModel>,
 }
 
 #[derive(Deserialize, Debug)]
 struct MorpheusModel {
     id: String,
-    object: String,
+    #[serde(rename = "blockchainID")]
+    blockchain_id: String,
+    created: i64,
+    tags: Vec<String>,
+    #[serde(rename = "modelType")]
+    model_type: String,
 }
 
 #[derive(Clone)]
@@ -91,14 +98,28 @@ impl AiProvider for MorpheusAdapter {
             });
         }
 
-        let response_body = response
-            .json::<MorpheusModelsResponse>()
+        // First get the raw response text to see what format it's in
+        let response_text = response
+            .text()
             .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize Morpheus models response: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Failed to read Morpheus response: {}", e) })?;
+
+        debug!("Morpheus models raw response: {}", response_text);
+
+        // Parse the JSON response
+        let response_body = match serde_json::from_str::<MorpheusModelsResponse>(&response_text) {
+            Ok(body) => body,
+            Err(e) => {
+                error!("Failed to deserialize Morpheus models response: {}. Raw response: {}", e, response_text);
+                return Err(RestApiError::UnprocessableEntity {
+                    message: format!("Failed to parse Morpheus models response: {}", e)
+                });
+            }
+        };
 
         let models: Vec<String> = response_body.data
             .into_iter()
-            .filter(|model| model.object == "model")
+            // Return all models - let the user decide which to use
             .map(|model| model.id)
             .collect();
 
