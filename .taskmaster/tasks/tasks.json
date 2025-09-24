@@ -752,7 +752,7 @@
         "dependencies": [
           11
         ],
-        "status": "pending",
+        "status": "in-progress",
         "subtasks": [
           {
             "id": 1,
@@ -760,7 +760,7 @@
             "description": "Develop the SSE endpoint in dashboard/api/sse.rs and implement logic to broadcast events for metrics updates, client connections/disconnections, and system status changes.",
             "dependencies": [],
             "details": "Set up the SSE endpoint with correct HTTP headers and ensure it can send events in the required format. Integrate event broadcasting for all relevant dashboard updates.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify the endpoint streams events correctly by simulating updates and checking client reception."
           },
           {
@@ -1220,7 +1220,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-23T09:09:30.407Z",
+      "updated": "2025-09-23T09:24:59.377Z",
       "description": "Tasks for master context"
     }
   }
