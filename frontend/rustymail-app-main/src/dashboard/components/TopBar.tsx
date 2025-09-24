@@ -11,8 +11,13 @@ import { useConfig, useSetActiveAdapter } from '@/dashboard/api/hooks';
 import { Loader2 } from 'lucide-react';
 
 const TopBar: React.FC = () => {
-  const { data: config, isLoading: isConfigLoading } = useConfig();
+  const { data: config, isLoading: isConfigLoading, error: configError } = useConfig();
   const setActiveAdapterMutation = useSetActiveAdapter();
+
+  // Debug logging
+  console.log('TopBar config data:', config);
+  console.log('TopBar config loading:', isConfigLoading);
+  console.log('TopBar config error:', configError);
 
   // Handle adapter selection
   const handleAdapterChange = (value: string) => {
@@ -68,7 +73,7 @@ const TopBar: React.FC = () => {
           {config && (
             <div className="hidden md:flex text-xs text-muted-foreground">
               <span className="px-2 py-1 rounded-md bg-primary/10">
-                v{config.version}
+                {config.activeAdapter.name}
               </span>
             </div>
           )}
