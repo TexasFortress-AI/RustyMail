@@ -7,6 +7,7 @@ use crate::dashboard::api::errors::ApiError;
 use crate::dashboard::services::DashboardState;
 use crate::dashboard::api::models::{ChatbotQuery, ServerConfig};
 use crate::dashboard::api::sse::EventType;
+use crate::dashboard::services::ai::provider_manager::ProviderConfig;
 use actix_web_lab::sse::{self, Sse};
 use futures_util::StreamExt;
 use tokio::sync::mpsc;
@@ -323,4 +324,163 @@ pub async fn get_available_event_types() -> Result<impl Responder, ApiError> {
             "dashboard_event": "Generic dashboard events"
         }
     })))
+}
+
+// AI Provider Management Handlers
+
+#[derive(Debug, Deserialize)]
+pub struct SetProviderRequest {
+    pub provider_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ProvidersResponse {
+    pub current_provider: Option<String>,
+    pub available_providers: Vec<ProviderConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SetModelRequest {
+    pub model_name: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ModelsResponse {
+    pub current_model: Option<String>,
+    pub available_models: Vec<String>,
+    pub provider: Option<String>,
+}
+
+// Handler for getting AI provider status and list
+pub async fn get_ai_providers(
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling GET /api/dashboard/ai/providers");
+
+    let providers = state.ai_service.list_providers().await;
+    let current_provider = state.ai_service.get_current_provider_name().await;
+
+    let response = ProvidersResponse {
+        current_provider,
+        available_providers: providers,
+    };
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+// Handler for setting the current AI provider
+pub async fn set_ai_provider(
+    req: web::Json<SetProviderRequest>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling POST /api/dashboard/ai/providers/set with provider: {}", req.provider_name);
+
+    // Set the current provider
+    state.ai_service
+        .set_current_provider(req.provider_name.clone())
+        .await
+        .map_err(|e| ApiError::BadRequest(e))?;
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "message": format!("Successfully switched to provider: {}", req.provider_name),
+        "current_provider": req.provider_name
+    })))
+}
+
+// Handler for getting available models for current AI provider
+pub async fn get_ai_models(
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling GET /api/dashboard/ai/models");
+
+    let current_provider = state.ai_service.get_current_provider_name().await;
+    let providers = state.ai_service.list_providers().await;
+
+    // Get current model from the current provider
+    let current_model = if let Some(ref provider_name) = current_provider {
+        providers.iter()
+            .find(|p| p.name == *provider_name)
+            .map(|p| p.model.clone())
+    } else {
+        None
+    };
+
+    // Hardcoded available models for each provider type
+    let available_models = match current_provider.as_deref() {
+        Some("openai") => vec![
+            "gpt-4".to_string(),
+            "gpt-4-turbo".to_string(),
+            "gpt-3.5-turbo".to_string(),
+            "gpt-3.5-turbo-16k".to_string(),
+        ],
+        Some("openrouter") => vec![
+            "meta-llama/llama-2-70b-chat".to_string(),
+            "anthropic/claude-3-haiku".to_string(),
+            "openai/gpt-4".to_string(),
+            "openai/gpt-3.5-turbo".to_string(),
+        ],
+        Some("morpheus") => vec![
+            "llama-3.2-90b-vision-instruct".to_string(),
+            "llama-3.2-11b-vision-instruct".to_string(),
+            "llama-3.2-3b-instruct".to_string(),
+            "llama-3.2-1b-instruct".to_string(),
+        ],
+        Some("ollama") => vec![
+            "llama3.2".to_string(),
+            "llama3.1".to_string(),
+            "llama3".to_string(),
+            "gemma2".to_string(),
+            "mistral".to_string(),
+            "qwen2.5".to_string(),
+        ],
+        Some("mock") => vec![
+            "mock-model".to_string(),
+            "mock-advanced".to_string(),
+        ],
+        _ => vec![]
+    };
+
+    let response = ModelsResponse {
+        current_model,
+        available_models,
+        provider: current_provider,
+    };
+
+    Ok(HttpResponse::Ok().json(response))
+}
+
+// Handler for setting the model for current AI provider
+pub async fn set_ai_model(
+    req: web::Json<SetModelRequest>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling POST /api/dashboard/ai/models/set with model: {}", req.model_name);
+
+    let current_provider = state.ai_service.get_current_provider_name().await;
+
+    if let Some(provider_name) = current_provider {
+        // Get current provider config
+        let providers = state.ai_service.list_providers().await;
+        if let Some(current_config) = providers.iter().find(|p| p.name == provider_name) {
+            // Create updated config with new model
+            let mut new_config = current_config.clone();
+            new_config.model = req.model_name.clone();
+
+            // Update the provider config
+            state.ai_service
+                .update_provider_config(&provider_name, new_config)
+                .await
+                .map_err(|e| ApiError::BadRequest(format!("Failed to update model: {}", e)))?;
+
+            Ok(HttpResponse::Ok().json(serde_json::json!({
+                "message": format!("Successfully set model to: {}", req.model_name),
+                "model": req.model_name,
+                "provider": provider_name
+            })))
+        } else {
+            Err(ApiError::BadRequest("Current provider configuration not found".to_string()))
+        }
+    } else {
+        Err(ApiError::BadRequest("No current provider set".to_string()))
+    }
 }

@@ -61,3 +61,28 @@ export function useChatbotMutation() {
     },
   });
 }
+
+// Hook for fetching AI providers
+export function useAiProviders() {
+  return useQuery({
+    queryKey: ['aiProviders'],
+    queryFn: async () => {
+      return apiClient.getAiProviders();
+    },
+  });
+}
+
+// Hook for setting AI provider
+export function useSetAiProvider() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (providerName: string) => {
+      return apiClient.setAiProvider(providerName);
+    },
+    onSuccess: () => {
+      // Invalidate and refetch AI providers list
+      queryClient.invalidateQueries({ queryKey: ['aiProviders'] });
+    },
+  });
+}

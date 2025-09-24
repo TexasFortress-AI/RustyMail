@@ -147,6 +147,33 @@ export const apiClient = {
       conversationId: response.conversation_id,
       followupSuggestions: response.followup_suggestions || [],
     };
+  },
+
+  // AI Provider Management
+  getAiProviders: async (): Promise<{
+    currentProvider: string | null;
+    availableProviders: Array<{
+      name: string;
+      provider_type: string;
+      model: string;
+      priority: number;
+      enabled: boolean;
+    }>;
+  }> => {
+    const response = await apiRequest<any>(`${API_BASE}/ai/providers`);
+    return {
+      currentProvider: response.current_provider,
+      availableProviders: response.available_providers,
+    };
+  },
+
+  setAiProvider: async (providerName: string): Promise<{ message: string; current_provider: string }> => {
+    return await apiRequest<any>(`${API_BASE}/ai/providers/set`, {
+      method: 'POST',
+      body: JSON.stringify({
+        provider_name: providerName,
+      }),
+    });
   }
 };
 

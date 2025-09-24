@@ -16,6 +16,12 @@ pub fn configure_routes() -> Scope {
         .route("/config/validate", web::get().to(config::validate_config))
         .route("/chatbot/query", web::post().to(handlers::query_chatbot))
         .route("/chatbot/stream", web::post().to(handlers::stream_chatbot))
+        // AI provider management endpoints
+        .route("/ai/providers", web::get().to(handlers::get_ai_providers))
+        .route("/ai/providers/set", web::post().to(handlers::set_ai_provider))
+        // AI model management endpoints
+        .route("/ai/models", web::get().to(handlers::get_ai_models))
+        .route("/ai/models/set", web::post().to(handlers::set_ai_model))
         .route("/events", web::get().to(sse::sse_handler))
         // Subscription management endpoints
         .route("/events/types", web::get().to(handlers::get_available_event_types))

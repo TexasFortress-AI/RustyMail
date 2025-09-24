@@ -121,6 +121,13 @@ impl AiService {
             enabled: true,
         }).await.ok();
 
+        // Set the first available provider as current (highest priority = lowest number)
+        let providers = provider_manager.list_providers().await;
+        if let Some(first_provider) = providers.iter().filter(|p| p.enabled).min_by_key(|p| p.priority) {
+            provider_manager.set_current_provider(first_provider.name.clone()).await.ok();
+            info!("Set initial current provider to: {}", first_provider.name);
+        }
+
         let nlp_processor = NlpProcessor::new(provider_manager.clone());
 
         Ok(Self {
@@ -144,8 +151,9 @@ impl AiService {
         ).await;
 
         let (response_text, email_data, suggestions) = match nlp_result {
-            Ok(nlp_res) if nlp_res.confidence > 0.6 => {
-                // High confidence NLP result - execute MCP operation
+            Ok(nlp_res) if nlp_res.confidence > 0.99 => {
+                // VERY high confidence NLP result - execute MCP operation (disabled for now)
+                // TODO: Implement actual MCP operations instead of showing debug info
                 info!("NLP detected intent: {:?} with confidence {}", nlp_res.intent, nlp_res.confidence);
 
                 let response = if let Some(mcp_op) = &nlp_res.mcp_operation {
@@ -251,6 +259,27 @@ impl AiService {
     #[allow(dead_code)]
     fn generate_mock_email_data(&self) -> EmailData {
         EmailData { messages: None, count: None, folders: None } // Simplified for example
+    }
+
+    // Provider management methods
+    pub async fn list_providers(&self) -> Vec<crate::dashboard::services::ai::provider_manager::ProviderConfig> {
+        self.provider_manager.list_providers().await
+    }
+
+    pub async fn get_current_provider_name(&self) -> Option<String> {
+        self.provider_manager.get_current_provider_name().await
+    }
+
+    pub async fn set_current_provider(&self, name: String) -> Result<(), String> {
+        self.provider_manager.set_current_provider(name)
+            .await
+            .map_err(|e| format!("Failed to set provider: {}", e))
+    }
+
+    pub async fn update_provider_config(&self, name: &str, config: provider_manager::ProviderConfig) -> Result<(), String> {
+        self.provider_manager.update_provider_config(name, config)
+            .await
+            .map_err(|e| format!("Failed to update provider config: {:?}", e))
     }
     
     // Clean up old conversations

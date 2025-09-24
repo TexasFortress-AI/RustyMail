@@ -5,6 +5,8 @@ use crate::api::errors::ApiError as RestApiError;
 
 pub mod openai;
 pub mod openrouter;
+pub mod morpheus;
+pub mod ollama;
 
 /// Common message structure for AI chat completion APIs (OpenAI, OpenRouter)
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -31,6 +33,8 @@ pub trait AiProvider: Send + Sync {
 // Re-export the provider implementations for easier access
 pub use openai::OpenAiAdapter;
 pub use openrouter::OpenRouterAdapter;
+pub use morpheus::MorpheusAdapter;
+pub use ollama::OllamaAdapter;
 
 // --- Mock Provider Implementation ---
 #[derive(Debug, Default)]
