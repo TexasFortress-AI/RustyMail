@@ -314,10 +314,13 @@ MIT License. See `LICENSE`.
 ## Authors
 
 - Steve Olson - [GitHub](https://github.com/rangersdo)
+- Chris Odom - [GitHub](https://github.com/fellowtraveler)
 - Contact: [steve@texasfortress.ai](mailto:steve@texasfortress.ai)
+- Contact: [chris@texasfortress.ai](mailto:chris@texasfortress.ai)
 
 ## Sponsors
 
 Sponsored by Texas Fortress AI.
 
 [Become a sponsor](https://github.com/sponsors/rangersdo)
+[Become a sponsor](https://github.com/sponsors/fellowtraveler)
