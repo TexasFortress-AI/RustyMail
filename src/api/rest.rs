@@ -1,7 +1,7 @@
 use actix_web::{
     web::{self, Data, Json, Path, Query},
     get, post, delete, put, // Added PUT and DELETE
-    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer, Responder,
+    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer,
     ResponseError,
     http::StatusCode,
 };
@@ -22,13 +22,12 @@ use crate::{ // Group crate imports
         error::ImapError,
         session::{AsyncImapOps, AsyncImapSessionWrapper}, // Import session types
         types::{ // Import necessary IMAP types
-            AppendEmailPayload, FlagOperation, Flags, Folder, Email, MailboxInfo, ModifyFlagsPayload, 
-            SearchCriteria,
+            FlagOperation, Flags,
         },
     },
     mcp::{
         handler::McpHandler,
-        types::{McpPortState, JsonRpcResponse, JsonRpcRequest, JsonRpcError}, // Remove McpCommand/Result if unused here
+        types::{JsonRpcError}, // Remove unused imports
     },
     session_manager::{SessionManager, SessionManagerTrait}, // Import both the struct and trait
 };
@@ -139,26 +138,26 @@ pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api/v1")
             .wrap(mw_from_fn(validate_api_key))
+            // Folder operations
             .service(list_folders)
-            // ... other IMAP routes ...
+            .service(get_folder)
             .service(create_folder)
+            .service(update_folder)
             .service(delete_folder)
-            .service(rename_folder)
             .service(select_folder)
-            .service(search_emails)
-            .service(fetch_emails)
-            .service(modify_flags)
+            // Email operations
+            .service(list_emails)
+            .service(get_email)
+            .service(create_email)
+            .service(update_email_flags)
+            .service(delete_email)
             .service(move_email)
-            .service(append_email)
+            .service(search_emails)
+            // Bulk operations
             .service(expunge_folder)
     );
 
-    // Optionally configure dashboard routes if dashboard feature is enabled
-    #[cfg(feature = "dashboard")]
-    {
-        use crate::dashboard::api::configure_dashboard_routes;
-        cfg.service(web::scope("/dashboard").configure(configure_dashboard_routes));
-    }
+    // Dashboard routes are configured separately in the main server setup
 }
 
 // --- Helper Functions ---
@@ -176,20 +175,78 @@ async fn get_session(state: &AppState, req: &HttpRequest) -> Result<Arc<ImapClie
 
 // --- Route Handlers ---
 
+// === Folder Operations ===
+
 #[get("/folders")]
 async fn list_folders(state: Data<AppState>, req: HttpRequest) -> Result<HttpResponse, ApiError> {
     info!("Handling GET /folders");
     let session = get_session(&state, &req).await?;
-    let folders: Vec<String> = session.list_folders().await?; // Correct return type is Vec<String>
-    Ok(HttpResponse::Ok().json(folders))
+    let folders: Vec<String> = session.list_folders().await?;
+
+    // Transform to proper REST response format
+    let folder_objects: Vec<serde_json::Value> = folders.iter().map(|name| {
+        serde_json::json!({
+            "name": name,
+            "delimiter": "/",
+            "attributes": [],
+        })
+    }).collect();
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "folders": folder_objects,
+        "total": folders.len(),
+    })))
+}
+
+#[get("/folders/{folder_name}")]
+async fn get_folder(state: Data<AppState>, req: HttpRequest, path: Path<String>) -> Result<HttpResponse, ApiError> {
+    let folder_name = path.into_inner();
+    info!("Handling GET /folders/{}", folder_name);
+    let session = get_session(&state, &req).await?;
+
+    // Verify folder exists
+    let folders = session.list_folders().await?;
+    if !folders.contains(&folder_name) {
+        return Err(ApiError::NotFound(format!("Folder '{}' not found", folder_name)));
+    }
+
+    // Select folder - note that actual implementation returns ()
+    let _ = session.select_folder(&folder_name).await?;
+
+    // Return folder info (without mailbox stats for now)
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "name": folder_name,
+        "delimiter": "/",
+        "attributes": [],
+    })))
 }
 
 #[post("/folders")]
-async fn create_folder(state: Data<AppState>, req: HttpRequest, payload: Json<Folder>) -> Result<HttpResponse, ApiError> {
+async fn create_folder(state: Data<AppState>, req: HttpRequest, payload: Json<CreateFolderRequest>) -> Result<HttpResponse, ApiError> {
     info!("Handling POST /folders");
+
+    // Validate request
+    if payload.name.is_empty() {
+        return Err(ApiError::BadRequest("Folder name cannot be empty".to_string()));
+    }
+
     let session = get_session(&state, &req).await?;
     session.create_folder(&payload.name).await?;
-    Ok(HttpResponse::Created().finish())
+
+    Ok(HttpResponse::Created()
+        .insert_header(("Location", format!("/api/v1/folders/{}", payload.name)))
+        .json(serde_json::json!({
+            "name": payload.name,
+            "delimiter": "/",
+            "message": "Folder created successfully"
+        })))
+}
+
+#[derive(Deserialize)]
+struct CreateFolderRequest {
+    name: String,
+    #[serde(default)]
+    parent: Option<String>,
 }
 
 #[delete("/folders/{folder_name}")]
@@ -202,13 +259,36 @@ async fn delete_folder(state: Data<AppState>, req: HttpRequest, path: Path<Strin
 }
 
 #[put("/folders/{folder_name}")]
-async fn rename_folder(state: Data<AppState>, req: HttpRequest, path: Path<String>, payload: Json<Folder>) -> Result<HttpResponse, ApiError> {
-    let old_name = path.into_inner();
-    let new_name = payload.into_inner().name;
-    info!("Handling PUT /folders/{} -> {}", old_name, new_name);
+async fn update_folder(state: Data<AppState>, req: HttpRequest, path: Path<String>, payload: Json<UpdateFolderRequest>) -> Result<HttpResponse, ApiError> {
+    let folder_name = path.into_inner();
+    info!("Handling PUT /folders/{}", folder_name);
+
     let session = get_session(&state, &req).await?;
-    session.rename_folder(&old_name, &new_name).await?;
-    Ok(HttpResponse::Ok().finish())
+
+    // Handle rename if new name provided
+    if let Some(new_name) = &payload.name {
+        if new_name.is_empty() {
+            return Err(ApiError::BadRequest("New folder name cannot be empty".to_string()));
+        }
+        session.rename_folder(&folder_name, new_name).await?;
+
+        Ok(HttpResponse::Ok()
+            .insert_header(("Location", format!("/api/v1/folders/{}", new_name)))
+            .json(serde_json::json!({
+                "name": new_name,
+                "message": "Folder renamed successfully"
+            })))
+    } else {
+        Ok(HttpResponse::Ok().json(serde_json::json!({
+            "name": folder_name,
+            "message": "No changes made"
+        })))
+    }
+}
+
+#[derive(Deserialize)]
+struct UpdateFolderRequest {
+    name: Option<String>,
 }
 
 #[post("/folders/{folder_name}/select")]
@@ -216,95 +296,243 @@ async fn select_folder(state: Data<AppState>, req: HttpRequest, path: Path<Strin
     let folder_name = path.into_inner();
     info!("Handling POST /folders/{}/select", folder_name);
     let session = get_session(&state, &req).await?;
-    session.select_folder(&folder_name).await?;
-    // TODO: Return actual mailbox info when available
+    let _ = session.select_folder(&folder_name).await?;
+
     Ok(HttpResponse::Ok().json(serde_json::json!({
-        "selected": folder_name,
-        "status": "ok"
+        "folder": folder_name,
+        "status": "selected",
     })))
 }
 
+// === Email Operations ===
+
 #[get("/folders/{folder_name}/emails")]
-async fn search_emails(state: Data<AppState>, req: HttpRequest, path: Path<String>, query: Query<SearchCriteria>) -> Result<HttpResponse, ApiError> {
+async fn list_emails(state: Data<AppState>, req: HttpRequest, path: Path<String>, query: Query<ListEmailsQuery>) -> Result<HttpResponse, ApiError> {
     let folder_name = path.into_inner();
-    info!("Handling GET /folders/{}/emails with criteria: {}", folder_name, query.to_string());
-    let session = get_session(&state, &req).await?;
-    let _ = session.select_folder(&folder_name).await?; // Select folder first
-    let uids = session.search_emails(&query.to_string()).await?;
-    Ok(HttpResponse::Ok().json(uids))
-}
+    info!("Handling GET /folders/{}/emails", folder_name);
 
-#[get("/emails")]
-async fn fetch_emails(state: Data<AppState>, req: HttpRequest, query: Query<FetchEmailsQuery>) -> Result<HttpResponse, ApiError> {
-    info!("Handling GET /emails?uids={}", query.uids);
     let session = get_session(&state, &req).await?;
-    let uids: Vec<u32> = query.uids.split(',') // Parse UIDs from query string
-        .filter_map(|s| s.trim().parse().ok())
+    let _ = session.select_folder(&folder_name).await?;
+
+    // Default to fetching recent emails if no specific query
+    let search_criteria = query.search.as_deref().unwrap_or("ALL");
+    let uids = session.search_emails(search_criteria).await?;
+
+    // Apply pagination
+    let limit = query.limit.unwrap_or(50).min(100); // Max 100 emails per request
+    let offset = query.offset.unwrap_or(0);
+
+    let paginated_uids: Vec<u32> = uids.iter()
+        .skip(offset)
+        .take(limit)
+        .copied()
         .collect();
-    if uids.is_empty() {
-        return Err(ApiError::BadRequest("No valid UIDs provided".to_string()));
+
+    // Fetch email headers for the paginated results
+    let emails = if !paginated_uids.is_empty() {
+        session.fetch_emails(&paginated_uids).await?
+    } else {
+        vec![]
+    };
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "emails": emails,
+        "total": uids.len(),
+        "limit": limit,
+        "offset": offset,
+        "folder": folder_name,
+    })))
+}
+
+#[derive(Deserialize)]
+struct ListEmailsQuery {
+    search: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+}
+
+#[get("/folders/{folder_name}/emails/{uid}")]
+async fn get_email(state: Data<AppState>, req: HttpRequest, path: Path<(String, u32)>) -> Result<HttpResponse, ApiError> {
+    let (folder_name, uid) = path.into_inner();
+    info!("Handling GET /folders/{}/emails/{}", folder_name, uid);
+
+    let session = get_session(&state, &req).await?;
+    let _ = session.select_folder(&folder_name).await?;
+
+    let emails = session.fetch_emails(&vec![uid]).await?;
+
+    if emails.is_empty() {
+        return Err(ApiError::NotFound(format!("Email with UID {} not found in folder '{}'", uid, folder_name)));
     }
-    let emails = session.fetch_emails(&uids).await?; // Pass Vec<u32>
-    Ok(HttpResponse::Ok().json(emails))
+
+    Ok(HttpResponse::Ok().json(&emails[0]))
 }
 
-#[derive(Deserialize)]
-struct FetchEmailsQuery {
-    uids: String, // Comma-separated UIDs
-}
-
-#[post("/emails/flags")]
-async fn modify_flags(state: Data<AppState>, req: HttpRequest, payload: Json<ModifyFlagsPayload>) -> Result<HttpResponse, ApiError> {
-    info!("Handling POST /emails/flags");
-    let session = get_session(&state, &req).await?;
-    let uids = &payload.uids;
-    let operation = payload.operation.clone(); // Clone operation
-    let flags_to_modify: Vec<String> = payload.flags.items.iter().map(|f| f.to_string()).collect(); // Convert flags to Vec<String>
-
-    session.store_flags(uids, operation, &flags_to_modify).await?; // Pass Vec<String>
-    Ok(HttpResponse::Ok().finish())
-}
-
-#[post("/emails/move")]
-async fn move_email(state: Data<AppState>, req: HttpRequest, payload: Json<MoveEmailPayload>) -> Result<HttpResponse, ApiError> {
-    info!("Handling POST /emails/move");
-    let session = get_session(&state, &req).await?;
-    // Assuming MoveEmailPayload contains uid, from_folder, to_folder
-    session.move_email(payload.uid, &payload.from_folder, &payload.to_folder).await?;
-    Ok(HttpResponse::Ok().finish())
-}
-
-#[derive(Deserialize)]
-struct MoveEmailPayload {
-    uid: u32,
-    from_folder: String,
-    to_folder: String,
-}
-
-#[post("/folders/{folder_name}/emails/append")]
-async fn append_email(state: Data<AppState>, req: HttpRequest, path: Path<String>, payload: Json<AppendEmailPayload>) -> Result<HttpResponse, ApiError> {
+#[post("/folders/{folder_name}/emails")]
+async fn create_email(state: Data<AppState>, req: HttpRequest, path: Path<String>, payload: Json<CreateEmailRequest>) -> Result<HttpResponse, ApiError> {
     let folder_name = path.into_inner();
-    info!("Handling POST /folders/{}/emails/append", folder_name);
+    info!("Handling POST /folders/{}/emails", folder_name);
+
     let session = get_session(&state, &req).await?;
+
     // Decode base64 content
     use base64::Engine;
     let content = base64::engine::general_purpose::STANDARD
         .decode(&payload.content)
         .map_err(|e| ApiError::BadRequest(format!("Invalid base64 content: {}", e)))?;
-    let flags: Vec<String> = payload.flags.items.iter().map(|f| f.to_string()).collect(); // Convert flags
+
+    let flags: Vec<String> = payload.flags.as_ref()
+        .map(|f| f.items.iter().map(|flag| flag.to_string()).collect())
+        .unwrap_or_default();
 
     session.append(&folder_name, &content, &flags).await?;
-    Ok(HttpResponse::Created().finish())
+
+    Ok(HttpResponse::Created()
+        .json(serde_json::json!({
+            "message": "Email appended successfully",
+            "folder": folder_name,
+        })))
 }
+
+#[derive(Deserialize)]
+struct CreateEmailRequest {
+    content: String, // Base64 encoded RFC822 message
+    flags: Option<Flags>,
+}
+
+#[get("/emails/search")]
+async fn search_emails(state: Data<AppState>, req: HttpRequest, query: Query<SearchEmailsQuery>) -> Result<HttpResponse, ApiError> {
+    info!("Handling GET /emails/search");
+
+    let session = get_session(&state, &req).await?;
+
+    // Select folder if specified, otherwise use INBOX
+    let folder = query.folder.as_deref().unwrap_or("INBOX");
+    let _ = session.select_folder(folder).await?;
+
+    let search_criteria = query.q.as_deref().unwrap_or("ALL");
+    let uids = session.search_emails(search_criteria).await?;
+
+    // Apply pagination
+    let limit = query.limit.unwrap_or(50).min(100);
+    let offset = query.offset.unwrap_or(0);
+
+    let paginated_uids: Vec<u32> = uids.iter()
+        .skip(offset)
+        .take(limit)
+        .copied()
+        .collect();
+
+    let emails = if !paginated_uids.is_empty() {
+        session.fetch_emails(&paginated_uids).await?
+    } else {
+        vec![]
+    };
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "results": emails,
+        "total": uids.len(),
+        "query": search_criteria,
+        "folder": folder,
+    })))
+}
+
+#[derive(Deserialize)]
+struct SearchEmailsQuery {
+    q: Option<String>, // Search query
+    folder: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+}
+
+#[put("/folders/{folder_name}/emails/{uid}")]
+async fn update_email_flags(state: Data<AppState>, req: HttpRequest, path: Path<(String, u32)>, payload: Json<UpdateEmailRequest>) -> Result<HttpResponse, ApiError> {
+    let (folder_name, uid) = path.into_inner();
+    info!("Handling PUT /folders/{}/emails/{}", folder_name, uid);
+
+    let session = get_session(&state, &req).await?;
+    let _ = session.select_folder(&folder_name).await?;
+
+    if let Some(flags) = &payload.flags {
+        let flag_strings: Vec<String> = flags.items.iter().map(|f| f.to_string()).collect();
+        let operation = payload.flag_operation.clone().unwrap_or(FlagOperation::Set);
+        session.store_flags(&vec![uid], operation, &flag_strings).await?;
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "uid": uid,
+        "folder": folder_name,
+        "message": "Email updated successfully"
+    })))
+}
+
+#[derive(Deserialize)]
+struct UpdateEmailRequest {
+    flags: Option<Flags>,
+    flag_operation: Option<FlagOperation>,
+}
+
+#[delete("/folders/{folder_name}/emails/{uid}")]
+async fn delete_email(state: Data<AppState>, req: HttpRequest, path: Path<(String, u32)>) -> Result<HttpResponse, ApiError> {
+    let (folder_name, uid) = path.into_inner();
+    info!("Handling DELETE /folders/{}/emails/{}", folder_name, uid);
+
+    let session = get_session(&state, &req).await?;
+    let _ = session.select_folder(&folder_name).await?;
+
+    // Mark email as deleted
+    session.store_flags(&vec![uid], FlagOperation::Add, &vec!["\\Deleted".to_string()]).await?;
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "uid": uid,
+        "folder": folder_name,
+        "message": "Email marked for deletion. Run expunge to permanently delete."
+    })))
+}
+
+
+#[post("/folders/{folder_name}/emails/{uid}/move")]
+async fn move_email(state: Data<AppState>, req: HttpRequest, path: Path<(String, u32)>, payload: Json<MoveEmailRequest>) -> Result<HttpResponse, ApiError> {
+    let (from_folder, uid) = path.into_inner();
+    info!("Handling POST /folders/{}/emails/{}/move", from_folder, uid);
+
+    if payload.to_folder.is_empty() {
+        return Err(ApiError::BadRequest("Target folder cannot be empty".to_string()));
+    }
+
+    let session = get_session(&state, &req).await?;
+    session.move_email(uid, &from_folder, &payload.to_folder).await?;
+
+    Ok(HttpResponse::Ok()
+        .insert_header(("Location", format!("/api/v1/folders/{}/emails/{}", payload.to_folder, uid)))
+        .json(serde_json::json!({
+            "uid": uid,
+            "from": from_folder,
+            "to": payload.to_folder,
+            "message": "Email moved successfully"
+        })))
+}
+
+#[derive(Deserialize)]
+struct MoveEmailRequest {
+    to_folder: String,
+}
+
+// === Bulk Operations ===
 
 #[post("/folders/{folder_name}/expunge")]
 async fn expunge_folder(state: Data<AppState>, req: HttpRequest, path: Path<String>) -> Result<HttpResponse, ApiError> {
     let folder_name = path.into_inner();
     info!("Handling POST /folders/{}/expunge", folder_name);
+
     let session = get_session(&state, &req).await?;
-    let _ = session.select_folder(&folder_name).await?; // Select folder first
-    session.expunge().await?;
-    Ok(HttpResponse::Ok().finish())
+    let _ = session.select_folder(&folder_name).await?;
+    let _ = session.expunge().await?;
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "folder": folder_name,
+        "message": "Expunge operation completed successfully"
+    })))
 }
 
 // --- Main Server Setup (Optional, if this is the main entry point) ---
