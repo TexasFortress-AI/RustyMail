@@ -1,11 +1,18 @@
 use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::convert::Infallible;
 use log::debug;
 use crate::dashboard::api::errors::ApiError;
 use crate::dashboard::services::DashboardState;
 use crate::dashboard::api::models::{ChatbotQuery, ServerConfig};
 use crate::dashboard::api::sse::EventType;
+use actix_web_lab::sse::{self, Sse};
+use futures_util::StreamExt;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
+use uuid;
+use serde_json;
 
 // Query parameters for client list endpoint
 #[derive(Debug, Deserialize)]
@@ -67,12 +74,79 @@ pub async fn query_chatbot(
     req: web::Json<ChatbotQuery>,
 ) -> Result<impl Responder, ApiError> {
     debug!("Handling POST /api/dashboard/chatbot/query with body: {:?}", req);
-    
+
     let response = state.ai_service.process_query(req.0)
         .await
         .map_err(|e| ApiError::InternalError(format!("AI service error: {}", e)))?;
-    
+
     Ok(HttpResponse::Ok().json(response))
+}
+
+// Handler for streaming chatbot responses via SSE
+pub async fn stream_chatbot(
+    state: web::Data<DashboardState>,
+    req: web::Json<ChatbotQuery>,
+) -> Result<Sse<impl futures_util::Stream<Item = Result<sse::Event, Infallible>>>, ApiError> {
+    debug!("Handling POST /api/dashboard/chatbot/stream with body: {:?}", req);
+
+    let (tx, rx) = mpsc::channel(100);
+    let ai_service = state.ai_service.clone();
+    let query = req.into_inner();
+
+    // Spawn task to process query and stream response
+    tokio::spawn(async move {
+        // First send a "start" event
+        let start_event = sse::Data::new(serde_json::json!({
+            "type": "start",
+            "conversation_id": query.conversation_id.clone().unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+        }).to_string())
+            .event("chatbot");
+
+        if tx.send(Ok(sse::Event::Data(start_event))).await.is_err() {
+            return;
+        }
+
+        // Process the query
+        match ai_service.process_query(query).await {
+            Ok(response) => {
+                // For now, send the full response at once
+                // TODO: Implement actual token-by-token streaming when provider supports it
+                let content_event = sse::Data::new(serde_json::json!({
+                    "type": "content",
+                    "text": response.text,
+                    "conversation_id": response.conversation_id,
+                    "email_data": response.email_data,
+                    "followup_suggestions": response.followup_suggestions
+                }).to_string())
+                    .event("chatbot");
+
+                let _ = tx.send(Ok(sse::Event::Data(content_event))).await;
+
+                // Send completion event
+                let complete_event = sse::Data::new(serde_json::json!({
+                    "type": "complete"
+                }).to_string())
+                    .event("chatbot");
+
+                let _ = tx.send(Ok(sse::Event::Data(complete_event))).await;
+            }
+            Err(e) => {
+                // Send error event
+                let error_event = sse::Data::new(serde_json::json!({
+                    "type": "error",
+                    "error": format!("AI service error: {}", e)
+                }).to_string())
+                    .event("chatbot");
+
+                let _ = tx.send(Ok(sse::Event::Data(error_event))).await;
+            }
+        }
+    });
+
+    // Convert receiver to stream
+    let stream = ReceiverStream::new(rx);
+
+    Ok(Sse::from_stream(stream))
 }
 
 // Request/response structures for subscription management

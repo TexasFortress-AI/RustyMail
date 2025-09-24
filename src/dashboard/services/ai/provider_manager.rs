@@ -50,31 +50,6 @@ impl ProviderManager {
         }
     }
 
-    pub fn add_provider(&self, config: ProviderConfig) -> Result<(), RestApiError> {
-        let provider: Arc<dyn AiProvider> = match config.provider_type {
-            ProviderType::OpenAI => {
-                Arc::new(OpenAiAdapter::new(
-                    config.api_key.clone().ok_or_else(|| RestApiError::InternalError {
-                        message: "OpenAI API key is required".to_string()
-                    })?,
-                    self.http_client.clone()
-                ))
-            },
-            ProviderType::OpenRouter => {
-                Arc::new(OpenRouterAdapter::new(
-                    config.api_key.clone().ok_or_else(|| RestApiError::InternalError {
-                        message: "OpenRouter API key is required".to_string()
-                    })?,
-                    self.http_client.clone()
-                ))
-            },
-            ProviderType::Mock => Arc::new(MockAiProvider),
-        };
-
-        self.providers.write().unwrap().insert(config.name.clone(), provider);
-        self.configs.write().unwrap().push(config);
-        Ok(())
-    }
 
     // Initialize from environment variables
     pub async fn init_from_env(&mut self) -> Result<(), RestApiError> {
@@ -100,7 +75,7 @@ impl ProviderManager {
 
             // Create OpenAI provider
             let provider = Arc::new(OpenAiAdapter::new(api_key, self.http_client.clone()));
-            self.providers.insert("openai".to_string(), provider);
+            self.providers.write().await.insert("openai".to_string(), provider);
             info!("Initialized OpenAI provider");
         }
 
@@ -125,7 +100,7 @@ impl ProviderManager {
 
             // Create OpenRouter provider
             let provider = Arc::new(OpenRouterAdapter::new(api_key, self.http_client.clone()));
-            self.providers.insert("openrouter".to_string(), provider);
+            self.providers.write().await.insert("openrouter".to_string(), provider);
             info!("Initialized OpenRouter provider");
         }
 
@@ -141,7 +116,7 @@ impl ProviderManager {
             enabled: true,
         };
         configs.push(mock_config);
-        self.providers.insert("mock".to_string(), Arc::new(MockAiProvider));
+        self.providers.write().await.insert("mock".to_string(), Arc::new(MockAiProvider));
         info!("Initialized Mock provider as fallback");
 
         // Sort configs by priority
@@ -180,7 +155,7 @@ impl ProviderManager {
             },
         };
 
-        self.providers.insert(config.name.clone(), provider);
+        self.providers.write().await.insert(config.name.clone(), provider);
 
         let mut configs = self.configs.write().await;
         configs.push(config.clone());
@@ -194,7 +169,8 @@ impl ProviderManager {
     pub async fn get_current_provider(&self) -> Option<Arc<dyn AiProvider>> {
         let current = self.current_provider.read().await;
         if let Some(name) = current.as_ref() {
-            self.providers.get(name).cloned()
+            let providers = self.providers.read().await;
+            providers.get(name).cloned()
         } else {
             None
         }
@@ -202,11 +178,13 @@ impl ProviderManager {
 
     // Set current provider
     pub async fn set_current_provider(&self, name: String) -> Result<(), RestApiError> {
-        if !self.providers.contains_key(&name) {
+        let providers = self.providers.read().await;
+        if !providers.contains_key(&name) {
             return Err(RestApiError::UnprocessableEntity {
                 message: format!("Provider '{}' not found", name)
             });
         }
+        drop(providers); // Release read lock before write
 
         *self.current_provider.write().await = Some(name.clone());
         info!("Switched current provider to: {}", name);
@@ -216,9 +194,10 @@ impl ProviderManager {
     // Generate response with automatic failover
     pub async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError> {
         let configs = self.configs.read().await;
+        let providers = self.providers.read().await;
 
         for config in configs.iter().filter(|c| c.enabled) {
-            if let Some(provider) = self.providers.get(&config.name) {
+            if let Some(provider) = providers.get(&config.name) {
                 debug!("Trying provider: {}", config.name);
 
                 match provider.generate_response(messages).await {
@@ -263,7 +242,7 @@ impl ProviderManager {
     // Update provider configuration
     pub async fn update_provider_config(&mut self, name: &str, config: ProviderConfig) -> Result<(), RestApiError> {
         // Remove old provider
-        self.providers.remove(name);
+        self.providers.write().await.remove(name);
 
         // Add new provider with updated config
         self.add_provider(config).await?;

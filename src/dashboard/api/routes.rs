@@ -15,6 +15,7 @@ pub fn configure_routes() -> Scope {
         .route("/config/dashboard", web::put().to(config::update_dashboard))
         .route("/config/validate", web::get().to(config::validate_config))
         .route("/chatbot/query", web::post().to(handlers::query_chatbot))
+        .route("/chatbot/stream", web::post().to(handlers::stream_chatbot))
         .route("/events", web::get().to(sse::sse_handler))
         // Subscription management endpoints
         .route("/events/types", web::get().to(handlers::get_available_event_types))

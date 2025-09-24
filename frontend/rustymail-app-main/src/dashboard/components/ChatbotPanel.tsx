@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useChatbotMutation } from '@/dashboard/api/hooks';
+import { useSSEChatbot } from '@/dashboard/api/useSSEChatbot';
 import { ChatMessage } from '@/types';
 import { Send, Bot, User, Loader2, Mail, Folder, Download, Copy, Trash2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
@@ -42,10 +43,54 @@ const ChatbotPanel: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>(loadConversation);
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
+  const [useStreaming, setUseStreaming] = useState(true); // Default to SSE streaming
+  const [streamingMessage, setStreamingMessage] = useState<ChatMessage | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  
+
   const chatbotMutation = useChatbotMutation();
+
+  const { streamQuery, isStreaming } = useSSEChatbot({
+    onStart: (convId) => {
+      setConversationId(convId);
+    },
+    onContent: (text, partial) => {
+      // Update the streaming message with new content
+      setStreamingMessage(prev => prev ? {
+        ...prev,
+        text
+      } : null);
+    },
+    onComplete: (response) => {
+      // Finalize the message with complete data
+      if (streamingMessage) {
+        const finalMessage: ChatMessage = {
+          ...streamingMessage,
+          text: response.text,
+          emailData: response.emailData,
+          followupSuggestions: response.followupSuggestions
+        };
+        setMessages(prev => {
+          // Replace the streaming message with the final one
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1] = finalMessage;
+          return newMessages;
+        });
+        setStreamingMessage(null);
+      }
+    },
+    onError: (error) => {
+      setStreamingMessage(null);
+      // Add error message to conversation
+      const errorMessage: ChatMessage = {
+        id: uuidv4(),
+        type: 'ai',
+        text: 'Sorry, I encountered an error processing your request. Please try again.',
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, errorMessage]);
+    }
+  });
   
   // Save conversation whenever messages change
   useEffect(() => {
@@ -63,11 +108,11 @@ const ChatbotPanel: React.FC = () => {
   }, []);
   
   // Handle form submission
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!inputText.trim()) return;
-    
+
     // Add user message to the conversation
     const userMessage: ChatMessage = {
       id: uuidv4(),
@@ -75,51 +120,67 @@ const ChatbotPanel: React.FC = () => {
       text: inputText,
       timestamp: new Date().toISOString()
     };
-    
+
     setMessages(prev => [...prev, userMessage]);
+    const queryText = inputText;
     setInputText('');
-    
-    // Send the query to the chatbot
-    chatbotMutation.mutate(
-      { 
-        query: inputText, 
-        conversation_id: conversationId 
-      },
-      {
-        onSuccess: (response) => {
-          // Add AI response to the conversation
-          const aiMessage: ChatMessage = {
-            id: uuidv4(),
-            type: 'ai',
-            text: response.text,
-            timestamp: new Date().toISOString(),
-            emailData: response.emailData,
-            followupSuggestions: response.followupSuggestions
-          };
-          
-          setMessages(prev => [...prev, aiMessage]);
-          setConversationId(response.conversation_id);
+
+    if (useStreaming) {
+      // Use SSE streaming
+      const aiMessage: ChatMessage = {
+        id: uuidv4(),
+        type: 'ai',
+        text: '',
+        timestamp: new Date().toISOString()
+      };
+      setStreamingMessage(aiMessage);
+      setMessages(prev => [...prev, aiMessage]);
+
+      // Stream the query
+      await streamQuery(queryText, conversationId);
+    } else {
+      // Use traditional HTTP POST
+      chatbotMutation.mutate(
+        {
+          query: queryText,
+          conversation_id: conversationId
         },
-        onError: (error) => {
-          // Show error toast
-          toast({
-            title: "Chatbot Error",
-            description: error instanceof Error ? error.message : "Failed to get response",
-            variant: "destructive",
-          });
-          
-          // Add error message to conversation
-          const errorMessage: ChatMessage = {
-            id: uuidv4(),
-            type: 'ai',
-            text: 'Sorry, I encountered an error processing your request. Please try again.',
-            timestamp: new Date().toISOString()
-          };
-          
-          setMessages(prev => [...prev, errorMessage]);
+        {
+          onSuccess: (response) => {
+            // Add AI response to the conversation
+            const aiMessage: ChatMessage = {
+              id: uuidv4(),
+              type: 'ai',
+              text: response.text,
+              timestamp: new Date().toISOString(),
+              emailData: response.emailData,
+              followupSuggestions: response.followupSuggestions
+            };
+
+            setMessages(prev => [...prev, aiMessage]);
+            setConversationId(response.conversation_id);
+          },
+          onError: (error) => {
+            // Show error toast
+            toast({
+              title: "Chatbot Error",
+              description: error instanceof Error ? error.message : "Failed to get response",
+              variant: "destructive",
+            });
+
+            // Add error message to conversation
+            const errorMessage: ChatMessage = {
+              id: uuidv4(),
+              type: 'ai',
+              text: 'Sorry, I encountered an error processing your request. Please try again.',
+              timestamp: new Date().toISOString()
+            };
+
+            setMessages(prev => [...prev, errorMessage]);
+          }
         }
-      }
-    );
+      );
+    }
   };
   
   // Handle quick reply click
@@ -361,7 +422,7 @@ const ChatbotPanel: React.FC = () => {
               ))}
               
               {/* Typing indicator when loading */}
-              {chatbotMutation.isPending && (
+              {(chatbotMutation.isPending || (isStreaming && !streamingMessage?.text)) && (
                 <div className="flex justify-start">
                   <div className="bg-card border rounded-lg p-3 max-w-[85%] mr-4">
                     <div className="flex items-center gap-2">
@@ -393,12 +454,12 @@ const ChatbotPanel: React.FC = () => {
             disabled={chatbotMutation.isPending}
             data-testid="chatbot-input"
           />
-          <Button 
-            type="submit" 
-            disabled={!inputText.trim() || chatbotMutation.isPending}
+          <Button
+            type="submit"
+            disabled={!inputText.trim() || chatbotMutation.isPending || isStreaming}
             data-testid="chatbot-send-button"
           >
-            {chatbotMutation.isPending ? (
+            {(chatbotMutation.isPending || isStreaming) ? (
               <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
               <Send className="h-4 w-4" />

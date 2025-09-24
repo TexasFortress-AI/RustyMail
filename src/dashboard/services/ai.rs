@@ -72,11 +72,11 @@ impl AiService {
         }
     }
 
-    pub fn new(
+    pub async fn new(
         openai_api_key: Option<String>,
         openrouter_api_key: Option<String>,
     ) -> Result<Self, String> {
-        let provider_manager = ProviderManager::new();
+        let mut provider_manager = ProviderManager::new();
 
         // Configure providers
         if let Some(key) = openai_api_key {
@@ -89,7 +89,7 @@ impl AiService {
                 temperature: Some(0.7),
                 priority: 1,
                 enabled: true,
-            }).ok();
+            }).await.ok();
         }
 
         if let Some(key) = openrouter_api_key {
@@ -102,7 +102,7 @@ impl AiService {
                 temperature: Some(0.7),
                 priority: 2,
                 enabled: true,
-            }).ok();
+            }).await.ok();
         }
 
         let nlp_processor = NlpProcessor::new(provider_manager.clone());
