@@ -7,9 +7,16 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useChatbotMutation } from '@/dashboard/api/hooks';
 import { ChatMessage } from '@/types';
-import { Send, Bot, User, Loader2, Mail, Folder } from 'lucide-react';
+import { Send, Bot, User, Loader2, Mail, Folder, Download, Copy, Trash2 } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { toast } from '@/hooks/use-toast';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { MoreHorizontal } from 'lucide-react';
 
 // Load conversation from localStorage
 const loadConversation = (): ChatMessage[] => {
@@ -126,6 +133,70 @@ const ChatbotPanel: React.FC = () => {
     setMessages([]);
     setConversationId(undefined);
     localStorage.removeItem('chatConversation');
+    toast({
+      description: "Conversation cleared",
+    });
+  };
+
+  // Export conversation as text
+  const handleExportText = () => {
+    const text = messages.map(msg => {
+      const sender = msg.type === 'user' ? 'You' : 'AI Assistant';
+      const timestamp = new Date(msg.timestamp).toLocaleString();
+      return `[${timestamp}] ${sender}: ${msg.text}`;
+    }).join('\n\n');
+
+    const blob = new Blob([text], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chat-export-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    toast({
+      description: "Conversation exported as text file",
+    });
+  };
+
+  // Export conversation as JSON
+  const handleExportJSON = () => {
+    const json = JSON.stringify(messages, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chat-export-${new Date().toISOString().split('T')[0]}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    toast({
+      description: "Conversation exported as JSON file",
+    });
+  };
+
+  // Copy conversation to clipboard
+  const handleCopyToClipboard = async () => {
+    const text = messages.map(msg => {
+      const sender = msg.type === 'user' ? 'You' : 'AI Assistant';
+      return `${sender}: ${msg.text}`;
+    }).join('\n\n');
+
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({
+        description: "Conversation copied to clipboard",
+      });
+    } catch (err) {
+      toast({
+        description: "Failed to copy to clipboard",
+        variant: "destructive",
+      });
+    }
   };
 
   return (
@@ -138,16 +209,35 @@ const ChatbotPanel: React.FC = () => {
               Email Assistant
             </span>
           </CardTitle>
-          
+
           {messages.length > 0 && (
-            <Button 
-              variant="ghost" 
-              size="sm" 
-              onClick={handleClearConversation}
-              className="text-xs h-7"
-            >
-              Clear conversation
-            </Button>
+            <div className="flex items-center gap-2">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleExportText}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Export as Text
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleExportJSON}>
+                    <Download className="mr-2 h-4 w-4" />
+                    Export as JSON
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleCopyToClipboard}>
+                    <Copy className="mr-2 h-4 w-4" />
+                    Copy to Clipboard
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleClearConversation} className="text-destructive">
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Clear Conversation
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           )}
         </div>
       </CardHeader>

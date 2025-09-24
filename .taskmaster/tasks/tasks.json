@@ -887,7 +887,7 @@
         "dependencies": [
           13
         ],
-        "status": "in-progress",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -895,7 +895,7 @@
             "description": "Define the overall architecture for a natural language processing pipeline using Retrieval Interleaved Generation (RIG) to convert user queries into MCP operations.",
             "dependencies": [],
             "details": "Specify the flow from user input to MCP method invocation, including integration points for RIG, data retrieval, and response generation. Ensure the design supports dynamic retrieval and generation cycles for accurate intent mapping.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Review architecture diagrams and perform design walkthroughs to ensure all required components and data flows are addressed."
           },
           {
@@ -906,7 +906,7 @@
               "14.1"
             ],
             "details": "Design prompt templates that guide the RIG model to extract relevant entities and actions from user queries, ensuring coverage of all supported MCP email operations.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test prompt templates with a variety of user query phrasings and verify correct extraction of intent and parameters."
           },
           {
@@ -917,7 +917,7 @@
               "14.2"
             ],
             "details": "Use the outputs from the RIG pipeline and prompt templates to identify user intent and required parameters, then translate these into the corresponding MCP API calls.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test with diverse queries to ensure correct mapping to MCP methods and validate with unit tests for each supported operation."
           },
           {
@@ -928,7 +928,7 @@
               "14.3"
             ],
             "details": "Implement context management to retain relevant information from previous queries, enabling accurate interpretation of ambiguous or follow-up requests.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Simulate multi-turn conversations and verify that context is correctly maintained and utilized for subsequent queries."
           },
           {
@@ -939,7 +939,7 @@
               "14.4"
             ],
             "details": "Test the system with a wide range of query formats and conversation scenarios to ensure robust performance and correct operation mapping.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Perform integration tests, user acceptance tests, and edge case evaluations to confirm end-to-end functionality and reliability."
           }
         ]
@@ -955,7 +955,7 @@
           12,
           14
         ],
-        "status": "pending",
+        "status": "in-progress",
         "subtasks": [
           {
             "id": 1,
@@ -1220,7 +1220,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-24T12:47:38.565Z",
+      "updated": "2025-09-24T13:22:02.968Z",
       "description": "Tasks for master context"
     }
   }
