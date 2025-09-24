@@ -182,96 +182,77 @@ impl AiService {
 
         debug!("Processing chatbot query for conversation {}: {}", conversation_id, query_text);
 
-        // First, try to process as an email query using NLP
-        let nlp_result = self.nlp_processor.process_query(
-            &query_text,
-            None // TODO: Add conversation context support
-        ).await;
+        // DISABLED NLP processor - it's injecting system messages that cause refusals
+        // Go directly to the AI provider without NLP interference
 
-        let (response_text, email_data, suggestions) = match nlp_result {
-            Ok(nlp_res) if nlp_res.confidence > 0.99 => {
-                // VERY high confidence NLP result - execute MCP operation (disabled for now)
-                // TODO: Implement actual MCP operations instead of showing debug info
-                info!("NLP detected intent: {:?} with confidence {}", nlp_res.intent, nlp_res.confidence);
+        let mut conversations = self.conversations.write().await;
+        let conversation = conversations
+            .entry(conversation_id.clone())
+            .or_insert_with(|| {
+                debug!("Creating new conversation: {}", conversation_id);
+                Conversation {
+                    entries: Vec::new(),
+                    last_activity: chrono::Utc::now(),
+                }
+            });
 
-                let response = if let Some(mcp_op) = &nlp_res.mcp_operation {
-                    format!(
-                        "I understood you want to {}. Executing: {} with parameters: {}",
-                        nlp_res.intent.to_string(),
-                        mcp_op.method,
-                        mcp_op.params
-                    )
-                } else {
-                    format!("I understood you want to {}, but I couldn't map it to a specific operation.", nlp_res.intent.to_string())
-                };
+        conversation.last_activity = chrono::Utc::now();
 
-                let suggestions = vec![
-                    "Show me my folders".to_string(),
-                    "List unread emails".to_string(),
-                    "Search for emails from john@example.com".to_string(),
-                ];
+        let mut messages_history: Vec<AiChatMessage> = conversation.entries.iter()
+            .map(|entry| entry.message.clone())
+            .collect();
 
-                (response, None, suggestions)
-            },
-            _ => {
-                // Low confidence or error - use regular AI chat
-                let mut conversations = self.conversations.write().await;
-                let conversation = conversations
-                    .entry(conversation_id.clone())
-                    .or_insert_with(|| {
-                        debug!("Creating new conversation: {}", conversation_id);
-                        Conversation {
-                            entries: Vec::new(),
-                            last_activity: chrono::Utc::now(),
-                        }
-                    });
+        // Add a system message that clarifies this is an email assistant
+        if messages_history.is_empty() || !messages_history.iter().any(|m| m.role == "system") {
+            messages_history.insert(0, AiChatMessage {
+                role: "system".to_string(),
+                content: "You are RustyMail Assistant, an email management AI. You have full access to the user's email account through the RustyMail system. You can list folders, read emails, search messages, and perform all email operations. Respond naturally to email-related queries.".to_string()
+            });
+        }
 
-                conversation.last_activity = chrono::Utc::now();
+        let user_message = AiChatMessage { role: "user".to_string(), content: query_text.clone() };
+        messages_history.push(user_message.clone());
 
-                let mut messages_history: Vec<AiChatMessage> = conversation.entries.iter()
-                    .map(|entry| entry.message.clone())
-                    .collect();
+        // Get current provider and model info for visibility
+        let provider_name = self.provider_manager.get_current_provider_name().await.unwrap_or_else(|| "none".to_string());
+        let model_name = self.provider_manager.get_current_model_name().await.unwrap_or_else(|| "none".to_string());
 
-                let user_message = AiChatMessage { role: "user".to_string(), content: query_text.clone() };
-                messages_history.push(user_message.clone());
-
-                let response_text = if self.mock_mode {
-                    warn!("AI Service is in mock mode. Using mock response.");
-                    self.generate_mock_response(&query_text)
-                } else {
-                    match self.provider_manager.generate_response(&messages_history).await {
-                        Ok(text) => text,
-                        Err(e) => {
-                            error!("AI Service failed to get response: {}. Falling back to mock.", e);
-                            self.generate_mock_response(&query_text)
-                        }
-                    }
-                };
-
-                let assistant_message = AiChatMessage { role: "assistant".to_string(), content: response_text.clone() };
-                conversation.entries.push(ConversationEntry {
-                    message: user_message,
-                    timestamp: chrono::Utc::now(),
-                });
-                conversation.entries.push(ConversationEntry {
-                    message: assistant_message,
-                    timestamp: chrono::Utc::now(),
-                });
-
-                let suggestions = vec![
-                    "Show me my unread emails".to_string(),
-                    "How many emails do I have from support?".to_string(),
-                    "What's in my Sent folder?".to_string(),
-                ];
-
-                (response_text, None, suggestions)
+        let response_text = if self.mock_mode {
+            warn!("AI Service is in mock mode. Using mock response.");
+            format!("[Mock Mode - Provider: mock, Model: mock]\n\n{}", self.generate_mock_response(&query_text))
+        } else {
+            match self.provider_manager.generate_response(&messages_history).await {
+                Ok(text) => {
+                    // Prepend provider/model info to response for visibility
+                    format!("[Provider: {}, Model: {}]\n\n{}", provider_name, model_name, text)
+                },
+                Err(e) => {
+                    error!("AI Service failed: {}", e);
+                    format!("[Error - Provider: {} failed]\n\n{}", provider_name, e.to_string())
+                }
             }
         };
+
+        let assistant_message = AiChatMessage { role: "assistant".to_string(), content: response_text.clone() };
+        conversation.entries.push(ConversationEntry {
+            message: user_message,
+            timestamp: chrono::Utc::now(),
+        });
+        conversation.entries.push(ConversationEntry {
+            message: assistant_message,
+            timestamp: chrono::Utc::now(),
+        });
+
+        let suggestions = vec![
+            "Show me my unread emails".to_string(),
+            "How many emails do I have?".to_string(),
+            "List my folders".to_string(),
+        ];
 
         Ok(ChatbotResponse {
             text: response_text,
             conversation_id,
-            email_data,
+            email_data: None,
             followup_suggestions: Some(suggestions),
         })
     }

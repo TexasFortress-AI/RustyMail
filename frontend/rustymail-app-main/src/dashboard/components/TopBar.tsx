@@ -172,10 +172,10 @@ const TopBar: React.FC = () => {
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">Loading...</span>
               </div>
-            ) : aiModels?.currentModel && aiModels.availableModels.length > 0 ? (
+            ) : aiModels?.availableModels && aiModels.availableModels.length > 0 ? (
               <div className="relative">
                 <Select
-                  value={aiModels.currentModel}
+                  value={aiModels.currentModel || ''}
                   onValueChange={handleAiModelChange}
                   disabled={setAiModelMutation.isPending || !aiProviders?.currentProvider}
                   data-testid="ai-model-selector"

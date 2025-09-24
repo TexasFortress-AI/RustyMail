@@ -182,7 +182,13 @@ export const apiClient = {
     availableModels: string[];
     provider: string | null;
   }> => {
-    return await apiRequest<any>(`${API_BASE}/ai/models`);
+    const response = await apiRequest<any>(`${API_BASE}/ai/models`);
+    // Transform snake_case from backend to camelCase for frontend
+    return {
+      currentModel: response.current_model,
+      availableModels: response.available_models,
+      provider: response.provider,
+    };
   },
 
   setAiModel: async (modelName: string): Promise<{ message: string }> => {

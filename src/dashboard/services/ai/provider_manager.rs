@@ -262,31 +262,39 @@ impl ProviderManager {
         self.current_provider.read().await.clone()
     }
 
-    // Generate response with automatic failover
-    pub async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError> {
+    pub async fn get_current_model_name(&self) -> Option<String> {
         let configs = self.configs.read().await;
-        let providers = self.providers.read().await;
+        let current_name = self.current_provider.read().await.clone()?;
 
-        for config in configs.iter().filter(|c| c.enabled) {
-            if let Some(provider) = providers.get(&config.name) {
-                debug!("Trying provider: {}", config.name);
+        configs.iter()
+            .find(|c| c.name == current_name)
+            .map(|c| c.model.clone())
+    }
 
-                match provider.generate_response(messages).await {
-                    Ok(response) => {
-                        debug!("Successfully got response from provider: {}", config.name);
-                        return Ok(response);
-                    },
-                    Err(e) => {
-                        warn!("Provider {} failed: {}. Trying next provider...", config.name, e);
-                        continue;
-                    }
+    // Generate response using ONLY the current selected provider - NO FALLBACKS
+    pub async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError> {
+        // Use ONLY the current provider - no fallbacks
+        if let Some(current_provider) = self.get_current_provider().await {
+            let current_name = self.get_current_provider_name().await.unwrap_or_else(|| "unknown".to_string());
+            info!("Using provider: {} with model: {}", current_name, self.get_current_model_name().await.unwrap_or_else(|| "unknown".to_string()));
+
+            match current_provider.generate_response(messages).await {
+                Ok(response) => {
+                    info!("Successfully got response from provider: {}", current_name);
+                    return Ok(response);
+                },
+                Err(e) => {
+                    error!("Provider {} failed: {}. NO FALLBACK - user must select different provider.", current_name, e);
+                    return Err(RestApiError::ServiceUnavailable {
+                        service: format!("Provider '{}' failed: {}. Please select a different provider.", current_name, e)
+                    });
                 }
             }
         }
 
-        error!("All providers failed");
+        error!("No provider selected");
         Err(RestApiError::ServiceUnavailable {
-            service: "No AI providers available".to_string()
+            service: "No AI provider selected. Please select a provider first.".to_string()
         })
     }
 
