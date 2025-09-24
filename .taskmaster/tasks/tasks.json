@@ -1293,11 +1293,24 @@
         ],
         "priority": "low",
         "subtasks": []
+      },
+      {
+        "id": 25,
+        "title": "Implement local email caching and IMAP synchronization",
+        "description": "Create a proper email caching system that stores emails locally and syncs with IMAP like a real email client",
+        "details": "Implement a local caching system for emails that:\n1. Stores all emails, folders, and metadata in a local database (SQLite or similar)\n2. Uses IMAP UIDVALIDITY and UIDNEXT for efficient synchronization\n3. Only fetches new/changed emails after initial sync\n4. Supports offline access to cached emails\n5. Handles folder synchronization and hierarchy\n6. Syncs message flags (read/unread, flagged, etc.)\n7. Handles deletions and moves properly\n8. Implements background sync service that periodically checks for updates\n9. Provides fast local search capabilities\n10. Manages storage efficiently with configurable retention policies\n\nThis should work exactly like traditional email clients (Thunderbird, Outlook, Apple Mail) where emails are stored locally and IMAP is used only for synchronization.",
+        "testStrategy": "Test initial sync with real IMAP account. Verify incremental sync only fetches new emails. Test offline access works. Verify flag synchronization. Test folder operations. Benchmark performance improvements.",
+        "status": "pending",
+        "dependencies": [
+          21
+        ],
+        "priority": "high",
+        "subtasks": []
       }
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-24T19:15:43.470Z",
+      "updated": "2025-09-24T19:55:46.732Z",
       "description": "Tasks for master context"
     }
   }
