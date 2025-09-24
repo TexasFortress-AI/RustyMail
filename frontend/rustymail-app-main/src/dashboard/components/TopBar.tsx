@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Select,
   SelectContent,
@@ -35,6 +35,19 @@ const TopBar: React.FC = () => {
       model.toLowerCase().includes(modelSearchQuery.toLowerCase())
     );
   }, [aiModels?.availableModels, modelSearchQuery]);
+
+  // Restore saved model when provider changes
+  useEffect(() => {
+    if (aiProviders?.currentProvider && aiModels?.availableModels && aiModels.availableModels.length > 0) {
+      const savedModel = localStorage.getItem(`selectedModel_${aiProviders.currentProvider}`);
+      if (savedModel && aiModels.availableModels.includes(savedModel)) {
+        // Only set if it's different from current to avoid unnecessary API calls
+        if (aiModels.currentModel !== savedModel) {
+          setAiModelMutation.mutate(savedModel);
+        }
+      }
+    }
+  }, [aiProviders?.currentProvider, aiModels?.availableModels]);
 
   // Debug logging
   console.log('TopBar config data:', config);
