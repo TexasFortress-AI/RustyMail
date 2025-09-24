@@ -155,14 +155,33 @@ export const initEventSource = (
   onStatsUpdated: (data: DashboardStats) => void,
   onClientConnected: (data: any) => void,
   onClientDisconnected: (data: any) => void,
-  onSystemAlert: (data: any) => void
+  onSystemAlert: (data: any) => void,
+  onReconnected?: () => void
 ) => {
   // Connect to the real SSE endpoint
+  // EventSource will automatically reconnect and send Last-Event-ID header
   const eventSource = new EventSource(`${API_BASE}/events`);
+
+  let isReconnection = false;
+  let connectionAttempts = 0;
 
   // Handle different event types
   eventSource.addEventListener('welcome', (event) => {
-    console.log('SSE connected:', event.data);
+    try {
+      const welcomeData = JSON.parse(event.data);
+      if (welcomeData.reconnect) {
+        console.log('SSE reconnected with client ID:', welcomeData.clientId);
+        isReconnection = true;
+        if (onReconnected) {
+          onReconnected();
+        }
+      } else {
+        console.log('SSE connected with client ID:', welcomeData.clientId);
+      }
+      connectionAttempts = 0; // Reset on successful connection
+    } catch (e) {
+      console.log('SSE connected:', event.data);
+    }
   });
 
   eventSource.addEventListener('stats_update', (event) => {
@@ -219,8 +238,20 @@ export const initEventSource = (
   });
 
   eventSource.addEventListener('error', (event) => {
-    console.error('SSE error:', event);
+    connectionAttempts++;
+    if (eventSource.readyState === EventSource.CONNECTING) {
+      console.log(`SSE reconnecting... (attempt ${connectionAttempts})`);
+    } else if (eventSource.readyState === EventSource.CLOSED) {
+      console.error('SSE connection closed permanently');
+    } else {
+      console.error('SSE error:', event);
+    }
   });
+
+  // EventSource connection states for reference:
+  // - CONNECTING (0): Connecting or reconnecting
+  // - OPEN (1): Connected
+  // - CLOSED (2): Connection closed and won't retry
 
   // Fallback: Fetch stats every 30 seconds as backup
   const fallbackStatsInterval = setInterval(async () => {
