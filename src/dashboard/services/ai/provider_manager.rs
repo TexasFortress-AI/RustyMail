@@ -32,21 +32,48 @@ pub enum ProviderType {
 }
 
 // Provider manager for handling multiple AI providers
+#[derive(Clone)]
 pub struct ProviderManager {
-    providers: HashMap<String, Arc<dyn AiProvider>>,
-    configs: RwLock<Vec<ProviderConfig>>,
-    current_provider: RwLock<Option<String>>,
+    providers: Arc<RwLock<HashMap<String, Arc<dyn AiProvider>>>>,
+    configs: Arc<RwLock<Vec<ProviderConfig>>>,
+    current_provider: Arc<RwLock<Option<String>>>,
     http_client: Client,
 }
 
 impl ProviderManager {
     pub fn new() -> Self {
         Self {
-            providers: HashMap::new(),
-            configs: RwLock::new(Vec::new()),
-            current_provider: RwLock::new(None),
+            providers: Arc::new(RwLock::new(HashMap::new())),
+            configs: Arc::new(RwLock::new(Vec::new())),
+            current_provider: Arc::new(RwLock::new(None)),
             http_client: Client::new(),
         }
+    }
+
+    pub fn add_provider(&self, config: ProviderConfig) -> Result<(), RestApiError> {
+        let provider: Arc<dyn AiProvider> = match config.provider_type {
+            ProviderType::OpenAI => {
+                Arc::new(OpenAiAdapter::new(
+                    config.api_key.clone().ok_or_else(|| RestApiError::InternalError {
+                        message: "OpenAI API key is required".to_string()
+                    })?,
+                    self.http_client.clone()
+                ))
+            },
+            ProviderType::OpenRouter => {
+                Arc::new(OpenRouterAdapter::new(
+                    config.api_key.clone().ok_or_else(|| RestApiError::InternalError {
+                        message: "OpenRouter API key is required".to_string()
+                    })?,
+                    self.http_client.clone()
+                ))
+            },
+            ProviderType::Mock => Arc::new(MockAiProvider),
+        };
+
+        self.providers.write().unwrap().insert(config.name.clone(), provider);
+        self.configs.write().unwrap().push(config);
+        Ok(())
     }
 
     // Initialize from environment variables

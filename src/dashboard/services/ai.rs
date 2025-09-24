@@ -1,13 +1,15 @@
 pub mod provider;
 pub mod provider_manager;
+pub mod nlp_processor;
 
 use log::{debug, error, info, warn};
 use crate::dashboard::api::models::{ChatbotQuery, ChatbotResponse, EmailData};
-use crate::dashboard::services::ai::provider::{AiProvider, AiChatMessage, MockAiProvider};
+use crate::dashboard::services::ai::provider::{AiProvider, AiChatMessage};
+use crate::dashboard::services::ai::provider_manager::ProviderManager;
+use crate::dashboard::services::ai::nlp_processor::NlpProcessor;
 use std::sync::Arc;
 use crate::api::errors::ApiError;
 use thiserror::Error;
-use async_trait::async_trait;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
 use uuid::Uuid;
@@ -29,7 +31,8 @@ struct Conversation {
 
 pub struct AiService {
     conversations: RwLock<HashMap<String, Conversation>>,
-    providers: HashMap<String, Arc<dyn AiProvider>>,
+    provider_manager: ProviderManager,
+    nlp_processor: NlpProcessor,
     mock_mode: bool, // Flag to force mock responses
 }
 
@@ -37,7 +40,6 @@ impl std::fmt::Debug for AiService {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AiService")
             .field("conversations_count", &self.conversations.try_read().map(|g| g.len()).unwrap_or(0))
-            .field("providers_count", &self.providers.len())
             .field("mock_mode", &self.mock_mode)
             .finish()
     }
@@ -59,11 +61,12 @@ pub enum AiError {
 impl AiService {
     /// Creates a new mock AiService instance for testing
     pub fn new_mock() -> Self {
-        let mut providers: HashMap<String, Arc<dyn AiProvider>> = HashMap::new();
-        providers.insert("mock".to_string(), Arc::new(provider::MockAiProvider));
-        
+        let provider_manager = ProviderManager::new();
+        let nlp_processor = NlpProcessor::new(provider_manager.clone());
+
         Self {
-            providers,
+            provider_manager,
+            nlp_processor,
             conversations: RwLock::new(HashMap::new()),
             mock_mode: true, // Force mock mode
         }
@@ -73,98 +76,141 @@ impl AiService {
         openai_api_key: Option<String>,
         openrouter_api_key: Option<String>,
     ) -> Result<Self, String> {
-        let mut providers: HashMap<String, Arc<dyn AiProvider>> = HashMap::new();
-        let http_client = Client::new();
+        let provider_manager = ProviderManager::new();
 
+        // Configure providers
         if let Some(key) = openai_api_key {
-            providers.insert("openai".to_string(), Arc::new(provider::OpenAiAdapter::new(key, http_client.clone())));
-        }
-        if let Some(key) = openrouter_api_key {
-             providers.insert("openrouter".to_string(), Arc::new(provider::OpenRouterAdapter::new(key, http_client.clone())));
+            provider_manager.add_provider(provider_manager::ProviderConfig {
+                name: "openai".to_string(),
+                provider_type: provider_manager::ProviderType::OpenAI,
+                api_key: Some(key),
+                model: "gpt-3.5-turbo".to_string(),
+                max_tokens: Some(2000),
+                temperature: Some(0.7),
+                priority: 1,
+                enabled: true,
+            }).ok();
         }
 
-        if providers.is_empty() {
-            info!("No AI provider API keys found. Using MockAiProvider.");
-             providers.insert("mock".to_string(), Arc::new(provider::MockAiProvider));
+        if let Some(key) = openrouter_api_key {
+            provider_manager.add_provider(provider_manager::ProviderConfig {
+                name: "openrouter".to_string(),
+                provider_type: provider_manager::ProviderType::OpenRouter,
+                api_key: Some(key),
+                model: "meta-llama/llama-2-70b-chat".to_string(),
+                max_tokens: Some(2000),
+                temperature: Some(0.7),
+                priority: 2,
+                enabled: true,
+            }).ok();
         }
+
+        let nlp_processor = NlpProcessor::new(provider_manager.clone());
 
         Ok(Self {
-            providers,
-            conversations: RwLock::new(HashMap::new()), // Initialize RwLock with HashMap
-            mock_mode: false, // Default mock_mode
+            provider_manager,
+            nlp_processor,
+            conversations: RwLock::new(HashMap::new()),
+            mock_mode: false,
         })
     }
 
     pub async fn process_query(&self, query: ChatbotQuery) -> Result<ChatbotResponse, ApiError> {
         let conversation_id = query.conversation_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let query_text = query.query.clone();
-        
+
         debug!("Processing chatbot query for conversation {}: {}", conversation_id, query_text);
-        
-        let mut conversations = self.conversations.write().await;
-        let conversation = conversations
-            .entry(conversation_id.clone())
-            .or_insert_with(|| {
-                debug!("Creating new conversation: {}", conversation_id);
-                Conversation {
-                    entries: Vec::new(),
-                    last_activity: chrono::Utc::now(),
-                }
-            });
-        
-        // Update last activity time
-        conversation.last_activity = chrono::Utc::now();
 
-        // Prepare the message history for OpenAI
-        let mut messages_history: Vec<AiChatMessage> = conversation.entries.iter()
-            .map(|entry| entry.message.clone()) // Clone messages from history
-            .collect();
-        
-        // Add the current user query
-        let user_message = AiChatMessage { role: "user".to_string(), content: query_text.clone() };
-        messages_history.push(user_message.clone());
-        
-        // Generate response: Use API key if available, otherwise use mock logic
-        let response_text_result = if self.mock_mode {
-            warn!("AI Service is in mock mode. Using mock response.");
-            Ok(self.generate_mock_response(&query_text))
-        } else if let Some(provider) = self.providers.get("openai").or_else(|| self.providers.get("mock")) {
-            // Use the first available provider
-            provider.generate_response(&messages_history).await
-                .map_err(|e| ApiError::InternalError { message: format!("AI provider error: {}", e) })
-        } else {
-            warn!("No AI providers available. Using mock response.");
-            Ok(self.generate_mock_response(&query_text))
-        };
+        // First, try to process as an email query using NLP
+        let nlp_result = self.nlp_processor.process_query(
+            &query_text,
+            None // TODO: Add conversation context support
+        ).await;
 
-        let response_text = match response_text_result {
-            Ok(text) => text,
-            Err(e) => {
-                error!("AI Service failed to get response: {}. Falling back to mock.", e);
-                self.generate_mock_response(&query_text) // Fallback to mock
+        let (response_text, email_data, suggestions) = match nlp_result {
+            Ok(nlp_res) if nlp_res.confidence > 0.6 => {
+                // High confidence NLP result - execute MCP operation
+                info!("NLP detected intent: {:?} with confidence {}", nlp_res.intent, nlp_res.confidence);
+
+                let response = if let Some(mcp_op) = &nlp_res.mcp_operation {
+                    format!(
+                        "I understood you want to {}. Executing: {} with parameters: {}",
+                        nlp_res.intent.to_string(),
+                        mcp_op.method,
+                        mcp_op.params
+                    )
+                } else {
+                    format!("I understood you want to {}, but I couldn't map it to a specific operation.", nlp_res.intent.to_string())
+                };
+
+                let suggestions = vec![
+                    "Show me my folders".to_string(),
+                    "List unread emails".to_string(),
+                    "Search for emails from john@example.com".to_string(),
+                ];
+
+                (response, None, suggestions)
+            },
+            _ => {
+                // Low confidence or error - use regular AI chat
+                let mut conversations = self.conversations.write().await;
+                let conversation = conversations
+                    .entry(conversation_id.clone())
+                    .or_insert_with(|| {
+                        debug!("Creating new conversation: {}", conversation_id);
+                        Conversation {
+                            entries: Vec::new(),
+                            last_activity: chrono::Utc::now(),
+                        }
+                    });
+
+                conversation.last_activity = chrono::Utc::now();
+
+                let mut messages_history: Vec<AiChatMessage> = conversation.entries.iter()
+                    .map(|entry| entry.message.clone())
+                    .collect();
+
+                let user_message = AiChatMessage { role: "user".to_string(), content: query_text.clone() };
+                messages_history.push(user_message.clone());
+
+                let response_text = if self.mock_mode {
+                    warn!("AI Service is in mock mode. Using mock response.");
+                    self.generate_mock_response(&query_text)
+                } else {
+                    match self.provider_manager.generate_response(&messages_history).await {
+                        Ok(text) => text,
+                        Err(e) => {
+                            error!("AI Service failed to get response: {}. Falling back to mock.", e);
+                            self.generate_mock_response(&query_text)
+                        }
+                    }
+                };
+
+                let assistant_message = AiChatMessage { role: "assistant".to_string(), content: response_text.clone() };
+                conversation.entries.push(ConversationEntry {
+                    message: user_message,
+                    timestamp: chrono::Utc::now(),
+                });
+                conversation.entries.push(ConversationEntry {
+                    message: assistant_message,
+                    timestamp: chrono::Utc::now(),
+                });
+
+                let suggestions = vec![
+                    "Show me my unread emails".to_string(),
+                    "How many emails do I have from support?".to_string(),
+                    "What's in my Sent folder?".to_string(),
+                ];
+
+                (response_text, None, suggestions)
             }
         };
 
-        // Store user query and AI response in conversation history
-        let assistant_message = AiChatMessage { role: "assistant".to_string(), content: response_text.clone() };
-        conversation.entries.push(ConversationEntry {
-            message: user_message, // Store user query
-            timestamp: chrono::Utc::now(),
-        });
-         conversation.entries.push(ConversationEntry {
-            message: assistant_message, // Store assistant response
-            timestamp: chrono::Utc::now(),
-        });
-        
         Ok(ChatbotResponse {
             text: response_text,
             conversation_id,
-            email_data: None, // Keep email_data logic separate for now
-            followup_suggestions: Some(vec![
-                "Show me my unread emails".to_string(),
-                "How many emails do I have from support?".to_string(),
-                "What's in my Sent folder?".to_string(),
-            ]),
+            email_data,
+            followup_suggestions: Some(suggestions),
         })
     }
 
@@ -211,14 +257,4 @@ impl AiService {
         }
     }
 
-    // Placeholder for sending context to the actual AI provider
-    async fn send_conversation_context(&self, provider_id: &str, messages: &[AiChatMessage]) -> Result<String, AiError> {
-        // Find the provider
-        let provider = self.providers.get(provider_id)
-            .ok_or_else(|| AiError::ProviderNotFound(provider_id.to_string()))?;
-        
-        // Call the provider's method
-        provider.generate_response(messages).await
-            .map_err(|e| AiError::ProviderError(format!("Provider '{}' error: {}", provider_id, e)))
-    }
 }
