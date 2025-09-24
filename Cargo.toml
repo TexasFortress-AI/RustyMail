@@ -42,7 +42,7 @@ regex = "1.10"
 # Configuration
 dotenvy = "0.15"
 config = { version = "0.14", features = ["toml"] }
-toml = "0.8"
+toml = "0.9"
 log = "0.4"
 env_logger = "0.11"
 
