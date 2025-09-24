@@ -5,4 +5,5 @@ pub mod integration;
 pub mod sse;
 pub mod sse_lifecycle;
 pub mod sse_subscription;
-pub mod sse_reconnection; 
+pub mod sse_reconnection;
+pub mod sse_comprehensive; 
