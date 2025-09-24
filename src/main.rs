@@ -180,7 +180,7 @@ async fn main() -> std::io::Result<()> {
         config.clone(),
         imap_session_factory.clone(),
         connection_pool
-    );
+    ).await;
     info!("Dashboard state initialized.");
 
     // Start background metrics collection task (needs DashboardState)

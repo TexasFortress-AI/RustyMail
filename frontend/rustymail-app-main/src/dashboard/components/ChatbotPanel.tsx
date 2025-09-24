@@ -43,7 +43,7 @@ const ChatbotPanel: React.FC = () => {
   const [inputText, setInputText] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>(loadConversation);
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
-  const [useStreaming, setUseStreaming] = useState(true); // Default to SSE streaming
+  const [useStreaming, setUseStreaming] = useState(false); // Temporarily disable SSE streaming - use HTTP POST
   const [streamingMessage, setStreamingMessage] = useState<ChatMessage | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);

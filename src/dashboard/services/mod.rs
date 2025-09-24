@@ -9,7 +9,7 @@
 use thiserror::Error;
 use std::sync::Arc;
 use actix_web::web;
-use log::{info, error};
+use log::{info, error, warn};
 use actix_web::{web::Data};
 use tokio::sync::Mutex as TokioMutex;
 // Import CloneableImapSessionFactory from prelude
@@ -75,7 +75,7 @@ pub struct DashboardState {
 }
 
 // Initialize the services
-pub fn init(
+pub async fn init(
     config: Data<crate::config::Settings>,
     imap_session_factory: CloneableImapSessionFactory,
     connection_pool: Arc<ConnectionPool>,
@@ -90,8 +90,17 @@ pub fn init(
     let metrics_service = Arc::new(MetricsService::new(metrics_interval_duration)); // Pass interval duration, not client manager
     let config_service = Arc::new(ConfigService::new());
 
-    // Initialize AI Service (handle potential errors)
-    let ai_service = Arc::new(AiService::new_mock()); // Use a mock service for now
+    // Initialize AI Service with environment variables
+    let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
+    let openrouter_api_key = std::env::var("OPENROUTER_API_KEY").ok();
+
+    let ai_service = match AiService::new(openai_api_key, openrouter_api_key).await {
+        Ok(service) => Arc::new(service),
+        Err(e) => {
+            warn!("Failed to initialize AI service with API keys: {}. Using mock service.", e);
+            Arc::new(AiService::new_mock())
+        }
+    };
 
     // Create event bus
     let event_bus = Arc::new(EventBus::new());
