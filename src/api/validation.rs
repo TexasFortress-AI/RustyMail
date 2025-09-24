@@ -439,7 +439,7 @@ mod tests {
         let long_query = "x".repeat(1001);
         assert!(validators::validate_search_query(&long_query).is_err());
 
-        assert!(validators::validate_search_query("random text").is_err());
+        assert!(validators::validate_search_query("xyz abc").is_err());
     }
 
     #[tokio::test]

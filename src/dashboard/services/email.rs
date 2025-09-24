@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use log::{info, error, debug};
+use log::{info, error, debug, warn};
 use crate::imap::error::ImapError;
 use crate::imap::types::Email;
 use crate::prelude::CloneableImapSessionFactory;
