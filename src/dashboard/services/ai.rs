@@ -77,6 +77,7 @@ impl AiService {
         openrouter_api_key: Option<String>,
     ) -> Result<Self, String> {
         let mut provider_manager = ProviderManager::new();
+        let mut has_real_provider = false;
 
         // Configure providers
         if let Some(key) = openai_api_key {
@@ -90,6 +91,7 @@ impl AiService {
                 priority: 1,
                 enabled: true,
             }).await.ok();
+            has_real_provider = true;
         }
 
         if let Some(key) = openrouter_api_key {
@@ -103,7 +105,21 @@ impl AiService {
                 priority: 2,
                 enabled: true,
             }).await.ok();
+            has_real_provider = true;
         }
+
+        // Always add mock provider as fallback
+        // Priority is lower so real providers are used first when available
+        provider_manager.add_provider(provider_manager::ProviderConfig {
+            name: "mock".to_string(),
+            provider_type: provider_manager::ProviderType::Mock,
+            api_key: None,
+            model: "mock-model".to_string(),
+            max_tokens: Some(2000),
+            temperature: Some(0.7),
+            priority: if has_real_provider { 99 } else { 1 }, // Lower priority if real providers exist
+            enabled: true,
+        }).await.ok();
 
         let nlp_processor = NlpProcessor::new(provider_manager.clone());
 
@@ -111,7 +127,7 @@ impl AiService {
             provider_manager,
             nlp_processor,
             conversations: RwLock::new(HashMap::new()),
-            mock_mode: false,
+            mock_mode: !has_real_provider, // Set mock mode if no real providers
         })
     }
 
