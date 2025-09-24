@@ -10,6 +10,7 @@ use crate::api::errors::ApiError as RestApiError;
 
 // OpenAI API constants
 const OPENAI_API_URL: &str = "https://api.openai.com/v1/chat/completions";
+const OPENAI_MODELS_URL: &str = "https://api.openai.com/v1/models";
 const DEFAULT_OPENAI_MODEL: &str = "gpt-4o-mini"; 
 
 // --- OpenAI Specific Request/Response Structs ---
@@ -35,6 +36,17 @@ struct OpenAiChoice {
 #[derive(Deserialize, Debug)]
 struct OpenAiUsage {
     // Define usage fields if needed
+}
+
+#[derive(Deserialize, Debug)]
+struct OpenAiModelsResponse {
+    data: Vec<OpenAiModel>,
+}
+
+#[derive(Deserialize, Debug)]
+struct OpenAiModel {
+    id: String,
+    object: String,
 }
 
 #[derive(Clone)]
@@ -63,6 +75,41 @@ impl OpenAiAdapter {
 
 #[async_trait]
 impl AiProvider for OpenAiAdapter {
+    async fn get_available_models(&self) -> Result<Vec<String>, RestApiError> {
+        debug!("Fetching available models from OpenAI API");
+
+        let response = self.http_client
+            .get(OPENAI_MODELS_URL)
+            .bearer_auth(&self.api_key)
+            .timeout(std::time::Duration::from_secs(30))
+            .send()
+            .await
+            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("OpenAI models: {}", e) })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!("OpenAI models API request failed with status {}: {}", status, error_body);
+            return Err(RestApiError::ServiceUnavailable {
+                service: format!("OpenAI models API returned error status {}: {}", status, error_body)
+            });
+        }
+
+        let response_body = response
+            .json::<OpenAiModelsResponse>()
+            .await
+            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize OpenAI models response: {}", e) })?;
+
+        let models: Vec<String> = response_body.data
+            .into_iter()
+            .filter(|model| model.object == "model")
+            .map(|model| model.id)
+            .collect();
+
+        debug!("Retrieved {} models from OpenAI API", models.len());
+        Ok(models)
+    }
+
     async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError> {
         let request_payload = OpenAiChatRequest {
             model: self.model.clone(),

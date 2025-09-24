@@ -9,6 +9,7 @@ use super::{AiProvider, AiChatMessage}; // Import trait and common message struc
 
 // OpenRouter API constants
 const OPENROUTER_API_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
+const OPENROUTER_MODELS_URL: &str = "https://openrouter.ai/api/v1/models";
 const DEFAULT_OPENROUTER_MODEL: &str = "deepseek/deepseek-coder-v2-lite-instruct";
 const REFERER_HEADER_VALUE: &str = "http://localhost/rustymail-dashboard"; // Example value
 const TITLE_HEADER_VALUE: &str = "RustyMail Dashboard"; // Example value
@@ -35,6 +36,16 @@ struct OpenRouterChatResponse {
 #[derive(Deserialize)]
 struct OpenRouterChoice {
     message: AiChatMessage,
+}
+
+#[derive(Deserialize, Debug)]
+struct OpenRouterModelsResponse {
+    data: Vec<OpenRouterModel>,
+}
+
+#[derive(Deserialize, Debug)]
+struct OpenRouterModel {
+    id: String,
 }
 // --- End Structs ---
 
@@ -74,6 +85,41 @@ impl OpenRouterAdapter {
 
 #[async_trait]
 impl AiProvider for OpenRouterAdapter {
+    async fn get_available_models(&self) -> Result<Vec<String>, RestApiError> {
+        debug!("Fetching available models from OpenRouter API");
+
+        let response = self.http_client
+            .get(OPENROUTER_MODELS_URL)
+            .headers(self.common_headers.clone())
+            .header(AUTHORIZATION, format!("Bearer {}", self.api_key))
+            .timeout(std::time::Duration::from_secs(30))
+            .send()
+            .await
+            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("OpenRouter models: {}", e) })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!("OpenRouter models API request failed with status {}: {}", status, error_body);
+            return Err(RestApiError::ServiceUnavailable {
+                service: format!("OpenRouter models API returned error status {}: {}", status, error_body)
+            });
+        }
+
+        let response_body = response
+            .json::<OpenRouterModelsResponse>()
+            .await
+            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize OpenRouter models response: {}", e) })?;
+
+        let models: Vec<String> = response_body.data
+            .into_iter()
+            .map(|model| model.id)
+            .collect();
+
+        debug!("Retrieved {} models from OpenRouter API", models.len());
+        Ok(models)
+    }
+
     async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError> {
         let request_payload = OpenRouterChatRequest {
             model: self.model.clone(),

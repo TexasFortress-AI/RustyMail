@@ -10,6 +10,7 @@ use crate::api::errors::ApiError as RestApiError;
 
 // Morpheus API constants
 const MORPHEUS_API_BASE_URL: &str = "https://api.dev.mor.org/api/v1";
+const MORPHEUS_MODELS_URL: &str = "https://api.dev.mor.org/api/v1/models";
 const DEFAULT_MORPHEUS_MODEL: &str = "llama-3.2-90b-vision-instruct";
 
 // --- Morpheus Specific Request/Response Structs ---
@@ -31,6 +32,17 @@ struct MorpheusChatResponse {
 struct MorpheusChoice {
     message: AiChatMessage,
     // Add other fields if needed, like finish_reason
+}
+
+#[derive(Deserialize, Debug)]
+struct MorpheusModelsResponse {
+    data: Vec<MorpheusModel>,
+}
+
+#[derive(Deserialize, Debug)]
+struct MorpheusModel {
+    id: String,
+    object: String,
 }
 
 #[derive(Clone)]
@@ -59,6 +71,41 @@ impl MorpheusAdapter {
 
 #[async_trait]
 impl AiProvider for MorpheusAdapter {
+    async fn get_available_models(&self) -> Result<Vec<String>, RestApiError> {
+        debug!("Fetching available models from Morpheus API");
+
+        let response = self.http_client
+            .get(MORPHEUS_MODELS_URL)
+            .bearer_auth(&self.api_key)
+            .timeout(std::time::Duration::from_secs(30))
+            .send()
+            .await
+            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Morpheus models: {}", e) })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!("Morpheus models API request failed with status {}: {}", status, error_body);
+            return Err(RestApiError::ServiceUnavailable {
+                service: format!("Morpheus models API returned error status {}: {}", status, error_body)
+            });
+        }
+
+        let response_body = response
+            .json::<MorpheusModelsResponse>()
+            .await
+            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize Morpheus models response: {}", e) })?;
+
+        let models: Vec<String> = response_body.data
+            .into_iter()
+            .filter(|model| model.object == "model")
+            .map(|model| model.id)
+            .collect();
+
+        debug!("Retrieved {} models from Morpheus API", models.len());
+        Ok(models)
+    }
+
     async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError> {
         let url = format!("{}/chat/completions", MORPHEUS_API_BASE_URL);
 

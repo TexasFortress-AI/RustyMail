@@ -362,6 +362,67 @@ impl ProviderManager {
         info!("Updated provider: {}", config.name);
         Ok(())
     }
+
+    // Get available models from the current provider
+    pub async fn get_available_models(&self) -> Result<Vec<String>, RestApiError> {
+        let current_provider = self.get_current_provider().await;
+
+        match current_provider {
+            Some(provider) => {
+                provider.get_available_models().await
+            },
+            None => {
+                Err(RestApiError::UnprocessableEntity {
+                    message: "No provider currently selected".to_string()
+                })
+            }
+        }
+    }
+
+    // Update all provider models to use their first available model
+    pub async fn update_models_from_api(&mut self) -> Result<(), RestApiError> {
+        let mut updated_configs = Vec::new();
+
+        // Get current configs
+        let configs = self.configs.read().await.clone();
+
+        for config in configs {
+            // Skip mock provider
+            if config.provider_type == ProviderType::Mock {
+                updated_configs.push(config);
+                continue;
+            }
+
+            // Get provider and fetch available models
+            let providers = self.providers.read().await;
+            if let Some(provider) = providers.get(&config.name) {
+                match provider.get_available_models().await {
+                    Ok(models) => {
+                        if let Some(first_model) = models.first() {
+                            let mut updated_config = config.clone();
+                            updated_config.model = first_model.clone();
+                            updated_configs.push(updated_config);
+                            info!("Updated {} provider to use model: {}", config.name, first_model);
+                        } else {
+                            warn!("No models available for provider: {}", config.name);
+                            updated_configs.push(config);
+                        }
+                    },
+                    Err(e) => {
+                        warn!("Failed to fetch models for provider {}: {:?}", config.name, e);
+                        // Keep original config if model fetching fails
+                        updated_configs.push(config);
+                    }
+                }
+            } else {
+                updated_configs.push(config);
+            }
+        }
+
+        // Update configs
+        *self.configs.write().await = updated_configs;
+        Ok(())
+    }
 }
 
 // Conversation context management

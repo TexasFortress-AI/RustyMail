@@ -2,7 +2,7 @@ use actix_web::{web, HttpResponse, Responder};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::convert::Infallible;
-use log::debug;
+use log::{debug, warn};
 use crate::dashboard::api::errors::ApiError;
 use crate::dashboard::services::DashboardState;
 use crate::dashboard::api::models::{ChatbotQuery, ServerConfig};
@@ -405,39 +405,18 @@ pub async fn get_ai_models(
         None
     };
 
-    // Hardcoded available models for each provider type
-    let available_models = match current_provider.as_deref() {
-        Some("openai") => vec![
-            "gpt-4".to_string(),
-            "gpt-4-turbo".to_string(),
-            "gpt-3.5-turbo".to_string(),
-            "gpt-3.5-turbo-16k".to_string(),
-        ],
-        Some("openrouter") => vec![
-            "meta-llama/llama-2-70b-chat".to_string(),
-            "anthropic/claude-3-haiku".to_string(),
-            "openai/gpt-4".to_string(),
-            "openai/gpt-3.5-turbo".to_string(),
-        ],
-        Some("morpheus") => vec![
-            "llama-3.2-90b-vision-instruct".to_string(),
-            "llama-3.2-11b-vision-instruct".to_string(),
-            "llama-3.2-3b-instruct".to_string(),
-            "llama-3.2-1b-instruct".to_string(),
-        ],
-        Some("ollama") => vec![
-            "llama3.2".to_string(),
-            "llama3.1".to_string(),
-            "llama3".to_string(),
-            "gemma2".to_string(),
-            "mistral".to_string(),
-            "qwen2.5".to_string(),
-        ],
-        Some("mock") => vec![
-            "mock-model".to_string(),
-            "mock-advanced".to_string(),
-        ],
-        _ => vec![]
+    // Dynamically fetch available models from the current provider
+    let available_models = if let Some(provider_name) = current_provider.as_deref() {
+        match state.ai_service.get_available_models().await {
+            Ok(models) => models,
+            Err(e) => {
+                warn!("Failed to fetch models from provider {}: {:?}", provider_name, e);
+                // Fallback to empty list if API call fails
+                vec![]
+            }
+        }
+    } else {
+        vec![]
     };
 
     let response = ModelsResponse {

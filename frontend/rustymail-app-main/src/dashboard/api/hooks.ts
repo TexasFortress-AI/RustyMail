@@ -83,6 +83,33 @@ export function useSetAiProvider() {
     onSuccess: () => {
       // Invalidate and refetch AI providers list
       queryClient.invalidateQueries({ queryKey: ['aiProviders'] });
+      // Also invalidate models since they change with provider
+      queryClient.invalidateQueries({ queryKey: ['aiModels'] });
+    },
+  });
+}
+
+// Hook for fetching AI models
+export function useAiModels() {
+  return useQuery({
+    queryKey: ['aiModels'],
+    queryFn: async () => {
+      return apiClient.getAiModels();
+    },
+  });
+}
+
+// Hook for setting AI model
+export function useSetAiModel() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (modelName: string) => {
+      return apiClient.setAiModel(modelName);
+    },
+    onSuccess: () => {
+      // Invalidate and refetch AI models list
+      queryClient.invalidateQueries({ queryKey: ['aiModels'] });
     },
   });
 }

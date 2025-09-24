@@ -28,6 +28,13 @@ pub trait AiProvider: Send + Sync {
     ///
     /// A `Result` containing the AI's response text (`String`) or an `ApiError`.
     async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError>;
+
+    /// Fetches the list of available models from the provider's API.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing a vector of model names (`Vec<String>`) or an `ApiError`.
+    async fn get_available_models(&self) -> Result<Vec<String>, RestApiError>;
 }
 
 // Re-export the provider implementations for easier access
@@ -42,6 +49,14 @@ pub struct MockAiProvider;
 
 #[async_trait]
 impl AiProvider for MockAiProvider {
+    async fn get_available_models(&self) -> Result<Vec<String>, RestApiError> {
+        Ok(vec![
+            "mock-gpt-4".to_string(),
+            "mock-claude-3.5".to_string(),
+            "mock-llama-2".to_string(),
+        ])
+    }
+
     async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError> {
         if let Some(last_message) = messages.last() {
             if last_message.role == "user" {

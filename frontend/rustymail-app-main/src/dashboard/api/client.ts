@@ -174,6 +174,24 @@ export const apiClient = {
         provider_name: providerName,
       }),
     });
+  },
+
+  // AI Model Management
+  getAiModels: async (): Promise<{
+    currentModel: string | null;
+    availableModels: string[];
+    provider: string | null;
+  }> => {
+    return await apiRequest<any>(`${API_BASE}/ai/models`);
+  },
+
+  setAiModel: async (modelName: string): Promise<{ message: string }> => {
+    return await apiRequest<any>(`${API_BASE}/ai/models/set`, {
+      method: 'POST',
+      body: JSON.stringify({
+        model_name: modelName,
+      }),
+    });
   }
 };
 

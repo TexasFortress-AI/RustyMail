@@ -75,6 +75,8 @@ impl AiService {
     pub async fn new(
         openai_api_key: Option<String>,
         openrouter_api_key: Option<String>,
+        morpheus_api_key: Option<String>,
+        ollama_base_url: Option<String>,
     ) -> Result<Self, String> {
         let mut provider_manager = ProviderManager::new();
         let mut has_real_provider = false;
@@ -108,6 +110,34 @@ impl AiService {
             has_real_provider = true;
         }
 
+        if let Some(key) = morpheus_api_key {
+            provider_manager.add_provider(provider_manager::ProviderConfig {
+                name: "morpheus".to_string(),
+                provider_type: provider_manager::ProviderType::Morpheus,
+                api_key: Some(key),
+                model: "llama-3.2-90b-vision-instruct".to_string(), // Will be updated from API
+                max_tokens: Some(2000),
+                temperature: Some(0.7),
+                priority: 3,
+                enabled: true,
+            }).await.ok();
+            has_real_provider = true;
+        }
+
+        if let Some(_base_url) = ollama_base_url {
+            provider_manager.add_provider(provider_manager::ProviderConfig {
+                name: "ollama".to_string(),
+                provider_type: provider_manager::ProviderType::Ollama,
+                api_key: None, // Ollama doesn't need an API key for local instances
+                model: "llama3.2".to_string(), // Will be updated from API
+                max_tokens: Some(2000),
+                temperature: Some(0.7),
+                priority: 4,
+                enabled: true,
+            }).await.ok();
+            has_real_provider = true;
+        }
+
         // Always add mock provider as fallback
         // Priority is lower so real providers are used first when available
         provider_manager.add_provider(provider_manager::ProviderConfig {
@@ -120,6 +150,14 @@ impl AiService {
             priority: if has_real_provider { 99 } else { 1 }, // Lower priority if real providers exist
             enabled: true,
         }).await.ok();
+
+        // Update provider models to use first available model from APIs
+        if has_real_provider {
+            match provider_manager.update_models_from_api().await {
+                Ok(()) => info!("Successfully updated provider models from APIs"),
+                Err(e) => warn!("Failed to update some provider models from APIs: {:?}", e),
+            }
+        }
 
         // Set the first available provider as current (highest priority = lowest number)
         let providers = provider_manager.list_providers().await;
@@ -280,6 +318,10 @@ impl AiService {
         self.provider_manager.update_provider_config(name, config)
             .await
             .map_err(|e| format!("Failed to update provider config: {:?}", e))
+    }
+
+    pub async fn get_available_models(&self) -> Result<Vec<String>, ApiError> {
+        self.provider_manager.get_available_models().await
     }
     
     // Clean up old conversations

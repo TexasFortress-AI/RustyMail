@@ -31,6 +31,17 @@ struct OllamaChoice {
     // Add other fields if needed, like finish_reason
 }
 
+#[derive(Deserialize, Debug)]
+struct OllamaModelsResponse {
+    data: Vec<OllamaModel>,
+}
+
+#[derive(Deserialize, Debug)]
+struct OllamaModel {
+    id: String,
+    object: String,
+}
+
 #[derive(Clone)]
 pub struct OllamaAdapter {
     base_url: String,
@@ -57,6 +68,44 @@ impl OllamaAdapter {
 
 #[async_trait]
 impl AiProvider for OllamaAdapter {
+    async fn get_available_models(&self) -> Result<Vec<String>, RestApiError> {
+        debug!("Fetching available models from Ollama API");
+
+        // Use OpenAI-compatible models endpoint
+        let url = format!("{}/v1/models", self.base_url);
+
+        let response = self.http_client
+            .get(&url)
+            .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(30))
+            .send()
+            .await
+            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Ollama models: {}", e) })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!("Ollama models API request failed with status {}: {}", status, error_body);
+            return Err(RestApiError::ServiceUnavailable {
+                service: format!("Ollama models API returned error status {}: {}", status, error_body)
+            });
+        }
+
+        let response_body = response
+            .json::<OllamaModelsResponse>()
+            .await
+            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize Ollama models response: {}", e) })?;
+
+        let models: Vec<String> = response_body.data
+            .into_iter()
+            .filter(|model| model.object == "model")
+            .map(|model| model.id)
+            .collect();
+
+        debug!("Retrieved {} models from Ollama API", models.len());
+        Ok(models)
+    }
+
     async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError> {
         // Use OpenAI-compatible endpoint
         let url = format!("{}/v1/chat/completions", self.base_url);
