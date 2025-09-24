@@ -1223,7 +1223,7 @@
         "description": "Remove all hardcoded ports and ensure configuration is externalized",
         "details": "Update vite.config.ts to use environment variable FRONTEND_PORT instead of hardcoded 8080. Add FRONTEND_PORT=9440 to .env.example. Ensure all other configuration values are also externalized and not hardcoded in the codebase.",
         "testStrategy": "Verify that changing port values in .env file correctly changes where services run. Ensure no hardcoded values remain in codebase.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
         "subtasks": []
@@ -1234,7 +1234,7 @@
         "description": "Set up proper proxy configuration for frontend to communicate with backend",
         "details": "Add proxy configuration to vite.config.ts to forward /api requests to localhost:9437. Ensure CORS headers are properly set. Fix any API endpoint mismatches between frontend and backend.",
         "testStrategy": "Test that frontend can successfully call backend APIs. Verify stats load, client list loads, and chatbot responds.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           19
         ],
@@ -1260,7 +1260,7 @@
         "description": "Fix empty IMAP adapter dropdown and other UI issues",
         "details": "Fix the IMAP adapter dropdown to show available adapters. Ensure stats and client list load properly. Fix any other UI components that are not displaying data correctly.",
         "testStrategy": "Verify dropdown shows adapter options. Test that all dashboard panels display correct data. Check for console errors.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           21
         ],
@@ -1297,7 +1297,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-09-24T16:12:47.121Z",
+      "updated": "2025-09-24T19:15:43.470Z",
       "description": "Tasks for master context"
     }
   }

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Config Test</title>
+</head>
+<body>
+    <h1>Testing Config API</h1>
+    <pre id="result">Loading...</pre>
+    <script>
+        fetch('http://localhost:9440/api/dashboard/config')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('result').textContent = JSON.stringify(data, null, 2);
+                console.log('Raw response:', data);
+            })
+            .catch(error => {
+                document.getElementById('result').textContent = 'Error: ' + error;
+                console.error(error);
+            });
+    </script>
+</body>
+</html>

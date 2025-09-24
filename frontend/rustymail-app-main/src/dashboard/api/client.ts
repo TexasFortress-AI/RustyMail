@@ -113,13 +113,13 @@ export const apiClient = {
       ],
       settings: {
         dashboard: {
-          enabled: data.dashboard.enabled,
-          port: data.dashboard.port,
+          enabled: data.dashboard?.enabled || false,
+          port: data.dashboard?.port || 9439,
         },
         rest: {
-          enabled: data.rest.enabled,
-          host: data.rest.host,
-          port: data.rest.port,
+          enabled: data.rest?.enabled || false,
+          host: data.rest?.host || '0.0.0.0',
+          port: data.rest?.port || 9437,
         }
       }
     };

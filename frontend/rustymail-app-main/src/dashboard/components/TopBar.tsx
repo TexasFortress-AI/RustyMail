@@ -105,9 +105,11 @@ const TopBar: React.FC = () => {
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                 <span className="text-sm text-muted-foreground">Loading...</span>
               </div>
-            ) : (
+            ) : configError ? (
+              <div className="text-sm text-red-500">Error loading config</div>
+            ) : config ? (
               <Select
-                defaultValue={config?.activeAdapter.id}
+                defaultValue={config.activeAdapter.id}
                 onValueChange={handleAdapterChange}
                 disabled={setActiveAdapterMutation.isPending}
                 data-testid="imap-adapter-selector"
@@ -116,7 +118,7 @@ const TopBar: React.FC = () => {
                   <SelectValue placeholder="Select adapter" />
                 </SelectTrigger>
                 <SelectContent>
-                  {config?.availableAdapters.map((adapter) => (
+                  {config.availableAdapters.map((adapter) => (
                     <SelectItem
                       key={adapter.id}
                       value={adapter.id}
@@ -127,6 +129,8 @@ const TopBar: React.FC = () => {
                   ))}
                 </SelectContent>
               </Select>
+            ) : (
+              <div className="text-sm text-muted-foreground">No config available</div>
             )}
           </div>
 
