@@ -35,6 +35,10 @@ actix-web-actors = "4.3"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
+# Validation
+validator = { version = "0.18", features = ["derive"] }
+regex = "1.10"
+
 # Configuration
 dotenvy = "0.15"
 config = { version = "0.14", features = ["toml"] }
@@ -77,6 +81,10 @@ base64 = "0.21"
 # High-concurrency data structures
 dashmap = "5.5"
 crossbeam = "0.8"
+
+# OpenAPI documentation
+utoipa = { version = "5", features = ["actix_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "8", features = ["actix-web"] }
 
 # MIME parsing
 mail-parser = "0.8"

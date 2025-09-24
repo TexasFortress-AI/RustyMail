@@ -1,34 +1,31 @@
 use actix_web::{
     web::{self, Data, Json, Path, Query},
     get, post, delete, put, // Added PUT and DELETE
-    App, Error as ActixError, HttpRequest, HttpResponse, HttpServer,
-    ResponseError,
-    http::StatusCode,
+    App, HttpRequest, HttpResponse, HttpServer,
 };
-use actix_web_lab::middleware::from_fn as mw_from_fn; // Keep if used for middleware
-use log::{error, info, warn}; // Keep necessary log levels
-use serde::{Deserialize, Serialize};
+use actix_web_lab::middleware::from_fn as mw_from_fn;
+use log::info; // Only keep info for now
+use serde::Deserialize;
 use std::sync::Arc;
-use thiserror::Error;
 use tokio::sync::Mutex as TokioMutex;
 
 // Crate-local imports
 use crate::{ // Group crate imports
+    api::{
+        auth::{ApiKeyStore, ApiScope, simple_validate_api_key},
+        errors::{ApiError, success_response, paginated_response}, // Use new error module
+    },
     config::Settings,
-    dashboard::api::errors::ApiError as DashboardApiError, // Use alias to avoid clash
+    // dashboard::api::errors::ApiError as DashboardApiError, // Now handled in errors.rs
     dashboard::services::DashboardState,
     imap::{
         client::ImapClient,
-        error::ImapError,
-        session::{AsyncImapOps, AsyncImapSessionWrapper}, // Import session types
+        session::AsyncImapSessionWrapper, // Import session type
         types::{ // Import necessary IMAP types
             FlagOperation, Flags,
         },
     },
-    mcp::{
-        handler::McpHandler,
-        types::{JsonRpcError}, // Remove unused imports
-    },
+    mcp::handler::McpHandler,
     session_manager::{SessionManager, SessionManagerTrait}, // Import both the struct and trait
 };
 
@@ -39,97 +36,20 @@ pub struct AppState {
     pub mcp_handler: Arc<dyn McpHandler>,
     pub session_manager: Arc<SessionManager>,
     pub dashboard_state: Option<Arc<TokioMutex<DashboardState>>>,
+    pub api_key_store: Arc<ApiKeyStore>,
 }
 
-// --- Error Handling ---
-#[derive(Debug, Error, Serialize)] // Ensure ApiError derives Serialize
-pub enum ApiError {
-    #[error("IMAP Error: {0}")]
-    Imap(String),
+// ApiError is now in the errors module and imported above
 
-    #[error("MCP Error: {0}")]
-    Mcp(String),
-
-    #[error("Authentication Required")]
-    Unauthorized,
-
-    #[error("Invalid Request: {0}")]
-    BadRequest(String),
-
-    #[error("Resource Not Found: {0}")]
-    NotFound(String),
-
-    #[error("Internal Server Error: {0}")]
-    InternalError(String),
-
-    #[error("Dashboard Error: {0}")]
-    Dashboard(String),
-
-    #[error("Invalid API Key: {0}")]
-    InvalidApiKey(String),
-
-    #[error("AI Provider Error: {0}")]
-    AiProviderError(String),
-}
-
-impl ResponseError for ApiError {
-    fn status_code(&self) -> StatusCode {
-        match self {
-            ApiError::Unauthorized | ApiError::InvalidApiKey(_) => StatusCode::UNAUTHORIZED,
-            ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
-            ApiError::NotFound(_) => StatusCode::NOT_FOUND,
-            ApiError::Imap(_) | ApiError::Mcp(_) | ApiError::InternalError(_) | ApiError::Dashboard(_) | ApiError::AiProviderError(_) => StatusCode::INTERNAL_SERVER_ERROR,
-        }
-    }
-
-    fn error_response(&self) -> HttpResponse {
-        error!("API Error: {}", self);
-        HttpResponse::build(self.status_code())
-            .json(JsonRpcError::server_error(
-                self.status_code().as_u16() as i64, // Use status code as error code
-                self.to_string() // Use the error message
-            ))
+// Legacy conversion - keep for backward compatibility
+impl From<String> for ApiError {
+    fn from(err: String) -> Self {
+        ApiError::InternalError { message: err }
     }
 }
 
-// Convert ImapError to ApiError
-impl From<ImapError> for ApiError {
-    fn from(err: ImapError) -> Self {
-        ApiError::Imap(err.to_string())
-    }
-}
+// DashboardApiError conversion is now in errors.rs
 
-// Convert DashboardApiError to ApiError
-impl From<DashboardApiError> for ApiError {
-    fn from(err: DashboardApiError) -> Self {
-        ApiError::Dashboard(err.to_string())
-    }
-}
-
-// --- Middleware ---
-
-use actix_web::dev::ServiceRequest;
-use actix_web_lab::middleware::Next;
-
-/// Simple API key validation middleware
-async fn validate_api_key(
-    req: ServiceRequest,
-    next: Next<impl actix_web::body::MessageBody>,
-) -> Result<actix_web::dev::ServiceResponse<impl actix_web::body::MessageBody>, ActixError> {
-    // Check for API key in header
-    let has_api_key = req.headers()
-        .get("X-API-Key")
-        .or_else(|| req.headers().get("Authorization"))
-        .is_some();
-
-    if !has_api_key {
-        warn!("Request missing API key");
-        return Err(ActixError::from(ApiError::InvalidApiKey("Missing API key".to_string())));
-    }
-
-    // For now, just check presence - in production, validate the actual key
-    next.call(req).await
-}
 
 // --- Route Configuration ---
 
@@ -137,7 +57,7 @@ pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
     // Scope for authenticated IMAP operations
     cfg.service(
         web::scope("/api/v1")
-            .wrap(mw_from_fn(validate_api_key))
+            .wrap(mw_from_fn(simple_validate_api_key))
             // Folder operations
             .service(list_folders)
             .service(get_folder)
@@ -157,6 +77,16 @@ pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
             .service(expunge_folder)
     );
 
+    // API Key management endpoints (require admin scope)
+    cfg.service(
+        web::scope("/api/v1/auth")
+            .wrap(mw_from_fn(simple_validate_api_key))
+            .service(get_api_key_info)
+            .service(create_api_key)
+            .service(revoke_api_key)
+            .service(list_api_keys)
+    );
+
     // Dashboard routes are configured separately in the main server setup
 }
 
@@ -164,13 +94,41 @@ pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
 
 // Helper to get an IMAP session for the account specified by API key
 async fn get_session(state: &AppState, req: &HttpRequest) -> Result<Arc<ImapClient<AsyncImapSessionWrapper>>, ApiError> {
-    let api_key = req.headers().get("X-API-Key")
-        .and_then(|hv| hv.to_str().ok())
+    // Get API key from headers
+    let api_key = req.headers()
+        .get("X-API-Key")
+        .or_else(|| req.headers().get("Authorization"))
+        .and_then(|h| h.to_str().ok())
+        .map(|s| {
+            if s.starts_with("Bearer ") {
+                &s[7..]
+            } else {
+                s
+            }
+        })
         .ok_or(ApiError::Unauthorized)?;
 
-    state.session_manager.as_ref().get_session(api_key)
-        .await
-        .map_err(|e| ApiError::InternalError(format!("Failed to get session: {}", e)))
+    // Get API key data from store
+    let api_key_data = state.api_key_store.validate_key(api_key).await?;
+
+    // Try to get existing session
+    let session_result = state.session_manager.as_ref().get_session(&api_key_data.key).await;
+
+    match session_result {
+        Ok(session) => Ok(session),
+        Err(_) => {
+            // Create new session with stored IMAP credentials
+            let creds = &api_key_data.imap_credentials;
+            state.session_manager.as_ref().create_session(
+                &api_key_data.key,
+                &creds.username,
+                &creds.password,
+                &creds.server,
+                creds.port,
+            ).await
+            .map_err(|e| ApiError::InternalError { message: format!("Failed to create session: {}", e) })
+        }
+    }
 }
 
 // --- Route Handlers ---
@@ -207,7 +165,7 @@ async fn get_folder(state: Data<AppState>, req: HttpRequest, path: Path<String>)
     // Verify folder exists
     let folders = session.list_folders().await?;
     if !folders.contains(&folder_name) {
-        return Err(ApiError::NotFound(format!("Folder '{}' not found", folder_name)));
+        return Err(ApiError::FolderNotFound { folder: folder_name.clone() });
     }
 
     // Select folder - note that actual implementation returns ()
@@ -227,7 +185,7 @@ async fn create_folder(state: Data<AppState>, req: HttpRequest, payload: Json<Cr
 
     // Validate request
     if payload.name.is_empty() {
-        return Err(ApiError::BadRequest("Folder name cannot be empty".to_string()));
+        return Err(ApiError::MissingField { field: "name".to_string() });
     }
 
     let session = get_session(&state, &req).await?;
@@ -268,7 +226,7 @@ async fn update_folder(state: Data<AppState>, req: HttpRequest, path: Path<Strin
     // Handle rename if new name provided
     if let Some(new_name) = &payload.name {
         if new_name.is_empty() {
-            return Err(ApiError::BadRequest("New folder name cannot be empty".to_string()));
+            return Err(ApiError::MissingField { field: "name".to_string() });
         }
         session.rename_folder(&folder_name, new_name).await?;
 
@@ -362,7 +320,7 @@ async fn get_email(state: Data<AppState>, req: HttpRequest, path: Path<(String, 
     let emails = session.fetch_emails(&vec![uid]).await?;
 
     if emails.is_empty() {
-        return Err(ApiError::NotFound(format!("Email with UID {} not found in folder '{}'", uid, folder_name)));
+        return Err(ApiError::EmailNotFound { uid });
     }
 
     Ok(HttpResponse::Ok().json(&emails[0]))
@@ -379,7 +337,7 @@ async fn create_email(state: Data<AppState>, req: HttpRequest, path: Path<String
     use base64::Engine;
     let content = base64::engine::general_purpose::STANDARD
         .decode(&payload.content)
-        .map_err(|e| ApiError::BadRequest(format!("Invalid base64 content: {}", e)))?;
+        .map_err(|e| ApiError::InvalidFieldValue { field: "content".to_string(), reason: format!("Invalid base64: {}", e) })?;
 
     let flags: Vec<String> = payload.flags.as_ref()
         .map(|f| f.items.iter().map(|flag| flag.to_string()).collect())
@@ -497,7 +455,7 @@ async fn move_email(state: Data<AppState>, req: HttpRequest, path: Path<(String,
     info!("Handling POST /folders/{}/emails/{}/move", from_folder, uid);
 
     if payload.to_folder.is_empty() {
-        return Err(ApiError::BadRequest("Target folder cannot be empty".to_string()));
+        return Err(ApiError::MissingField { field: "to_folder".to_string() });
     }
 
     let session = get_session(&state, &req).await?;
@@ -516,6 +474,133 @@ async fn move_email(state: Data<AppState>, req: HttpRequest, path: Path<(String,
 #[derive(Deserialize)]
 struct MoveEmailRequest {
     to_folder: String,
+}
+
+// === API Key Management ===
+
+#[get("/keys/current")]
+async fn get_api_key_info(state: Data<AppState>, req: HttpRequest) -> Result<HttpResponse, ApiError> {
+    info!("Handling GET /auth/keys/current");
+
+    // Get API key from headers
+    let api_key = req.headers()
+        .get("X-API-Key")
+        .and_then(|h| h.to_str().ok())
+        .ok_or(ApiError::Unauthorized)?;
+
+    // Return key info without sensitive data
+    let info = state.api_key_store.get_key_info(api_key).await?;
+
+    Ok(HttpResponse::Ok().json(info))
+}
+
+#[post("/keys")]
+async fn create_api_key(state: Data<AppState>, req: HttpRequest, payload: Json<CreateApiKeyRequest>) -> Result<HttpResponse, ApiError> {
+    info!("Handling POST /auth/keys");
+
+    // Check if requester has admin scope
+    let api_key = req.headers()
+        .get("X-API-Key")
+        .and_then(|h| h.to_str().ok())
+        .ok_or(ApiError::Unauthorized)?;
+
+    if !state.api_key_store.has_scope(api_key, &ApiScope::Admin).await {
+        return Err(ApiError::Unauthorized);
+    }
+
+    // Validate request
+    if payload.name.is_empty() || payload.email.is_empty() {
+        return Err(ApiError::ValidationFailed {
+            message: "Missing required fields".to_string(),
+            errors: vec![
+                crate::api::errors::ValidationError {
+                    field: "name".to_string(),
+                    message: "Name is required".to_string(),
+                    constraint: Some("required".to_string()),
+                },
+                crate::api::errors::ValidationError {
+                    field: "email".to_string(),
+                    message: "Email is required".to_string(),
+                    constraint: Some("required".to_string()),
+                },
+            ]
+        });
+    }
+
+    // Create new API key
+    let new_key = state.api_key_store.create_api_key(
+        payload.name.clone(),
+        payload.email.clone(),
+        payload.imap_credentials.clone(),
+        payload.scopes.clone().unwrap_or_else(|| vec![
+            ApiScope::ReadEmail,
+            ApiScope::WriteEmail,
+            ApiScope::ManageFolders,
+        ]),
+    ).await;
+
+    Ok(HttpResponse::Created().json(serde_json::json!({
+        "api_key": new_key,
+        "message": "API key created successfully",
+        "warning": "Store this key securely. It cannot be retrieved again."
+    })))
+}
+
+#[derive(Deserialize)]
+struct CreateApiKeyRequest {
+    name: String,
+    email: String,
+    imap_credentials: crate::api::auth::ImapCredentials,
+    scopes: Option<Vec<ApiScope>>,
+}
+
+#[delete("/keys/{key}")]
+async fn revoke_api_key(state: Data<AppState>, req: HttpRequest, path: Path<String>) -> Result<HttpResponse, ApiError> {
+    let key_to_revoke = path.into_inner();
+    info!("Handling DELETE /auth/keys/{}", key_to_revoke);
+
+    // Check if requester has admin scope
+    let api_key = req.headers()
+        .get("X-API-Key")
+        .and_then(|h| h.to_str().ok())
+        .ok_or(ApiError::Unauthorized)?;
+
+    if !state.api_key_store.has_scope(api_key, &ApiScope::Admin).await {
+        return Err(ApiError::Unauthorized);
+    }
+
+    // Don't allow self-revocation
+    if api_key == key_to_revoke {
+        return Err(ApiError::BadRequest { message: "Cannot revoke your own API key".to_string() });
+    }
+
+    state.api_key_store.revoke_key(&key_to_revoke).await?;
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "message": "API key revoked successfully"
+    })))
+}
+
+#[get("/keys")]
+async fn list_api_keys(state: Data<AppState>, req: HttpRequest) -> Result<HttpResponse, ApiError> {
+    info!("Handling GET /auth/keys");
+
+    // Check if requester has admin scope
+    let api_key = req.headers()
+        .get("X-API-Key")
+        .and_then(|h| h.to_str().ok())
+        .ok_or(ApiError::Unauthorized)?;
+
+    if !state.api_key_store.has_scope(api_key, &ApiScope::Admin).await {
+        return Err(ApiError::Unauthorized);
+    }
+
+    // This would need to be implemented in ApiKeyStore
+    // For now, return empty list
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "keys": [],
+        "message": "API key listing not yet implemented"
+    })))
 }
 
 // === Bulk Operations ===
@@ -544,11 +629,16 @@ pub async fn run_server(settings: Settings, mcp_handler: Arc<dyn McpHandler>, se
     let bind_address = format!("{}:{}", rest_config.host, rest_config.port);
     info!("Starting REST API server at {}", bind_address);
 
+    // Initialize API key store
+    let api_key_store = Arc::new(ApiKeyStore::new());
+    api_key_store.init_with_defaults().await;
+
     let app_state = Data::new(AppState {
         settings: Arc::new(settings),
         mcp_handler,
         session_manager,
         dashboard_state,
+        api_key_store: Arc::clone(&api_key_store),
     });
 
     HttpServer::new(move || {

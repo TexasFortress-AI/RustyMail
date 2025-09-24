@@ -1,3 +1,4 @@
+#![recursion_limit = "256"]
 //! Library core for RustyMail.
 
 // --- Modules ---

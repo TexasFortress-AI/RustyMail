@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use reqwest::{Client, header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT}};
 use serde::{Serialize, Deserialize};
 use log::{debug, warn, error};
-use crate::api::rest::ApiError as RestApiError;
+use crate::api::errors::ApiError as RestApiError;
 use super::{AiProvider, AiChatMessage}; // Import trait and common message struct
 
 // OpenRouter API constants
@@ -93,23 +93,21 @@ impl AiProvider for OpenRouterAdapter {
             .timeout(std::time::Duration::from_secs(60)) // Slightly longer timeout maybe?
             .send()
             .await
-            .map_err(|e| RestApiError::InternalError(format!("Network error calling OpenRouter: {}", e)))?;
+            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("OpenRouter: {}", e) })?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
             error!("OpenRouter API request failed with status {}: {}", status, error_body);
-            return Err(RestApiError::InternalError(format!(
-                "OpenRouter API returned error status {}: {}",
-                status,
-                error_body
-            )));
+            return Err(RestApiError::ServiceUnavailable {
+                service: format!("OpenRouter API returned error status {}: {}", status, error_body)
+            });
         }
 
         let response_body = response
             .json::<OpenRouterChatResponse>() // Use OpenRouter specific response struct
             .await
-            .map_err(|e| RestApiError::InternalError(format!("Failed to deserialize OpenRouter response: {}", e)))?;
+            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize OpenRouter response: {}", e) })?;
 
         // Extract the first choice's message content
         if let Some(choice) = response_body.choices.first() {
@@ -117,7 +115,7 @@ impl AiProvider for OpenRouterAdapter {
             Ok(choice.message.content.clone())
         } else {
             warn!("OpenRouter API response did not contain any choices.");
-            Err(RestApiError::InternalError("OpenRouter response was empty or missing choices".to_string()))
+            Err(RestApiError::UnprocessableEntity { message: "OpenRouter response was empty or missing choices".to_string() })
         }
     }
 } 

@@ -3,6 +3,7 @@ use rustymail::config::Settings;
 // Remove direct ImapClient import if only used for connect check, keep if factory needs it explicitly
 // use rustymail::imap::ImapClient; 
 use rustymail::api::rest::{AppState, configure_rest_service};
+use rustymail::api::auth::ApiKeyStore;
 use std::sync::Arc;
 use dotenvy::dotenv;
 use log::{info, error, warn};
@@ -17,6 +18,7 @@ use tokio::sync::Mutex as TokioMutex;
 use env_logger;
 use rustymail::dashboard;
 use rustymail::dashboard::api::SseManager;
+use rustymail::api::openapi_docs;
 // --- Add imports for factory --- 
 use rustymail::imap::client::ImapClient; // Needed for the factory closure
 use std::future::Future;
@@ -158,11 +160,14 @@ async fn main() -> std::io::Result<()> {
 
     // --- Create AppState manually (no new method) ---
     let session_manager = Arc::new(SessionManager::new(Arc::new(settings.clone())));
+    let api_key_store = Arc::new(ApiKeyStore::new());
+    api_key_store.init_with_defaults().await;
     let app_state = AppState {
         settings: Arc::new(settings.clone()),
         mcp_handler: mcp_handler.clone(),
         session_manager: session_manager.clone(),
         dashboard_state: None, // Will be set later
+        api_key_store: api_key_store.clone(),
     };
     info!("Application state initialized.");
 
@@ -230,6 +235,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(dashboard::api::middleware::Metrics) 
             // Configure routes
             .configure(configure_rest_service)                // RustyMail REST API
+            .configure(openapi_docs::configure_openapi)       // OpenAPI/Swagger documentation
             // .configure(configure_sse_service)              // SSE not implemented yet
             .configure(|cfg| dashboard::api::init_routes(cfg)); // Dashboard API routes
 

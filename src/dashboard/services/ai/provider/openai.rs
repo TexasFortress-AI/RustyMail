@@ -6,7 +6,7 @@ use serde::{Serialize, Deserialize};
 use log::{debug, warn, error};
 use crate::dashboard::api::errors::ApiError;
 use super::{AiProvider, AiChatMessage}; // Import trait and common message struct
-use crate::api::rest::ApiError as RestApiError;
+use crate::api::errors::ApiError as RestApiError;
 
 // OpenAI API constants
 const OPENAI_API_URL: &str = "https://api.openai.com/v1/chat/completions";
@@ -79,23 +79,21 @@ impl AiProvider for OpenAiAdapter {
             .timeout(std::time::Duration::from_secs(30))
             .send()
             .await
-            .map_err(|e| RestApiError::AiProviderError(format!("Network error calling OpenAI: {}", e)))?;
+            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("OpenAI: {}", e) })?;
 
         if !response.status().is_success() {
             let status = response.status();
             let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
             error!("OpenAI API request failed with status {}: {}", status, error_body);
-            return Err(RestApiError::AiProviderError(format!(
-                "OpenAI API returned error status {}: {}",
-                status,
-                error_body
-            )));
+            return Err(RestApiError::ServiceUnavailable {
+                service: format!("OpenAI API returned error status {}: {}", status, error_body)
+            });
         }
 
         let response_body = response
             .json::<OpenAiChatResponse>()
             .await
-            .map_err(|e| RestApiError::AiProviderError(format!("Failed to deserialize OpenAI response: {}", e)))?;
+            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize OpenAI response: {}", e) })?;
 
         // Extract the first choice's message content
         if let Some(choice) = response_body.choices.first() {
@@ -103,7 +101,7 @@ impl AiProvider for OpenAiAdapter {
             Ok(choice.message.content.clone())
         } else {
             warn!("OpenAI API response did not contain any choices.");
-            Err(RestApiError::AiProviderError("OpenAI response was empty or missing choices".to_string()))
+            Err(RestApiError::UnprocessableEntity { message: "OpenAI response was empty or missing choices".to_string() })
         }
     }
 } 

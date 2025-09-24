@@ -14,12 +14,12 @@ Don't assume the UI is displaying correctly if you haven't actually used a brows
 IMPORTANT:
 - Remember to always use Context7 and rust-docs for looking up Documentation of any classes you're using.
 - Remember to always use tree-sitter for code visibility of the project.
-- Remember to always use mycelian-memory to keep track of your understanding of the project goals and decisions, key insights, lessons learned.
+- Remember to always use mycelian-memory to keep track of your understanding of the project goals and decisions, key insights, lessons learned. Also, search your memory for relevant information BEFORE making an important decision.
 - Remember to use your puppeteer tool for testing the frontend in the browser.
 
 WARNING: Don't use over-generalized searches in the code base, because the results are too large for the context window. Be specific and targeted.
 
-REMEMBER: The PURPOSE of your memory is to keep track of key insights, and decision points. When you have to make a decision, you should remember WHY you made that decision, and WHAT the decision was, and how it relates to the overall goal, and the KEY INSIGHTS derived along the way.
+REMEMBER: The PURPOSE of your memory is to keep track of key insights, and decision points, so you can use them to make informed decisions. When you have to make a decision, you should first check for relevant memories. And once the decision is made, you should always remember WHY you made that decision, and WHAT the decision was, and how it relates to the overall goal, and the KEY INSIGHTS derived along the way.
 
 IMPORTANT: Remember to use taskmaster for tracking all tasks and progress. (use "taskmaster next" to see next task).
 IMPORTANT: Make sure the project always builds and passes all tests before continuing to the next task.

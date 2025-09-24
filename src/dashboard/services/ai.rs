@@ -4,7 +4,7 @@ use log::{debug, error, info, warn};
 use crate::dashboard::api::models::{ChatbotQuery, ChatbotResponse, EmailData};
 use crate::dashboard::services::ai::provider::{AiProvider, AiChatMessage, MockAiProvider};
 use std::sync::Arc;
-use crate::api::rest::ApiError;
+use crate::api::errors::ApiError;
 use thiserror::Error;
 use async_trait::async_trait;
 use std::collections::HashMap;
@@ -50,7 +50,7 @@ pub enum AiError {
     #[error("Configuration error: {0}")]
     ConfigurationError(String),
     #[error("API Error during AI operation: {0}")]
-    ApiError(#[from] crate::api::rest::ApiError),
+    ApiError(#[from] crate::api::errors::ApiError),
     #[error("Provider not found: {0}")]
     ProviderNotFound(String),
 }
@@ -130,7 +130,7 @@ impl AiService {
         } else if let Some(provider) = self.providers.get("openai").or_else(|| self.providers.get("mock")) {
             // Use the first available provider
             provider.generate_response(&messages_history).await
-                .map_err(|e| ApiError::InternalError(format!("AI provider error: {}", e)))
+                .map_err(|e| ApiError::InternalError { message: format!("AI provider error: {}", e) })
         } else {
             warn!("No AI providers available. Using mock response.");
             Ok(self.generate_mock_response(&query_text))
