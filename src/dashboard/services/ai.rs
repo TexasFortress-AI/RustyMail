@@ -1,4 +1,5 @@
 pub mod provider;
+pub mod provider_manager;
 
 use log::{debug, error, info, warn};
 use crate::dashboard::api::models::{ChatbotQuery, ChatbotResponse, EmailData};
