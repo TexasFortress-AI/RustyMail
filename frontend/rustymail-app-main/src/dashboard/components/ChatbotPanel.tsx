@@ -106,6 +106,7 @@ const ChatbotPanel: React.FC = () => {
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
+
   
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
@@ -261,7 +262,7 @@ const ChatbotPanel: React.FC = () => {
   };
 
   return (
-    <Card className="shadow-sm transition-all duration-200 animate-fade-in glass-panel" data-testid="chatbot-panel">
+    <Card className="shadow-sm transition-all duration-200 animate-fade-in glass-panel h-full flex flex-col" data-testid="chatbot-panel">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg font-medium flex items-center">
@@ -303,8 +304,11 @@ const ChatbotPanel: React.FC = () => {
         </div>
       </CardHeader>
       
-      <CardContent className="p-0">
-        <div className="h-64 md:h-80 overflow-y-auto p-4 space-y-4" data-testid="chatbot-messages">
+      <CardContent className="p-0 flex-1 flex flex-col min-h-0">
+        <div
+          className="overflow-y-auto p-4 space-y-4 flex-1 min-h-0"
+          data-testid="chatbot-messages"
+        >
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center px-4 text-muted-foreground">
               <Bot className="h-12 w-12 mb-3 text-primary/40" />
@@ -441,10 +445,10 @@ const ChatbotPanel: React.FC = () => {
             </>
           )}
         </div>
-        
+
         <Separator />
-        
-        <form onSubmit={handleSubmit} className="p-4 flex gap-2" data-testid="chatbot-form">
+
+        <form onSubmit={handleSubmit} className="p-4 flex gap-2 flex-shrink-0" data-testid="chatbot-form">
           <Input
             ref={inputRef}
             value={inputText}

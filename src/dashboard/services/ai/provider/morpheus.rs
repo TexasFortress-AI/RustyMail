@@ -9,8 +9,8 @@ use super::{AiProvider, AiChatMessage}; // Import trait and common message struc
 use crate::api::errors::ApiError as RestApiError;
 
 // Morpheus API constants
-const MORPHEUS_API_BASE_URL: &str = "https://api.dev.mor.org/api/v1";
-const MORPHEUS_MODELS_URL: &str = "https://api.dev.mor.org/api/v1/models";
+const MORPHEUS_API_BASE_URL: &str = "https://api.dev.mor.org/v1";
+const MORPHEUS_MODELS_URL: &str = "https://api.dev.mor.org/v1/models";
 const DEFAULT_MORPHEUS_MODEL: &str = "llama-3.2-90b-vision-instruct";
 
 // --- Morpheus Specific Request/Response Structs ---

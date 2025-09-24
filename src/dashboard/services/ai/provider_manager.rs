@@ -88,7 +88,7 @@ impl ProviderManager {
                 provider_type: ProviderType::OpenRouter,
                 api_key: Some(api_key.clone()),
                 model: std::env::var("OPENROUTER_MODEL")
-                    .unwrap_or_else(|_| "deepseek/deepseek-coder-v2-lite-instruct".to_string()),
+                    .unwrap_or_else(|_| "meta-llama/llama-3.2-3b-instruct:free".to_string()),
                 max_tokens: std::env::var("OPENROUTER_MAX_TOKENS")
                     .ok()
                     .and_then(|v| v.parse().ok()),
@@ -123,10 +123,11 @@ impl ProviderManager {
                 priority: 3,
                 enabled: true,
             };
-            configs.push(config);
+            configs.push(config.clone());
 
             // Create Morpheus provider
-            let provider = Arc::new(MorpheusAdapter::new(api_key, self.http_client.clone()));
+            let provider = Arc::new(MorpheusAdapter::new(api_key, self.http_client.clone())
+                .with_model(config.model.clone()));
             self.providers.write().await.insert("morpheus".to_string(), provider);
             info!("Initialized Morpheus provider");
         }
@@ -138,7 +139,7 @@ impl ProviderManager {
                 provider_type: ProviderType::Ollama,
                 api_key: None, // Ollama doesn't require an API key for local instances
                 model: std::env::var("OLLAMA_MODEL")
-                    .unwrap_or_else(|_| "llama3.2".to_string()),
+                    .unwrap_or_else(|_| "qwen2.5:3b".to_string()),
                 max_tokens: std::env::var("OLLAMA_MAX_TOKENS")
                     .ok()
                     .and_then(|v| v.parse().ok()),
@@ -200,21 +201,24 @@ impl ProviderManager {
                     .ok_or_else(|| RestApiError::UnprocessableEntity {
                         message: "OpenRouter provider requires API key".to_string()
                     })?;
-                Arc::new(OpenRouterAdapter::new(api_key.clone(), self.http_client.clone()))
+                Arc::new(OpenRouterAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
             },
             ProviderType::Morpheus => {
                 let api_key = config.api_key.as_ref()
                     .ok_or_else(|| RestApiError::UnprocessableEntity {
                         message: "Morpheus provider requires API key".to_string()
                     })?;
-                Arc::new(MorpheusAdapter::new(api_key.clone(), self.http_client.clone()))
+                Arc::new(MorpheusAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
             },
             ProviderType::Ollama => {
                 // For Ollama, we need a base URL (which would be stored in the config name or a separate field)
                 // Since we don't have a base_url field in the config, we'll use the standard Ollama URL
                 let base_url = std::env::var("OLLAMA_API_BASE")
                     .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-                Arc::new(OllamaAdapter::new(base_url, self.http_client.clone()))
+                Arc::new(OllamaAdapter::new(base_url, self.http_client.clone())
+                    .with_model(config.model.clone()))
             },
             ProviderType::Mock => {
                 Arc::new(MockAiProvider)
@@ -337,19 +341,22 @@ impl ProviderManager {
                     .ok_or_else(|| RestApiError::UnprocessableEntity {
                         message: "OpenRouter provider requires API key".to_string()
                     })?;
-                Arc::new(OpenRouterAdapter::new(api_key.clone(), self.http_client.clone()))
+                Arc::new(OpenRouterAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
             },
             ProviderType::Morpheus => {
                 let api_key = config.api_key.as_ref()
                     .ok_or_else(|| RestApiError::UnprocessableEntity {
                         message: "Morpheus provider requires API key".to_string()
                     })?;
-                Arc::new(MorpheusAdapter::new(api_key.clone(), self.http_client.clone()))
+                Arc::new(MorpheusAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
             },
             ProviderType::Ollama => {
                 let base_url = std::env::var("OLLAMA_API_BASE")
                     .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
-                Arc::new(OllamaAdapter::new(base_url, self.http_client.clone()))
+                Arc::new(OllamaAdapter::new(base_url, self.http_client.clone())
+                    .with_model(config.model.clone()))
             },
             ProviderType::Mock => {
                 Arc::new(MockAiProvider)
