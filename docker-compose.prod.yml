@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  rustymail:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: rustymail:latest
+    container_name: rustymail-server
+    ports:
+      - "9437:9437"  # REST API
+      - "9438:9438"  # SSE endpoint
+      - "9439:9439"  # Dashboard
+    environment:
+      - RUST_LOG=info
+      - IMAP_ADAPTER=${IMAP_ADAPTER:-mock}
+      - IMAP_HOST=${IMAP_HOST:-}
+      - IMAP_PORT=${IMAP_PORT:-993}
+      - IMAP_USER=${IMAP_USER:-}
+      - IMAP_PASS=${IMAP_PASS:-}
+      - REST_HOST=0.0.0.0
+      - REST_PORT=9437
+      - SSE_HOST=0.0.0.0
+      - SSE_PORT=9438
+      - DASHBOARD_ENABLED=true
+      - DASHBOARD_PORT=9439
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+    volumes:
+      - ./data:/app/data
+    networks:
+      - rustymail-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9437/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+networks:
+  rustymail-network:
+    driver: bridge
+
+volumes:
+  data:

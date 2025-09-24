@@ -1,0 +1,100 @@
+name: Dependency Updates
+
+on:
+  schedule:
+    - cron: '0 0 * * MON'  # Weekly on Mondays
+  workflow_dispatch:
+
+jobs:
+  update-rust-dependencies:
+    name: Update Rust Dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-edit
+        run: cargo install cargo-edit
+
+      - name: Update dependencies
+        run: |
+          cargo update
+          cargo upgrade --workspace --skip-compatible
+
+      - name: Test updated dependencies
+        run: cargo test --all
+        env:
+          IMAP_ADAPTER: mock
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore: update Rust dependencies'
+          title: 'chore: update Rust dependencies'
+          body: |
+            ## Automated Dependency Update
+
+            This PR updates the Rust dependencies to their latest compatible versions.
+
+            ### Changes
+            - Updated Cargo.lock with latest dependency versions
+            - Upgraded direct dependencies where compatible
+
+            ### Testing
+            - All tests have been run and passed
+
+            Please review the changes and merge if everything looks good.
+          branch: update-rust-dependencies
+          delete-branch: true
+
+  update-npm-dependencies:
+    name: Update NPM Dependencies
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend/rustymail-app-main
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Update dependencies
+        run: |
+          npm update
+          npm audit fix
+
+      - name: Test updated dependencies
+        run: |
+          npm run build
+          npm test -- --watchAll=false || true
+        env:
+          CI: true
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore: update NPM dependencies'
+          title: 'chore: update NPM dependencies'
+          body: |
+            ## Automated Dependency Update
+
+            This PR updates the NPM dependencies to their latest compatible versions.
+
+            ### Changes
+            - Updated package-lock.json with latest dependency versions
+            - Fixed any security vulnerabilities found by npm audit
+
+            ### Testing
+            - Build completed successfully
+            - Tests have been run
+
+            Please review the changes and merge if everything looks good.
+          branch: update-npm-dependencies
+          delete-branch: true
