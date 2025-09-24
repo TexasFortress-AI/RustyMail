@@ -33,6 +33,7 @@ pub struct AiService {
     conversations: RwLock<HashMap<String, Conversation>>,
     provider_manager: ProviderManager,
     nlp_processor: NlpProcessor,
+    email_service: Option<Arc<super::email::EmailService>>,
     mock_mode: bool, // Flag to force mock responses
 }
 
@@ -68,6 +69,7 @@ impl AiService {
             provider_manager,
             nlp_processor,
             conversations: RwLock::new(HashMap::new()),
+            email_service: None,
             mock_mode: true, // Force mock mode
         }
     }
@@ -172,6 +174,7 @@ impl AiService {
             provider_manager,
             nlp_processor,
             conversations: RwLock::new(HashMap::new()),
+            email_service: None,
             mock_mode: !has_real_provider, // Set mock mode if no real providers
         })
     }
@@ -181,6 +184,13 @@ impl AiService {
         let query_text = query.query.clone();
 
         debug!("Processing chatbot query for conversation {}: {}", conversation_id, query_text);
+
+        // Check if this is an email-related query and we have email service
+        let email_context = if let Some(email_service) = &self.email_service {
+            self.fetch_email_context(&query_text, email_service).await
+        } else {
+            None
+        };
 
         // DISABLED NLP processor - it's injecting system messages that cause refusals
         // Go directly to the AI provider without NLP interference
@@ -204,9 +214,17 @@ impl AiService {
 
         // Add a system message that clarifies this is an email assistant
         if messages_history.is_empty() || !messages_history.iter().any(|m| m.role == "system") {
+            let mut system_content = "You are RustyMail Assistant, an email management AI. You have full access to the user's email account through the RustyMail system. You can list folders, read emails, search messages, and perform all email operations. Respond naturally to email-related queries.".to_string();
+
+            // Add email context if available
+            if let Some(context) = email_context {
+                system_content.push_str("\n\nCurrent email data from the user's account:\n");
+                system_content.push_str(&context);
+            }
+
             messages_history.insert(0, AiChatMessage {
                 role: "system".to_string(),
-                content: "You are RustyMail Assistant, an email management AI. You have full access to the user's email account through the RustyMail system. You can list folders, read emails, search messages, and perform all email operations. Respond naturally to email-related queries.".to_string()
+                content: system_content
             });
         }
 
@@ -304,7 +322,110 @@ impl AiService {
     pub async fn get_available_models(&self) -> Result<Vec<String>, ApiError> {
         self.provider_manager.get_available_models().await
     }
-    
+
+    /// Set the email service for fetching real emails
+    pub fn set_email_service(&mut self, email_service: Arc<super::email::EmailService>) {
+        self.email_service = Some(email_service);
+    }
+
+    /// Fetch email context based on the query
+    async fn fetch_email_context(&self, query: &str, email_service: &Arc<super::email::EmailService>) -> Option<String> {
+        let query_lower = query.to_lowercase();
+
+        // Determine what email data to fetch based on the query
+        if query_lower.contains("unread") || query_lower.contains("new mail") || query_lower.contains("new email") {
+            // Fetch unread emails
+            match email_service.get_unread_emails().await {
+                Ok(emails) if !emails.is_empty() => {
+                    let mut context = format!("Found {} unread emails:\n", emails.len());
+                    for (i, email) in emails.iter().take(10).enumerate() {
+                        let subject = email.envelope.as_ref()
+                            .and_then(|e| e.subject.as_deref())
+                            .unwrap_or("No subject");
+                        let from = email.envelope.as_ref()
+                            .and_then(|e| e.from.first())
+                            .map(|addr| format!("{}@{}",
+                                addr.mailbox.as_deref().unwrap_or("unknown"),
+                                addr.host.as_deref().unwrap_or("unknown")))
+                            .unwrap_or_else(|| "Unknown".to_string());
+                        let date = email.internal_date
+                            .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
+                            .unwrap_or_else(|| "Unknown".to_string());
+
+                        context.push_str(&format!(
+                            "{}. Subject: {}, From: {}, Date: {}\n",
+                            i + 1, subject, from, date
+                        ));
+                    }
+                    Some(context)
+                },
+                Ok(_) => Some("No unread emails found.".to_string()),
+                Err(e) => {
+                    error!("Failed to fetch unread emails: {}", e);
+                    None
+                }
+            }
+        } else if query_lower.contains("inbox") || query_lower.contains("recent") || query_lower.contains("latest") ||
+                  query_lower.contains("top") || query_lower.contains("emails") || query_lower.contains("messages") {
+            // Fetch recent emails from inbox
+            let limit = if query_lower.contains("top 10") || query_lower.contains("10 email") { 10 }
+                       else if query_lower.contains("top 5") || query_lower.contains("5 email") { 5 }
+                       else if query_lower.contains("top 20") || query_lower.contains("20 email") { 20 }
+                       else { 10 };
+
+            match email_service.get_recent_inbox_emails(limit).await {
+                Ok(emails) if !emails.is_empty() => {
+                    let mut context = format!("Most recent {} emails in inbox:\n", emails.len());
+                    for (i, email) in emails.iter().enumerate() {
+                        let unread = !email.flags.iter().any(|f| f == "\\Seen" || f == "Seen");
+                        let subject = email.envelope.as_ref()
+                            .and_then(|e| e.subject.as_deref())
+                            .unwrap_or("No subject");
+                        let from = email.envelope.as_ref()
+                            .and_then(|e| e.from.first())
+                            .map(|addr| format!("{}@{}",
+                                addr.mailbox.as_deref().unwrap_or("unknown"),
+                                addr.host.as_deref().unwrap_or("unknown")))
+                            .unwrap_or_else(|| "Unknown".to_string());
+                        let date = email.internal_date
+                            .map(|d| d.format("%Y-%m-%d %H:%M").to_string())
+                            .unwrap_or_else(|| "Unknown".to_string());
+
+                        context.push_str(&format!(
+                            "{}. Subject: {}, From: {}, Date: {}{}\n",
+                            i + 1, subject, from, date,
+                            if unread { " [UNREAD]" } else { "" }
+                        ));
+                    }
+                    Some(context)
+                },
+                Ok(_) => Some("No emails found in inbox.".to_string()),
+                Err(e) => {
+                    error!("Failed to fetch inbox emails: {}", e);
+                    None
+                }
+            }
+        } else if query_lower.contains("folder") || query_lower.contains("mailbox") {
+            // List folders
+            match email_service.list_folders().await {
+                Ok(folders) if !folders.is_empty() => {
+                    let mut context = format!("Email folders ({}):\n", folders.len());
+                    for folder in folders {
+                        context.push_str(&format!("- {}\n", folder));
+                    }
+                    Some(context)
+                },
+                Ok(_) => Some("No folders found.".to_string()),
+                Err(e) => {
+                    error!("Failed to list folders: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    }
+
     // Clean up old conversations
     #[allow(dead_code)]
     async fn cleanup_old_conversations(&self, conversations: &mut HashMap<String, Conversation>) {

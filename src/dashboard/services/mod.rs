@@ -19,6 +19,7 @@ use crate::connection_pool::ConnectionPool;
 pub mod ai;
 pub mod clients;
 pub mod config;
+pub mod email;
 pub mod events;
 pub mod event_integration;
 pub mod health;
@@ -38,6 +39,7 @@ pub use metrics::{MetricsService};
 pub use clients::{ClientManager};
 pub use config::{ConfigService};
 pub use ai::{AiService};
+pub use email::{EmailService};
 pub use events::{EventBus, DashboardEvent};
 pub use health::{HealthService, HealthReport, HealthStatus};
 
@@ -66,6 +68,7 @@ pub struct DashboardState {
     pub metrics_service: Arc<MetricsService>,
     pub config_service: Arc<ConfigService>,
     pub ai_service: Arc<AiService>,
+    pub email_service: Arc<EmailService>,
     pub sse_manager: Arc<SseManager>,
     pub event_bus: Arc<EventBus>,
     pub health_service: Option<Arc<HealthService>>,
@@ -90,6 +93,12 @@ pub async fn init(
     let metrics_service = Arc::new(MetricsService::new(metrics_interval_duration)); // Pass interval duration, not client manager
     let config_service = Arc::new(ConfigService::new());
 
+    // Initialize Email Service
+    let email_service = Arc::new(EmailService::new(
+        imap_session_factory.clone(),
+        connection_pool.clone(),
+    ));
+
     // Initialize AI Service with environment variables
     let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
     let openrouter_api_key = std::env::var("OPENROUTER_API_KEY").ok();
@@ -97,7 +106,11 @@ pub async fn init(
     let ollama_base_url = std::env::var("OLLAMA_API_BASE").ok();
 
     let ai_service = match AiService::new(openai_api_key, openrouter_api_key, morpheus_api_key, ollama_base_url).await {
-        Ok(service) => Arc::new(service),
+        Ok(mut service) => {
+            // Set the email service so AI can fetch real emails
+            service.set_email_service(email_service.clone());
+            Arc::new(service)
+        },
         Err(e) => {
             warn!("Failed to initialize AI service with API keys: {}. Using mock service.", e);
             Arc::new(AiService::new_mock())
@@ -129,6 +142,7 @@ pub async fn init(
         metrics_service,
         config_service,
         ai_service,
+        email_service,
         sse_manager,
         event_bus,
         health_service: Some(health_service),
