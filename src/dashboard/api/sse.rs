@@ -8,7 +8,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, RwLock};
 use tokio::time::interval;
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use log::{info, debug, error, warn};
 use crate::dashboard::services::metrics::MetricsService;
@@ -19,6 +19,52 @@ use tokio_stream::wrappers::{ReceiverStream, IntervalStream};
 use crate::dashboard::services::DashboardState;
 use actix_web::HttpRequest;
 
+// Event type definitions for subscription filtering
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum EventType {
+    Welcome,
+    StatsUpdate,
+    ClientConnected,
+    ClientDisconnected,
+    SystemAlert,
+    ConfigurationUpdated,
+    DashboardEvent,
+}
+
+impl EventType {
+    pub fn from_string(s: &str) -> Option<Self> {
+        match s {
+            "welcome" => Some(EventType::Welcome),
+            "stats_update" => Some(EventType::StatsUpdate),
+            "client_connected" => Some(EventType::ClientConnected),
+            "client_disconnected" => Some(EventType::ClientDisconnected),
+            "system_alert" => Some(EventType::SystemAlert),
+            "configuration_updated" => Some(EventType::ConfigurationUpdated),
+            "dashboard_event" => Some(EventType::DashboardEvent),
+            _ => None,
+        }
+    }
+
+    pub fn to_string(&self) -> &'static str {
+        match self {
+            EventType::Welcome => "welcome",
+            EventType::StatsUpdate => "stats_update",
+            EventType::ClientConnected => "client_connected",
+            EventType::ClientDisconnected => "client_disconnected",
+            EventType::SystemAlert => "system_alert",
+            EventType::ConfigurationUpdated => "configuration_updated",
+            EventType::DashboardEvent => "dashboard_event",
+        }
+    }
+}
+
+// Default subscription: all events except welcome (which is sent once anyway)
+impl Default for EventType {
+    fn default() -> Self {
+        EventType::StatsUpdate
+    }
+}
+
 // SSE Event data structure
 #[derive(Debug, Clone)]
 pub struct SseEvent {
@@ -26,10 +72,52 @@ pub struct SseEvent {
     pub data: String,
 }
 
-// SSE client information
+// SSE client information with subscription preferences
 #[derive(Debug)]
 struct SseClient {
     sender: mpsc::Sender<SseEvent>,
+    subscriptions: HashSet<EventType>,
+}
+
+impl SseClient {
+    pub fn new(sender: mpsc::Sender<SseEvent>) -> Self {
+        // Default subscription: all event types except welcome (sent once on connection)
+        let mut subscriptions = HashSet::new();
+        subscriptions.insert(EventType::StatsUpdate);
+        subscriptions.insert(EventType::ClientConnected);
+        subscriptions.insert(EventType::ClientDisconnected);
+        subscriptions.insert(EventType::SystemAlert);
+        subscriptions.insert(EventType::ConfigurationUpdated);
+        subscriptions.insert(EventType::DashboardEvent);
+
+        Self {
+            sender,
+            subscriptions,
+        }
+    }
+
+    pub fn new_with_subscriptions(sender: mpsc::Sender<SseEvent>, subscriptions: HashSet<EventType>) -> Self {
+        Self {
+            sender,
+            subscriptions,
+        }
+    }
+
+    pub fn is_subscribed_to(&self, event_type: &EventType) -> bool {
+        self.subscriptions.contains(event_type)
+    }
+
+    pub fn subscribe_to(&mut self, event_type: EventType) {
+        self.subscriptions.insert(event_type);
+    }
+
+    pub fn unsubscribe_from(&mut self, event_type: &EventType) {
+        self.subscriptions.remove(event_type);
+    }
+
+    pub fn get_subscriptions(&self) -> &HashSet<EventType> {
+        &self.subscriptions
+    }
 }
 
 // SSE Manager that keeps track of connected clients
@@ -63,7 +151,7 @@ impl SseManager {
     // Register a new SSE client
     pub async fn register_client(&self, client_id: String, sender: mpsc::Sender<SseEvent>) {
         let mut clients = self.clients.write().await;
-        clients.insert(client_id.clone(), SseClient { sender: sender.clone() });
+        clients.insert(client_id.clone(), SseClient::new(sender));
         
         // Update metrics
         // self.metrics_service.increment_connections().await; // Removed: Metrics now use IMAP count
@@ -86,16 +174,98 @@ impl SseManager {
         // Broadcast client disconnected event
         self.broadcast_client_disconnected(client_id).await;
     }
+
+    // Update client subscription preferences
+    pub async fn update_client_subscriptions(&self, client_id: &str, subscriptions: HashSet<EventType>) -> bool {
+        let mut clients = self.clients.write().await;
+        if let Some(client) = clients.get_mut(client_id) {
+            client.subscriptions = subscriptions;
+            info!("Updated subscriptions for client {}: {:?}", client_id, client.subscriptions);
+            true
+        } else {
+            warn!("Tried to update subscriptions for non-existent client: {}", client_id);
+            false
+        }
+    }
+
+    // Add subscription for a client
+    pub async fn subscribe_client_to_event(&self, client_id: &str, event_type: EventType) -> bool {
+        let mut clients = self.clients.write().await;
+        if let Some(client) = clients.get_mut(client_id) {
+            client.subscribe_to(event_type.clone());
+            info!("Client {} subscribed to {:?}", client_id, event_type);
+            true
+        } else {
+            warn!("Tried to subscribe non-existent client: {}", client_id);
+            false
+        }
+    }
+
+    // Remove subscription for a client
+    pub async fn unsubscribe_client_from_event(&self, client_id: &str, event_type: &EventType) -> bool {
+        let mut clients = self.clients.write().await;
+        if let Some(client) = clients.get_mut(client_id) {
+            client.unsubscribe_from(event_type);
+            info!("Client {} unsubscribed from {:?}", client_id, event_type);
+            true
+        } else {
+            warn!("Tried to unsubscribe non-existent client: {}", client_id);
+            false
+        }
+    }
+
+    // Get client's current subscriptions
+    pub async fn get_client_subscriptions(&self, client_id: &str) -> Option<HashSet<EventType>> {
+        let clients = self.clients.read().await;
+        clients.get(client_id).map(|client| client.subscriptions.clone())
+    }
     
-    // Broadcast an event to all connected clients
+    // Broadcast an event to all connected clients with filtering
     pub async fn broadcast(&self, event: SseEvent) {
         let clients = self.clients.read().await;
-        
+
+        // Parse event type for filtering
+        let event_type = EventType::from_string(&event.event_type);
+
         for (client_id, client) in clients.iter() {
-            if let Err(_) = client.sender.send(event.clone()).await {
-                debug!("Failed to send event to client {}", client_id);
-                // We'll handle client removal on the next heartbeat
+            // Check if client is subscribed to this event type
+            let should_send = match &event_type {
+                Some(et) => client.is_subscribed_to(et),
+                None => {
+                    // Unknown event type - send to all clients (backward compatibility)
+                    warn!("Unknown event type '{}', sending to all clients", event.event_type);
+                    true
+                }
+            };
+
+            if should_send {
+                if let Err(_) = client.sender.send(event.clone()).await {
+                    debug!("Failed to send event to client {}", client_id);
+                    // We'll handle client removal on the next heartbeat
+                }
+            } else {
+                debug!("Filtered out event '{}' for client {} (not subscribed)", event.event_type, client_id);
             }
+        }
+    }
+
+    // Broadcast an event to a specific client (bypasses subscription filtering)
+    pub async fn send_to_client(&self, client_id: &str, event: SseEvent) -> bool {
+        let clients = self.clients.read().await;
+        if let Some(client) = clients.get(client_id) {
+            match client.sender.send(event.clone()).await {
+                Ok(_) => {
+                    debug!("Sent event '{}' to client {}", event.event_type, client_id);
+                    true
+                }
+                Err(_) => {
+                    debug!("Failed to send event to client {}", client_id);
+                    false
+                }
+            }
+        } else {
+            warn!("Tried to send event to non-existent client: {}", client_id);
+            false
         }
     }
     
@@ -404,7 +574,28 @@ pub async fn sse_handler(
 
     // Merge the event stream and heartbeat stream
     let stream = futures::stream::select(event_stream, heartbeat_interval);
-    
-    // Return SSE streaming response
-    Sse::from_stream(stream)
+
+    // Create a cleanup-aware stream that handles disconnection
+    let managed_client_id_for_cleanup = managed_client_id.clone();
+    let sse_manager_for_cleanup = Arc::clone(&sse_manager);
+    let client_manager_for_cleanup = Arc::clone(&client_manager);
+
+    let cleanup_stream = stream.chain(futures::stream::once(async move {
+        // This runs when the stream ends (client disconnects)
+        info!("SSE client {} disconnected - performing cleanup", managed_client_id_for_cleanup);
+
+        // Remove from SSE manager
+        sse_manager_for_cleanup.remove_client(&managed_client_id_for_cleanup).await;
+
+        // Remove from client manager
+        client_manager_for_cleanup.remove_client(&managed_client_id_for_cleanup).await;
+
+        info!("Cleanup completed for disconnected SSE client {}", managed_client_id_for_cleanup);
+
+        // Return a final event (this will never be sent since stream is ending)
+        Ok::<_, Infallible>(sse::Event::Comment("cleanup".into()))
+    }));
+
+    // Return SSE streaming response with cleanup handling
+    Sse::from_stream(cleanup_stream)
 }

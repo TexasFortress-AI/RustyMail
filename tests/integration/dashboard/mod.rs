@@ -2,4 +2,6 @@
 // This module organizes all dashboard-related integration tests
 
 pub mod integration;
-pub mod sse; 
+pub mod sse;
+pub mod sse_lifecycle;
+pub mod sse_subscription; 

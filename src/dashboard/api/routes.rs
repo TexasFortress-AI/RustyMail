@@ -16,6 +16,12 @@ pub fn configure_routes() -> Scope {
         .route("/config/validate", web::get().to(config::validate_config))
         .route("/chatbot/query", web::post().to(handlers::query_chatbot))
         .route("/events", web::get().to(sse::sse_handler))
+        // Subscription management endpoints
+        .route("/events/types", web::get().to(handlers::get_available_event_types))
+        .route("/clients/{client_id}/subscriptions", web::get().to(handlers::get_client_subscriptions))
+        .route("/clients/{client_id}/subscriptions", web::put().to(handlers::update_client_subscriptions))
+        .route("/clients/{client_id}/subscribe", web::post().to(handlers::subscribe_to_event))
+        .route("/clients/{client_id}/unsubscribe", web::post().to(handlers::unsubscribe_from_event))
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {

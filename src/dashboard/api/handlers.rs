@@ -1,9 +1,11 @@
 use actix_web::{web, HttpResponse, Responder};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use log::debug;
 use crate::dashboard::api::errors::ApiError;
 use crate::dashboard::services::DashboardState;
 use crate::dashboard::api::models::{ChatbotQuery, ServerConfig};
+use crate::dashboard::api::sse::EventType;
 
 // Query parameters for client list endpoint
 #[derive(Debug, Deserialize)]
@@ -71,4 +73,180 @@ pub async fn query_chatbot(
         .map_err(|e| ApiError::InternalError(format!("AI service error: {}", e)))?;
     
     Ok(HttpResponse::Ok().json(response))
+}
+
+// Request/response structures for subscription management
+#[derive(Debug, Deserialize)]
+pub struct SubscriptionRequest {
+    pub event_types: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SubscriptionResponse {
+    pub client_id: String,
+    pub subscriptions: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SubscribeRequest {
+    pub event_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UnsubscribeRequest {
+    pub event_type: String,
+}
+
+// Path parameters for subscription endpoints
+#[derive(Debug, Deserialize)]
+pub struct ClientIdPath {
+    pub client_id: String,
+}
+
+// Handler for getting client subscriptions
+pub async fn get_client_subscriptions(
+    path: web::Path<ClientIdPath>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling GET /api/dashboard/clients/{}/subscriptions", path.client_id);
+
+    match state.sse_manager.get_client_subscriptions(&path.client_id).await {
+        Some(subscriptions) => {
+            let subscription_strings: Vec<String> = subscriptions
+                .iter()
+                .map(|et| et.to_string().to_string())
+                .collect();
+
+            let response = SubscriptionResponse {
+                client_id: path.client_id.clone(),
+                subscriptions: subscription_strings,
+            };
+
+            Ok(HttpResponse::Ok().json(response))
+        }
+        None => Err(ApiError::NotFound("Client not found".to_string()))
+    }
+}
+
+// Handler for updating client subscriptions (PUT - replaces all)
+pub async fn update_client_subscriptions(
+    path: web::Path<ClientIdPath>,
+    req: web::Json<SubscriptionRequest>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling PUT /api/dashboard/clients/{}/subscriptions", path.client_id);
+
+    // Convert string event types to EventType enum
+    let mut event_types = HashSet::new();
+    for event_str in &req.event_types {
+        match EventType::from_string(event_str) {
+            Some(event_type) => {
+                event_types.insert(event_type);
+            }
+            None => {
+                return Err(ApiError::BadRequest(format!("Invalid event type: {}", event_str)));
+            }
+        }
+    }
+
+    // Update subscriptions
+    let success = state.sse_manager
+        .update_client_subscriptions(&path.client_id, event_types.clone())
+        .await;
+
+    if success {
+        let subscription_strings: Vec<String> = event_types
+            .iter()
+            .map(|et| et.to_string().to_string())
+            .collect();
+
+        let response = SubscriptionResponse {
+            client_id: path.client_id.clone(),
+            subscriptions: subscription_strings,
+        };
+
+        Ok(HttpResponse::Ok().json(response))
+    } else {
+        Err(ApiError::NotFound("Client not found".to_string()))
+    }
+}
+
+// Handler for subscribing to a single event type (POST)
+pub async fn subscribe_to_event(
+    path: web::Path<ClientIdPath>,
+    req: web::Json<SubscribeRequest>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling POST /api/dashboard/clients/{}/subscribe", path.client_id);
+
+    // Convert string to EventType
+    let event_type = EventType::from_string(&req.event_type)
+        .ok_or_else(|| ApiError::BadRequest(format!("Invalid event type: {}", req.event_type)))?;
+
+    // Subscribe client
+    let success = state.sse_manager
+        .subscribe_client_to_event(&path.client_id, event_type)
+        .await;
+
+    if success {
+        Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": format!("Client {} subscribed to {}", path.client_id, req.event_type)
+        })))
+    } else {
+        Err(ApiError::NotFound("Client not found".to_string()))
+    }
+}
+
+// Handler for unsubscribing from a single event type (POST)
+pub async fn unsubscribe_from_event(
+    path: web::Path<ClientIdPath>,
+    req: web::Json<UnsubscribeRequest>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling POST /api/dashboard/clients/{}/unsubscribe", path.client_id);
+
+    // Convert string to EventType
+    let event_type = EventType::from_string(&req.event_type)
+        .ok_or_else(|| ApiError::BadRequest(format!("Invalid event type: {}", req.event_type)))?;
+
+    // Unsubscribe client
+    let success = state.sse_manager
+        .unsubscribe_client_from_event(&path.client_id, &event_type)
+        .await;
+
+    if success {
+        Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": format!("Client {} unsubscribed from {}", path.client_id, req.event_type)
+        })))
+    } else {
+        Err(ApiError::NotFound("Client not found".to_string()))
+    }
+}
+
+// Handler for listing available event types
+pub async fn get_available_event_types() -> Result<impl Responder, ApiError> {
+    debug!("Handling GET /api/dashboard/events/types");
+
+    let event_types = vec![
+        EventType::Welcome.to_string(),
+        EventType::StatsUpdate.to_string(),
+        EventType::ClientConnected.to_string(),
+        EventType::ClientDisconnected.to_string(),
+        EventType::SystemAlert.to_string(),
+        EventType::ConfigurationUpdated.to_string(),
+        EventType::DashboardEvent.to_string(),
+    ];
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "available_event_types": event_types,
+        "description": {
+            "welcome": "Welcome message sent when client connects",
+            "stats_update": "Real-time dashboard statistics updates",
+            "client_connected": "Notifications when new clients connect",
+            "client_disconnected": "Notifications when clients disconnect",
+            "system_alert": "System alerts and warnings",
+            "configuration_updated": "Configuration change notifications",
+            "dashboard_event": "Generic dashboard events"
+        }
+    })))
 }

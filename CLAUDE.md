@@ -29,7 +29,7 @@ IMPORTANT: Then, always commit to git before continuing to the next task.
 
 ## Do not ever use Common port numbers
 
-Port numbers like 8000, 5000, 3000, etc. are going to be in use by other processes. There's a docker running on this computer and all kinds of other apps. Do not EVER use common port numbers. Pick a port number that is not in use and is not a common port number. Furthermore, explicitly ensure that you aren't using any port numbers that conflict with ports in use by other dockers that are running on this computer.
+Port numbers like 8000, 8080, 5000, 3000, etc. are going to be in use by other processes. There's a docker running on this computer and all kinds of other apps. Do not EVER use common port numbers. Pick a port number that is not in use and is not a common port number. Furthermore, explicitly ensure that you aren't using any port numbers that conflict with ports in use by other dockers that are running on this computer.
 
 If you just got the backend server re-built, make sure to stop the old server and start the new one. Clean and fresh.
 
