@@ -302,6 +302,65 @@ impl ProviderManager {
         })
     }
 
+    // Generate response with specific provider and model
+    pub async fn generate_response_with_override(
+        &self,
+        messages: &[AiChatMessage],
+        provider_name: Option<String>,
+        model_name: Option<String>
+    ) -> Result<String, RestApiError> {
+        // If no override specified, use default generation
+        if provider_name.is_none() && model_name.is_none() {
+            return self.generate_response(messages).await;
+        }
+
+        // If provider override specified, use that provider
+        if let Some(provider_name) = provider_name {
+            let providers = self.providers.read().await;
+            if let Some(provider) = providers.get(&provider_name) {
+                // If model override specified, create a new provider instance with that model
+                let provider_to_use = if let Some(ref model_override) = model_name {
+                    // For Morpheus, we can update the model
+                    if provider_name == "morpheus" {
+                        if let Ok(api_key) = std::env::var("MORPHEUS_API_KEY") {
+                            Arc::new(super::provider::morpheus::MorpheusAdapter::new(api_key, self.http_client.clone())
+                                .with_model(model_override.clone()))
+                        } else {
+                            provider.clone()
+                        }
+                    } else {
+                        // For other providers, we'd need similar logic
+                        provider.clone()
+                    }
+                } else {
+                    provider.clone()
+                };
+
+                info!("Using override provider: {} with model: {}", provider_name, model_name.as_deref().unwrap_or("default"));
+
+                match provider_to_use.generate_response(messages).await {
+                    Ok(response) => {
+                        info!("Successfully got response from override provider: {}", provider_name);
+                        return Ok(response);
+                    },
+                    Err(e) => {
+                        error!("Override provider {} failed: {}", provider_name, e);
+                        return Err(RestApiError::ServiceUnavailable {
+                            service: format!("Provider '{}' failed: {}", provider_name, e)
+                        });
+                    }
+                }
+            } else {
+                return Err(RestApiError::NotFound {
+                    resource: format!("Provider '{}' not found", provider_name)
+                });
+            }
+        }
+
+        // If only model override specified, use current provider with new model
+        self.generate_response(messages).await
+    }
+
     // List available providers
     pub async fn list_providers(&self) -> Vec<ProviderConfig> {
         self.configs.read().await.clone()

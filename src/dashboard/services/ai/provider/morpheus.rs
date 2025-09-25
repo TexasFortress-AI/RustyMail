@@ -137,8 +137,13 @@ impl AiProvider for MorpheusAdapter {
             max_tokens: Some(2000),
         };
 
-        debug!("Sending request to Morpheus API: model={}, messages_count={}",
-               request_payload.model, request_payload.messages.len());
+        debug!("Sending request to Morpheus API: model={}, messages_count={}, url={}",
+               request_payload.model, request_payload.messages.len(), url);
+
+        // Log the API key details to verify it's being passed correctly
+        debug!("Morpheus API key length: {}, first 10 chars: {}",
+               self.api_key.len(),
+               &self.api_key.chars().take(10).collect::<String>());
 
         let response = self.http_client
             .post(&url)

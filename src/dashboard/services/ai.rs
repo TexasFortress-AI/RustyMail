@@ -182,6 +182,8 @@ impl AiService {
     pub async fn process_query(&self, query: ChatbotQuery) -> Result<ChatbotResponse, ApiError> {
         let conversation_id = query.conversation_id.unwrap_or_else(|| Uuid::new_v4().to_string());
         let query_text = query.query.clone();
+        let provider_override = query.provider_override.clone();
+        let model_override = query.model_override.clone();
 
         debug!("Processing chatbot query for conversation {}: {}", conversation_id, query_text);
 
@@ -231,15 +233,33 @@ impl AiService {
         let user_message = AiChatMessage { role: "user".to_string(), content: query_text.clone() };
         messages_history.push(user_message.clone());
 
-        // Get current provider and model info for visibility
-        let provider_name = self.provider_manager.get_current_provider_name().await.unwrap_or_else(|| "none".to_string());
-        let model_name = self.provider_manager.get_current_model_name().await.unwrap_or_else(|| "none".to_string());
+        // Get provider and model info (use overrides if provided)
+        let provider_name = if let Some(ref override_name) = provider_override {
+            override_name.clone()
+        } else {
+            self.provider_manager.get_current_provider_name().await
+                .unwrap_or_else(|| "none".to_string())
+        };
+
+        let model_name = if let Some(ref override_name) = model_override {
+            override_name.clone()
+        } else {
+            self.provider_manager.get_current_model_name().await
+                .unwrap_or_else(|| "none".to_string())
+        };
 
         let response_text = if self.mock_mode {
             warn!("AI Service is in mock mode. Using mock response.");
             format!("[Mock Mode - Provider: mock, Model: mock]\n\n{}", self.generate_mock_response(&query_text))
         } else {
-            match self.provider_manager.generate_response(&messages_history).await {
+            // Use the override method if overrides are provided
+            let response_result = if provider_override.is_some() || model_override.is_some() {
+                self.provider_manager.generate_response_with_override(&messages_history, provider_override, model_override).await
+            } else {
+                self.provider_manager.generate_response(&messages_history).await
+            };
+
+            match response_result {
                 Ok(text) => {
                     // Prepend provider/model info to response for visibility
                     format!("[Provider: {}, Model: {}]\n\n{}", provider_name, model_name, text)

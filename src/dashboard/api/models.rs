@@ -100,6 +100,8 @@ pub struct ImapAdapter {
 pub struct ChatbotQuery {
     pub query: String,
     pub conversation_id: Option<String>,
+    pub provider_override: Option<String>,
+    pub model_override: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
