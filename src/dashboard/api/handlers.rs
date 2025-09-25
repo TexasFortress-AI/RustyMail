@@ -174,24 +174,138 @@ pub async fn list_mcp_tools(
 
 // Handler for executing MCP tools
 pub async fn execute_mcp_tool(
-    _state: web::Data<DashboardState>,
+    state: web::Data<DashboardState>,
     req: web::Json<serde_json::Value>,
 ) -> Result<impl Responder, ApiError> {
     let tool_name = req.get("tool")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ApiError::BadRequest("Missing tool name".to_string()))?;
 
-    let _params = req.get("parameters")
+    let params = req.get("parameters")
         .cloned()
         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
-    // For now, return a mock response
-    // TODO: Actually execute the MCP tool through the IMAP connection
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "success": false,
-        "message": format!("Tool '{}' execution not yet implemented in dashboard API", tool_name),
-        "tool": tool_name
-    })))
+    debug!("Executing MCP tool: {} with params: {:?}", tool_name, params);
+
+    // Get the email service from the state
+    let email_service = state.email_service.clone();
+
+    // Execute the appropriate tool
+    let result = match tool_name {
+        "list_folders" => {
+            match email_service.list_folders().await {
+                Ok(folders) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": folders,
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to list folders: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "list_folders_hierarchical" => {
+            // For now, just use regular list_folders since hierarchical is not implemented
+            match email_service.list_folders().await {
+                Ok(folders) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": folders,
+                        "tool": tool_name,
+                        "note": "Using flat list - hierarchical not yet implemented"
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to list folders: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "search_emails" => {
+            let folder = params.get("folder")
+                .and_then(|v| v.as_str())
+                .unwrap_or("INBOX");
+            let query = params.get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("ALL");
+
+            // search_emails returns UIDs, not full emails
+            match email_service.search_emails(folder, query).await {
+                Ok(uids) => {
+                    // Optionally limit results
+                    let max_results = params.get("max_results")
+                        .and_then(|v| v.as_u64())
+                        .map(|v| v as usize);
+
+                    let limited_uids = if let Some(max) = max_results {
+                        uids.into_iter().take(max).collect::<Vec<_>>()
+                    } else {
+                        uids
+                    };
+
+                    serde_json::json!({
+                        "success": true,
+                        "data": limited_uids,
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to search emails: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "fetch_emails_with_mime" => {
+            let folder = params.get("folder")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'folder' parameter".to_string()))?;
+            let uid = params.get("uid")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'uid' parameter".to_string()))? as u32;
+
+            // fetch_emails expects an array of UIDs
+            match email_service.fetch_emails(folder, &[uid]).await {
+                Ok(emails) => {
+                    // Return just the first email if found
+                    let email_data = emails.into_iter().next();
+                    serde_json::json!({
+                        "success": true,
+                        "data": email_data,
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to fetch email: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        _ => {
+            // For other tools not yet implemented
+            serde_json::json!({
+                "success": false,
+                "message": format!("Tool '{}' execution not yet implemented", tool_name),
+                "tool": tool_name
+            })
+        }
+    };
+
+    Ok(HttpResponse::Ok().json(result))
 }
 
 // Handler for streaming chatbot responses via SSE
