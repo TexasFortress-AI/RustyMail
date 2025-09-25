@@ -1,4 +1,5 @@
 use actix_web::{web, App, HttpServer};
+use actix_cors::Cors;
 use rustymail::config::Settings;
 // Remove direct ImapClient import if only used for connect check, keep if factory needs it explicitly
 // use rustymail::imap::ImapClient; 
@@ -222,15 +223,23 @@ async fn main() -> std::io::Result<()> {
     let dashboard_state_clone_for_task = dashboard_state.clone();
 
     let server = HttpServer::new(move || {
+        // Configure CORS
+        let cors = Cors::default()
+            .allow_any_origin()
+            .allow_any_method()
+            .allow_any_header()
+            .max_age(3600);
+
         let mut app = App::new()
-            // --- Register updated state --- 
+            // --- Register updated state ---
             .app_data(web::Data::new(app_state.clone()))        // Core AppState (handler, factory)
             .app_data(web::Data::new(imap_session_factory.clone())) // Pass factory directly for REST handlers
             // .app_data(web::Data::new(sse_state.clone()))     // SSE not implemented yet
-            // --- End updated state --- 
+            // --- End updated state ---
             .app_data(config.clone())                             // Dashboard config
             .app_data(dashboard_state.clone())                  // Dashboard state
             .app_data(web::Data::new(sse_manager.clone()))      // Dashboard SSE Manager
+            .wrap(cors)
             .wrap(actix_web::middleware::Logger::default())
             .wrap(dashboard::api::middleware::Metrics) 
             // Configure routes

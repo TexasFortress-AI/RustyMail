@@ -16,6 +16,8 @@ pub fn configure_routes() -> Scope {
         .route("/config/validate", web::get().to(config::validate_config))
         .route("/chatbot/query", web::post().to(handlers::query_chatbot))
         .route("/chatbot/stream", web::post().to(handlers::stream_chatbot))
+        .route("/mcp/tools", web::get().to(handlers::list_mcp_tools))
+        .route("/mcp/execute", web::post().to(handlers::execute_mcp_tool))
         // AI provider management endpoints
         .route("/ai/providers", web::get().to(handlers::get_ai_providers))
         .route("/ai/providers/set", web::post().to(handlers::set_ai_provider))

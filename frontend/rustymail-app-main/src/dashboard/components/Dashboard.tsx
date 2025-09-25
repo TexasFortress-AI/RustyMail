@@ -6,6 +6,7 @@ import TopBar from './TopBar';
 import StatsPanel from './StatsPanel';
 import ClientListPanel from './ClientListPanel';
 import ChatbotPanel from './ChatbotPanel';
+import McpTools from './McpTools';
 
 const Dashboard: React.FC = () => {
   // Initialize SSE event listener
@@ -97,12 +98,15 @@ const Dashboard: React.FC = () => {
           className="overflow-hidden flex flex-col min-h-0"
           style={{ height: `${topHeight}%` }}
         >
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0 overflow-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0 overflow-auto">
             <div className="min-h-0 overflow-auto">
               <StatsPanel />
             </div>
             <div className="min-h-0 overflow-auto">
               <ClientListPanel />
+            </div>
+            <div className="min-h-0 overflow-auto">
+              <McpTools />
             </div>
           </div>
         </div>

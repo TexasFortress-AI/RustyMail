@@ -83,6 +83,117 @@ pub async fn query_chatbot(
     Ok(HttpResponse::Ok().json(response))
 }
 
+// Handler for listing available MCP tools
+pub async fn list_mcp_tools(
+    _state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    // List of MCP tools available in the system
+    let tools = vec![
+        serde_json::json!({
+            "name": "list_folders",
+            "description": "List all email folders in the account",
+            "parameters": {}
+        }),
+        serde_json::json!({
+            "name": "list_folders_hierarchical",
+            "description": "List folders with hierarchical structure",
+            "parameters": {}
+        }),
+        serde_json::json!({
+            "name": "search_emails",
+            "description": "Search for emails matching criteria",
+            "parameters": {
+                "folder": "Folder to search in (e.g., INBOX)",
+                "query": "Search query (e.g., FROM user@example.com)",
+                "max_results": "Maximum number of results (optional)"
+            }
+        }),
+        serde_json::json!({
+            "name": "fetch_emails_with_mime",
+            "description": "Fetch email content with MIME data",
+            "parameters": {
+                "folder": "Folder containing the email",
+                "uid": "Email UID"
+            }
+        }),
+        serde_json::json!({
+            "name": "atomic_move_message",
+            "description": "Move a single message to another folder",
+            "parameters": {
+                "source_folder": "Source folder",
+                "target_folder": "Target folder",
+                "uid": "Message UID to move"
+            }
+        }),
+        serde_json::json!({
+            "name": "atomic_batch_move",
+            "description": "Move multiple messages to another folder",
+            "parameters": {
+                "source_folder": "Source folder",
+                "target_folder": "Target folder",
+                "uids": "Comma-separated list of UIDs"
+            }
+        }),
+        serde_json::json!({
+            "name": "mark_as_deleted",
+            "description": "Mark messages as deleted",
+            "parameters": {
+                "folder": "Folder containing messages",
+                "uids": "Comma-separated list of UIDs"
+            }
+        }),
+        serde_json::json!({
+            "name": "delete_messages",
+            "description": "Permanently delete messages",
+            "parameters": {
+                "folder": "Folder containing messages",
+                "uids": "Comma-separated list of UIDs"
+            }
+        }),
+        serde_json::json!({
+            "name": "undelete_messages",
+            "description": "Unmark messages as deleted",
+            "parameters": {
+                "folder": "Folder containing messages",
+                "uids": "Comma-separated list of UIDs"
+            }
+        }),
+        serde_json::json!({
+            "name": "expunge",
+            "description": "Expunge deleted messages from folder",
+            "parameters": {
+                "folder": "Folder to expunge"
+            }
+        })
+    ];
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "tools": tools
+    })))
+}
+
+// Handler for executing MCP tools
+pub async fn execute_mcp_tool(
+    _state: web::Data<DashboardState>,
+    req: web::Json<serde_json::Value>,
+) -> Result<impl Responder, ApiError> {
+    let tool_name = req.get("tool")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ApiError::BadRequest("Missing tool name".to_string()))?;
+
+    let _params = req.get("parameters")
+        .cloned()
+        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+    // For now, return a mock response
+    // TODO: Actually execute the MCP tool through the IMAP connection
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "success": false,
+        "message": format!("Tool '{}' execution not yet implemented in dashboard API", tool_name),
+        "tool": tool_name
+    })))
+}
+
 // Handler for streaming chatbot responses via SSE
 pub async fn stream_chatbot(
     state: web::Data<DashboardState>,
