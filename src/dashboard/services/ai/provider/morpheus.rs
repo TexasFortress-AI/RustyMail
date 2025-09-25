@@ -11,7 +11,7 @@ use crate::api::errors::ApiError as RestApiError;
 
 // Morpheus API constants
 const MORPHEUS_API_BASE_URL: &str = "https://api.dev.mor.org/api/v1";
-const MORPHEUS_MODELS_URL: &str = "https://api.dev.mor.org/api/v1/models";
+const MORPHEUS_MODELS_URL: &str = "https://api.dev.mor.org/api/v1/models/allmodels";
 const DEFAULT_MORPHEUS_MODEL: &str = "LMR-Hermes-3-Llama-3.1-8B";
 
 // --- Morpheus Specific Request/Response Structs ---
@@ -119,7 +119,7 @@ impl AiProvider for MorpheusAdapter {
 
         let models: Vec<String> = response_body.data
             .into_iter()
-            // Return all models - let the user decide which to use
+            // Return ALL models - no filtering whatsoever
             .map(|model| model.id)
             .collect();
 
