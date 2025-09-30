@@ -1,0 +1,245 @@
+version: '3.8'
+
+services:
+  # Main RustyMail application
+  rustymail:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - BUILD_VERSION=${BUILD_VERSION:-latest}
+    image: rustymail:${BUILD_VERSION:-latest}
+    container_name: rustymail-server
+    restart: unless-stopped
+
+    ports:
+      - "${REST_PORT:-9437}:9437"     # REST API
+      - "${SSE_PORT:-9438}:9438"       # SSE endpoint
+      - "${DASHBOARD_PORT:-9439}:9439" # Dashboard UI
+
+    environment:
+      # IMAP Configuration
+      - IMAP_ADAPTER=${IMAP_ADAPTER}
+      - IMAP_HOST=${IMAP_HOST}
+      - IMAP_PORT=${IMAP_PORT:-993}
+      - IMAP_USERNAME=${IMAP_USERNAME}
+      - IMAP_PASSWORD=${IMAP_PASSWORD}
+      - IMAP_USE_TLS=${IMAP_USE_TLS:-true}
+      - IMAP_VALIDATE_CERTS=${IMAP_VALIDATE_CERTS:-true}
+
+      # Server Configuration
+      - REST_HOST=0.0.0.0
+      - REST_PORT=9437
+      - SSE_HOST=0.0.0.0
+      - SSE_PORT=9438
+      - DASHBOARD_ENABLED=${DASHBOARD_ENABLED:-true}
+      - DASHBOARD_PORT=9439
+      - DASHBOARD_PATH=/app/frontend/dist
+
+      # Logging
+      - RUST_LOG=${RUST_LOG:-info}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_FORMAT=${LOG_FORMAT:-json}
+
+      # Performance
+      - MAX_CONNECTIONS=${MAX_CONNECTIONS:-10}
+      - CONNECTION_TIMEOUT=${CONNECTION_TIMEOUT:-30}
+      - WORKER_THREADS=${WORKER_THREADS:-}
+      - BLOCKING_THREADS=${BLOCKING_THREADS:-}
+
+      # Security
+      - REQUIRE_HTTPS=${REQUIRE_HTTPS:-false}
+      - RATE_LIMIT_ENABLED=${RATE_LIMIT_ENABLED:-true}
+      - RATE_LIMIT_REQUESTS=${RATE_LIMIT_REQUESTS:-100}
+      - RATE_LIMIT_PERIOD=${RATE_LIMIT_PERIOD:-60}
+      - JWT_SECRET=${JWT_SECRET}
+      - API_KEY=${API_KEY:-}
+
+      # Cache
+      - CACHE_ENABLED=${CACHE_ENABLED:-true}
+      - CACHE_TYPE=${CACHE_TYPE:-redis}
+      - CACHE_REDIS_URL=redis://redis:6379/0
+      - CACHE_TTL=${CACHE_TTL:-300}
+
+      # AI Services (optional)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+
+      # Monitoring
+      - METRICS_ENABLED=${METRICS_ENABLED:-true}
+      - METRICS_PATH=${METRICS_PATH:-/metrics}
+
+    volumes:
+      - rustymail_data:/app/data
+      - rustymail_logs:/app/logs
+      - ./config:/app/config:ro
+
+    networks:
+      - rustymail_network
+
+    depends_on:
+      - redis
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9437/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    deploy:
+      resources:
+        limits:
+          cpus: '${DOCKER_CPU_LIMIT:-2}'
+          memory: ${DOCKER_MEMORY_LIMIT:-2G}
+        reservations:
+          cpus: '${DOCKER_CPU_RESERVATION:-0.5}'
+          memory: ${DOCKER_MEMORY_RESERVATION:-512M}
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "${LOG_MAX_SIZE:-10m}"
+        max-file: "${LOG_MAX_FILES:-5}"
+        labels: "service=rustymail,environment=${ENVIRONMENT:-production}"
+
+  # Redis cache service
+  redis:
+    image: redis:7-alpine
+    container_name: rustymail-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory ${REDIS_MAX_MEMORY:-256mb} --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    networks:
+      - rustymail_network
+    deploy:
+      resources:
+        limits:
+          memory: ${REDIS_MEMORY_LIMIT:-256M}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  # Nginx reverse proxy (optional, uncomment to enable)
+  # nginx:
+  #   image: nginx:alpine
+  #   container_name: rustymail-proxy
+  #   restart: unless-stopped
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+  #     - ./nginx/ssl:/etc/nginx/ssl:ro
+  #     - nginx_cache:/var/cache/nginx
+  #   networks:
+  #     - rustymail_network
+  #   depends_on:
+  #     - rustymail
+
+  # Prometheus monitoring (optional, uncomment to enable)
+  # prometheus:
+  #   image: prom/prometheus:latest
+  #   container_name: rustymail-prometheus
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9090:9090"
+  #   volumes:
+  #     - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+  #     - prometheus_data:/prometheus
+  #   command:
+  #     - '--config.file=/etc/prometheus/prometheus.yml'
+  #     - '--storage.tsdb.path=/prometheus'
+  #     - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+  #     - '--web.console.templates=/usr/share/prometheus/consoles'
+  #   networks:
+  #     - rustymail_network
+
+  # Grafana dashboard (optional, uncomment to enable)
+  # grafana:
+  #   image: grafana/grafana:latest
+  #   container_name: rustymail-grafana
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - grafana_data:/var/lib/grafana
+  #     - ./grafana/provisioning:/etc/grafana/provisioning:ro
+  #   environment:
+  #     - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+  #     - GF_INSTALL_PLUGINS=redis-datasource
+  #   networks:
+  #     - rustymail_network
+  #   depends_on:
+  #     - prometheus
+
+  # Loki for log aggregation (optional, uncomment to enable)
+  # loki:
+  #   image: grafana/loki:latest
+  #   container_name: rustymail-loki
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3100:3100"
+  #   volumes:
+  #     - loki_data:/loki
+  #     - ./loki/loki-config.yaml:/etc/loki/local-config.yaml:ro
+  #   command: -config.file=/etc/loki/local-config.yaml
+  #   networks:
+  #     - rustymail_network
+
+  # Backup service (optional, uncomment to enable)
+  # backup:
+  #   image: alpine:latest
+  #   container_name: rustymail-backup
+  #   volumes:
+  #     - rustymail_data:/data:ro
+  #     - ./backups:/backups
+  #   entrypoint: |
+  #     sh -c 'while true; do
+  #       tar -czf /backups/rustymail-backup-$$(date +%Y%m%d-%H%M%S).tar.gz -C /data .
+  #       find /backups -name "*.tar.gz" -mtime +7 -delete
+  #       sleep 86400
+  #     done'
+  #   networks:
+  #     - rustymail_network
+
+networks:
+  rustymail_network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: ${NETWORK_SUBNET:-172.25.0.0/16}
+
+volumes:
+  rustymail_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${DATA_PATH:-./data}
+
+  rustymail_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${LOGS_PATH:-./logs}
+
+  redis_data:
+    driver: local
+
+  nginx_cache:
+    driver: local
+
+  prometheus_data:
+    driver: local
+
+  grafana_data:
+    driver: local
+
+  loki_data:
+    driver: local

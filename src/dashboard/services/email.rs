@@ -4,6 +4,7 @@ use crate::imap::error::ImapError;
 use crate::imap::types::Email;
 use crate::prelude::CloneableImapSessionFactory;
 use crate::connection_pool::ConnectionPool;
+use crate::dashboard::services::cache::{CacheService, CachedEmail};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -19,6 +20,7 @@ pub enum EmailServiceError {
 pub struct EmailService {
     imap_factory: CloneableImapSessionFactory,
     connection_pool: Arc<ConnectionPool>,
+    cache_service: Option<Arc<CacheService>>,
 }
 
 impl EmailService {
@@ -26,7 +28,13 @@ impl EmailService {
         Self {
             imap_factory,
             connection_pool,
+            cache_service: None,
         }
+    }
+
+    pub fn with_cache(mut self, cache_service: Arc<CacheService>) -> Self {
+        self.cache_service = Some(cache_service);
+        self
     }
 
     /// List all folders in the email account
@@ -69,16 +77,59 @@ impl EmailService {
             return Ok(Vec::new());
         }
 
-        let session = self.imap_factory.create_session().await
-            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+        let mut emails = Vec::new();
+        let mut uids_to_fetch = Vec::new();
 
-        // Select the folder first
-        session.select_folder(folder).await?;
+        // Check cache first if available
+        if let Some(cache) = &self.cache_service {
+            for &uid in uids {
+                match cache.get_cached_email(folder, uid).await {
+                    Ok(Some(cached_email)) => {
+                        debug!("Email {} found in cache", uid);
+                        // Convert CachedEmail to Email
+                        emails.push(self.cached_email_to_email(cached_email));
+                    }
+                    Ok(None) => {
+                        debug!("Email {} not in cache, will fetch from IMAP", uid);
+                        uids_to_fetch.push(uid);
+                    }
+                    Err(e) => {
+                        warn!("Cache error for email {}: {}", uid, e);
+                        uids_to_fetch.push(uid);
+                    }
+                }
+            }
+        } else {
+            uids_to_fetch = uids.to_vec();
+        }
 
-        // Fetch the emails
-        let emails = session.fetch_emails(uids).await?;
+        // Fetch missing emails from IMAP
+        if !uids_to_fetch.is_empty() {
+            let session = self.imap_factory.create_session().await
+                .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
 
-        info!("Fetched {} emails", emails.len());
+            // Select the folder first
+            session.select_folder(folder).await?;
+
+            // Fetch the emails
+            let fetched_emails = session.fetch_emails(&uids_to_fetch).await?;
+
+            // Cache the fetched emails
+            if let Some(cache) = &self.cache_service {
+                for email in &fetched_emails {
+                    if let Err(e) = cache.cache_email(folder, email).await {
+                        warn!("Failed to cache email {}: {}", email.uid, e);
+                    }
+                }
+            }
+
+            emails.extend(fetched_emails);
+        }
+
+        info!("Fetched {} emails ({} from cache, {} from IMAP)",
+              emails.len(),
+              uids.len() - uids_to_fetch.len(),
+              uids_to_fetch.len());
         Ok(emails)
     }
 
@@ -137,5 +188,59 @@ impl EmailService {
 
         info!("Fetched {} unread emails", emails.len());
         Ok(emails)
+    }
+
+    /// Convert CachedEmail to Email
+    fn cached_email_to_email(&self, cached: CachedEmail) -> Email {
+        use crate::imap::types::{Envelope, Address};
+
+        // Reconstruct envelope from cached data
+        let envelope = Some(Envelope {
+            date: None, // Date string not stored separately
+            subject: cached.subject.clone(),
+            from: if let Some(from_str) = &cached.from_address {
+                // Parse email address
+                let parts: Vec<&str> = from_str.split('@').collect();
+                vec![Address {
+                    name: cached.from_name.clone(),
+                    mailbox: parts.get(0).map(|s| s.to_string()),
+                    host: parts.get(1).map(|s| s.to_string()),
+                }]
+            } else {
+                Vec::new()
+            },
+            to: cached.to_addresses.iter().map(|addr| {
+                let parts: Vec<&str> = addr.split('@').collect();
+                Address {
+                    name: None,
+                    mailbox: parts.get(0).map(|s| s.to_string()),
+                    host: parts.get(1).map(|s| s.to_string()),
+                }
+            }).collect(),
+            cc: cached.cc_addresses.iter().map(|addr| {
+                let parts: Vec<&str> = addr.split('@').collect();
+                Address {
+                    name: None,
+                    mailbox: parts.get(0).map(|s| s.to_string()),
+                    host: parts.get(1).map(|s| s.to_string()),
+                }
+            }).collect(),
+            bcc: Vec::new(),
+            reply_to: Vec::new(),
+            in_reply_to: None,
+            message_id: cached.message_id.clone(),
+        });
+
+        Email {
+            uid: cached.uid,
+            flags: cached.flags,
+            internal_date: cached.internal_date,
+            envelope,
+            body: None, // Body loaded on demand
+            mime_parts: Vec::new(),
+            text_body: cached.body_text,
+            html_body: cached.body_html,
+            attachments: Vec::new(), // Attachments loaded separately
+        }
     }
 }

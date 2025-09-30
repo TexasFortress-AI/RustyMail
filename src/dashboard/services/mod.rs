@@ -17,6 +17,7 @@ use crate::prelude::CloneableImapSessionFactory;
 use crate::connection_pool::ConnectionPool;
 
 pub mod ai;
+pub mod cache;
 pub mod clients;
 pub mod config;
 pub mod email;
@@ -24,6 +25,7 @@ pub mod events;
 pub mod event_integration;
 pub mod health;
 pub mod metrics;
+pub mod sync;
 
 // Define or import error types if they exist
 #[derive(Error, Debug)] pub enum MetricsError { #[error("Metrics collection failed: {0}")] CollectionFailed(String), #[error("Metrics storage error: {0}")] StorageError(String) }
@@ -36,6 +38,7 @@ pub mod metrics;
 
 // Re-export main service types for convenience
 pub use metrics::{MetricsService};
+pub use cache::{CacheService, CacheConfig};
 pub use clients::{ClientManager};
 pub use config::{ConfigService};
 pub use ai::{AiService};
@@ -66,6 +69,7 @@ use std::time::Duration;
 pub struct DashboardState {
     pub client_manager: Arc<ClientManager>,
     pub metrics_service: Arc<MetricsService>,
+    pub cache_service: Arc<CacheService>,
     pub config_service: Arc<ConfigService>,
     pub ai_service: Arc<AiService>,
     pub email_service: Arc<EmailService>,
@@ -93,11 +97,41 @@ pub async fn init(
     let metrics_service = Arc::new(MetricsService::new(metrics_interval_duration)); // Pass interval duration, not client manager
     let config_service = Arc::new(ConfigService::new());
 
-    // Initialize Email Service
-    let email_service = Arc::new(EmailService::new(
-        imap_session_factory.clone(),
-        connection_pool.clone(),
-    ));
+    // Initialize Cache Service
+    let cache_config = CacheConfig {
+        database_url: std::env::var("CACHE_DATABASE_URL")
+            .unwrap_or_else(|_| "sqlite:data/email_cache.db".to_string()),
+        max_memory_items: std::env::var("CACHE_MAX_MEMORY_ITEMS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1000),
+        max_cache_size_mb: std::env::var("CACHE_MAX_SIZE_MB")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1000),
+        max_email_age_days: std::env::var("CACHE_MAX_EMAIL_AGE_DAYS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(30),
+        sync_interval_seconds: std::env::var("CACHE_SYNC_INTERVAL_SECONDS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(300),
+    };
+
+    let mut cache_service = CacheService::new(cache_config);
+    if let Err(e) = cache_service.initialize().await {
+        warn!("Failed to initialize cache service: {}. Running without cache.", e);
+    }
+    let cache_service = Arc::new(cache_service);
+
+    // Initialize Email Service with cache
+    let email_service = Arc::new(
+        EmailService::new(
+            imap_session_factory.clone(),
+            connection_pool.clone(),
+        ).with_cache(cache_service.clone())
+    );
 
     // Initialize AI Service with environment variables
     let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
@@ -140,6 +174,7 @@ pub async fn init(
     Data::new(DashboardState {
         client_manager,
         metrics_service,
+        cache_service,
         config_service,
         ai_service,
         email_service,
