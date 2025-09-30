@@ -642,22 +642,40 @@ impl ContentDisposition {
 }
 
 impl Email {
+    /// Decode MIME RFC 2047 encoded text (e.g., "=?UTF-8?q?Subject_line?=")
+    fn decode_mime_encoded_text(bytes: &[u8]) -> String {
+        let raw = String::from_utf8_lossy(bytes);
+
+        // Check if this looks like MIME encoded text
+        if raw.contains("=?") && raw.contains("?=") {
+            // Parse as a simple header to decode MIME encoded words
+            if let Some(message) = mail_parser::Message::parse(format!("Subject: {}\r\n\r\n", raw).as_bytes()) {
+                if let Some(subject) = message.subject() {
+                    return subject.to_string();
+                }
+            }
+        }
+
+        // Fallback to raw string if not MIME encoded or decoding fails
+        raw.to_string()
+    }
+
     pub fn from_fetch(fetch: &Fetch) -> Result<Self, ImapError> {
         // Handle flags - fetch.flags() returns an iterator
         let flags: Vec<String> = fetch.flags()
             .map(|f| format!("{:?}", f))
             .collect();
         let envelope = fetch.envelope().map(|env| Envelope {
-            date: env.date.as_ref().map(|d| String::from_utf8_lossy(d).to_string()),
-            subject: env.subject.as_ref().map(|s| String::from_utf8_lossy(s).to_string()),
+            date: env.date.as_ref().map(|d| Email::decode_mime_encoded_text(d)),
+            subject: env.subject.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
             from: env.from.as_ref().unwrap_or(&vec![]).iter().map(Self::convert_address).collect(),
             // Note: sender field exists in async-imap but not in our Envelope struct
             reply_to: env.reply_to.as_ref().unwrap_or(&vec![]).iter().map(Self::convert_address).collect(),
             to: env.to.as_ref().unwrap_or(&vec![]).iter().map(Self::convert_address).collect(),
             cc: env.cc.as_ref().unwrap_or(&vec![]).iter().map(Self::convert_address).collect(),
             bcc: env.bcc.as_ref().unwrap_or(&vec![]).iter().map(Self::convert_address).collect(),
-            in_reply_to: env.in_reply_to.as_ref().map(|s| String::from_utf8_lossy(s).to_string()),
-            message_id: env.message_id.as_ref().map(|s| String::from_utf8_lossy(s).to_string()),
+            in_reply_to: env.in_reply_to.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
+            message_id: env.message_id.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
         });
 
         let internal_date = fetch.internal_date()
@@ -689,10 +707,10 @@ impl Email {
 
     fn convert_address(addr: &async_imap::imap_proto::Address) -> crate::imap::types::Address {
         crate::imap::types::Address {
-            name: addr.name.as_ref().map(|s| String::from_utf8_lossy(s).to_string()),
+            name: addr.name.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
             // Note: async-imap Address has route field but our Address doesn't
-            mailbox: addr.mailbox.as_ref().map(|s| String::from_utf8_lossy(s).to_string()),
-            host: addr.host.as_ref().map(|s| String::from_utf8_lossy(s).to_string()),
+            mailbox: addr.mailbox.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
+            host: addr.host.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
         }
     }
 
@@ -818,18 +836,18 @@ impl From<Fetch> for Email {
         let flags: Vec<String> = fetch.flags()
             .map(|f| format!("{:?}", f))
             .collect();
-        
+
         let envelope = fetch.envelope().map(|env| Envelope {
-            date: env.date.as_ref().map(|d| String::from_utf8_lossy(d).to_string()),
-            subject: env.subject.as_ref().map(|s| String::from_utf8_lossy(s).to_string()),
+            date: env.date.as_ref().map(|d| Email::decode_mime_encoded_text(d)),
+            subject: env.subject.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
             from: env.from.as_ref().unwrap_or(&vec![]).iter().map(Email::convert_address).collect(),
             // Note: sender field exists in async-imap but not in our Envelope struct
             reply_to: env.reply_to.as_ref().unwrap_or(&vec![]).iter().map(Email::convert_address).collect(),
             to: env.to.as_ref().unwrap_or(&vec![]).iter().map(Email::convert_address).collect(),
             cc: env.cc.as_ref().unwrap_or(&vec![]).iter().map(Email::convert_address).collect(),
             bcc: env.bcc.as_ref().unwrap_or(&vec![]).iter().map(Email::convert_address).collect(),
-            in_reply_to: env.in_reply_to.as_ref().map(|s| String::from_utf8_lossy(s).to_string()),
-            message_id: env.message_id.as_ref().map(|s| String::from_utf8_lossy(s).to_string()),
+            in_reply_to: env.in_reply_to.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
+            message_id: env.message_id.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
         });
 
         let internal_date = fetch.internal_date()

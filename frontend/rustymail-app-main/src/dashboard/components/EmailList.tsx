@@ -4,7 +4,7 @@ import { API_BASE_URL } from '../../config/api';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
-import { RefreshCw, Mail, ChevronLeft, ChevronRight } from 'lucide-react';
+import { RefreshCw, Mail, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface Email {
@@ -77,6 +77,20 @@ const EmailList: React.FC = () => {
     if (text.length <= maxLength) return text;
     return text.substring(0, maxLength) + '...';
   };
+
+  // Handle ESC key to close modal
+  useEffect(() => {
+    const handleEsc = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setSelectedEmail(null);
+      }
+    };
+
+    if (selectedEmail) {
+      document.addEventListener('keydown', handleEsc);
+      return () => document.removeEventListener('keydown', handleEsc);
+    }
+  }, [selectedEmail]);
 
   if (error) {
     return (
@@ -182,8 +196,17 @@ const EmailList: React.FC = () => {
         {/* Email Preview Modal */}
         {selectedEmail && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
-              <div className="mb-4">
+            <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto relative">
+              {/* Close button in top-right corner */}
+              <button
+                onClick={() => setSelectedEmail(null)}
+                className="absolute top-4 right-4 p-1 hover:bg-gray-100 rounded-full transition-colors"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5 text-gray-500" />
+              </button>
+
+              <div className="mb-4 pr-8">
                 <h3 className="text-lg font-semibold">{selectedEmail.subject || '(No subject)'}</h3>
                 <p className="text-sm text-gray-600">
                   From: {selectedEmail.from_name || selectedEmail.from_address || 'Unknown'}

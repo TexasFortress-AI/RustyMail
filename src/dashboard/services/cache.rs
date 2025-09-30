@@ -118,10 +118,22 @@ impl CacheService {
     pub async fn initialize(&mut self) -> Result<(), CacheError> {
         info!("Initializing cache service with database: {}", self.config.database_url);
 
+        // Extract the file path from the database URL
+        let db_path = self.config.database_url.replace("sqlite:", "");
+        let path = std::path::Path::new(&db_path);
+
         // Create data directory if it doesn't exist
-        if let Some(parent) = std::path::Path::new(&self.config.database_url.replace("sqlite:", "")).parent() {
+        if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).map_err(|e|
                 CacheError::OperationFailed(format!("Failed to create data directory: {}", e))
+            )?;
+        }
+
+        // Create the database file if it doesn't exist
+        if !path.exists() {
+            info!("Database file doesn't exist, creating: {}", db_path);
+            std::fs::File::create(&db_path).map_err(|e|
+                CacheError::OperationFailed(format!("Failed to create database file: {}", e))
             )?;
         }
 
@@ -131,10 +143,11 @@ impl CacheService {
             .connect(&self.config.database_url)
             .await?;
 
-        // Run migrations (commented out for now - manual SQL execution needed)
-        // sqlx::migrate!("./migrations")
-        //     .run(&pool)
-        //     .await?;
+        // Run migrations to ensure tables exist
+        sqlx::migrate!("./migrations")
+            .run(&pool)
+            .await
+            .map_err(|e| CacheError::OperationFailed(format!("Failed to run migrations: {}", e)))?;
 
         self.db_pool = Some(pool);
 
