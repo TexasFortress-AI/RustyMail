@@ -14,6 +14,7 @@ use std::collections::HashMap;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 use reqwest::Client;
+use serde_json::{json, Value};
 
 // Conversation history entry
 #[derive(Debug, Clone)]
@@ -35,6 +36,8 @@ pub struct AiService {
     nlp_processor: NlpProcessor,
     email_service: Option<Arc<super::email::EmailService>>,
     mock_mode: bool, // Flag to force mock responses
+    http_client: Client,
+    mcp_base_url: String,
 }
 
 impl std::fmt::Debug for AiService {
@@ -71,6 +74,8 @@ impl AiService {
             conversations: RwLock::new(HashMap::new()),
             email_service: None,
             mock_mode: true, // Force mock mode
+            http_client: Client::new(),
+            mcp_base_url: "http://localhost:9437/api".to_string(),
         }
     }
 
@@ -176,6 +181,8 @@ impl AiService {
             conversations: RwLock::new(HashMap::new()),
             email_service: None,
             mock_mode: !has_real_provider, // Set mock mode if no real providers
+            http_client: Client::new(),
+            mcp_base_url: "http://localhost:9437/api".to_string(),
         })
     }
 
@@ -187,12 +194,8 @@ impl AiService {
 
         debug!("Processing chatbot query for conversation {}: {}", conversation_id, query_text);
 
-        // Check if this is an email-related query and we have email service
-        let email_context = if let Some(email_service) = &self.email_service {
-            self.fetch_email_context(&query_text, email_service).await
-        } else {
-            None
-        };
+        // Always use MCP tools to fetch email context (no longer dependent on email_service)
+        let email_context = self.fetch_email_context_mcp(&query_text).await;
 
         // DISABLED NLP processor - it's injecting system messages that cause refusals
         // Go directly to the AI provider without NLP interference
@@ -295,57 +298,58 @@ impl AiService {
         })
     }
 
-    // Generate a mock response for testing or fallback
+    // Generate a mock response using MCP tools
     fn generate_mock_response(&self, query: &str) -> String {
         let query_lower = query.to_lowercase();
 
-        // Use async block to get real data
+        // Use async block to get real data via MCP
         let rt = tokio::runtime::Handle::current();
-        let email_service = self.email_service.clone();
 
         if query_lower.contains("hello") || query_lower.contains("hi") {
             "Hello! I'm the RustyMail assistant. How can I help you with your emails today?".to_string()
         } else if query_lower.contains("unread") || query_lower.contains("total") || query_lower.contains("how many") {
-            // Get real email count from cache
-            if let Some(email_svc) = email_service {
-                match rt.block_on(async {
-                    // Search for all emails in INBOX
-                    email_svc.search_emails("INBOX", "ALL").await
-                }) {
-                    Ok(all_uids) => {
-                        let total = all_uids.len();
-                        // For unread, we'd need to check flags, but for now show total
-                        format!("You have {} total emails in your inbox. All emails have been synced and cached locally.", total)
-                    }
-                    Err(_) => {
-                        "I'm having trouble accessing your emails right now. Please try again.".to_string()
+            // Get real email count from cache via MCP
+            match rt.block_on(async {
+                self.call_mcp_tool("count_emails_in_folder", json!({"folder": "INBOX"})).await
+            }) {
+                Ok(result) => {
+                    if let Some(count) = result.get("count").and_then(|c| c.as_i64()) {
+                        format!("You have {} total emails in your inbox. All emails have been synced and cached locally.", count)
+                    } else {
+                        "I'm having trouble getting the email count. Please try again.".to_string()
                     }
                 }
-            } else {
-                "Email service is not configured. Please check your settings.".to_string()
+                Err(_) => {
+                    "I'm having trouble accessing your emails right now. Please try again.".to_string()
+                }
             }
         } else if query_lower.contains("inbox") || query_lower.contains("email") || query_lower.contains("message") {
-            if let Some(email_svc) = email_service {
-                match rt.block_on(async {
-                    // Get UIDs and fetch a sample
-                    let uids = email_svc.search_emails("INBOX", "ALL").await?;
-                    let total = uids.len();
+            match rt.block_on(async {
+                // Get folder stats via MCP
+                let stats_result = self.call_mcp_tool("get_folder_stats", json!({"folder": "INBOX"})).await?;
+                let total = stats_result.get("total_emails").and_then(|t| t.as_i64()).unwrap_or(0);
+                let unread = stats_result.get("unread_count").and_then(|u| u.as_i64()).unwrap_or(0);
 
-                    // Get the most recent 8 emails
-                    let recent_uids: Vec<u32> = uids.into_iter().rev().take(8).collect();
-                    let emails = email_svc.fetch_emails("INBOX", &recent_uids).await?;
+                // Get recent emails via MCP
+                let emails_result = self.call_mcp_tool("list_cached_emails", json!({
+                    "folder": "INBOX",
+                    "limit": 8,
+                    "offset": 0
+                })).await?;
 
-                    Ok::<(usize, usize), Box<dyn std::error::Error>>((total, emails.len()))
-                }) {
-                    Ok((total, shown)) => {
-                        format!("Your inbox contains {} total emails. I can show you the most recent {} emails. All emails have been synced to your local cache.", total, shown)
-                    }
-                    Err(_) => {
-                        "I'm having trouble accessing your emails right now. Please try again.".to_string()
-                    }
+                let shown = emails_result.get("emails")
+                    .and_then(|e| e.as_array())
+                    .map(|a| a.len())
+                    .unwrap_or(0);
+
+                Ok::<(i64, i64, usize), String>((total, unread, shown))
+            }) {
+                Ok((total, unread, shown)) => {
+                    format!("Your inbox contains {} total emails ({} unread). I can show you the most recent {} emails. All emails have been synced to your local cache.", total, unread, shown)
                 }
-            } else {
-                "Email service is not configured. Please check your settings.".to_string()
+                Err(_) => {
+                    "I'm having trouble accessing your emails right now. Please try again.".to_string()
+                }
             }
         } else if query_lower.contains("sent") {
             "Your Sent folder functionality is coming soon.".to_string()
@@ -390,7 +394,101 @@ impl AiService {
         self.email_service = Some(email_service);
     }
 
-    /// Fetch email context based on the query
+    /// Call an MCP tool through the HTTP API
+    async fn call_mcp_tool(&self, tool_name: &str, args: Value) -> Result<Value, String> {
+        let url = format!("{}/dashboard/mcp/execute", self.mcp_base_url);
+
+        let body = json!({
+            "tool": tool_name,
+            "args": args
+        });
+
+        match self.http_client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&body)
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if response.status().is_success() {
+                    response.json::<Value>().await
+                        .map_err(|e| format!("Failed to parse MCP response: {}", e))
+                } else {
+                    Err(format!("MCP tool failed with status: {}", response.status()))
+                }
+            }
+            Err(e) => Err(format!("Failed to call MCP tool: {}", e))
+        }
+    }
+
+    /// Fetch email context using MCP tools
+    async fn fetch_email_context_mcp(&self, query: &str) -> Option<String> {
+        let query_lower = query.to_lowercase();
+
+        // Get total email count first
+        let total_count = match self.call_mcp_tool("count_emails_in_folder", json!({"folder": "INBOX"})).await {
+            Ok(result) => result.get("count").and_then(|c| c.as_i64()).unwrap_or(0),
+            Err(e) => {
+                error!("Failed to get email count via MCP: {}", e);
+                return None;
+            }
+        };
+
+        // Get recent emails
+        let emails_result = match self.call_mcp_tool("list_cached_emails", json!({
+            "folder": "INBOX",
+            "limit": 10,
+            "offset": 0
+        })).await {
+            Ok(result) => result,
+            Err(e) => {
+                error!("Failed to list emails via MCP: {}", e);
+                return None;
+            }
+        };
+
+        // Build context from MCP response
+        if let Some(emails) = emails_result.get("emails").and_then(|e| e.as_array()) {
+            let mut context = format!("You have {} total emails in your inbox.\n", total_count);
+
+            if !emails.is_empty() {
+                context.push_str(&format!("Here are the {} most recent emails:\n", emails.len()));
+
+                for (i, email) in emails.iter().enumerate() {
+                    let subject = email.get("subject")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("(No subject)");
+                    let from = email.get("from_address")
+                        .and_then(|f| f.as_str())
+                        .unwrap_or("Unknown");
+                    let date = email.get("date")
+                        .and_then(|d| d.as_str())
+                        .or_else(|| email.get("internal_date").and_then(|d| d.as_str()))
+                        .unwrap_or("Unknown date");
+                    let flags = email.get("flags")
+                        .and_then(|f| f.as_array())
+                        .map(|arr| arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .collect::<Vec<_>>())
+                        .unwrap_or_default();
+                    let unread = !flags.iter().any(|f| f.contains("Seen"));
+
+                    context.push_str(&format!(
+                        "{}. Subject: {}, From: {}, Date: {}{}\n",
+                        i + 1, subject, from, date,
+                        if unread { " [UNREAD]" } else { "" }
+                    ));
+                }
+            }
+
+            Some(context)
+        } else {
+            None
+        }
+    }
+
+    /// Fetch email context based on the query (legacy - uses direct email service)
     async fn fetch_email_context(&self, query: &str, email_service: &Arc<super::email::EmailService>) -> Option<String> {
         let query_lower = query.to_lowercase();
 

@@ -165,6 +165,55 @@ pub async fn list_mcp_tools(
             "parameters": {
                 "folder": "Folder to expunge"
             }
+        }),
+        // Cache-based tools
+        serde_json::json!({
+            "name": "list_cached_emails",
+            "description": "List cached emails from database",
+            "parameters": {
+                "folder": "Folder name (default: INBOX)",
+                "limit": "Maximum number of emails (default: 20)",
+                "offset": "Pagination offset (default: 0)"
+            }
+        }),
+        serde_json::json!({
+            "name": "get_email_by_uid",
+            "description": "Get full cached email by UID",
+            "parameters": {
+                "folder": "Folder name (default: INBOX)",
+                "uid": "Email UID"
+            }
+        }),
+        serde_json::json!({
+            "name": "get_email_by_index",
+            "description": "Get cached email by position index",
+            "parameters": {
+                "folder": "Folder name (default: INBOX)",
+                "index": "Zero-based position index"
+            }
+        }),
+        serde_json::json!({
+            "name": "count_emails_in_folder",
+            "description": "Count total emails in cached folder",
+            "parameters": {
+                "folder": "Folder name (default: INBOX)"
+            }
+        }),
+        serde_json::json!({
+            "name": "get_folder_stats",
+            "description": "Get statistics about cached folder",
+            "parameters": {
+                "folder": "Folder name (default: INBOX)"
+            }
+        }),
+        serde_json::json!({
+            "name": "search_cached_emails",
+            "description": "Search within cached emails",
+            "parameters": {
+                "folder": "Folder name (default: INBOX)",
+                "query": "Search query text",
+                "limit": "Maximum number of results (default: 20)"
+            }
         })
     ];
 
@@ -294,6 +343,206 @@ pub async fn execute_mcp_tool(
                         "tool": tool_name
                     })
                 }
+            }
+        }
+        // Cache-based tools
+        "list_cached_emails" => {
+            let folder = params.get("folder")
+                .and_then(|v| v.as_str())
+                .unwrap_or("INBOX");
+            let limit = params.get("limit")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(20);
+            let offset = params.get("offset")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(0);
+
+            match state.cache_service.get_cached_emails(folder, limit, offset).await {
+                Ok(emails) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": emails,
+                        "folder": folder,
+                        "count": emails.len(),
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to get cached emails: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "get_email_by_uid" => {
+            let folder = params.get("folder")
+                .and_then(|v| v.as_str())
+                .unwrap_or("INBOX");
+            let uid = params.get("uid")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as u32);
+
+            if let Some(uid) = uid {
+                match state.cache_service.get_email_by_uid(folder, uid).await {
+                    Ok(Some(email)) => {
+                        serde_json::json!({
+                            "success": true,
+                            "data": email,
+                            "tool": tool_name
+                        })
+                    }
+                    Ok(None) => {
+                        serde_json::json!({
+                            "success": false,
+                            "error": format!("Email with UID {} not found in {}", uid, folder),
+                            "tool": tool_name
+                        })
+                    }
+                    Err(e) => {
+                        serde_json::json!({
+                            "success": false,
+                            "error": format!("Failed to get email by UID: {}", e),
+                            "tool": tool_name
+                        })
+                    }
+                }
+            } else {
+                serde_json::json!({
+                    "success": false,
+                    "error": "UID parameter is required",
+                    "tool": tool_name
+                })
+            }
+        }
+        "get_email_by_index" => {
+            let folder = params.get("folder")
+                .and_then(|v| v.as_str())
+                .unwrap_or("INBOX");
+            let index = params.get("index")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize);
+
+            if let Some(index) = index {
+                // Get emails sorted by date DESC, then select by index
+                match state.cache_service.get_cached_emails(folder, index + 1, index).await {
+                    Ok(emails) if !emails.is_empty() => {
+                        serde_json::json!({
+                            "success": true,
+                            "data": emails[0],
+                            "tool": tool_name
+                        })
+                    }
+                    Ok(_) => {
+                        serde_json::json!({
+                            "success": false,
+                            "error": format!("No email at index {} in {}", index, folder),
+                            "tool": tool_name
+                        })
+                    }
+                    Err(e) => {
+                        serde_json::json!({
+                            "success": false,
+                            "error": format!("Failed to get email by index: {}", e),
+                            "tool": tool_name
+                        })
+                    }
+                }
+            } else {
+                serde_json::json!({
+                    "success": false,
+                    "error": "index parameter is required",
+                    "tool": tool_name
+                })
+            }
+        }
+        "count_emails_in_folder" => {
+            let folder = params.get("folder")
+                .and_then(|v| v.as_str())
+                .unwrap_or("INBOX");
+
+            match state.cache_service.count_emails_in_folder(folder).await {
+                Ok(count) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": {
+                            "count": count,
+                            "folder": folder
+                        },
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to count emails: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "get_folder_stats" => {
+            let folder = params.get("folder")
+                .and_then(|v| v.as_str())
+                .unwrap_or("INBOX");
+
+            match state.cache_service.get_folder_stats(folder).await {
+                Ok(stats) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": stats,
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to get folder stats: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "search_cached_emails" => {
+            let folder = params.get("folder")
+                .and_then(|v| v.as_str())
+                .unwrap_or("INBOX");
+            let query = params.get("query")
+                .and_then(|v| v.as_str());
+            let limit = params.get("limit")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or(20);
+
+            if let Some(query) = query {
+                match state.cache_service.search_cached_emails(folder, query, limit).await {
+                    Ok(emails) => {
+                        serde_json::json!({
+                            "success": true,
+                            "data": emails,
+                            "query": query,
+                            "folder": folder,
+                            "count": emails.len(),
+                            "tool": tool_name
+                        })
+                    }
+                    Err(e) => {
+                        serde_json::json!({
+                            "success": false,
+                            "error": format!("Failed to search emails: {}", e),
+                            "tool": tool_name
+                        })
+                    }
+                }
+            } else {
+                serde_json::json!({
+                    "success": false,
+                    "error": "query parameter is required",
+                    "tool": tool_name
+                })
             }
         }
         _ => {

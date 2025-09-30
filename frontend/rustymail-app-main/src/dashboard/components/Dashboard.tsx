@@ -91,21 +91,28 @@ const Dashboard: React.FC = () => {
       <TopBar />
 
       <div
-        className="container mx-auto px-4 py-6 flex-1 flex flex-col"
+        className="container mx-auto px-4 py-6 flex-1 flex flex-col h-full"
         data-testid="dashboard-container"
       >
         {/* Top section - Widgets */}
         <div
-          className="overflow-hidden flex flex-col min-h-0"
+          className="flex flex-col min-h-0"
           style={{ height: `${topHeight}%` }}
         >
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 min-h-0 overflow-auto">
-            <div className="min-h-0 overflow-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 overflow-hidden">
+            <div className="flex flex-col min-h-0">
               <EmailList />
             </div>
-            <div className="grid grid-cols-1 gap-4 min-h-0 overflow-auto">
-              <StatsPanel />
-              <ClientListPanel />
+            <div className="flex flex-col gap-4 min-h-0">
+              <div className="flex-shrink-0">
+                <StatsPanel />
+              </div>
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <ClientListPanel />
+              </div>
+              <div className="flex-1 min-h-0 overflow-hidden">
+                <McpTools />
+              </div>
             </div>
           </div>
         </div>
@@ -114,42 +121,21 @@ const Dashboard: React.FC = () => {
         <div
           className={`
             relative h-4 py-1 bg-muted/30 cursor-ns-resize flex items-center justify-center
-            hover:bg-muted/50 transition-colors duration-150 select-none
+            hover:bg-muted/50 transition-colors duration-150 select-none flex-shrink-0
             ${isResizing ? 'bg-primary/20' : ''}
           `}
           onMouseDown={handleResizeStart}
           title="Drag to resize panels"
         >
           <GripHorizontal className="h-3 w-3 text-muted-foreground pointer-events-none" />
-          {/* Debug info */}
-          <div className="absolute right-2 text-xs text-muted-foreground">
-            {topHeight.toFixed(0)}% | {isResizing ? 'RESIZING' : 'IDLE'}
-          </div>
-          {/* Debug test buttons */}
-          <div className="absolute left-2 flex gap-1">
-            <button
-              onClick={() => setTopHeight(20)}
-              className="text-xs bg-blue-500 text-white px-1 rounded"
-            >
-              20%
-            </button>
-            <button
-              onClick={() => setTopHeight(80)}
-              className="text-xs bg-green-500 text-white px-1 rounded"
-            >
-              80%
-            </button>
-          </div>
         </div>
 
         {/* Bottom section - Chatbot */}
         <div
-          className="overflow-hidden flex flex-col min-h-0"
-          style={{ height: `${100 - topHeight}%` }}
+          className="flex flex-col min-h-0"
+          style={{ height: `calc(${100 - topHeight}% - 1rem)` }}
         >
-          <div className="flex-1 min-h-0">
-            <ChatbotPanel />
-          </div>
+          <ChatbotPanel />
         </div>
       </div>
     </div>
