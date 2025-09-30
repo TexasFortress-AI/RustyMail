@@ -73,7 +73,12 @@ impl SyncService {
 
     /// Sync a specific folder
     pub async fn sync_folder(&self, folder_name: &str) -> Result<(), SyncError> {
-        debug!("Syncing folder: {}", folder_name);
+        self.sync_folder_with_limit(folder_name, Some(50)).await
+    }
+
+    /// Sync a specific folder with optional limit
+    pub async fn sync_folder_with_limit(&self, folder_name: &str, limit: Option<usize>) -> Result<(), SyncError> {
+        debug!("Syncing folder: {} (limit: {:?})", folder_name, limit);
 
         // Update sync status
         if let Err(e) = self.cache_service.update_sync_state(folder_name, 0, SyncStatus::Syncing).await {
@@ -96,11 +101,11 @@ impl SyncService {
         let search_criteria = if last_uid_synced > 0 {
             format!("UID {}:*", last_uid_synced + 1)
         } else {
-            // First sync - get last N emails
+            // First sync - get ALL emails
             "ALL".to_string()
         };
 
-        let uids = session.search_emails(&search_criteria).await?;
+        let mut uids = session.search_emails(&search_criteria).await?;
 
         if uids.is_empty() {
             debug!("No new emails to sync in folder {}", folder_name);
@@ -110,27 +115,39 @@ impl SyncService {
             return Ok(());
         }
 
-        // Limit the number of emails to sync in one batch
-        const BATCH_SIZE: usize = 50;
-        let uids_to_sync: Vec<u32> = if uids.len() > BATCH_SIZE {
-            // For initial sync or large updates, take only the most recent emails
-            uids.into_iter().rev().take(BATCH_SIZE).collect()
+        // Apply limit if specified
+        let uids_to_sync: Vec<u32> = if let Some(batch_size) = limit {
+            if uids.len() > batch_size {
+                // For limited sync, take only the most recent emails
+                uids.sort_unstable();
+                uids.into_iter().rev().take(batch_size).collect()
+            } else {
+                uids
+            }
         } else {
+            // No limit - sync all emails
             uids
         };
 
-        debug!("Syncing {} emails in folder {}", uids_to_sync.len(), folder_name);
+        info!("Syncing {} emails in folder {}", uids_to_sync.len(), folder_name);
 
-        // Fetch and cache emails
-        let emails = session.fetch_emails(&uids_to_sync).await?;
-
+        // Process in batches to avoid memory issues
+        const FETCH_BATCH_SIZE: usize = 20;
         let mut last_uid = last_uid_synced;
-        for email in emails {
-            if let Err(e) = self.cache_service.cache_email(folder_name, &email).await {
-                error!("Failed to cache email {}: {}", email.uid, e);
-            } else {
-                if email.uid > last_uid {
-                    last_uid = email.uid;
+
+        for chunk in uids_to_sync.chunks(FETCH_BATCH_SIZE) {
+            debug!("Fetching batch of {} emails", chunk.len());
+
+            // Fetch and cache emails
+            let emails = session.fetch_emails(chunk).await?;
+
+            for email in emails {
+                if let Err(e) = self.cache_service.cache_email(folder_name, &email).await {
+                    error!("Failed to cache email {}: {}", email.uid, e);
+                } else {
+                    if email.uid > last_uid {
+                        last_uid = email.uid;
+                    }
                 }
             }
         }
@@ -140,7 +157,7 @@ impl SyncService {
             warn!("Failed to update sync state: {}", e);
         }
 
-        info!("Synced {} emails in folder {}", uids_to_sync.len(), folder_name);
+        info!("Successfully synced {} emails in folder {}", uids_to_sync.len(), folder_name);
         Ok(())
     }
 
@@ -153,8 +170,8 @@ impl SyncService {
             error!("Failed to clear folder cache: {}", e);
         }
 
-        // Perform normal sync
-        self.sync_folder(folder_name).await
+        // Perform full sync without limit
+        self.sync_folder_with_limit(folder_name, None).await
     }
 
     /// Handle IMAP IDLE for real-time updates

@@ -1,8 +1,9 @@
 use actix_web::{web, HttpResponse, Responder};
+use actix_web::web::Data;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::convert::Infallible;
-use log::{debug, warn};
+use log::{debug, warn, info, error};
 use crate::dashboard::api::errors::ApiError;
 use crate::dashboard::services::DashboardState;
 use crate::dashboard::api::models::{ChatbotQuery, ServerConfig};
@@ -686,5 +687,62 @@ pub async fn set_ai_model(
         }
     } else {
         Err(ApiError::BadRequest("No current provider set".to_string()))
+    }
+}
+
+/// Trigger a full email sync
+pub async fn trigger_email_sync(
+    state: Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    info!("Triggering full email sync");
+
+    // Clone the sync service Arc to move into the async task
+    let sync_service = state.sync_service.clone();
+
+    // Spawn the sync task in the background
+    tokio::spawn(async move {
+        info!("Starting full sync of INBOX");
+        match sync_service.full_sync_folder("INBOX").await {
+            Ok(()) => info!("Full sync completed successfully"),
+            Err(e) => error!("Full sync failed: {}", e),
+        }
+    });
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "message": "Email sync started in background",
+        "status": "syncing"
+    })))
+}
+
+/// Get the current sync status
+pub async fn get_sync_status(
+    state: Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    // Get sync state for INBOX
+    match state.cache_service.get_sync_state("INBOX").await {
+        Ok(Some(sync_state)) => {
+            Ok(HttpResponse::Ok().json(serde_json::json!({
+                "folder": "INBOX",
+                "status": format!("{:?}", sync_state.sync_status),
+                "last_uid_synced": sync_state.last_uid_synced,
+                "last_full_sync": sync_state.last_full_sync,
+                "last_incremental_sync": sync_state.last_incremental_sync,
+                "error_message": sync_state.error_message
+            })))
+        }
+        Ok(None) => {
+            Ok(HttpResponse::Ok().json(serde_json::json!({
+                "folder": "INBOX",
+                "status": "never_synced",
+                "last_uid_synced": null,
+                "last_full_sync": null,
+                "last_incremental_sync": null,
+                "error_message": null
+            })))
+        }
+        Err(e) => {
+            error!("Failed to get sync status: {}", e);
+            Err(ApiError::InternalError(format!("Failed to get sync status: {}", e)))
+        }
     }
 }

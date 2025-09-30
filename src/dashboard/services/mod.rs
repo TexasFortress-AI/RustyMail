@@ -45,6 +45,7 @@ pub use ai::{AiService};
 pub use email::{EmailService};
 pub use events::{EventBus, DashboardEvent};
 pub use health::{HealthService, HealthReport, HealthStatus};
+pub use sync::{SyncService};
 
 // Import the types that were causing privacy issues directly from their source
 // Removed unresolved ImapConfiguration import
@@ -73,6 +74,7 @@ pub struct DashboardState {
     pub config_service: Arc<ConfigService>,
     pub ai_service: Arc<AiService>,
     pub email_service: Arc<EmailService>,
+    pub sync_service: Arc<SyncService>,
     pub sse_manager: Arc<SseManager>,
     pub event_bus: Arc<EventBus>,
     pub health_service: Option<Arc<HealthService>>,
@@ -133,6 +135,18 @@ pub async fn init(
         ).with_cache(cache_service.clone())
     );
 
+    // Initialize Sync Service
+    let sync_interval = std::env::var("SYNC_INTERVAL_SECONDS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(300); // Default 5 minutes
+
+    let sync_service = Arc::new(SyncService::new(
+        imap_session_factory.clone(),
+        cache_service.clone(),
+        sync_interval,
+    ));
+
     // Initialize AI Service with environment variables
     let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
     let openrouter_api_key = std::env::var("OPENROUTER_API_KEY").ok();
@@ -178,6 +192,7 @@ pub async fn init(
         config_service,
         ai_service,
         email_service,
+        sync_service,
         sse_manager,
         event_bus,
         health_service: Some(health_service),

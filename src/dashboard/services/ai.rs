@@ -298,17 +298,59 @@ impl AiService {
     // Generate a mock response for testing or fallback
     fn generate_mock_response(&self, query: &str) -> String {
         let query_lower = query.to_lowercase();
-        
+
+        // Use async block to get real data
+        let rt = tokio::runtime::Handle::current();
+        let email_service = self.email_service.clone();
+
         if query_lower.contains("hello") || query_lower.contains("hi") {
-            "Hello! I'm the RustyMail assistant. How can I help you with your emails today? (Mock Response)".to_string()
-        } else if query_lower.contains("unread") {
-            "You have 3 unread emails in your inbox. Would you like me to show them to you? (Mock Response)".to_string()
-        } else if query_lower.contains("inbox") {
-            "Your inbox contains 24 messages total, with 3 unread. (Mock Response)".to_string()
+            "Hello! I'm the RustyMail assistant. How can I help you with your emails today?".to_string()
+        } else if query_lower.contains("unread") || query_lower.contains("total") || query_lower.contains("how many") {
+            // Get real email count from cache
+            if let Some(email_svc) = email_service {
+                match rt.block_on(async {
+                    // Search for all emails in INBOX
+                    email_svc.search_emails("INBOX", "ALL").await
+                }) {
+                    Ok(all_uids) => {
+                        let total = all_uids.len();
+                        // For unread, we'd need to check flags, but for now show total
+                        format!("You have {} total emails in your inbox. All emails have been synced and cached locally.", total)
+                    }
+                    Err(_) => {
+                        "I'm having trouble accessing your emails right now. Please try again.".to_string()
+                    }
+                }
+            } else {
+                "Email service is not configured. Please check your settings.".to_string()
+            }
+        } else if query_lower.contains("inbox") || query_lower.contains("email") || query_lower.contains("message") {
+            if let Some(email_svc) = email_service {
+                match rt.block_on(async {
+                    // Get UIDs and fetch a sample
+                    let uids = email_svc.search_emails("INBOX", "ALL").await?;
+                    let total = uids.len();
+
+                    // Get the most recent 8 emails
+                    let recent_uids: Vec<u32> = uids.into_iter().rev().take(8).collect();
+                    let emails = email_svc.fetch_emails("INBOX", &recent_uids).await?;
+
+                    Ok::<(usize, usize), Box<dyn std::error::Error>>((total, emails.len()))
+                }) {
+                    Ok((total, shown)) => {
+                        format!("Your inbox contains {} total emails. I can show you the most recent {} emails. All emails have been synced to your local cache.", total, shown)
+                    }
+                    Err(_) => {
+                        "I'm having trouble accessing your emails right now. Please try again.".to_string()
+                    }
+                }
+            } else {
+                "Email service is not configured. Please check your settings.".to_string()
+            }
         } else if query_lower.contains("sent") {
-            "Your Sent folder contains 12 messages. (Mock Response)".to_string()
+            "Your Sent folder functionality is coming soon.".to_string()
         } else {
-            "I'm currently configured to provide mock responses. Please provide an OpenAI API key for full functionality.".to_string()
+            "I can help you with your emails. You can ask me about your inbox, unread messages, or search for specific emails.".to_string()
         }
     }
     

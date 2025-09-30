@@ -24,6 +24,9 @@ pub fn configure_routes() -> Scope {
         // AI model management endpoints
         .route("/ai/models", web::get().to(handlers::get_ai_models))
         .route("/ai/models/set", web::post().to(handlers::set_ai_model))
+        // Email sync endpoints
+        .route("/sync/trigger", web::post().to(handlers::trigger_email_sync))
+        .route("/sync/status", web::get().to(handlers::get_sync_status))
         .route("/events", web::get().to(sse::sse_handler))
         // Subscription management endpoints
         .route("/events/types", web::get().to(handlers::get_available_event_types))
