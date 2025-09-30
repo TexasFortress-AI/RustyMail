@@ -27,6 +27,8 @@ pub fn configure_routes() -> Scope {
         // Email sync endpoints
         .route("/sync/trigger", web::post().to(handlers::trigger_email_sync))
         .route("/sync/status", web::get().to(handlers::get_sync_status))
+        // Email cache endpoints
+        .route("/emails", web::get().to(handlers::get_cached_emails))
         .route("/events", web::get().to(sse::sse_handler))
         // Subscription management endpoints
         .route("/events/types", web::get().to(handlers::get_available_event_types))

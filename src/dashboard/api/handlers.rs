@@ -746,3 +746,40 @@ pub async fn get_sync_status(
         }
     }
 }
+
+/// Get cached emails from the database
+pub async fn get_cached_emails(
+    state: Data<DashboardState>,
+    query: web::Query<serde_json::Value>,
+) -> Result<impl Responder, ApiError> {
+    let folder = query.get("folder")
+        .and_then(|v| v.as_str())
+        .unwrap_or("INBOX");
+
+    let limit = query.get("limit")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .unwrap_or(50);
+
+    let offset = query.get("offset")
+        .and_then(|v| v.as_u64())
+        .map(|v| v as usize)
+        .unwrap_or(0);
+
+    info!("Getting cached emails for folder: {}, limit: {}, offset: {}", folder, limit, offset);
+
+    match state.cache_service.get_cached_emails(folder, limit, offset).await {
+        Ok(emails) => {
+            info!("Retrieved {} cached emails", emails.len());
+            Ok(HttpResponse::Ok().json(serde_json::json!({
+                "emails": emails,
+                "folder": folder,
+                "count": emails.len(),
+            })))
+        }
+        Err(e) => {
+            error!("Failed to get cached emails: {}", e);
+            Err(ApiError::InternalError(format!("Failed to get cached emails: {}", e)))
+        }
+    }
+}

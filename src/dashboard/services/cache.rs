@@ -427,6 +427,68 @@ impl CacheService {
         }
     }
 
+    /// Get cached emails with pagination support
+    pub async fn get_cached_emails(&self, folder_name: &str, limit: usize, offset: usize) -> Result<Vec<CachedEmail>, CacheError> {
+        let folder = match self.get_folder_from_cache(folder_name).await {
+            Some(f) => f,
+            None => return Ok(Vec::new()),
+        };
+
+        let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
+
+        let emails = sqlx::query_as::<_, (
+            i64, i64, i64, Option<String>, Option<String>, Option<String>, Option<String>,
+            String, String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>,
+            String, Option<String>, Option<String>, DateTime<Utc>
+        )>(
+            r#"
+            SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
+                   to_addresses, cc_addresses, date, internal_date, size,
+                   flags, body_text, body_html, cached_at
+            FROM emails
+            WHERE folder_id = ?
+            ORDER BY date DESC
+            LIMIT ? OFFSET ?
+            "#
+        )
+        .bind(folder.id)
+        .bind(limit as i64)
+        .bind(offset as i64)
+        .fetch_all(pool)
+        .await?;
+
+        let mut cached_emails = Vec::new();
+        for (id, folder_id, uid, message_id, subject, from_address, from_name,
+             to_addresses, cc_addresses, date, internal_date, size,
+             flags, body_text, body_html, cached_at) in emails {
+
+            let to_addrs: Vec<String> = serde_json::from_str(&to_addresses).unwrap_or_default();
+            let cc_addrs: Vec<String> = serde_json::from_str(&cc_addresses).unwrap_or_default();
+            let flag_list: Vec<String> = serde_json::from_str(&flags).unwrap_or_default();
+
+            cached_emails.push(CachedEmail {
+                id,
+                folder_id,
+                uid: uid as u32,
+                message_id,
+                subject,
+                from_address,
+                from_name,
+                to_addresses: to_addrs,
+                cc_addresses: cc_addrs,
+                date,
+                internal_date,
+                size,
+                flags: flag_list,
+                body_text,
+                body_html,
+                cached_at,
+            });
+        }
+
+        Ok(cached_emails)
+    }
+
     pub async fn get_cached_emails_for_folder(&self, folder_name: &str, limit: usize) -> Result<Vec<CachedEmail>, CacheError> {
         let folder = match self.get_folder_from_cache(folder_name).await {
             Some(f) => f,
