@@ -389,7 +389,7 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
 }
 
 pub fn configure_mcp_sse_service(cfg: &mut web::ServiceConfig, state_addr: Addr<McpSseState>) {
-    info!("Configuring MCP SSE service endpoint (/mcp/sse)...");
+    info!("Configuring MCP SSE service endpoint (/api/mcp/sse)...");
     cfg.app_data(Data::new(state_addr))
-        .route("/mcp/sse", web::get().to(mcp_sse_handler));
+        .route("/api/mcp/sse", web::get().to(mcp_sse_handler));
 } 

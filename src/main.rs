@@ -246,7 +246,8 @@ async fn main() -> std::io::Result<()> {
             .configure(configure_rest_service)                // RustyMail REST API
             .configure(openapi_docs::configure_openapi)       // OpenAPI/Swagger documentation
             // .configure(configure_sse_service)              // SSE not implemented yet
-            .configure(|cfg| dashboard::api::init_routes(cfg)); // Dashboard API routes
+            .configure(|cfg| dashboard::api::init_routes(cfg)) // Dashboard API routes
+            .configure(rustymail::api::mcp_sse_real::configure_mcp_sse_routes); // MCP SSE routes
 
         // Serve static dashboard files (logic remains the same)
         if let Some(dashboard_config) = &config.dashboard {

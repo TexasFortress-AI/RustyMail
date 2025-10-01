@@ -9,5 +9,6 @@ pub mod validation;
 pub mod sse;
 pub mod mcp_stdio;
 pub mod mcp_sse;
+pub mod mcp_sse_real;
 
 // pub mod sse; // Will be added later 
