@@ -24,13 +24,25 @@ fn main() {
     // Create runtime for async operations
     let rt = Runtime::new().expect("Failed to create Tokio runtime");
 
-    // Create a placeholder factory that returns an error when called
-    // This is fine for the stdio adapter since actual IMAP operations will be handled
-    // when real credentials are provided via MCP tools
+    // Read IMAP credentials from environment variables
+    let imap_host = std::env::var("IMAP_HOST").unwrap_or_else(|_| "localhost".to_string());
+    let imap_port = std::env::var("IMAP_PORT").unwrap_or_else(|_| "993".to_string())
+        .parse::<u16>().unwrap_or(993);
+    let imap_user = std::env::var("IMAP_USER").unwrap_or_else(|_| "user@example.com".to_string());
+    let imap_pass = std::env::var("IMAP_PASS").unwrap_or_else(|_| "password".to_string());
+
+    info!("IMAP config: host={}, port={}, user={}", imap_host, imap_port, imap_user);
+
+    // Create a real IMAP factory using environment credentials
     let raw_factory: Box<dyn Fn() -> BoxFuture<'static, Result<ImapClient<AsyncImapSessionWrapper>, ImapError>> + Send + Sync> =
-        Box::new(|| {
+        Box::new(move || {
+            let host = imap_host.clone();
+            let port = imap_port;
+            let user = imap_user.clone();
+            let pass = imap_pass.clone();
+
             Box::pin(async move {
-                Err(ImapError::Connection("Placeholder factory - IMAP credentials not configured".to_string()))
+                ImapClient::<AsyncImapSessionWrapper>::connect(&host, port, &user, &pass).await
             })
         });
 
