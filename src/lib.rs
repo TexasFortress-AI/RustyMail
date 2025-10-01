@@ -10,6 +10,7 @@ pub mod imap;
 pub mod mcp;
 pub mod transport;
 pub mod mcp_port;
+pub mod mcp_cache_tools;
 pub mod session_manager;
 pub mod connection_pool;
 pub mod utils;

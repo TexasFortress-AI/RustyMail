@@ -11,6 +11,10 @@ use std::collections::HashMap;
 use std::future::Future;
 use futures_util::future::BoxFuture;
 use crate::prelude::AsyncImapOps;
+use crate::mcp_cache_tools::{
+    list_cached_emails_tool, get_email_by_uid_tool, get_email_by_index_tool,
+    count_emails_in_folder_tool, get_folder_stats_tool, search_cached_emails_tool
+};
 
 // Define the signature for an MCP tool function
 // The function receives the IMAP session, MCP state, and optional parameters.
@@ -515,8 +519,14 @@ pub fn create_mcp_tool_registry() -> McpToolRegistry {
     registry.register("delete_messages", DefaultMcpTool::new("delete_messages", delete_messages_tool));
     registry.register("undelete_messages", DefaultMcpTool::new("undelete_messages", undelete_messages_tool));
     registry.register("expunge", DefaultMcpTool::new("expunge", expunge_tool));
-    // ... register other tools like create_folder_tool, delete_folder_tool etc.
-    // These tools will need to be defined similar to list_folders_tool
+
+    // Cache tools - these work with the email_cache.db database
+    registry.register("list_cached_emails", DefaultMcpTool::new("list_cached_emails", list_cached_emails_tool));
+    registry.register("get_email_by_uid", DefaultMcpTool::new("get_email_by_uid", get_email_by_uid_tool));
+    registry.register("get_email_by_index", DefaultMcpTool::new("get_email_by_index", get_email_by_index_tool));
+    registry.register("count_emails_in_folder", DefaultMcpTool::new("count_emails_in_folder", count_emails_in_folder_tool));
+    registry.register("get_folder_stats", DefaultMcpTool::new("get_folder_stats", get_folder_stats_tool));
+    registry.register("search_cached_emails", DefaultMcpTool::new("search_cached_emails", search_cached_emails_tool));
 
     registry
 }

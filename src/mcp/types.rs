@@ -9,6 +9,7 @@ use std::fmt;
 use tokio::sync::Mutex;
 use log;
 use crate::session_manager::SessionManager;
+use crate::dashboard::services::cache::CacheService;
 use std::sync::Arc;
 
 // Error code constants for IMAP errors - these match the enum values in ErrorCode
@@ -59,6 +60,8 @@ pub struct McpPortState {
     pub selected_folder: Option<String>,
     session_id: Option<String>,
     session_manager: Arc<SessionManager>,
+    /// Cache service for database operations
+    pub cache_service: Option<Arc<CacheService>>,
 }
 
 impl McpPortState {
@@ -67,6 +70,17 @@ impl McpPortState {
             selected_folder: None,
             session_id: None,
             session_manager,
+            cache_service: None,
+        }
+    }
+
+    /// Create a new state with cache service
+    pub fn with_cache_service(session_manager: Arc<SessionManager>, cache_service: Arc<CacheService>) -> Self {
+        Self {
+            selected_folder: None,
+            session_id: None,
+            session_manager,
+            cache_service: Some(cache_service),
         }
     }
     

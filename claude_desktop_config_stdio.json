@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "rustymail": {
+      "command": "/Users/au/src/RustyMail/target/release/rustymail-mcp-stdio",
+      "env": {
+        "RUST_LOG": "info"
+      }
+    }
+  }
+}

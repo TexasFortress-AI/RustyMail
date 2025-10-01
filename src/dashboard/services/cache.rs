@@ -79,6 +79,17 @@ pub struct CacheService {
     config: CacheConfig,
 }
 
+impl std::fmt::Debug for CacheService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CacheService")
+            .field("db_pool", &self.db_pool.is_some())
+            .field("memory_cache", &"<LruCache>")
+            .field("folder_cache", &"<HashMap>")
+            .field("config", &self.config)
+            .finish()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct CacheConfig {
     pub database_url: String,
