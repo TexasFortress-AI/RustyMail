@@ -38,6 +38,7 @@ pub struct AiService {
     mock_mode: bool, // Flag to force mock responses
     http_client: Client,
     mcp_base_url: String,
+    api_key: String,
 }
 
 impl std::fmt::Debug for AiService {
@@ -76,6 +77,8 @@ impl AiService {
             mock_mode: true, // Force mock mode
             http_client: Client::new(),
             mcp_base_url: "http://localhost:9437/api".to_string(),
+            api_key: std::env::var("RUSTYMAIL_API_KEY")
+                .unwrap_or_else(|_| "test-rustymail-key-2024".to_string()),
         }
     }
 
@@ -84,6 +87,7 @@ impl AiService {
         openrouter_api_key: Option<String>,
         morpheus_api_key: Option<String>,
         ollama_base_url: Option<String>,
+        api_key: Option<String>,
     ) -> Result<Self, String> {
         let mut provider_manager = ProviderManager::new();
         let mut has_real_provider = false;
@@ -183,6 +187,10 @@ impl AiService {
             mock_mode: !has_real_provider, // Set mock mode if no real providers
             http_client: Client::new(),
             mcp_base_url: "http://localhost:9437/api".to_string(),
+            api_key: api_key.unwrap_or_else(||
+                std::env::var("RUSTYMAIL_API_KEY")
+                    .unwrap_or_else(|_| "test-rustymail-key-2024".to_string())
+            ),
         })
     }
 
@@ -407,7 +415,7 @@ impl AiService {
         match self.http_client
             .post(&url)
             .header("Content-Type", "application/json")
-            .header("X-API-Key", "test-rustymail-key-2024")
+            .header("X-API-Key", &self.api_key)
             .json(&body)
             .send()
             .await

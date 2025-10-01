@@ -61,6 +61,7 @@ pub struct Settings {
     pub mcp_stdio: Option<McpStdioConfig>,
     pub sse: Option<SseConfig>, // SSE configuration
     pub dashboard: Option<DashboardConfig>, // Dashboard configuration
+    pub api_key: Option<String>, // API key for authentication
 }
 
 impl Settings {
@@ -88,7 +89,10 @@ impl Settings {
             .set_default("dashboard.enabled", false)?
             .set_default("dashboard.port", 9439)?  // Updated to match .env.example
             // Log defaults
-            .set_default("log.level", "info")?;
+            .set_default("log.level", "info")?
+
+            // API key default
+            .set_default("api_key", "test-rustymail-key-2024")?;
         
         // Add configuration from file
         if let Some(path) = config_path {
@@ -204,6 +208,7 @@ impl Default for Settings {
             mcp_stdio: Some(McpStdioConfig::default()),
             sse: Some(SseConfig::default()),
             dashboard: Some(DashboardConfig::default()),
+            api_key: Some("test-rustymail-key-2024".to_string()),
         }
     }
 }

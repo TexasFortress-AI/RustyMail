@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, Play, Terminal, Code } from 'lucide-react';
+import config from '../config';
 
 interface McpTool {
   name: string;
@@ -21,9 +22,9 @@ const McpTools: React.FC = () => {
 
   const fetchTools = async () => {
     try {
-      const response = await fetch('http://localhost:9437/api/dashboard/mcp/tools', {
+      const response = await fetch(`${config.api.baseUrl}/dashboard/mcp/tools`, {
         headers: {
-          'X-API-Key': 'test-rustymail-key-2024'
+          'X-API-Key': config.api.apiKey
         }
       });
 
@@ -54,11 +55,11 @@ const McpTools: React.FC = () => {
     setResults(prev => ({ ...prev, [toolName]: null }));
 
     try {
-      const response = await fetch('http://localhost:9437/api/dashboard/mcp/execute', {
+      const response = await fetch(`${config.api.baseUrl}/dashboard/mcp/execute`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': 'test-rustymail-key-2024'
+          'X-API-Key': config.api.apiKey
         },
         body: JSON.stringify({
           tool: toolName,
