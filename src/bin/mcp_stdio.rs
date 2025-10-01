@@ -1,61 +1,36 @@
 use log::{error, info, debug};
-use rustymail::mcp::adapters::sdk::SdkMcpAdapter;
-use rustymail::prelude::CloneableImapSessionFactory;
-use rustymail::imap::{ImapClient, AsyncImapSessionWrapper, ImapError};
-use rustymail::mcp::{McpPortState, McpHandler};
-use rustymail::mcp_port;
 use serde_json::{json, Value};
 use std::io::{self, BufRead, BufReader, Write};
 use tokio::runtime::Runtime;
-use futures_util::future::BoxFuture;
-use std::sync::Arc;
-use tokio::sync::Mutex as TokioMutex;
 
 /// MCP Stdio adapter for Claude Desktop integration
-/// Reads JSON-RPC messages from stdin and writes responses to stdout
+/// Proxies MCP requests to the backend server's API
 fn main() {
     // Initialize logging to stderr (not stdout, which is used for MCP communication)
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .target(env_logger::Target::Stderr)
         .init();
 
-    info!("Starting RustyMail MCP stdio adapter...");
+    info!("Starting RustyMail MCP stdio adapter (API proxy mode)...");
+
+    // Get backend API configuration from environment
+    let api_base_url = std::env::var("RUSTYMAIL_API_URL")
+        .unwrap_or_else(|_| "http://localhost:9437/api/dashboard".to_string());
+    let api_key = std::env::var("RUSTYMAIL_API_KEY")
+        .unwrap_or_else(|_| "test-rustymail-key-2024".to_string());
+
+    info!("Backend API: {}", api_base_url);
 
     // Create runtime for async operations
     let rt = Runtime::new().expect("Failed to create Tokio runtime");
 
-    // Read IMAP credentials from environment variables
-    let imap_host = std::env::var("IMAP_HOST").unwrap_or_else(|_| "localhost".to_string());
-    let imap_port = std::env::var("IMAP_PORT").unwrap_or_else(|_| "993".to_string())
-        .parse::<u16>().unwrap_or(993);
-    let imap_user = std::env::var("IMAP_USER").unwrap_or_else(|_| "user@example.com".to_string());
-    let imap_pass = std::env::var("IMAP_PASS").unwrap_or_else(|_| "password".to_string());
+    // Create HTTP client
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .expect("Failed to create HTTP client");
 
-    info!("IMAP config: host={}, port={}, user={}", imap_host, imap_port, imap_user);
-
-    // Create a real IMAP factory using environment credentials
-    let raw_factory: Box<dyn Fn() -> BoxFuture<'static, Result<ImapClient<AsyncImapSessionWrapper>, ImapError>> + Send + Sync> =
-        Box::new(move || {
-            let host = imap_host.clone();
-            let port = imap_port;
-            let user = imap_user.clone();
-            let pass = imap_pass.clone();
-
-            Box::pin(async move {
-                ImapClient::<AsyncImapSessionWrapper>::connect(&host, port, &user, &pass).await
-            })
-        });
-
-    let factory = CloneableImapSessionFactory::new(raw_factory);
-    let mcp_handler = match SdkMcpAdapter::new(factory) {
-        Ok(handler) => handler,
-        Err(e) => {
-            error!("Failed to initialize MCP handler: {}", e);
-            return;
-        }
-    };
-
-    info!("MCP handler initialized");
+    info!("MCP stdio adapter initialized");
 
     // Set up stdin reader and stdout writer
     let stdin = io::stdin();
@@ -88,7 +63,7 @@ fn main() {
                     Ok(request) => {
                         // Handle the request asynchronously
                         let response = rt.block_on(async {
-                            handle_mcp_request(request, &mcp_handler).await
+                            handle_mcp_request(request, &client, &api_base_url, &api_key).await
                         });
 
                         // Only send response if it's not null (notifications don't need responses)
@@ -163,7 +138,12 @@ fn main() {
     info!("MCP stdio adapter shutting down");
 }
 
-async fn handle_mcp_request(request: Value, mcp_handler: &SdkMcpAdapter) -> Value {
+async fn handle_mcp_request(
+    request: Value,
+    client: &reqwest::Client,
+    api_base_url: &str,
+    api_key: &str,
+) -> Value {
     let method = request.get("method")
         .and_then(|m| m.as_str())
         .unwrap_or("");
@@ -195,49 +175,132 @@ async fn handle_mcp_request(request: Value, mcp_handler: &SdkMcpAdapter) -> Valu
             })
         },
         "tools/call" => {
-            // Handle tool calls by delegating to the MCP handler
+            // Proxy tool calls to backend API
             let tool_name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
             let tool_params = params.get("arguments").cloned().unwrap_or(json!({}));
 
-            debug!("Calling tool: {} with params: {}", tool_name, tool_params);
+            debug!("Proxying tool call '{}' to backend API", tool_name);
 
-            // Create a pseudo request for the handler
-            let handler_request = json!({
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "method": tool_name,
+            // Call backend API's MCP execute endpoint
+            let api_url = format!("{}/mcp/execute", api_base_url);
+            let request_body = json!({
+                "tool": tool_name,
                 "params": tool_params
             });
 
-            // Call the actual handler
-            let state = Arc::new(TokioMutex::new(McpPortState::default()));
-            let response = mcp_handler.handle_request(state, handler_request).await;
-
-            // The response from handle_request is already formatted as JSON-RPC
-            response
+            match client.post(&api_url)
+                .header("X-API-Key", api_key)
+                .header("Content-Type", "application/json")
+                .json(&request_body)
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    match response.json::<Value>().await {
+                        Ok(result) => {
+                            // Convert backend response to MCP format
+                            json!({
+                                "jsonrpc": "2.0",
+                                "id": request_id,
+                                "result": {
+                                    "content": [{
+                                        "type": "text",
+                                        "text": serde_json::to_string_pretty(&result).unwrap_or_else(|_| "null".to_string())
+                                    }],
+                                    "isError": false
+                                }
+                            })
+                        }
+                        Err(e) => {
+                            error!("Failed to parse backend response: {}", e);
+                            json!({
+                                "jsonrpc": "2.0",
+                                "id": request_id,
+                                "error": {
+                                    "code": -32603,
+                                    "message": format!("Backend response error: {}", e)
+                                }
+                            })
+                        }
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to call backend API: {}", e);
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {
+                            "code": -32603,
+                            "message": format!("Backend API call failed: {}", e)
+                        }
+                    })
+                }
+            }
         },
         "tools/list" => {
-            // List available tools from the registry with proper schemas
-            let tool_registry = mcp_port::create_mcp_tool_registry();
-            let tools: Vec<_> = tool_registry.keys().map(|name| {
-                json!({
-                    "name": name,
-                    "description": format!("IMAP tool: {}", name),
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
-                })
-            }).collect();
+            // Get tools from backend API
+            let api_url = format!("{}/mcp/tools", api_base_url);
 
-            json!({
-                "jsonrpc": "2.0",
-                "id": request_id,
-                "result": {
-                    "tools": tools
+            debug!("Fetching tool list from backend API");
+
+            match client.get(&api_url)
+                .header("X-API-Key", api_key)
+                .send()
+                .await
+            {
+                Ok(response) => {
+                    match response.json::<Value>().await {
+                        Ok(tools_data) => {
+                            // Backend returns array of tool names, convert to MCP format
+                            let tools: Vec<Value> = if let Some(arr) = tools_data.as_array() {
+                                arr.iter().map(|tool_name| {
+                                    json!({
+                                        "name": tool_name.as_str().unwrap_or("unknown"),
+                                        "description": format!("IMAP tool: {}", tool_name.as_str().unwrap_or("unknown")),
+                                        "inputSchema": {
+                                            "type": "object",
+                                            "properties": {},
+                                            "required": []
+                                        }
+                                    })
+                                }).collect()
+                            } else {
+                                vec![]
+                            };
+
+                            json!({
+                                "jsonrpc": "2.0",
+                                "id": request_id,
+                                "result": {
+                                    "tools": tools
+                                }
+                            })
+                        }
+                        Err(e) => {
+                            error!("Failed to parse tools response: {}", e);
+                            json!({
+                                "jsonrpc": "2.0",
+                                "id": request_id,
+                                "error": {
+                                    "code": -32603,
+                                    "message": format!("Failed to get tools: {}", e)
+                                }
+                            })
+                        }
+                    }
                 }
-            })
+                Err(e) => {
+                    error!("Failed to fetch tools from backend: {}", e);
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {
+                            "code": -32603,
+                            "message": format!("Failed to fetch tools: {}", e)
+                        }
+                    })
+                }
+            }
         },
         "notifications/initialized" => {
             // Client has initialized, no response needed for notifications

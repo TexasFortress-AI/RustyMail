@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { API_BASE_URL } from '../../config/api';
+import { config } from '../config';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -36,7 +37,12 @@ const EmailList: React.FC = () => {
     queryFn: async () => {
       const offset = (currentPage - 1) * pageSize;
       const response = await fetch(
-        `${API_BASE_URL}/dashboard/emails?limit=${pageSize}&offset=${offset}`
+        `${API_BASE_URL}/dashboard/emails?limit=${pageSize}&offset=${offset}`,
+        {
+          headers: {
+            'X-API-Key': config.api.apiKey
+          }
+        }
       );
       if (!response.ok) {
         throw new Error('Failed to fetch emails');
