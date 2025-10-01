@@ -48,20 +48,31 @@ fn main() {
     // Set up stdin reader and stdout writer
     let stdin = io::stdin();
     let mut stdout = io::stdout();
-    let reader = BufReader::new(stdin);
+    let mut reader = BufReader::new(stdin);
 
-    // Process messages from stdin
-    for line in reader.lines() {
-        match line {
-            Ok(input) => {
-                if input.trim().is_empty() {
+    // Process messages from stdin - use a persistent loop to keep connection alive
+    loop {
+        // Read line from stdin
+        let mut line = String::new();
+        debug!("Waiting for next message from stdin...");
+        match reader.read_line(&mut line) {
+            Ok(0) => {
+                // EOF reached
+                info!("stdin closed (EOF), exiting gracefully");
+                break;
+            }
+            Ok(bytes_read) => {
+                debug!("Read {} bytes from stdin", bytes_read);
+                let input = line.trim();
+                if input.is_empty() {
+                    debug!("Empty line received, skipping");
                     continue;
                 }
 
                 debug!("Received input: {}", input);
 
                 // Parse the JSON-RPC request
-                match serde_json::from_str::<Value>(&input) {
+                match serde_json::from_str::<Value>(input) {
                     Ok(request) => {
                         // Handle the request asynchronously
                         let response = rt.block_on(async {
@@ -126,7 +137,7 @@ fn main() {
                 }
             }
             Err(e) => {
-                // EOF or error reading from stdin
+                // Error reading from stdin
                 if e.kind() == io::ErrorKind::UnexpectedEof {
                     info!("stdin closed, exiting gracefully");
                 } else {
@@ -152,36 +163,22 @@ async fn handle_mcp_request(request: Value, mcp_handler: &SdkMcpAdapter) -> Valu
 
     match method {
         "initialize" => {
-            // Get the actual tools from the tool registry
-            let tool_registry = mcp_port::create_mcp_tool_registry();
-            let tools: Vec<_> = tool_registry.keys().map(|name| {
-                json!({
-                    "name": name,
-                    "description": format!("IMAP tool: {}", name),
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {},
-                        "required": []
-                    }
-                })
-            }).collect();
-
-            info!("Responding to initialize with {} tools", tools.len());
+            // Initialize response should NOT include tools array
+            // Tools are discovered via tools/list method after initialization
+            info!("Responding to initialize request");
 
             json!({
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "result": {
                     "protocolVersion": "2025-06-18",
+                    "capabilities": {
+                        "tools": {}
+                    },
                     "serverInfo": {
                         "name": "rustymail-mcp",
                         "version": "1.0.0"
-                    },
-                    "capabilities": {
-                        "tools": true,
-                        "resources": false
-                    },
-                    "tools": tools
+                    }
                 }
             })
         },
@@ -208,12 +205,17 @@ async fn handle_mcp_request(request: Value, mcp_handler: &SdkMcpAdapter) -> Valu
             response
         },
         "tools/list" => {
-            // List available tools from the registry
+            // List available tools from the registry with proper schemas
             let tool_registry = mcp_port::create_mcp_tool_registry();
             let tools: Vec<_> = tool_registry.keys().map(|name| {
                 json!({
                     "name": name,
-                    "description": format!("IMAP tool: {}", name)
+                    "description": format!("IMAP tool: {}", name),
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "required": []
+                    }
                 })
             }).collect();
 
