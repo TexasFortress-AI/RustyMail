@@ -251,19 +251,40 @@ async fn handle_mcp_request(
                 Ok(response) => {
                     match response.json::<Value>().await {
                         Ok(tools_data) => {
-                            // Backend returns array of tool names, convert to MCP format
-                            let tools: Vec<Value> = if let Some(arr) = tools_data.as_array() {
-                                arr.iter().map(|tool_name| {
-                                    json!({
-                                        "name": tool_name.as_str().unwrap_or("unknown"),
-                                        "description": format!("IMAP tool: {}", tool_name.as_str().unwrap_or("unknown")),
-                                        "inputSchema": {
-                                            "type": "object",
-                                            "properties": {},
-                                            "required": []
-                                        }
-                                    })
-                                }).collect()
+                            // Backend returns {"tools": [...]}
+                            let tools: Vec<Value> = if let Some(tools_obj) = tools_data.get("tools") {
+                                if let Some(arr) = tools_obj.as_array() {
+                                    arr.iter().map(|tool| {
+                                        // Each tool has name, description, and parameters
+                                        let name = tool.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+                                        let description = tool.get("description").and_then(|d| d.as_str()).unwrap_or("");
+                                        let parameters = tool.get("parameters").cloned().unwrap_or(json!({}));
+
+                                        // Convert parameters object to inputSchema
+                                        let properties = if let Some(params_obj) = parameters.as_object() {
+                                            params_obj.iter().map(|(key, value)| {
+                                                (key.clone(), json!({
+                                                    "type": "string",
+                                                    "description": value.as_str().unwrap_or("")
+                                                }))
+                                            }).collect()
+                                        } else {
+                                            serde_json::Map::new()
+                                        };
+
+                                        json!({
+                                            "name": name,
+                                            "description": description,
+                                            "inputSchema": {
+                                                "type": "object",
+                                                "properties": properties,
+                                                "required": []
+                                            }
+                                        })
+                                    }).collect()
+                                } else {
+                                    vec![]
+                                }
                             } else {
                                 vec![]
                             };
