@@ -81,8 +81,8 @@ const ClientListPanel: React.FC = () => {
   ];
 
   return (
-    <Card className="shadow-sm transition-all duration-200 animate-fade-in glass-panel" data-testid="client-list-panel">
-      <CardHeader className="pb-2">
+    <Card className="shadow-sm transition-all duration-200 animate-fade-in glass-panel h-full flex flex-col" data-testid="client-list-panel">
+      <CardHeader className="pb-2 flex-shrink-0">
         <div className="flex items-center justify-between">
           <CardTitle className="text-lg font-medium flex items-center">
             <span>Connected Clients</span>
@@ -120,7 +120,7 @@ const ClientListPanel: React.FC = () => {
         </div>
       </CardHeader>
       
-      <CardContent className="pb-4">
+      <CardContent className="pb-4 flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="h-64 flex items-center justify-center">
             <div className="animate-pulse flex flex-col items-center gap-3">

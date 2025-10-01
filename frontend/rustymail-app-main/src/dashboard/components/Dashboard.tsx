@@ -195,7 +195,7 @@ const Dashboard: React.FC = () => {
             <div className="flex flex-col min-h-0" data-testid="right-panels-container">
               {/* StatsPanel */}
               <div
-                className="overflow-hidden"
+                className="overflow-hidden flex flex-col"
                 style={{ height: `${rightPanel1Height}%` }}
               >
                 <StatsPanel />
@@ -216,7 +216,7 @@ const Dashboard: React.FC = () => {
 
               {/* ClientListPanel */}
               <div
-                className="overflow-hidden"
+                className="overflow-hidden flex flex-col"
                 style={{ height: `${rightPanel2Height}%` }}
               >
                 <ClientListPanel />
@@ -237,7 +237,7 @@ const Dashboard: React.FC = () => {
 
               {/* McpTools */}
               <div
-                className="flex-1 min-h-0 overflow-hidden"
+                className="flex-1 min-h-0 overflow-hidden flex flex-col"
                 style={{ height: `calc(${100 - rightPanel1Height - rightPanel2Height}% - 1.5rem)` }}
               >
                 <McpTools />

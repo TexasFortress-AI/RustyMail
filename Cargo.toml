@@ -97,6 +97,9 @@ lru = "0.12" # For in-memory LRU cache
 
 # Dashboard dependencies
 sysinfo = "0.30" # For system metrics
+
+# Lazy static for MIME decoder
+lazy_static = "1.4"
 rand = "0.8" # For random number generation in example metrics
 reqwest = { version = "0.12", features = ["json"] }
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", branch = "main", features = ["server"] } # Use the MCP SDK

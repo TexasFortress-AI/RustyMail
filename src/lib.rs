@@ -12,6 +12,7 @@ pub mod transport;
 pub mod mcp_port;
 pub mod session_manager;
 pub mod connection_pool;
+pub mod utils;
 
 // Re-export key types for convenience
 pub mod prelude {

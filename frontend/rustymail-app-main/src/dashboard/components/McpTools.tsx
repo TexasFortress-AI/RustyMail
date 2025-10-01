@@ -93,8 +93,8 @@ const McpTools: React.FC = () => {
   };
 
   return (
-    <div className="bg-gray-800 rounded-lg p-4">
-      <div className="flex items-center gap-2 mb-4">
+    <div className="bg-gray-800 rounded-lg p-4 h-full flex flex-col">
+      <div className="flex items-center gap-2 mb-4 flex-shrink-0">
         <Terminal className="w-5 h-5 text-blue-400" />
         <h3 className="text-lg font-semibold text-white">MCP Email Tools</h3>
         <span className="text-xs text-gray-400 ml-auto">
@@ -103,12 +103,12 @@ const McpTools: React.FC = () => {
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/50 rounded p-3 mb-4">
+        <div className="bg-red-500/10 border border-red-500/50 rounded p-3 mb-4 flex-shrink-0">
           <p className="text-red-400 text-sm">{error}</p>
         </div>
       )}
 
-      <div className="space-y-2">
+      <div className="space-y-2 flex-1 overflow-y-auto">
         {tools.map(tool => (
           <div key={tool.name} className="border border-gray-700 rounded overflow-hidden">
             {/* Tool Header */}

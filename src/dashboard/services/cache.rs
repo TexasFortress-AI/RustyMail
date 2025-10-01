@@ -280,7 +280,11 @@ impl CacheService {
                 .map(|a| format!("{}@{}", a.mailbox.as_deref().unwrap_or(""), a.host.as_deref().unwrap_or("")))
                 .collect();
 
-            (envelope.message_id.clone(), envelope.subject.clone(),
+            // Decode MIME-encoded subject if present
+            let decoded_subject = envelope.subject.as_ref()
+                .map(|s| crate::utils::decode_mime_header(s));
+
+            (envelope.message_id.clone(), decoded_subject,
              Some(from_str), from_name_str, to_vec, cc_vec, None::<chrono::DateTime<chrono::Utc>>)
         } else {
             (None, None, None, None, Vec::new(), Vec::new(), None)

@@ -44,8 +44,8 @@ const StatsPanel: React.FC = () => {
   const StatusIcon = healthStatus.icon;
 
   return (
-    <Card className="shadow-sm transition-all duration-200 animate-fade-in glass-panel" data-testid="stats-panel">
-      <CardHeader className="pb-2">
+    <Card className="shadow-sm transition-all duration-200 animate-fade-in glass-panel h-full flex flex-col" data-testid="stats-panel">
+      <CardHeader className="pb-2 flex-shrink-0">
         <CardTitle className="text-lg font-medium flex items-center justify-between">
           <span>System Statistics</span>
           {stats && (
@@ -55,8 +55,8 @@ const StatsPanel: React.FC = () => {
           )}
         </CardTitle>
       </CardHeader>
-      
-      <CardContent className="pb-4">
+
+      <CardContent className="pb-4 flex-1 overflow-y-auto">
         {isLoading ? (
           <div className="h-64 flex items-center justify-center">
             <div className="animate-pulse flex flex-col items-center gap-3">
