@@ -313,7 +313,7 @@ impl AiService {
                 self.call_mcp_tool("count_emails_in_folder", json!({"folder": "INBOX"})).await
             }) {
                 Ok(result) => {
-                    if let Some(count) = result.get("count").and_then(|c| c.as_i64()) {
+                    if let Some(count) = result.get("data").and_then(|d| d.get("count")).and_then(|c| c.as_i64()) {
                         format!("You have {} total emails in your inbox. All emails have been synced and cached locally.", count)
                     } else {
                         "I'm having trouble getting the email count. Please try again.".to_string()
@@ -327,8 +327,9 @@ impl AiService {
             match rt.block_on(async {
                 // Get folder stats via MCP
                 let stats_result = self.call_mcp_tool("get_folder_stats", json!({"folder": "INBOX"})).await?;
-                let total = stats_result.get("total_emails").and_then(|t| t.as_i64()).unwrap_or(0);
-                let unread = stats_result.get("unread_count").and_then(|u| u.as_i64()).unwrap_or(0);
+                let stats_data = stats_result.get("data").unwrap_or(&stats_result);
+                let total = stats_data.get("total_emails").and_then(|t| t.as_i64()).unwrap_or(0);
+                let unread = stats_data.get("unread_count").and_then(|u| u.as_i64()).unwrap_or(0);
 
                 // Get recent emails via MCP
                 let emails_result = self.call_mcp_tool("list_cached_emails", json!({
@@ -337,7 +338,7 @@ impl AiService {
                     "offset": 0
                 })).await?;
 
-                let shown = emails_result.get("emails")
+                let shown = emails_result.get("data")
                     .and_then(|e| e.as_array())
                     .map(|a| a.len())
                     .unwrap_or(0);
@@ -400,12 +401,13 @@ impl AiService {
 
         let body = json!({
             "tool": tool_name,
-            "args": args
+            "parameters": args
         });
 
         match self.http_client
             .post(&url)
             .header("Content-Type", "application/json")
+            .header("X-API-Key", "test-rustymail-key-2024")
             .json(&body)
             .send()
             .await
@@ -428,7 +430,10 @@ impl AiService {
 
         // Get total email count first
         let total_count = match self.call_mcp_tool("count_emails_in_folder", json!({"folder": "INBOX"})).await {
-            Ok(result) => result.get("count").and_then(|c| c.as_i64()).unwrap_or(0),
+            Ok(result) => result.get("data")
+                .and_then(|d| d.get("count"))
+                .and_then(|c| c.as_i64())
+                .unwrap_or(0),
             Err(e) => {
                 error!("Failed to get email count via MCP: {}", e);
                 return None;
@@ -449,7 +454,7 @@ impl AiService {
         };
 
         // Build context from MCP response
-        if let Some(emails) = emails_result.get("emails").and_then(|e| e.as_array()) {
+        if let Some(emails) = emails_result.get("data").and_then(|e| e.as_array()) {
             let mut context = format!("You have {} total emails in your inbox.\n", total_count);
 
             if !emails.is_empty() {
