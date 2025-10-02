@@ -21,7 +21,7 @@ WARNING: Don't use over-generalized searches in the code base, because the resul
 
 REMEMBER: The PURPOSE of your memory is to keep track of key insights, and decision points, so you can use them to make informed decisions. When you have to make a decision, you should first check for relevant memories. And once the decision is made, you should always remember WHY you made that decision, and WHAT the decision was, and how it relates to the overall goal, and the KEY INSIGHTS derived along the way.
 
-REMEMBER: When I ask you something, you should check your memories, in addition to searching the code, to find the answer.
+REMEMBER: When I ask you about something we've already discussed, you should check your memories, in addition to searching the code, to find the answer.
 
 IMPORTANT: Remember to use taskmaster for tracking all tasks and progress. (use "taskmaster next" to see next task).
 IMPORTANT: Make sure the project always builds and passes all tests before continuing to the next task.
