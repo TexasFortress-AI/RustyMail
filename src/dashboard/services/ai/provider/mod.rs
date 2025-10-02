@@ -7,6 +7,13 @@ pub mod openai;
 pub mod openrouter;
 pub mod morpheus;
 pub mod ollama;
+pub mod anthropic;
+pub mod deepseek;
+pub mod xai;
+pub mod gemini;
+pub mod mistral;
+pub mod together;
+pub mod azure;
 
 /// Common message structure for AI chat completion APIs (OpenAI, OpenRouter)
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -42,6 +49,13 @@ pub use openai::OpenAiAdapter;
 pub use openrouter::OpenRouterAdapter;
 pub use morpheus::MorpheusAdapter;
 pub use ollama::OllamaAdapter;
+pub use anthropic::AnthropicAdapter;
+pub use deepseek::DeepSeekAdapter;
+pub use xai::XAIAdapter;
+pub use gemini::GeminiAdapter;
+pub use mistral::MistralAdapter;
+pub use together::TogetherAdapter;
+pub use azure::AzureOpenAIAdapter;
 
 // --- Mock Provider Implementation ---
 #[derive(Debug, Default)]

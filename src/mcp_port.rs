@@ -4,6 +4,7 @@ use tokio::sync::Mutex as TokioMutex;
 use crate::mcp::{types::{JsonRpcError, McpPortState}};
 use crate::imap::client::ImapClient;
 use crate::imap::session::AsyncImapSessionWrapper;
+use crate::imap::types::FlagOperation;
 use base64::{engine::general_purpose, Engine as _};
 use log::{info, warn, error, debug};
 use async_trait::async_trait;
@@ -504,6 +505,94 @@ pub async fn expunge_tool(
     }))
 }
 
+/// Tool for marking messages as read (adds \Seen flag)
+pub async fn mark_as_read_tool(
+    session: Arc<dyn AsyncImapOps>,
+    _state: Arc<TokioMutex<McpPortState>>,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
+
+    // Extract UIDs
+    let uids = if let Some(uids_array) = params.get("uids") {
+        if let Some(uids_vec) = uids_array.as_array() {
+            uids_vec.iter()
+                .filter_map(|v| v.as_u64().map(|u| u as u32))
+                .collect::<Vec<u32>>()
+        } else {
+            return Err(JsonRpcError::invalid_params("uids must be an array of numbers"));
+        }
+    } else {
+        return Err(JsonRpcError::invalid_params("uids parameter is required"));
+    };
+
+    if uids.is_empty() {
+        return Err(JsonRpcError::invalid_params("At least one UID must be provided"));
+    }
+
+    // Mark messages as read by adding \Seen flag
+    session.store_flags(&uids, FlagOperation::Add, &vec!["\\Seen".to_string()]).await.map_err(|e| {
+        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("mark_as_read".to_string()));
+        if let Some(data) = error.data.as_mut() {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("uids".to_string(), serde_json::to_value(&uids).unwrap_or_default());
+            }
+        }
+        error
+    })?;
+
+    Ok(json!({
+        "success": true,
+        "message": format!("Successfully marked {} messages as read", uids.len()),
+        "marked_uids": uids,
+        "note": "\\Seen flag has been added to these messages"
+    }))
+}
+
+/// Tool for marking messages as unread (removes \Seen flag)
+pub async fn mark_as_unread_tool(
+    session: Arc<dyn AsyncImapOps>,
+    _state: Arc<TokioMutex<McpPortState>>,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
+
+    // Extract UIDs
+    let uids = if let Some(uids_array) = params.get("uids") {
+        if let Some(uids_vec) = uids_array.as_array() {
+            uids_vec.iter()
+                .filter_map(|v| v.as_u64().map(|u| u as u32))
+                .collect::<Vec<u32>>()
+        } else {
+            return Err(JsonRpcError::invalid_params("uids must be an array of numbers"));
+        }
+    } else {
+        return Err(JsonRpcError::invalid_params("uids parameter is required"));
+    };
+
+    if uids.is_empty() {
+        return Err(JsonRpcError::invalid_params("At least one UID must be provided"));
+    }
+
+    // Mark messages as unread by removing \Seen flag
+    session.store_flags(&uids, FlagOperation::Remove, &vec!["\\Seen".to_string()]).await.map_err(|e| {
+        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("mark_as_unread".to_string()));
+        if let Some(data) = error.data.as_mut() {
+            if let Some(obj) = data.as_object_mut() {
+                obj.insert("uids".to_string(), serde_json::to_value(&uids).unwrap_or_default());
+            }
+        }
+        error
+    })?;
+
+    Ok(json!({
+        "success": true,
+        "message": format!("Successfully marked {} messages as unread", uids.len()),
+        "marked_uids": uids,
+        "note": "\\Seen flag has been removed from these messages"
+    }))
+}
+
 // Function to create and populate the registry
 pub fn create_mcp_tool_registry() -> McpToolRegistry {
     let mut registry = McpToolRegistry::new();
@@ -519,6 +608,8 @@ pub fn create_mcp_tool_registry() -> McpToolRegistry {
     registry.register("delete_messages", DefaultMcpTool::new("delete_messages", delete_messages_tool));
     registry.register("undelete_messages", DefaultMcpTool::new("undelete_messages", undelete_messages_tool));
     registry.register("expunge", DefaultMcpTool::new("expunge", expunge_tool));
+    registry.register("mark_as_read", DefaultMcpTool::new("mark_as_read", mark_as_read_tool));
+    registry.register("mark_as_unread", DefaultMcpTool::new("mark_as_unread", mark_as_unread_tool));
 
     // Cache tools - these work with the email_cache.db database
     registry.register("list_cached_emails", DefaultMcpTool::new("list_cached_emails", list_cached_emails_tool));

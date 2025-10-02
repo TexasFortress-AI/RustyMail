@@ -8,7 +8,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use crate::api::errors::ApiError as RestApiError;
-use super::provider::{AiProvider, AiChatMessage, OpenAiAdapter, OpenRouterAdapter, MorpheusAdapter, OllamaAdapter, MockAiProvider};
+use super::provider::{
+    AiProvider, AiChatMessage,
+    OpenAiAdapter, OpenRouterAdapter, MorpheusAdapter, OllamaAdapter, MockAiProvider,
+    AnthropicAdapter, DeepSeekAdapter, XAIAdapter, GeminiAdapter,
+    MistralAdapter, TogetherAdapter, AzureOpenAIAdapter
+};
 use reqwest::Client;
 
 // Provider configuration
@@ -30,6 +35,13 @@ pub enum ProviderType {
     OpenRouter,
     Morpheus,
     Ollama,
+    Anthropic,
+    DeepSeek,
+    XAI,
+    Gemini,
+    Mistral,
+    Together,
+    Azure,
     Mock,
 }
 
@@ -157,6 +169,148 @@ impl ProviderManager {
             info!("Initialized Ollama provider");
         }
 
+        // Check for Anthropic Claude configuration
+        if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
+            let config = ProviderConfig {
+                name: "anthropic".to_string(),
+                provider_type: ProviderType::Anthropic,
+                api_key: Some(api_key.clone()),
+                model: std::env::var("ANTHROPIC_MODEL")
+                    .unwrap_or_else(|_| "claude-sonnet-4-5".to_string()),
+                max_tokens: None,
+                temperature: None,
+                priority: 5,
+                enabled: true,
+            };
+            configs.push(config);
+            let provider = Arc::new(AnthropicAdapter::new(api_key, self.http_client.clone()));
+            self.providers.write().await.insert("anthropic".to_string(), provider);
+            info!("Initialized Anthropic Claude provider");
+        }
+
+        // Check for DeepSeek configuration
+        if let Ok(api_key) = std::env::var("DEEPSEEK_API_KEY") {
+            let config = ProviderConfig {
+                name: "deepseek".to_string(),
+                provider_type: ProviderType::DeepSeek,
+                api_key: Some(api_key.clone()),
+                model: std::env::var("DEEPSEEK_MODEL")
+                    .unwrap_or_else(|_| "deepseek-chat".to_string()),
+                max_tokens: None,
+                temperature: None,
+                priority: 6,
+                enabled: true,
+            };
+            configs.push(config);
+            let provider = Arc::new(DeepSeekAdapter::new(api_key, self.http_client.clone()));
+            self.providers.write().await.insert("deepseek".to_string(), provider);
+            info!("Initialized DeepSeek provider");
+        }
+
+        // Check for xAI (Grok) configuration
+        if let Ok(api_key) = std::env::var("XAI_API_KEY") {
+            let config = ProviderConfig {
+                name: "xai".to_string(),
+                provider_type: ProviderType::XAI,
+                api_key: Some(api_key.clone()),
+                model: std::env::var("XAI_MODEL")
+                    .unwrap_or_else(|_| "grok-beta".to_string()),
+                max_tokens: None,
+                temperature: None,
+                priority: 7,
+                enabled: true,
+            };
+            configs.push(config);
+            let provider = Arc::new(XAIAdapter::new(api_key, self.http_client.clone()));
+            self.providers.write().await.insert("xai".to_string(), provider);
+            info!("Initialized xAI (Grok) provider");
+        }
+
+        // Check for Google Gemini configuration
+        if let Ok(api_key) = std::env::var("GEMINI_API_KEY") {
+            let config = ProviderConfig {
+                name: "gemini".to_string(),
+                provider_type: ProviderType::Gemini,
+                api_key: Some(api_key.clone()),
+                model: std::env::var("GEMINI_MODEL")
+                    .unwrap_or_else(|_| "gemini-2.5-flash".to_string()),
+                max_tokens: None,
+                temperature: None,
+                priority: 8,
+                enabled: true,
+            };
+            configs.push(config);
+            let provider = Arc::new(GeminiAdapter::new(api_key, self.http_client.clone()));
+            self.providers.write().await.insert("gemini".to_string(), provider);
+            info!("Initialized Google Gemini provider");
+        }
+
+        // Check for Mistral AI configuration
+        if let Ok(api_key) = std::env::var("MISTRAL_API_KEY") {
+            let config = ProviderConfig {
+                name: "mistral".to_string(),
+                provider_type: ProviderType::Mistral,
+                api_key: Some(api_key.clone()),
+                model: std::env::var("MISTRAL_MODEL")
+                    .unwrap_or_else(|_| "mistral-large-latest".to_string()),
+                max_tokens: None,
+                temperature: None,
+                priority: 9,
+                enabled: true,
+            };
+            configs.push(config);
+            let provider = Arc::new(MistralAdapter::new(api_key, self.http_client.clone()));
+            self.providers.write().await.insert("mistral".to_string(), provider);
+            info!("Initialized Mistral AI provider");
+        }
+
+        // Check for Together AI configuration
+        if let Ok(api_key) = std::env::var("TOGETHER_API_KEY") {
+            let config = ProviderConfig {
+                name: "together".to_string(),
+                provider_type: ProviderType::Together,
+                api_key: Some(api_key.clone()),
+                model: std::env::var("TOGETHER_MODEL")
+                    .unwrap_or_else(|_| "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo".to_string()),
+                max_tokens: None,
+                temperature: None,
+                priority: 10,
+                enabled: true,
+            };
+            configs.push(config);
+            let provider = Arc::new(TogetherAdapter::new(api_key, self.http_client.clone()));
+            self.providers.write().await.insert("together".to_string(), provider);
+            info!("Initialized Together AI provider");
+        }
+
+        // Check for Azure OpenAI configuration
+        if let Ok(api_key) = std::env::var("AZURE_OPENAI_API_KEY") {
+            // Azure requires endpoint to be set
+            if std::env::var("AZURE_OPENAI_ENDPOINT").is_ok() {
+                let config = ProviderConfig {
+                    name: "azure".to_string(),
+                    provider_type: ProviderType::Azure,
+                    api_key: Some(api_key.clone()),
+                    model: std::env::var("AZURE_OPENAI_DEPLOYMENT")
+                        .unwrap_or_else(|_| "gpt-4".to_string()),
+                    max_tokens: None,
+                    temperature: None,
+                    priority: 11,
+                    enabled: true,
+                };
+                configs.push(config);
+                match AzureOpenAIAdapter::new(api_key, self.http_client.clone()) {
+                    Ok(provider) => {
+                        self.providers.write().await.insert("azure".to_string(), Arc::new(provider));
+                        info!("Initialized Azure OpenAI provider");
+                    }
+                    Err(e) => {
+                        warn!("Failed to initialize Azure OpenAI provider: {:?}", e);
+                    }
+                }
+            }
+        }
+
         // Always add mock provider as fallback
         let mock_config = ProviderConfig {
             name: "mock".to_string(),
@@ -219,6 +373,62 @@ impl ProviderManager {
                     .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
                 Arc::new(OllamaAdapter::new(base_url, self.http_client.clone())
                     .with_model(config.model.clone()))
+            },
+            ProviderType::Anthropic => {
+                let api_key = config.api_key.as_ref()
+                    .ok_or_else(|| RestApiError::UnprocessableEntity {
+                        message: "Anthropic provider requires API key".to_string()
+                    })?;
+                Arc::new(AnthropicAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
+            },
+            ProviderType::DeepSeek => {
+                let api_key = config.api_key.as_ref()
+                    .ok_or_else(|| RestApiError::UnprocessableEntity {
+                        message: "DeepSeek provider requires API key".to_string()
+                    })?;
+                Arc::new(DeepSeekAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
+            },
+            ProviderType::XAI => {
+                let api_key = config.api_key.as_ref()
+                    .ok_or_else(|| RestApiError::UnprocessableEntity {
+                        message: "xAI provider requires API key".to_string()
+                    })?;
+                Arc::new(XAIAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
+            },
+            ProviderType::Gemini => {
+                let api_key = config.api_key.as_ref()
+                    .ok_or_else(|| RestApiError::UnprocessableEntity {
+                        message: "Gemini provider requires API key".to_string()
+                    })?;
+                Arc::new(GeminiAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
+            },
+            ProviderType::Mistral => {
+                let api_key = config.api_key.as_ref()
+                    .ok_or_else(|| RestApiError::UnprocessableEntity {
+                        message: "Mistral provider requires API key".to_string()
+                    })?;
+                Arc::new(MistralAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
+            },
+            ProviderType::Together => {
+                let api_key = config.api_key.as_ref()
+                    .ok_or_else(|| RestApiError::UnprocessableEntity {
+                        message: "Together AI provider requires API key".to_string()
+                    })?;
+                Arc::new(TogetherAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
+            },
+            ProviderType::Azure => {
+                let api_key = config.api_key.as_ref()
+                    .ok_or_else(|| RestApiError::UnprocessableEntity {
+                        message: "Azure OpenAI provider requires API key".to_string()
+                    })?;
+                AzureOpenAIAdapter::new(api_key.clone(), self.http_client.clone())
+                    .map(|adapter| Arc::new(adapter) as Arc<dyn AiProvider>)?
             },
             ProviderType::Mock => {
                 Arc::new(MockAiProvider)
@@ -416,6 +626,62 @@ impl ProviderManager {
                     .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
                 Arc::new(OllamaAdapter::new(base_url, self.http_client.clone())
                     .with_model(config.model.clone()))
+            },
+            ProviderType::Anthropic => {
+                let api_key = config.api_key.as_ref()
+                    .ok_or_else(|| RestApiError::UnprocessableEntity {
+                        message: "Anthropic provider requires API key".to_string()
+                    })?;
+                Arc::new(AnthropicAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
+            },
+            ProviderType::DeepSeek => {
+                let api_key = config.api_key.as_ref()
+                    .ok_or_else(|| RestApiError::UnprocessableEntity {
+                        message: "DeepSeek provider requires API key".to_string()
+                    })?;
+                Arc::new(DeepSeekAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
+            },
+            ProviderType::XAI => {
+                let api_key = config.api_key.as_ref()
+                    .ok_or_else(|| RestApiError::UnprocessableEntity {
+                        message: "xAI provider requires API key".to_string()
+                    })?;
+                Arc::new(XAIAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
+            },
+            ProviderType::Gemini => {
+                let api_key = config.api_key.as_ref()
+                    .ok_or_else(|| RestApiError::UnprocessableEntity {
+                        message: "Gemini provider requires API key".to_string()
+                    })?;
+                Arc::new(GeminiAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
+            },
+            ProviderType::Mistral => {
+                let api_key = config.api_key.as_ref()
+                    .ok_or_else(|| RestApiError::UnprocessableEntity {
+                        message: "Mistral provider requires API key".to_string()
+                    })?;
+                Arc::new(MistralAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
+            },
+            ProviderType::Together => {
+                let api_key = config.api_key.as_ref()
+                    .ok_or_else(|| RestApiError::UnprocessableEntity {
+                        message: "Together AI provider requires API key".to_string()
+                    })?;
+                Arc::new(TogetherAdapter::new(api_key.clone(), self.http_client.clone())
+                    .with_model(config.model.clone()))
+            },
+            ProviderType::Azure => {
+                let api_key = config.api_key.as_ref()
+                    .ok_or_else(|| RestApiError::UnprocessableEntity {
+                        message: "Azure OpenAI provider requires API key".to_string()
+                    })?;
+                AzureOpenAIAdapter::new(api_key.clone(), self.http_client.clone())
+                    .map(|adapter| Arc::new(adapter) as Arc<dyn AiProvider>)?
             },
             ProviderType::Mock => {
                 Arc::new(MockAiProvider)

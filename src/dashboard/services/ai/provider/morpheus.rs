@@ -9,9 +9,12 @@ use crate::dashboard::api::errors::ApiError;
 use super::{AiProvider, AiChatMessage}; // Import trait and common message struct
 use crate::api::errors::ApiError as RestApiError;
 
-// Morpheus API constants
-const MORPHEUS_API_BASE_URL: &str = "https://api.dev.mor.org/api/v1";
-const MORPHEUS_MODELS_URL: &str = "https://api.dev.mor.org/api/v1/models/allmodels";
+// Get Morpheus API base URL from environment or use default
+fn get_base_url() -> String {
+    std::env::var("MORPHEUS_BASE_URL")
+        .unwrap_or_else(|_| "https://api.dev.mor.org/api/v1".to_string())
+}
+
 const DEFAULT_MORPHEUS_MODEL: &str = "LMR-Hermes-3-Llama-3.1-8B";
 
 // --- Morpheus Specific Request/Response Structs ---
@@ -64,7 +67,8 @@ impl MorpheusAdapter {
         Self {
             api_key,
             http_client,
-            model: DEFAULT_MORPHEUS_MODEL.to_string(),
+            model: std::env::var("MORPHEUS_MODEL")
+                .unwrap_or_else(|_| DEFAULT_MORPHEUS_MODEL.to_string()),
         }
     }
 
@@ -80,9 +84,11 @@ impl MorpheusAdapter {
 impl AiProvider for MorpheusAdapter {
     async fn get_available_models(&self) -> Result<Vec<String>, RestApiError> {
         debug!("Fetching available models from Morpheus API");
+        let base_url = get_base_url();
+        let models_url = format!("{}/models/allmodels", base_url);
 
         let response = self.http_client
-            .get(MORPHEUS_MODELS_URL)
+            .get(&models_url)
             .bearer_auth(&self.api_key)
             .timeout(std::time::Duration::from_secs(30))
             .send()
@@ -128,7 +134,8 @@ impl AiProvider for MorpheusAdapter {
     }
 
     async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError> {
-        let url = format!("{}/chat/completions", MORPHEUS_API_BASE_URL);
+        let base_url = get_base_url();
+        let url = format!("{}/chat/completions", base_url);
 
         let request_payload = MorpheusChatRequest {
             model: self.model.clone(),

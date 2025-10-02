@@ -5,7 +5,14 @@ import { config } from '../config';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
-import { RefreshCw, Mail, ChevronLeft, ChevronRight, X } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { RefreshCw, Mail, ChevronLeft, ChevronRight, X, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface Email {
@@ -28,9 +35,15 @@ interface EmailListResponse {
 }
 
 const EmailList: React.FC = () => {
+  const [currentFolder, setCurrentFolder] = useState('INBOX');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const pageSize = 20;
+
+  // Reset to page 1 when folder changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [currentFolder]);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery<EmailListResponse>({
     queryKey: ['emails', currentPage],
@@ -115,9 +128,23 @@ const EmailList: React.FC = () => {
   return (
     <Card className="h-full flex flex-col">
       <CardHeader className="flex flex-row items-center justify-between flex-shrink-0">
-        <CardTitle className="flex items-center gap-2">
+        <CardTitle className="flex items-center gap-3">
           <Mail className="h-5 w-5" />
-          Inbox ({data?.emails.length || 0} of 279 emails)
+          <Select value={currentFolder} onValueChange={setCurrentFolder}>
+            <SelectTrigger className="w-[180px] h-8">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="INBOX">Inbox</SelectItem>
+              <SelectItem value="Sent">Sent</SelectItem>
+              <SelectItem value="Drafts">Drafts</SelectItem>
+              <SelectItem value="Trash">Trash</SelectItem>
+              <SelectItem value="Spam">Spam</SelectItem>
+            </SelectContent>
+          </Select>
+          <span className="text-sm font-normal text-muted-foreground">
+            ({data?.emails.length || 0} of 279 emails)
+          </span>
         </CardTitle>
         <div className="flex gap-2">
           <Button
@@ -174,27 +201,49 @@ const EmailList: React.FC = () => {
 
             {/* Pagination */}
             <div className="flex items-center justify-between mt-4 pt-4 border-t flex-shrink-0">
-              <Button
-                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                disabled={currentPage === 1}
-                size="sm"
-                variant="outline"
-              >
-                <ChevronLeft className="h-4 w-4 mr-1" />
-                Previous
-              </Button>
+              <div className="flex gap-1">
+                <Button
+                  onClick={() => setCurrentPage(1)}
+                  disabled={currentPage === 1}
+                  size="sm"
+                  variant="outline"
+                  title="First page"
+                >
+                  <ChevronsLeft className="h-4 w-4" />
+                </Button>
+                <Button
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                  size="sm"
+                  variant="outline"
+                >
+                  <ChevronLeft className="h-4 w-4 mr-1" />
+                  Previous
+                </Button>
+              </div>
               <span className="text-sm text-gray-600">
                 Page {currentPage} of {totalPages}
               </span>
-              <Button
-                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                disabled={currentPage >= totalPages}
-                size="sm"
-                variant="outline"
-              >
-                Next
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
+              <div className="flex gap-1">
+                <Button
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages}
+                  size="sm"
+                  variant="outline"
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+                <Button
+                  onClick={() => setCurrentPage(totalPages)}
+                  disabled={currentPage >= totalPages}
+                  size="sm"
+                  variant="outline"
+                  title="Last page"
+                >
+                  <ChevronsRight className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
           </div>
         )}

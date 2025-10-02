@@ -7,9 +7,12 @@ use log::{debug, warn, error};
 use crate::api::errors::ApiError as RestApiError;
 use super::{AiProvider, AiChatMessage}; // Import trait and common message struct
 
-// OpenRouter API constants
-const OPENROUTER_API_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
-const OPENROUTER_MODELS_URL: &str = "https://openrouter.ai/api/v1/models";
+// Get OpenRouter API base URL from environment or use default
+fn get_base_url() -> String {
+    std::env::var("OPENROUTER_BASE_URL")
+        .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string())
+}
+
 const DEFAULT_OPENROUTER_MODEL: &str = "deepseek/deepseek-coder-v2-lite-instruct";
 const REFERER_HEADER_VALUE: &str = "http://localhost/rustymail-dashboard"; // Example value
 const TITLE_HEADER_VALUE: &str = "RustyMail Dashboard"; // Example value
@@ -87,9 +90,11 @@ impl OpenRouterAdapter {
 impl AiProvider for OpenRouterAdapter {
     async fn get_available_models(&self) -> Result<Vec<String>, RestApiError> {
         debug!("Fetching available models from OpenRouter API");
+        let base_url = get_base_url();
+        let models_url = format!("{}/models", base_url);
 
         let response = self.http_client
-            .get(OPENROUTER_MODELS_URL)
+            .get(&models_url)
             .headers(self.common_headers.clone())
             .header(AUTHORIZATION, format!("Bearer {}", self.api_key))
             .timeout(std::time::Duration::from_secs(30))
@@ -121,16 +126,19 @@ impl AiProvider for OpenRouterAdapter {
     }
 
     async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError> {
+        let base_url = get_base_url();
+        let chat_url = format!("{}/chat/completions", base_url);
+
         let request_payload = OpenRouterChatRequest {
             model: self.model.clone(),
             messages: messages.to_vec(),
         };
 
-        debug!("Sending request to OpenRouter API: model={}, messages_count={}", 
-               request_payload.model, request_payload.messages.len());
+        debug!("Sending request to OpenRouter API: model={}, messages_count={}, url={}",
+               request_payload.model, request_payload.messages.len(), chat_url);
 
         let response = self.http_client
-            .post(OPENROUTER_API_URL)
+            .post(&chat_url)
             // Set common headers (Referer, X-Title, User-Agent)
             .headers(self.common_headers.clone()) 
             // Set authorization header

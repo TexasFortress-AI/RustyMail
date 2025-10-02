@@ -8,9 +8,12 @@ use crate::dashboard::api::errors::ApiError;
 use super::{AiProvider, AiChatMessage}; // Import trait and common message struct
 use crate::api::errors::ApiError as RestApiError;
 
-// OpenAI API constants
-const OPENAI_API_URL: &str = "https://api.openai.com/v1/chat/completions";
-const OPENAI_MODELS_URL: &str = "https://api.openai.com/v1/models";
+// Get OpenAI API base URL from environment or use default
+fn get_base_url() -> String {
+    std::env::var("OPENAI_BASE_URL")
+        .unwrap_or_else(|_| "https://api.openai.com/v1".to_string())
+}
+
 const DEFAULT_OPENAI_MODEL: &str = "gpt-4o-mini"; 
 
 // --- OpenAI Specific Request/Response Structs ---
@@ -61,7 +64,8 @@ impl OpenAiAdapter {
         Self {
             api_key,
             http_client,
-            model: DEFAULT_OPENAI_MODEL.to_string(),
+            model: std::env::var("OPENAI_MODEL")
+                .unwrap_or_else(|_| DEFAULT_OPENAI_MODEL.to_string()),
         }
     }
 
@@ -77,9 +81,11 @@ impl OpenAiAdapter {
 impl AiProvider for OpenAiAdapter {
     async fn get_available_models(&self) -> Result<Vec<String>, RestApiError> {
         debug!("Fetching available models from OpenAI API");
+        let base_url = get_base_url();
+        let models_url = format!("{}/models", base_url);
 
         let response = self.http_client
-            .get(OPENAI_MODELS_URL)
+            .get(&models_url)
             .bearer_auth(&self.api_key)
             .timeout(std::time::Duration::from_secs(30))
             .send()
@@ -111,16 +117,19 @@ impl AiProvider for OpenAiAdapter {
     }
 
     async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError> {
+        let base_url = get_base_url();
+        let chat_url = format!("{}/chat/completions", base_url);
+
         let request_payload = OpenAiChatRequest {
             model: self.model.clone(),
             messages: messages.to_vec(), // Clone messages for the request
         };
 
-        debug!("Sending request to OpenAI API: model={}, messages_count={}", 
-               request_payload.model, request_payload.messages.len());
+        debug!("Sending request to OpenAI API: model={}, messages_count={}, url={}",
+               request_payload.model, request_payload.messages.len(), chat_url);
 
         let response = self.http_client
-            .post(OPENAI_API_URL)
+            .post(&chat_url)
             .bearer_auth(&self.api_key)
             .json(&request_payload)
             .timeout(std::time::Duration::from_secs(30))
