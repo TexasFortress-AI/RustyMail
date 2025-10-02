@@ -436,6 +436,28 @@ impl AiService {
     async fn fetch_email_context_mcp(&self, query: &str) -> Option<String> {
         let query_lower = query.to_lowercase();
 
+        // Check if query is about folders
+        if query_lower.contains("folder") || query_lower.contains("mailbox") {
+            match self.call_mcp_tool("list_folders", json!({})).await {
+                Ok(result) => {
+                    if let Some(folders) = result.get("data").and_then(|d| d.as_array()) {
+                        let folder_names: Vec<String> = folders.iter()
+                            .filter_map(|f| f.as_str())
+                            .map(|s| s.to_string())
+                            .collect();
+
+                        let context = format!("Your email account has {} folders:\n{}",
+                            folder_names.len(),
+                            folder_names.join("\n"));
+                        return Some(context);
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to list folders via MCP: {}", e);
+                }
+            }
+        }
+
         // Get total email count first
         let total_count = match self.call_mcp_tool("count_emails_in_folder", json!({"folder": "INBOX"})).await {
             Ok(result) => result.get("data")
