@@ -1,0 +1,116 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT\n                id, account_name, email_address, provider_type,\n                imap_host, imap_port, imap_user, imap_pass, imap_use_tls,\n                smtp_host, smtp_port, smtp_user, smtp_pass, smtp_use_tls, smtp_use_starttls,\n                is_active, is_default\n            FROM accounts\n            WHERE id = ?\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "id",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "account_name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "email_address",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "provider_type",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "imap_host",
+        "ordinal": 4,
+        "type_info": "Text"
+      },
+      {
+        "name": "imap_port",
+        "ordinal": 5,
+        "type_info": "Int64"
+      },
+      {
+        "name": "imap_user",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "imap_pass",
+        "ordinal": 7,
+        "type_info": "Text"
+      },
+      {
+        "name": "imap_use_tls",
+        "ordinal": 8,
+        "type_info": "Bool"
+      },
+      {
+        "name": "smtp_host",
+        "ordinal": 9,
+        "type_info": "Text"
+      },
+      {
+        "name": "smtp_port",
+        "ordinal": 10,
+        "type_info": "Int64"
+      },
+      {
+        "name": "smtp_user",
+        "ordinal": 11,
+        "type_info": "Text"
+      },
+      {
+        "name": "smtp_pass",
+        "ordinal": 12,
+        "type_info": "Text"
+      },
+      {
+        "name": "smtp_use_tls",
+        "ordinal": 13,
+        "type_info": "Bool"
+      },
+      {
+        "name": "smtp_use_starttls",
+        "ordinal": 14,
+        "type_info": "Bool"
+      },
+      {
+        "name": "is_active",
+        "ordinal": 15,
+        "type_info": "Bool"
+      },
+      {
+        "name": "is_default",
+        "ordinal": 16,
+        "type_info": "Bool"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "8832e17e6a07aa240cf75e3a93431a2bfc9ad3372b4d726bc9128ec8d68d282b"
+}

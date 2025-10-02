@@ -1478,8 +1478,8 @@
             "dependencies": [
               "31.1"
             ],
-            "details": "Integrate provider lookup tables or use public configuration services. Handle OAuth2 where required. Provide clear error handling and fallback to manual configuration if auto-config fails.",
-            "status": "pending",
+            "details": "Integrate provider lookup tables or use public configuration services. Handle OAuth2 where required. Provide clear error handling and fallback to manual configuration if auto-config fails.\n<info added on 2025-10-02T16:16:32.435Z>\nI'll analyze the RustyMail codebase to provide specific implementation details for the subtask update.Subtask 31.2 completed successfully with comprehensive implementation of email provider auto-configuration functionality. The AccountService module now provides a complete solution with auto-detection based on email domains, pre-configured provider templates for 5 major email providers (Gmail, Outlook, Yahoo, iCloud, Fastmail), and full account management capabilities including CRUD operations and default account handling. The implementation includes proper error handling, OAuth readiness indicators, and seamless fallback to manual configuration when providers aren't found. Database integration uses SQLite with sqlx for compile-time query verification, and all type issues have been resolved. The module is fully integrated into the services architecture and ready for frontend integration and testing.\n</info added on 2025-10-02T16:16:32.435Z>",
+            "status": "done",
             "testStrategy": "Test auto-configuration with valid and invalid addresses for each supported provider. Verify correct settings are applied and fallback triggers on failure."
           },
           {
@@ -1796,7 +1796,7 @@
       ],
       "created": "2025-10-02T16:04:23.966Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-02T16:10:09.131Z"
+      "updated": "2025-10-02T16:16:39.000Z"
     }
   }
 }

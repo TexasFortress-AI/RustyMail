@@ -16,6 +16,7 @@ use tokio::sync::Mutex as TokioMutex;
 use crate::prelude::CloneableImapSessionFactory;
 use crate::connection_pool::ConnectionPool;
 
+pub mod account;
 pub mod ai;
 pub mod cache;
 pub mod clients;
@@ -37,6 +38,7 @@ pub mod sync;
 // use crate::dashboard::api::models::{ImapConfiguration}; 
 
 // Re-export main service types for convenience
+pub use account::{AccountService, Account, ProviderTemplate, AutoConfigResult};
 pub use metrics::{MetricsService};
 pub use cache::{CacheService, CacheConfig};
 pub use clients::{ClientManager};

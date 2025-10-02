@@ -1,0 +1,86 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT\n                provider_type,\n                display_name,\n                domain_patterns,\n                imap_host,\n                imap_port,\n                imap_use_tls,\n                smtp_host,\n                smtp_port,\n                smtp_use_tls,\n                smtp_use_starttls,\n                supports_oauth,\n                oauth_provider\n            FROM provider_templates\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "provider_type",
+        "ordinal": 0,
+        "type_info": "Text"
+      },
+      {
+        "name": "display_name",
+        "ordinal": 1,
+        "type_info": "Text"
+      },
+      {
+        "name": "domain_patterns",
+        "ordinal": 2,
+        "type_info": "Text"
+      },
+      {
+        "name": "imap_host",
+        "ordinal": 3,
+        "type_info": "Text"
+      },
+      {
+        "name": "imap_port",
+        "ordinal": 4,
+        "type_info": "Int64"
+      },
+      {
+        "name": "imap_use_tls",
+        "ordinal": 5,
+        "type_info": "Bool"
+      },
+      {
+        "name": "smtp_host",
+        "ordinal": 6,
+        "type_info": "Text"
+      },
+      {
+        "name": "smtp_port",
+        "ordinal": 7,
+        "type_info": "Int64"
+      },
+      {
+        "name": "smtp_use_tls",
+        "ordinal": 8,
+        "type_info": "Bool"
+      },
+      {
+        "name": "smtp_use_starttls",
+        "ordinal": 9,
+        "type_info": "Bool"
+      },
+      {
+        "name": "supports_oauth",
+        "ordinal": 10,
+        "type_info": "Bool"
+      },
+      {
+        "name": "oauth_provider",
+        "ordinal": 11,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 0
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "42486aa40da1805d38e54d917f84dfabc347f6ddefb5941134eb11cce4f63e72"
+}
