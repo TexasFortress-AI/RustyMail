@@ -1784,6 +1784,19 @@
         ],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": 37,
+        "title": "Create persistent account configuration system separate from cache database",
+        "description": "Implement a dedicated configuration file (accounts.json/accounts.toml) for storing account credentials and settings, keeping the cache database only for cached emails and sync state to allow safe cache deletion.",
+        "details": "1. Create a new `ConfigAccountService` that manages accounts in a dedicated config file format (accounts.json or accounts.toml) in the config directory. 2. Design account configuration file structure with fields for account_name, email_address, provider_type, IMAP settings (host, port, user, pass, use_tls), SMTP settings, and metadata (is_active, is_default). 3. Implement file-based serialization/deserialization using serde for JSON or TOML format. 4. Update existing `AccountService` to migrate data from database to config file during startup. 5. Modify the account management APIs in `src/dashboard/api/accounts.rs` to use the new file-based system instead of database operations. 6. Update the account auto-configuration to save to config file instead of database. 7. Ensure proper file locking and atomic writes for concurrent access safety. 8. Update the `Settings` struct in `src/config.rs` to include accounts configuration file path. 9. Modify the cache database schema to remove account tables (accounts, provider_templates) and keep only email cache tables. 10. Add migration logic to move existing accounts from database to config file during first startup. 11. Update documentation to reflect the separation of concerns between config file (credentials) and cache database (emails).",
+        "testStrategy": "1. Test config file creation with sample accounts data in both JSON and TOML formats. 2. Verify atomic write operations prevent corruption during concurrent access. 3. Test migration from database-stored accounts to config file format. 4. Verify cache database can be safely deleted without losing account configuration. 5. Test account CRUD operations work correctly with file-based storage. 6. Verify auto-configuration saves to config file instead of database. 7. Test file locking prevents concurrent modification issues. 8. Verify application startup works with existing config file. 9. Test backup/restore of configuration file maintains account settings. 10. Ensure account credentials are properly secured in config file with appropriate file permissions.",
+        "status": "in-progress",
+        "dependencies": [
+          31
+        ],
+        "priority": "high",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -1796,7 +1809,7 @@
       ],
       "created": "2025-10-02T16:04:23.966Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-02T16:26:29.934Z"
+      "updated": "2025-10-02T16:45:53.946Z"
     }
   }
 }

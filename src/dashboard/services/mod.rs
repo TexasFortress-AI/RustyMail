@@ -17,6 +17,7 @@ use crate::prelude::CloneableImapSessionFactory;
 use crate::connection_pool::ConnectionPool;
 
 pub mod account;
+pub mod account_store;
 pub mod ai;
 pub mod cache;
 pub mod clients;
@@ -39,6 +40,7 @@ pub mod sync;
 
 // Re-export main service types for convenience
 pub use account::{AccountService, Account, ProviderTemplate, AutoConfigResult};
+pub use account_store::{AccountStore, StoredAccount, ImapConfig as StoredImapConfig, SmtpConfig as StoredSmtpConfig};
 pub use metrics::{MetricsService};
 pub use cache::{CacheService, CacheConfig};
 pub use clients::{ClientManager};
@@ -77,6 +79,7 @@ pub struct DashboardState {
     pub ai_service: Arc<AiService>,
     pub email_service: Arc<EmailService>,
     pub sync_service: Arc<SyncService>,
+    pub account_service: Arc<TokioMutex<AccountService>>,
     pub sse_manager: Arc<SseManager>,
     pub event_bus: Arc<EventBus>,
     pub health_service: Option<Arc<HealthService>>,

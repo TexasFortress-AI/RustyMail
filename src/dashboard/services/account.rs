@@ -3,6 +3,8 @@ use log::{info, debug, error};
 use thiserror::Error;
 use serde::{Serialize, Deserialize};
 use std::time::Duration;
+use super::account_store::{AccountStore, StoredAccount, AccountStoreError};
+use chrono::Utc;
 
 #[derive(Error, Debug)]
 pub enum AccountError {
@@ -10,6 +12,8 @@ pub enum AccountError {
     DatabaseError(#[from] sqlx::Error),
     #[error("Serialization error: {0}")]
     SerializationError(#[from] serde_json::Error),
+    #[error("Account store error: {0}")]
+    AccountStoreError(#[from] AccountStoreError),
     #[error("Account not found: {0}")]
     NotFound(String),
     #[error("Provider not supported: {0}")]
@@ -77,25 +81,53 @@ pub struct AutoConfigResult {
 
 pub struct AccountService {
     db_pool: Option<SqlitePool>,
+    account_store: AccountStore,
 }
 
 impl AccountService {
-    pub fn new() -> Self {
-        Self { db_pool: None }
+    pub fn new(config_path: &str) -> Self {
+        Self {
+            db_pool: None,
+            account_store: AccountStore::new(config_path),
+        }
     }
 
     /// Initialize the account service with database pool
     pub async fn initialize(&mut self, db_pool: SqlitePool) -> Result<(), AccountError> {
         self.db_pool = Some(db_pool);
-        info!("Account service initialized");
+        self.account_store.initialize().await?;
+        info!("Account service initialized with file-based storage");
         Ok(())
     }
 
-    /// Get database pool or return error
+    /// Get database pool or return error (only used for provider templates now)
     fn db(&self) -> Result<&SqlitePool, AccountError> {
         self.db_pool.as_ref().ok_or_else(|| {
             AccountError::OperationFailed("Database not initialized".to_string())
         })
+    }
+
+    /// Convert StoredAccount to Account (for API responses)
+    fn stored_to_account(stored: StoredAccount) -> Account {
+        Account {
+            id: 0, // ID is string-based in StoredAccount, not used in Account anymore
+            account_name: stored.account_name,
+            email_address: stored.email_address,
+            provider_type: stored.provider_type,
+            imap_host: stored.imap.host,
+            imap_port: stored.imap.port as i64,
+            imap_user: stored.imap.username,
+            imap_pass: stored.imap.password,
+            imap_use_tls: stored.imap.use_tls,
+            smtp_host: stored.smtp.as_ref().map(|s| s.host.clone()),
+            smtp_port: stored.smtp.as_ref().map(|s| s.port as i64),
+            smtp_user: stored.smtp.as_ref().map(|s| s.username.clone()),
+            smtp_pass: stored.smtp.as_ref().map(|s| s.password.clone()),
+            smtp_use_tls: stored.smtp.as_ref().map(|s| s.use_tls),
+            smtp_use_starttls: stored.smtp.as_ref().map(|s| s.use_starttls),
+            is_active: stored.is_active,
+            is_default: false, // Will be set based on config default_account_id
+        }
     }
 
     /// Auto-configure email settings based on email address
@@ -209,147 +241,66 @@ impl AccountService {
     }
 
     /// Create a new account
-    pub async fn create_account(&self, account: Account) -> Result<i64, AccountError> {
-        let db = self.db()?;
+    pub async fn create_account(&self, account: Account) -> Result<String, AccountError> {
+        let account_id = AccountStore::generate_account_id();
 
-        let result = sqlx::query!(
-            r#"
-            INSERT INTO accounts (
-                account_name, email_address, provider_type,
-                imap_host, imap_port, imap_user, imap_pass, imap_use_tls,
-                smtp_host, smtp_port, smtp_user, smtp_pass, smtp_use_tls, smtp_use_starttls,
-                is_active, is_default
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
-            account.account_name,
-            account.email_address,
-            account.provider_type,
-            account.imap_host,
-            account.imap_port,
-            account.imap_user,
-            account.imap_pass,
-            account.imap_use_tls,
-            account.smtp_host,
-            account.smtp_port,
-            account.smtp_user,
-            account.smtp_pass,
-            account.smtp_use_tls,
-            account.smtp_use_starttls,
-            account.is_active,
-            account.is_default
-        )
-        .execute(db)
-        .await?;
+        let stored_account = StoredAccount {
+            id: account_id.clone(),
+            account_name: account.account_name.clone(),
+            email_address: account.email_address.clone(),
+            provider_type: account.provider_type.clone(),
+            imap: super::account_store::ImapConfig {
+                host: account.imap_host.clone(),
+                port: account.imap_port as u16,
+                username: account.imap_user.clone(),
+                password: account.imap_pass.clone(),
+                use_tls: account.imap_use_tls,
+            },
+            smtp: account.smtp_host.as_ref().map(|host| {
+                super::account_store::SmtpConfig {
+                    host: host.clone(),
+                    port: account.smtp_port.unwrap_or(587) as u16,
+                    username: account.smtp_user.clone().unwrap_or_default(),
+                    password: account.smtp_pass.clone().unwrap_or_default(),
+                    use_tls: account.smtp_use_tls.unwrap_or(true),
+                    use_starttls: account.smtp_use_starttls.unwrap_or(true),
+                }
+            }),
+            is_active: account.is_active,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
 
+        self.account_store.add_account(stored_account).await?;
         info!("Created account: {} ({})", account.account_name, account.email_address);
-        Ok(result.last_insert_rowid())
+        Ok(account_id)
     }
 
     /// Get account by ID
-    pub async fn get_account(&self, account_id: i64) -> Result<Account, AccountError> {
-        let db = self.db()?;
+    pub async fn get_account(&self, account_id: &str) -> Result<Account, AccountError> {
+        let stored = self.account_store.get_account(account_id).await?;
 
-        let row = sqlx::query!(
-            r#"
-            SELECT
-                id as "id!",
-                account_name as "account_name!",
-                email_address as "email_address!",
-                provider_type,
-                imap_host as "imap_host!",
-                imap_port as "imap_port!",
-                imap_user as "imap_user!",
-                imap_pass as "imap_pass!",
-                imap_use_tls as "imap_use_tls!",
-                smtp_host,
-                smtp_port,
-                smtp_user,
-                smtp_pass,
-                smtp_use_tls,
-                smtp_use_starttls,
-                is_active as "is_active!",
-                is_default as "is_default!"
-            FROM accounts
-            WHERE id = ?
-            "#,
-            account_id
-        )
-        .fetch_optional(db)
-        .await?
-        .ok_or_else(|| AccountError::NotFound(format!("Account ID: {}", account_id)))?;
+        // Check if this is the default account
+        let config = self.account_store.load_config().await?;
+        let is_default = config.default_account_id.as_deref() == Some(account_id);
 
-        Ok(Account {
-            id: row.id,
-            account_name: row.account_name,
-            email_address: row.email_address,
-            provider_type: row.provider_type,
-            imap_host: row.imap_host,
-            imap_port: row.imap_port,
-            imap_user: row.imap_user,
-            imap_pass: row.imap_pass,
-            imap_use_tls: row.imap_use_tls,
-            smtp_host: row.smtp_host,
-            smtp_port: row.smtp_port,
-            smtp_user: row.smtp_user,
-            smtp_pass: row.smtp_pass,
-            smtp_use_tls: row.smtp_use_tls,
-            smtp_use_starttls: row.smtp_use_starttls,
-            is_active: row.is_active,
-            is_default: row.is_default,
-        })
+        let mut account = Self::stored_to_account(stored);
+        account.is_default = is_default;
+        Ok(account)
     }
 
     /// List all accounts
     pub async fn list_accounts(&self) -> Result<Vec<Account>, AccountError> {
-        let db = self.db()?;
+        let stored_accounts = self.account_store.list_accounts().await?;
+        let config = self.account_store.load_config().await?;
 
-        let rows = sqlx::query!(
-            r#"
-            SELECT
-                id as "id!",
-                account_name as "account_name!",
-                email_address as "email_address!",
-                provider_type,
-                imap_host as "imap_host!",
-                imap_port as "imap_port!",
-                imap_user as "imap_user!",
-                imap_pass as "imap_pass!",
-                imap_use_tls as "imap_use_tls!",
-                smtp_host,
-                smtp_port,
-                smtp_user,
-                smtp_pass,
-                smtp_use_tls,
-                smtp_use_starttls,
-                is_active as "is_active!",
-                is_default as "is_default!"
-            FROM accounts
-            ORDER BY is_default DESC, account_name ASC
-            "#
-        )
-        .fetch_all(db)
-        .await?;
-
-        let accounts = rows
+        let accounts = stored_accounts
             .into_iter()
-            .map(|row| Account {
-                id: row.id,
-                account_name: row.account_name,
-                email_address: row.email_address,
-                provider_type: row.provider_type,
-                imap_host: row.imap_host,
-                imap_port: row.imap_port,
-                imap_user: row.imap_user,
-                imap_pass: row.imap_pass,
-                imap_use_tls: row.imap_use_tls,
-                smtp_host: row.smtp_host,
-                smtp_port: row.smtp_port,
-                smtp_user: row.smtp_user,
-                smtp_pass: row.smtp_pass,
-                smtp_use_tls: row.smtp_use_tls,
-                smtp_use_starttls: row.smtp_use_starttls,
-                is_active: row.is_active,
-                is_default: row.is_default,
+            .map(|stored| {
+                let is_default = config.default_account_id.as_deref() == Some(&stored.id);
+                let mut account = Self::stored_to_account(stored);
+                account.is_default = is_default;
+                account
             })
             .collect();
 
@@ -358,144 +309,63 @@ impl AccountService {
 
     /// Get default account
     pub async fn get_default_account(&self) -> Result<Option<Account>, AccountError> {
-        let db = self.db()?;
-
-        let row = sqlx::query!(
-            r#"
-            SELECT
-                id as "id!",
-                account_name as "account_name!",
-                email_address as "email_address!",
-                provider_type,
-                imap_host as "imap_host!",
-                imap_port as "imap_port!",
-                imap_user as "imap_user!",
-                imap_pass as "imap_pass!",
-                imap_use_tls as "imap_use_tls!",
-                smtp_host,
-                smtp_port,
-                smtp_user,
-                smtp_pass,
-                smtp_use_tls,
-                smtp_use_starttls,
-                is_active as "is_active!",
-                is_default as "is_default!"
-            FROM accounts
-            WHERE is_default = TRUE
-            LIMIT 1
-            "#
-        )
-        .fetch_optional(db)
-        .await?;
-
-        Ok(row.map(|row| Account {
-            id: row.id,
-            account_name: row.account_name,
-            email_address: row.email_address,
-            provider_type: row.provider_type,
-            imap_host: row.imap_host,
-            imap_port: row.imap_port,
-            imap_user: row.imap_user,
-            imap_pass: row.imap_pass,
-            imap_use_tls: row.imap_use_tls,
-            smtp_host: row.smtp_host,
-            smtp_port: row.smtp_port,
-            smtp_user: row.smtp_user,
-            smtp_pass: row.smtp_pass,
-            smtp_use_tls: row.smtp_use_tls,
-            smtp_use_starttls: row.smtp_use_starttls,
-            is_active: row.is_active,
-            is_default: row.is_default,
-        }))
+        match self.account_store.get_default_account().await? {
+            Some(stored) => {
+                let mut account = Self::stored_to_account(stored);
+                account.is_default = true;
+                Ok(Some(account))
+            }
+            None => Ok(None),
+        }
     }
 
-    /// Update account
-    pub async fn update_account(&self, account: Account) -> Result<(), AccountError> {
-        let db = self.db()?;
+    /// Update account (requires account_id as string)
+    pub async fn update_account(&self, account_id: &str, account: Account) -> Result<(), AccountError> {
+        // Get existing account to preserve id
+        let existing = self.account_store.get_account(account_id).await?;
 
-        sqlx::query!(
-            r#"
-            UPDATE accounts
-            SET account_name = ?, email_address = ?, provider_type = ?,
-                imap_host = ?, imap_port = ?, imap_user = ?, imap_pass = ?, imap_use_tls = ?,
-                smtp_host = ?, smtp_port = ?, smtp_user = ?, smtp_pass = ?,
-                smtp_use_tls = ?, smtp_use_starttls = ?,
-                is_active = ?, is_default = ?
-            WHERE id = ?
-            "#,
-            account.account_name,
-            account.email_address,
-            account.provider_type,
-            account.imap_host,
-            account.imap_port,
-            account.imap_user,
-            account.imap_pass,
-            account.imap_use_tls,
-            account.smtp_host,
-            account.smtp_port,
-            account.smtp_user,
-            account.smtp_pass,
-            account.smtp_use_tls,
-            account.smtp_use_starttls,
-            account.is_active,
-            account.is_default,
-            account.id
-        )
-        .execute(db)
-        .await?;
+        let updated = StoredAccount {
+            id: existing.id,
+            account_name: account.account_name.clone(),
+            email_address: account.email_address.clone(),
+            provider_type: account.provider_type.clone(),
+            imap: super::account_store::ImapConfig {
+                host: account.imap_host.clone(),
+                port: account.imap_port as u16,
+                username: account.imap_user.clone(),
+                password: account.imap_pass.clone(),
+                use_tls: account.imap_use_tls,
+            },
+            smtp: account.smtp_host.as_ref().map(|host| {
+                super::account_store::SmtpConfig {
+                    host: host.clone(),
+                    port: account.smtp_port.unwrap_or(587) as u16,
+                    username: account.smtp_user.clone().unwrap_or_default(),
+                    password: account.smtp_pass.clone().unwrap_or_default(),
+                    use_tls: account.smtp_use_tls.unwrap_or(true),
+                    use_starttls: account.smtp_use_starttls.unwrap_or(true),
+                }
+            }),
+            is_active: account.is_active,
+            created_at: existing.created_at,
+            updated_at: Utc::now(),
+        };
 
+        self.account_store.update_account(updated).await?;
         info!("Updated account: {} ({})", account.account_name, account.email_address);
         Ok(())
     }
 
     /// Delete account
-    pub async fn delete_account(&self, account_id: i64) -> Result<(), AccountError> {
-        let db = self.db()?;
-
-        let result = sqlx::query!(
-            r#"
-            DELETE FROM accounts WHERE id = ?
-            "#,
-            account_id
-        )
-        .execute(db)
-        .await?;
-
-        if result.rows_affected() == 0 {
-            return Err(AccountError::NotFound(format!("Account ID: {}", account_id)));
-        }
-
+    pub async fn delete_account(&self, account_id: &str) -> Result<(), AccountError> {
+        self.account_store.delete_account(account_id).await?;
         info!("Deleted account ID: {}", account_id);
         Ok(())
     }
 
     /// Set default account
-    pub async fn set_default_account(&self, account_id: i64) -> Result<(), AccountError> {
-        let db = self.db()?;
-
-        // Start transaction
-        let mut tx = db.begin().await?;
-
-        // Clear all default flags
-        sqlx::query!("UPDATE accounts SET is_default = FALSE")
-            .execute(&mut *tx)
-            .await?;
-
-        // Set new default
-        let result = sqlx::query!(
-            "UPDATE accounts SET is_default = TRUE WHERE id = ?",
-            account_id
-        )
-        .execute(&mut *tx)
-        .await?;
-
-        if result.rows_affected() == 0 {
-            return Err(AccountError::NotFound(format!("Account ID: {}", account_id)));
-        }
-
-        // Commit transaction
-        tx.commit().await?;
-
+    pub async fn set_default_account(&self, account_id: &str) -> Result<(), AccountError> {
+        self.account_store.set_default_account(account_id).await?;
         info!("Set default account to ID: {}", account_id);
         Ok(())
     }
