@@ -1221,7 +1221,7 @@
         "id": 19,
         "title": "Fix configuration issues",
         "description": "Remove all hardcoded ports and ensure configuration is externalized",
-        "details": "Update vite.config.ts to use environment variable FRONTEND_PORT instead of hardcoded 8080. Add FRONTEND_PORT=9440 to .env.example. Ensure all other configuration values are also externalized and not hardcoded in the codebase.",
+        "details": "Update vite.config.ts to use environment variable DASHBOARD_PORT instead of hardcoded 8080. Add DASHBOARD_PORT=9440 to .env.example. Ensure all other configuration values are also externalized and not hardcoded in the codebase.",
         "testStrategy": "Verify that changing port values in .env file correctly changes where services run. Ensure no hardcoded values remain in codebase.",
         "status": "done",
         "dependencies": [],
