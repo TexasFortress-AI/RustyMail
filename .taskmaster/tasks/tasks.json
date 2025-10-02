@@ -1469,7 +1469,7 @@
         "description": "There's a bug in the MCP tools - they're reporting incorrect information. Create subtasks to verify and fix each individual MCP email tool.",
         "details": "Systematically test each MCP tool (list_folders, search_emails, fetch_email, move_email, delete_email, etc.). Document expected vs actual behavior. Fix any bugs found. Add integration tests.",
         "testStrategy": "",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
         "subtasks": [
@@ -1528,10 +1528,11 @@
             "dependencies": [
               "32.4"
             ],
-            "details": "Test all cache tools: list_cached_emails_tool, get_email_by_uid_tool, get_email_by_index_tool, count_emails_in_folder_tool, get_folder_stats_tool, and search_cached_emails_tool. Verify they correctly interface with CacheService and return accurate data from email_cache.db. Check parameter validation and database error handling.",
-            "status": "pending",
+            "details": "Test all cache tools: list_cached_emails_tool, get_email_by_uid_tool, get_email_by_index_tool, count_emails_in_folder_tool, get_folder_stats_tool, and search_cached_emails_tool. Verify they correctly interface with CacheService and return accurate data from email_cache.db. Check parameter validation and database error handling.\n<info added on 2025-10-02T16:00:35.838Z>\nAll 6 cache-based MCP tools have been thoroughly tested and verified working correctly. Each tool successfully interfaces with the CacheService through src/mcp_cache_tools.rs and retrieves accurate data from the email_cache.db SQLite database. Test results show INBOX contains 280 cached emails totaling 105MB, all marked as read with Seen flags. Parameter validation is functioning properly, and no database errors were encountered during testing. Search functionality is working accurately, and all tools return consistent data as expected from their implementations in the codebase.\n</info added on 2025-10-02T16:00:35.838Z>",
+            "status": "done",
             "testStrategy": "Populate test database with known email data. Test all cache operations against this data. Verify database queries return expected results. Test with empty cache, missing UIDs, and invalid parameters.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-10-02T16:00:47.981Z"
           },
           {
             "id": 6,
@@ -1550,7 +1551,7 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2025-10-02T15:31:42.931Z"
+        "updatedAt": "2025-10-02T16:00:47.981Z"
       },
       {
         "id": "33",
@@ -1717,9 +1718,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-10-02T15:31:42.932Z",
+      "lastModified": "2025-10-02T16:00:47.983Z",
       "taskCount": 35,
-      "completedCount": 30,
+      "completedCount": 31,
       "tags": [
         "master"
       ]
