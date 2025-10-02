@@ -116,10 +116,23 @@ pub async fn list_accounts(
 ) -> HttpResponse {
     info!("Listing all accounts");
 
-    HttpResponse::NotImplemented().json(serde_json::json!({
-        "success": false,
-        "error": "AccountService not yet integrated into DashboardState"
-    }))
+    let account_service = state.account_service.lock().await;
+
+    match account_service.list_accounts().await {
+        Ok(accounts) => {
+            HttpResponse::Ok().json(AccountListResponse {
+                success: true,
+                accounts,
+            })
+        },
+        Err(e) => {
+            error!("Failed to list accounts: {}", e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "success": false,
+                "error": format!("Failed to list accounts: {}", e)
+            }))
+        }
+    }
 }
 
 /// Update account

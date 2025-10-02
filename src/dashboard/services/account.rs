@@ -26,7 +26,7 @@ pub enum AccountError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
-    pub id: i64,
+    pub id: String,
     pub account_name: String,
     pub email_address: String,
     pub provider_type: Option<String>,
@@ -292,7 +292,7 @@ impl AccountService {
     /// Convert StoredAccount to Account (for API responses)
     fn stored_to_account(stored: StoredAccount) -> Account {
         Account {
-            id: 0, // ID is string-based in StoredAccount, not used in Account anymore
+            id: stored.id.clone(),
             account_name: stored.account_name,
             email_address: stored.email_address,
             provider_type: stored.provider_type,

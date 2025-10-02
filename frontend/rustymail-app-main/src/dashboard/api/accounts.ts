@@ -36,7 +36,8 @@ export const accountsApi = {
       throw new Error(`Failed to fetch accounts: ${response.statusText}`);
     }
 
-    return response.json();
+    const data = await response.json();
+    return data.accounts || data;
   },
 
   // Get default account
