@@ -1,0 +1,11 @@
+# Task ID: 19
+# Title: Fix configuration issues
+# Status: done
+# Dependencies: None
+# Priority: high
+# Description: Remove all hardcoded ports and ensure configuration is externalized
+# Details:
+Update vite.config.ts to use environment variable DASHBOARD_PORT instead of hardcoded 8080. Add DASHBOARD_PORT=9440 to .env.example. Ensure all other configuration values are also externalized and not hardcoded in the codebase.
+
+# Test Strategy:
+Verify that changing port values in .env file correctly changes where services run. Ensure no hardcoded values remain in codebase.

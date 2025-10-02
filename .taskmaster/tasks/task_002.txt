@@ -1,0 +1,43 @@
+# Task ID: 2
+# Title: Fix compilation errors in core modules
+# Status: done
+# Dependencies: 1
+# Priority: high
+# Description: Resolve current compilation errors in sse.rs, rest.rs, and session.rs
+# Details:
+Fix missing lifetime specifier in api/sse.rs Context type. Resolve missing validate_api_key function in api/rest.rs. Add missing Mutex import in imap/session.rs. Ensure all modules compile successfully with proper type annotations and imports.
+
+# Test Strategy:
+Run cargo check and cargo build to verify all compilation errors are resolved. Ensure no remaining type errors or missing imports.
+
+# Subtasks:
+## 1. Fix missing lifetime specifier in api/sse.rs Context type [done]
+### Dependencies: None
+### Description: Add the required lifetime specifier to the Context type definition in api/sse.rs to resolve compilation errors related to borrowed references.
+### Details:
+Identify all struct and function signatures in api/sse.rs that use references without explicit lifetimes. Add appropriate lifetime annotations (e.g., <'a>) to both struct definitions and function signatures as needed.
+
+## 2. Implement missing validate_api_key function in api/rest.rs [done]
+### Dependencies: None
+### Description: Define and implement the validate_api_key function in api/rest.rs to resolve missing function compilation errors.
+### Details:
+Review all usages of validate_api_key in api/rest.rs. Implement the function with correct signature and logic, ensuring it matches expected usage throughout the module.
+
+## 3. Add missing Mutex import in imap/session.rs [done]
+### Dependencies: None
+### Description: Import the Mutex type in imap/session.rs to resolve missing import compilation errors.
+### Details:
+Identify all usages of Mutex in imap/session.rs. Add the necessary import statement (e.g., use std::sync::Mutex or use tokio::sync::Mutex) at the top of the file.
+
+## 4. Review and correct type annotations and imports in all core modules [done]
+### Dependencies: 2.1, 2.2, 2.3
+### Description: Ensure all type annotations and imports are correct in sse.rs, rest.rs, and session.rs to prevent further compilation errors.
+### Details:
+Audit all type annotations and import statements in the three modules. Correct any mismatches, missing imports, or incorrect type usage to ensure compatibility and successful compilation.
+
+## 5. Verify successful compilation of all core modules [done]
+### Dependencies: 2.4
+### Description: Confirm that sse.rs, rest.rs, and session.rs compile successfully with no errors after fixes.
+### Details:
+Run cargo check and cargo build on the entire project. Ensure that all core modules compile without errors and that all previous issues are resolved.
+

@@ -1533,11 +1533,81 @@
             "testStrategy": "Run full integration test suite covering all endpoint methods. Test specification compliance with MCP 2025-03-26 requirements. Verify session management and security features work correctly. Test error handling and edge cases. Validate performance under load conditions."
           }
         ]
+      },
+      {
+        "id": 35,
+        "title": "Fix Tab1 dashboard UI splitter and widget issues",
+        "description": "Fix multiple UI issues in the Email tab of the dashboard including rigid splitters, missing scrollbars, dropdown folder selection not working, and AI assistant folder access.",
+        "details": "Based on codebase analysis, multiple UI issues exist in the Email tab (Tab1) of the Dashboard component:\n\n1. Replace the current custom splitter implementation in Dashboard.tsx with proper ResizablePanelGroup components from react-resizable-panels library that's already imported. Currently the splitter between top/bottom sections is rigid due to incorrect height calculations and container queries.\n\n2. Add horizontal splitter between EmailList and McpTools components in the top section using ResizablePanel components instead of the current grid layout.\n\n3. Fix EmailList widget scrollbar issue by ensuring the container has proper overflow-y-auto styles and height constraints. The current flex layout may be causing content to scroll out of viewport.\n\n4. Add proper scrollbar to McpTools widget by updating the container styles from 'overflow-y-auto' to ensure content doesn't overflow the widget bounds.\n\n5. Update EmailList component's query to use the currentFolder state variable. Currently the API call in lines 52-53 uses hardcoded endpoint without folder parameter. Need to add folder parameter to the fetch URL.\n\n6. Enhance ChatbotPanel to have access to folder information by updating the backend API call to include current folder context, allowing the AI assistant to provide folder-specific responses instead of generic \"I don't have detailed information\" messages.\n\nTechnical implementation:\n- Replace custom splitter logic with ResizablePanelGroup, ResizablePanel, and ResizableHandle components\n- Update EmailList API endpoint to include folder parameter: `/dashboard/emails/${currentFolder}?limit=${pageSize}&offset=${offset}`\n- Add folder context to chatbot API calls\n- Fix CSS height/overflow styles on widgets",
+        "testStrategy": "Test splitter functionality by dragging both horizontal and vertical splitters to ensure they resize properly. Test folder dropdown selection updates email list. Verify scrollbars appear when content overflows in both EmailList and McpTools widgets. Test AI assistant can access and report on folder information when asked about specific folders. Verify no content scrolls out of sight in any widget. Test responsive behavior at different screen sizes.",
+        "status": "pending",
+        "dependencies": [
+          11,
+          22,
+          29
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Fix rigid splitter between top and bottom sections on Tab1",
+            "description": "The splitter between top and bottom sections is not draggable - needs to be made interactive so users can resize the panels",
+            "details": "Investigate the splitter component implementation in Tab1. Ensure it has proper drag handlers and state management for resizing. Check CSS and event listeners.",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 35
+          },
+          {
+            "id": 2,
+            "title": "Add missing splitter between two top widgets on Tab1",
+            "description": "Add a splitter between the folders widget and the email list widget in the top section",
+            "details": "Implement a vertical splitter between the left (folders) and right (email list) widgets in the top section to allow resizing.",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 35
+          },
+          {
+            "id": 3,
+            "title": "Fix folders widget scrollbar scrolling content out of sight",
+            "description": "The folders widget has a scrollbar but content scrolls out of view - needs proper container constraints",
+            "details": "Fix CSS/styling on folders widget to ensure scrollbar keeps content visible and contained within the widget bounds. Check overflow and height properties.",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 35
+          },
+          {
+            "id": 4,
+            "title": "Add scrollbar to MCP Email Tools widget",
+            "description": "MCP Email Tools widget is missing a scrollbar when content overflows",
+            "details": "Add overflow-y: auto or scroll styling to MCP Email Tools widget container to enable scrolling when content exceeds visible area.",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 35
+          },
+          {
+            "id": 5,
+            "title": "Fix folder dropdown not updating email list",
+            "description": "Changing folder selection in dropdown doesn't update the displayed email list",
+            "details": "Wire up the folder dropdown change event to trigger email list refresh. Ensure the selected folder value is passed to the email fetching logic and the list updates when folder changes.",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 35
+          },
+          {
+            "id": 6,
+            "title": "Fix AI assistant not having access to folder information",
+            "description": "AI assistant responds with 'I don't have detailed information on the specific folders in your account' when asked about folders",
+            "details": "Ensure the AI assistant has access to the list_folders MCP tool and can retrieve folder information from the backend. Update the AI service context to include folder data or enable the assistant to call the appropriate MCP tools.",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 35
+          }
+        ]
       }
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-10-02T13:53:14.737Z",
+      "updated": "2025-10-02T14:07:24.322Z",
       "description": "Tasks for master context"
     }
   }

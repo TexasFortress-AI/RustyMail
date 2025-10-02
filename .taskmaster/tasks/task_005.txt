@@ -1,0 +1,43 @@
+# Task ID: 5
+# Title: Standardize JSON-RPC 2.0 error handling
+# Status: done
+# Dependencies: 3
+# Priority: medium
+# Description: Implement comprehensive error handling with proper JSON-RPC 2.0 error codes across all interfaces
+# Details:
+Define error code ranges from -32700 to -32099 as specified in PRD. Map async-imap errors to appropriate JSON-RPC error codes. Implement consistent error response format across REST, MCP stdio, and MCP SSE interfaces. Add structured error details with operation context.
+
+# Test Strategy:
+Test error scenarios for each operation type. Verify error codes match JSON-RPC 2.0 specification. Test error propagation through all interface layers.
+
+# Subtasks:
+## 1. Define JSON-RPC 2.0 Error Code Ranges and Meanings [done]
+### Dependencies: None
+### Description: Establish the set of standard and custom error codes to be used, ensuring alignment with the JSON-RPC 2.0 specification and PRD requirements.
+### Details:
+Document error codes from -32700 to -32099, including their meanings and usage scenarios. Reference the official specification for standard codes such as Parse error, Invalid Request, Method not found, Invalid params, and Internal error.
+
+## 2. Map async-imap Errors to JSON-RPC Error Codes [done]
+### Dependencies: 5.1
+### Description: Create a mapping from async-imap error variants to appropriate JSON-RPC 2.0 error codes, ensuring all IMAP-related errors are represented correctly.
+### Details:
+Analyze async-imap error types and associate each with a corresponding JSON-RPC error code. Document the mapping for maintainability and future updates.
+
+## 3. Implement Consistent Error Response Format Across All Interfaces [done]
+### Dependencies: 5.1, 5.2
+### Description: Standardize the structure of error responses for REST, MCP stdio, and MCP SSE interfaces to ensure uniformity and compliance with JSON-RPC 2.0.
+### Details:
+Design and enforce a consistent error response schema, including required fields such as code, message, and optional data. Ensure all interfaces serialize errors identically.
+
+## 4. Add Structured Error Details with Operation Context [done]
+### Dependencies: 5.3
+### Description: Enhance error responses by including structured details about the failed operation, such as context, parameters, and relevant metadata.
+### Details:
+Extend the error 'data' field to include operation-specific context, making debugging and client-side handling easier. Define a schema for structured error details.
+
+## 5. Verify Error Handling and Propagation Across All Layers [done]
+### Dependencies: 5.4
+### Description: Test and validate error handling mechanisms to ensure correct error propagation and code assignment throughout all interface layers.
+### Details:
+Develop comprehensive test cases for error scenarios in REST, MCP stdio, and MCP SSE. Confirm that errors are propagated with correct codes and structured details from origin to client.
+

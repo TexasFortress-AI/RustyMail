@@ -1,0 +1,50 @@
+# Task ID: 33
+# Title: Implement Automatic Cleanup of Stale API Clients
+# Status: pending
+# Dependencies: 10
+# Priority: medium
+# Description: Add a backend background task that periodically removes inactive or disconnected API client entries based on their last_activity timestamp to prevent unbounded accumulation.
+# Details:
+Implement a background cleanup service using the backend's asynchronous task scheduling mechanism (e.g., FastAPI's BackgroundTasks, Celery, or a custom async loop, depending on the stack). The service should:
+
+- Periodically (e.g., every 10 minutes) scan the client management datastore for entries where last_activity is older than a configurable threshold (e.g., 30 minutes).
+- Remove or mark as deleted all such stale client records.
+- Ensure the cleanup operation is safe for concurrent execution and does not interfere with active client sessions (use database transactions or atomic operations as appropriate).
+- Make the inactivity threshold and cleanup interval configurable via environment variables or application settings.
+- Log cleanup actions for auditability and debugging.
+- Integrate the cleanup logic with the existing client management service to ensure consistency with how clients are tracked and removed.
+- If using FastAPI, consider using a dedicated background task runner (such as a startup event with asyncio.create_task) for periodic jobs, as FastAPI's BackgroundTasks are request-scoped and not suitable for scheduled jobs[2][4].
+- Ensure the cleanup task is robust against failures (e.g., use try/except blocks, log errors, and avoid crashing the main application loop).
+
+Example (FastAPI with asyncio):
+```python
+import asyncio
+from datetime import datetime, timedelta
+from myapp.db import get_stale_clients, remove_clients
+
+async def cleanup_stale_clients(interval_seconds=600, inactivity_minutes=30):
+    while True:
+        try:
+            cutoff = datetime.utcnow() - timedelta(minutes=inactivity_minutes)
+            stale_clients = await get_stale_clients(last_activity_before=cutoff)
+            if stale_clients:
+                await remove_clients(stale_clients)
+                print(f"Removed {len(stale_clients)} stale clients.")
+        except Exception as e:
+            print(f"Cleanup error: {e}")
+        await asyncio.sleep(interval_seconds)
+
+@app.on_event("startup")
+async def start_cleanup_task():
+    asyncio.create_task(cleanup_stale_clients())
+```
+If using another backend framework, adapt the scheduling and concurrency patterns accordingly. Ensure the cleanup logic is well-isolated and testable.
+
+# Test Strategy:
+1. Seed the client management datastore with a mix of active and inactive client entries (varying last_activity timestamps).
+2. Start the backend and allow the cleanup task to run for at least one interval.
+3. Verify that only clients with last_activity older than the configured threshold are removed, and active clients remain.
+4. Test with concurrent client connections to ensure no race conditions or accidental removal of active clients.
+5. Simulate database or network failures during cleanup and verify that the task logs errors and continues operating on subsequent intervals.
+6. Confirm that configuration changes to the inactivity threshold and interval are respected.
+7. Review logs to ensure cleanup actions are properly recorded.

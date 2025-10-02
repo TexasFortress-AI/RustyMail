@@ -1,0 +1,11 @@
+# Task ID: 20
+# Title: Fix frontend-backend connectivity
+# Status: done
+# Dependencies: 19
+# Priority: high
+# Description: Set up proper proxy configuration for frontend to communicate with backend
+# Details:
+Add proxy configuration to vite.config.ts to forward /api requests to localhost:9437. Ensure CORS headers are properly set. Fix any API endpoint mismatches between frontend and backend.
+
+# Test Strategy:
+Test that frontend can successfully call backend APIs. Verify stats load, client list loads, and chatbot responds.

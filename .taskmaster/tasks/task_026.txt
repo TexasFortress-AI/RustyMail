@@ -1,0 +1,11 @@
+# Task ID: 26
+# Title: Update Ollama base URL configuration to include /v1 suffix
+# Status: done
+# Dependencies: None
+# Priority: medium
+# Description: Ollama offers OpenAI-compatible API at /v1/chat/completions endpoint. The OLLAMA_BASE_URL should include the /v1 suffix for proper OpenAI compatibility.
+# Details:
+Update .env.example and ollama.rs to ensure base URL includes /v1 suffix. Change from http://localhost:11434 to http://localhost:11434/v1
+
+# Test Strategy:
+

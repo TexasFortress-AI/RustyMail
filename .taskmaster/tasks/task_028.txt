@@ -1,0 +1,11 @@
+# Task ID: 28
+# Title: Add light/dark theme toggle to dashboard
+# Status: done
+# Dependencies: None
+# Priority: medium
+# Description: Implement theme toggle in upper right corner of dashboard. Should default to system theme preference and allow manual override. All widgets should respect the selected theme.
+# Details:
+Use React context for theme state. Implement system preference detection. Create theme-aware CSS variables. Update all components to support both themes.
+
+# Test Strategy:
+

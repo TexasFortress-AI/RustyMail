@@ -1,0 +1,11 @@
+# Task ID: 23
+# Title: Fix AI chatbot functionality
+# Status: done
+# Dependencies: 21
+# Priority: medium
+# Description: Fix MockAiProvider to return proper responses instead of errors
+# Details:
+Update MockAiProvider implementation to return meaningful mock responses. Fix error handling in chatbot endpoints. Ensure chatbot can process queries and return responses even without real AI provider.
+
+# Test Strategy:
+Test chatbot with various queries. Verify mock responses are returned. Test with and without real AI provider keys.

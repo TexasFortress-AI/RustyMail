@@ -1,0 +1,43 @@
+# Task ID: 1
+# Title: Remove imap-types dependency completely
+# Status: done
+# Dependencies: None
+# Priority: high
+# Description: Eliminate all imap-types imports and dependencies from the codebase to use async-imap exclusively
+# Details:
+Remove imap-types from Cargo.toml dependencies. Search for all imports of imap-types throughout the codebase and remove them. Replace any imap-types usage with equivalent async-imap types. Update all type conversions to use async-imap types directly. This is critical foundation work that must be completed before any other IMAP operations can be stabilized.
+
+# Test Strategy:
+Verify compilation succeeds after removal. Run cargo check to ensure no remaining imap-types references. Test that all existing IMAP operations still function with async-imap only.
+
+# Subtasks:
+## 1. Remove imap-types from Cargo.toml and workspace configuration [done]
+### Dependencies: None
+### Description: Delete the imap-types dependency from Cargo.toml and any workspace-level configuration files to prevent further compilation or usage.
+### Details:
+Edit Cargo.toml and any related workspace files to remove all references to imap-types, ensuring it is no longer fetched or built.
+
+## 2. Identify and remove all imap-types imports in the codebase [done]
+### Dependencies: 1.1
+### Description: Search for and delete all import statements and use declarations referencing imap-types throughout the codebase.
+### Details:
+Perform a global search for 'imap_types' and remove all related use statements, module imports, and explicit references.
+
+## 3. Replace imap-types usages with async-imap equivalents [done]
+### Dependencies: 1.2
+### Description: Refactor all code that previously used imap-types types, functions, or constants to use the corresponding async-imap types and APIs.
+### Details:
+Map each imap-types usage to its async-imap equivalent, updating type annotations, function calls, and logic as needed for compatibility.
+
+## 4. Update type conversions and interfaces to use async-imap types directly [done]
+### Dependencies: 1.3
+### Description: Modify all type conversions, trait implementations, and public interfaces to use async-imap types instead of imap-types.
+### Details:
+Review all type conversions, trait bounds, and public API signatures to ensure they reference only async-imap types, updating documentation as necessary.
+
+## 5. Verify removal and functionality with async-imap only [done]
+### Dependencies: 1.4
+### Description: Confirm that the codebase builds, runs, and passes all tests using only async-imap, with no remaining imap-types references.
+### Details:
+Perform a final audit for any lingering imap-types references, then run all tests and IMAP operations to ensure full functionality.
+

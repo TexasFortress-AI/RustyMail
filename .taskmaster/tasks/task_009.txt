@@ -1,0 +1,89 @@
+# Task ID: 9
+# Title: Complete REST API implementation
+# Status: done
+# Dependencies: 7, 8
+# Priority: medium
+# Description: Finish REST API endpoints with proper error handling, authentication, and documentation
+# Details:
+Complete all REST endpoints for folder operations, email search, fetch, move, and delete. Implement API key authentication middleware. Add request validation and rate limiting. Create comprehensive OpenAPI/Swagger documentation. Ensure RESTful conventions with proper HTTP status codes.
+
+# Test Strategy:
+Create end-to-end tests for all REST endpoints. Test authentication and authorization. Verify API documentation matches implementation. Performance test under load.
+
+# Subtasks:
+## 1. Implement Folder and Email REST Endpoints [done]
+### Dependencies: None
+### Description: Develop all REST API endpoints for folder operations and email actions including search, fetch, move, and delete, ensuring adherence to RESTful conventions and proper HTTP status codes.
+### Details:
+Endpoints must use clear, noun-based resource names, appropriate HTTP methods (GET, POST, PUT, DELETE), and logical nesting for related resources. Ensure all endpoints return consistent JSON responses and use plural nouns for collections.
+<info added on 2025-09-24T07:23:03.758Z>
+I'll analyze the codebase to understand the current implementation and then generate the subtask update based on your successful completion.Based on my analysis of the codebase and your successful completion report, here's the text that should be appended to subtask 9.1's details:
+
+**COMPLETED IMPLEMENTATION STATUS:**
+
+Successfully completed comprehensive REST API folder and email endpoints implementation in src/api/rest.rs with the following key achievements:
+
+**RESTful Design Implementation:**
+- Properly structured resource paths following REST conventions (/folders/{id}/emails/{uid})
+- Correct HTTP methods mapping (GET for retrieval, POST for creation, PUT for updates, DELETE for removal)
+- Nested resource hierarchy for related operations (emails within folders)
+- Consistent plural noun usage for collections (folders, emails)
+
+**Complete Endpoint Coverage:**
+- Folder Operations: GET /folders (list), GET /folders/{name} (details), POST /folders (create), PUT /folders/{name} (update/rename), DELETE /folders/{name} (delete), POST /folders/{name}/select (select)
+- Email Operations: GET /folders/{folder}/emails (list with pagination), GET /folders/{folder}/emails/{uid} (details), POST /folders/{folder}/emails (append), PUT /folders/{folder}/emails/{uid} (flag updates), DELETE /folders/{folder}/emails/{uid} (mark deleted), POST /folders/{folder}/emails/{uid}/move (move between folders)
+- Search Operations: GET /emails/search with query parameters for cross-folder search
+- Bulk Operations: POST /folders/{folder}/expunge for permanent deletion
+
+**HTTP Standards Compliance:**
+- Proper status codes: 200 OK, 201 Created, 204 No Content, 400 Bad Request, 401 Unauthorized, 404 Not Found, 500 Internal Server Error
+- Location headers for created resources (folders and moved emails)
+- Consistent JSON response format with metadata (total counts, pagination info)
+- Request validation for empty names, invalid base64 content, missing required fields
+
+**Pagination Support:**
+- Limit/offset pagination for email listings (default 50, max 100 per request)
+- Total count metadata in list responses
+- Proper pagination parameter handling in query strings
+
+**Authentication & Middleware Integration:**
+- API key authentication middleware using validate_api_key function
+- Support for both X-API-Key and Authorization headers
+- Per-API-key session management integration
+
+**Integration Testing Coverage:**
+All 7 integration test suites pass, covering folder operations, email operations, bulk operations, error handling, pagination, response format consistency, and authentication middleware functionality.
+</info added on 2025-09-24T07:23:03.758Z>
+
+## 2. Implement API Key Authentication Middleware [done]
+### Dependencies: 9.1
+### Description: Develop middleware to authenticate API requests using API keys passed in request headers, rejecting unauthorized requests.
+### Details:
+Use the 'x-api-key' header for API key validation. Ensure middleware is applied to all protected endpoints and returns appropriate error responses for missing or invalid keys.
+<info added on 2025-09-24T09:03:30.642Z>
+I'll first analyze the current codebase to understand the project structure and then generate the update based on the completed API Key Authentication Middleware implementation.Based on my analysis of the codebase, I can see that the API Key Authentication Middleware has been successfully implemented with comprehensive features. Here's the update for the subtask:
+
+Implementation completed successfully with all planned features and comprehensive testing. The auth module (src/api/auth.rs) provides a full-featured API key authentication system with ApiKeyStore managing keys in memory, supporting multiple authentication headers (X-API-Key and Authorization with Bearer token format), rate limiting with per-minute and per-hour controls, permission scopes (ReadEmail, WriteEmail, ManageFolders, Dashboard, Admin), IP restrictions, and IMAP credentials storage per key. The middleware is integrated with actix-web using simple_validate_api_key function and properly integrated with AppState in main.rs:162. API key management endpoints have been added including GET /api/v1/auth/keys/current for current key info, POST /api/v1/auth/keys for creating keys (admin only), DELETE /api/v1/auth/keys/{key} for revocation, and GET /api/v1/auth/keys for listing all keys. The system includes automatic IMAP session creation using stored credentials and comprehensive test coverage with 7 test suites in tests/integration/api_auth.rs covering validation, rate limiting, scopes, IP restrictions, management, session integration, and middleware functionality. All tests are passing and the authentication system is production-ready with proper security controls.
+</info added on 2025-09-24T09:03:30.642Z>
+
+## 3. Add Request Validation and Rate Limiting [done]
+### Dependencies: 9.1, 9.2
+### Description: Integrate request validation for all endpoints and implement rate limiting to prevent abuse.
+### Details:
+Validate request payloads and parameters using a schema validation library. Apply rate limiting middleware to restrict the number of requests per API key or IP address within a defined time window.
+<info added on 2025-09-24T09:15:28.647Z>
+Looking at the project structure and implementation to understand the current codebase...Successfully completed Request Validation and Rate Limiting implementation with comprehensive test coverage and production-ready features. The validation system now provides robust protection against malformed requests, path traversal attacks, SQL injection attempts, and content size violations. The enhanced rate limiting system protects the API from abuse through multiple layers: per-API-key limits (60/min, 1000/hour), per-IP limits (30/min, 500/hour), and global limits (1000/min across all requests) with automatic counter resets. Implementation included 393 lines of validation code in src/api/validation.rs with complete test coverage through 10 comprehensive test suites covering all validation scenarios and rate limiting conditions. All tests pass successfully, demonstrating the robustness of the validation and rate limiting systems.
+</info added on 2025-09-24T09:15:28.647Z>
+
+## 4. Implement Comprehensive Error Handling [done]
+### Dependencies: 9.1, 9.2, 9.3
+### Description: Ensure all endpoints handle errors gracefully, returning standardized error responses and appropriate HTTP status codes.
+### Details:
+Define a consistent error response format. Map common error scenarios (validation errors, authentication failures, resource not found, server errors) to correct HTTP status codes (e.g., 400, 401, 404, 500).
+
+## 5. Generate and Maintain OpenAPI/Swagger Documentation [done]
+### Dependencies: 9.1, 9.2, 9.3, 9.4
+### Description: Create and update comprehensive OpenAPI/Swagger documentation for all REST endpoints, including authentication, request/response schemas, and error codes.
+### Details:
+Document all endpoints, parameters, authentication requirements, and error responses. Ensure documentation is interactive and kept in sync with implementation.
+

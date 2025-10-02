@@ -1,0 +1,11 @@
+# Task ID: 22
+# Title: Fix dashboard UI components
+# Status: done
+# Dependencies: 21
+# Priority: medium
+# Description: Fix empty IMAP adapter dropdown and other UI issues
+# Details:
+Fix the IMAP adapter dropdown to show available adapters. Ensure stats and client list load properly. Fix any other UI components that are not displaying data correctly.
+
+# Test Strategy:
+Verify dropdown shows adapter options. Test that all dashboard panels display correct data. Check for console errors.

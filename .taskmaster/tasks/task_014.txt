@@ -1,0 +1,43 @@
+# Task ID: 14
+# Title: Implement natural language to MCP conversion
+# Status: done
+# Dependencies: 13
+# Priority: low
+# Description: Create pipeline to convert natural language queries into MCP operations
+# Details:
+Implement natural language processing pipeline using RIG. Create prompt templates for email operations like 'show unread emails', 'emails from sender', 'move emails to folder'. Map natural language intents to specific MCP method calls. Add conversation context tracking for follow-up queries.
+
+# Test Strategy:
+Test natural language understanding with various query formats. Verify correct MCP operation mapping. Test conversation context maintenance across multiple queries.
+
+# Subtasks:
+## 1. Design RIG-based NLP Pipeline Architecture [done]
+### Dependencies: None
+### Description: Define the overall architecture for a natural language processing pipeline using Retrieval Interleaved Generation (RIG) to convert user queries into MCP operations.
+### Details:
+Specify the flow from user input to MCP method invocation, including integration points for RIG, data retrieval, and response generation. Ensure the design supports dynamic retrieval and generation cycles for accurate intent mapping.
+
+## 2. Develop Prompt Templates for Email Operations [done]
+### Dependencies: 14.1
+### Description: Create and validate prompt templates for common email-related natural language queries such as 'show unread emails', 'emails from sender', and 'move emails to folder'.
+### Details:
+Design prompt templates that guide the RIG model to extract relevant entities and actions from user queries, ensuring coverage of all supported MCP email operations.
+
+## 3. Implement Intent Recognition and MCP Method Mapping [done]
+### Dependencies: 14.2
+### Description: Develop logic to map extracted natural language intents and entities to specific MCP method calls.
+### Details:
+Use the outputs from the RIG pipeline and prompt templates to identify user intent and required parameters, then translate these into the corresponding MCP API calls.
+
+## 4. Integrate Conversation Context Tracking [done]
+### Dependencies: 14.3
+### Description: Add mechanisms to track and utilize conversation context for handling follow-up queries and maintaining state across interactions.
+### Details:
+Implement context management to retain relevant information from previous queries, enabling accurate interpretation of ambiguous or follow-up requests.
+
+## 5. End-to-End Testing and Validation [done]
+### Dependencies: 14.4
+### Description: Conduct comprehensive testing of the entire pipeline, including natural language understanding, MCP mapping, and context tracking.
+### Details:
+Test the system with a wide range of query formats and conversation scenarios to ensure robust performance and correct operation mapping.
+
