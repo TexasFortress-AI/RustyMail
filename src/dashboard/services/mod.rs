@@ -15,6 +15,7 @@ use tokio::sync::Mutex as TokioMutex;
 // Import CloneableImapSessionFactory from prelude
 use crate::prelude::CloneableImapSessionFactory;
 use crate::connection_pool::ConnectionPool;
+use sqlx::SqlitePool;
 
 pub mod account;
 pub mod account_store;
@@ -152,6 +153,26 @@ pub async fn init(
         sync_interval,
     ));
 
+    // Initialize Account Service with file-based storage
+    let accounts_config_path = std::env::var("ACCOUNTS_CONFIG_PATH")
+        .unwrap_or_else(|_| "config/accounts.json".to_string());
+
+    let mut account_service = AccountService::new(&accounts_config_path);
+
+    // Get database pool for provider templates (temporary - using cache database)
+    let cache_db_url = std::env::var("CACHE_DATABASE_URL")
+        .unwrap_or_else(|_| "sqlite:data/email_cache.db".to_string());
+
+    let account_db_pool = SqlitePool::connect(&cache_db_url)
+        .await
+        .expect("Failed to create database pool for account service");
+
+    if let Err(e) = account_service.initialize(account_db_pool).await {
+        error!("Failed to initialize account service: {}", e);
+    }
+
+    let account_service = Arc::new(TokioMutex::new(account_service));
+
     // Initialize AI Service with environment variables
     let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
     let openrouter_api_key = std::env::var("OPENROUTER_API_KEY").ok();
@@ -199,6 +220,7 @@ pub async fn init(
         ai_service,
         email_service,
         sync_service,
+        account_service,
         sse_manager,
         event_bus,
         health_service: Some(health_service),
