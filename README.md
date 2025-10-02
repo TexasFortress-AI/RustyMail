@@ -97,27 +97,36 @@ Start server:
 cargo run --release -- --mcp-sse
 ```
 
-Note: SSE endpoints are available on the same port as REST (9437)
+Note: MCP Streamable HTTP transport is available on the same port as REST (9437)
 
-Connect:
+**Main Endpoint:** `http://localhost:9437/mcp`
+**Versioned Endpoint:** `http://localhost:9437/mcp/v1`
+
+Connect via SSE (GET):
 
 ```bash
-curl -N http://localhost:9437/api/v1/sse/connect
+curl -N -H "Accept: text/event-stream" http://localhost:9437/mcp
 ```
 
-Send commands:
+Send JSON-RPC Requests (POST):
 
 ```bash
-curl -X POST http://localhost:9437/api/v1/sse/command \
+curl -X POST http://localhost:9437/mcp \
   -H "Content-Type: application/json" \
-  -d '{"command":"imap/listFolders","params":{}}'
+  -H "Accept: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/list",
+    "params": {}
+  }'
 ```
 
 ---
 
 ## MCP Protocol Specification
 
-RustyMail implements the Model Context Protocol (MCP) over stdio and SSE.
+RustyMail implements the Model Context Protocol (MCP) over stdio and Streamable HTTP transport (MCP 2025-03-26).
 
 ### JSON-RPC 2.0 Format
 

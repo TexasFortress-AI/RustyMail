@@ -1,12 +1,12 @@
 use actix_web::{web, HttpRequest, HttpResponse, Error as ActixError};
-use actix_web::http::header::{HeaderValue, ACCEPT, ORIGIN};
+use actix_web::http::header::{ACCEPT, ORIGIN};
 use futures::stream::Stream;
 use futures::StreamExt;
 use log::{info, error, debug, warn};
 use serde_json::{json, Value};
 use std::sync::Arc;
-use std::time::Duration;
-use std::collections::HashMap;
+use std::time::{Duration, Instant};
+use std::collections::{HashMap, VecDeque};
 use tokio::sync::{RwLock, mpsc};
 use tokio::time::interval;
 use tokio_stream::wrappers::IntervalStream;
@@ -17,10 +17,99 @@ use actix_web::web::Bytes;
 
 use crate::dashboard::services::DashboardState;
 
+const SESSION_TIMEOUT: Duration = Duration::from_secs(600); // 10 minutes
+const EVENT_HISTORY_SIZE: usize = 100;
+const CLEANUP_INTERVAL: Duration = Duration::from_secs(60); // 1 minute
+
+/// Session data with event history for resumability
+struct SessionData {
+    sender: mpsc::Sender<String>,
+    last_activity: Instant,
+    event_history: VecDeque<(u64, String)>,
+    next_event_id: u64,
+}
+
+impl SessionData {
+    fn new(sender: mpsc::Sender<String>) -> Self {
+        Self {
+            sender,
+            last_activity: Instant::now(),
+            event_history: VecDeque::with_capacity(EVENT_HISTORY_SIZE),
+            next_event_id: 1,
+        }
+    }
+
+    fn update_activity(&mut self) {
+        self.last_activity = Instant::now();
+    }
+
+    fn is_expired(&self) -> bool {
+        self.last_activity.elapsed() > SESSION_TIMEOUT
+    }
+
+    async fn send_event(&mut self, data: String) -> Result<(), String> {
+        let event_id = self.next_event_id;
+        self.next_event_id += 1;
+
+        // Format as SSE with event ID
+        let message = format!("id: {}\ndata: {}\n\n", event_id, data);
+
+        // Store in history
+        self.event_history.push_back((event_id, data.clone()));
+        if self.event_history.len() > EVENT_HISTORY_SIZE {
+            self.event_history.pop_front();
+        }
+
+        self.sender.send(message).await
+            .map_err(|e| e.to_string())?;
+
+        self.update_activity();
+        Ok(())
+    }
+
+    fn get_events_since(&self, last_event_id: u64) -> Vec<String> {
+        self.event_history
+            .iter()
+            .filter(|(id, _)| *id > last_event_id)
+            .map(|(id, data)| format!("id: {}\ndata: {}\n\n", id, data))
+            .collect()
+    }
+}
+
 // Global state to manage SSE connections and their message queues
 lazy_static::lazy_static! {
-    static ref SSE_SESSIONS: Arc<RwLock<HashMap<String, mpsc::Sender<String>>>> =
+    static ref SSE_SESSIONS: Arc<RwLock<HashMap<String, SessionData>>> =
         Arc::new(RwLock::new(HashMap::new()));
+}
+
+// Start background cleanup task
+pub fn start_session_cleanup() {
+    tokio::spawn(async {
+        let mut cleanup_interval = interval(CLEANUP_INTERVAL);
+        loop {
+            cleanup_interval.tick().await;
+            cleanup_expired_sessions().await;
+        }
+    });
+}
+
+async fn cleanup_expired_sessions() {
+    let mut sessions = SSE_SESSIONS.write().await;
+    let initial_count = sessions.len();
+
+    sessions.retain(|session_id, session| {
+        if session.is_expired() {
+            info!("Cleaning up expired session: {}", session_id);
+            false
+        } else {
+            true
+        }
+    });
+
+    let removed = initial_count - sessions.len();
+    if removed > 0 {
+        info!("Cleaned up {} expired sessions", removed);
+    }
 }
 
 /// SSE stream implementation for Streamable HTTP transport
@@ -250,6 +339,12 @@ pub async fn mcp_post_handler(
 
     if let Some(ref sid) = session_id {
         debug!("Request with session ID: {}", sid);
+
+        // Update session activity
+        let mut sessions = SSE_SESSIONS.write().await;
+        if let Some(session) = sessions.get_mut(sid) {
+            session.update_activity();
+        }
     }
 
     // Process the JSON-RPC request
@@ -282,10 +377,10 @@ pub async fn mcp_post_handler(
 }
 
 /// GET handler for MCP endpoint
-/// Opens an SSE stream for server-initiated messages
+/// Opens an SSE stream for server-initiated messages with resumability support
 pub async fn mcp_get_handler(
     req: HttpRequest,
-    state: web::Data<DashboardState>,
+    _state: web::Data<DashboardState>,
 ) -> Result<HttpResponse, ActixError> {
     info!("MCP GET request received for SSE stream");
 
@@ -311,22 +406,58 @@ pub async fn mcp_get_handler(
         .map(|s| s.to_string())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
 
-    info!("Creating SSE stream for session: {}", session_id);
+    // Check for Last-Event-ID for connection resumption
+    let last_event_id = req.headers().get("Last-Event-ID")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok());
+
+    info!("Creating SSE stream for session: {} (last_event_id: {:?})", session_id, last_event_id);
 
     // Create channel for SSE messages
     let (sender, receiver) = mpsc::channel(100);
 
-    // Store the sender in our sessions map
+    // Check if this is a reconnection
+    let mut missed_events = Vec::new();
     {
         let mut sessions = SSE_SESSIONS.write().await;
-        sessions.insert(session_id.clone(), sender.clone());
+
+        if let Some(existing_session) = sessions.get_mut(&session_id) {
+            // Resuming existing session
+            info!("Resuming existing session: {}", session_id);
+            existing_session.update_activity();
+
+            // Get missed events if Last-Event-ID provided
+            if let Some(last_id) = last_event_id {
+                missed_events = existing_session.get_events_since(last_id);
+                info!("Found {} missed events since ID {}", missed_events.len(), last_id);
+            }
+
+            // Update sender for new connection
+            existing_session.sender = sender.clone();
+        } else {
+            // New session
+            info!("Creating new session: {}", session_id);
+            sessions.insert(session_id.clone(), SessionData::new(sender.clone()));
+        }
     }
 
     // Send initial connection message
-    let initial_msg = format!(": connected {}\n\n", session_id);
+    let initial_msg = if last_event_id.is_some() {
+        format!(": reconnected {}\n\n", session_id)
+    } else {
+        format!(": connected {}\n\n", session_id)
+    };
+
     if let Err(e) = sender.send(initial_msg).await {
         error!("Failed to send initial SSE message: {}", e);
         return Ok(HttpResponse::InternalServerError().finish());
+    }
+
+    // Send missed events for reconnection
+    for event in missed_events {
+        if let Err(e) = sender.send(event).await {
+            error!("Failed to send missed event: {}", e);
+        }
     }
 
     // Create the SSE stream

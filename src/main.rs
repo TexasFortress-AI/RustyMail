@@ -193,6 +193,10 @@ async fn main() -> std::io::Result<()> {
     dashboard::services::event_integration::start_event_publishers(Arc::new(dashboard_state.as_ref().clone())).await;
     info!("Event publishers started");
 
+    // Start MCP session cleanup task
+    rustymail::api::mcp_http::start_session_cleanup();
+    info!("MCP session cleanup task started");
+
     // Create and initialize SSE manager for dashboard
     let sse_manager = Arc::new(SseManager::new(
         Arc::clone(&dashboard_state.metrics_service),

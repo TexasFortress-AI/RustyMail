@@ -2,7 +2,7 @@
   "master": {
     "tasks": [
       {
-        "id": "1",
+        "id": 1,
         "title": "Remove imap-types dependency completely",
         "description": "Eliminate all imap-types imports and dependencies from the codebase to use async-imap exclusively",
         "details": "Remove imap-types from Cargo.toml dependencies. Search for all imports of imap-types throughout the codebase and remove them. Replace any imap-types usage with equivalent async-imap types. Update all type conversions to use async-imap types directly. This is critical foundation work that must be completed before any other IMAP operations can be stabilized.",
@@ -72,7 +72,7 @@
         ]
       },
       {
-        "id": "2",
+        "id": 2,
         "title": "Fix compilation errors in core modules",
         "description": "Resolve current compilation errors in sse.rs, rest.rs, and session.rs",
         "details": "Fix missing lifetime specifier in api/sse.rs Context type. Resolve missing validate_api_key function in api/rest.rs. Add missing Mutex import in imap/session.rs. Ensure all modules compile successfully with proper type annotations and imports.",
@@ -142,7 +142,7 @@
         ]
       },
       {
-        "id": "3",
+        "id": 3,
         "title": "Consolidate IMAP client to async-imap only",
         "description": "Refactor all IMAP client code to use async-imap exclusively, removing any dual-library patterns",
         "details": "Update src/imap/client.rs to use only async-imap types and methods. Remove all type conversion functions between libraries. Standardize on AsyncImapSessionWrapper pattern. Ensure all IMAP operations (connect, authenticate, select, search, fetch, move, delete) work through async-imap only. Update error handling to map async-imap errors to domain errors.",
@@ -217,7 +217,7 @@
         ]
       },
       {
-        "id": "4",
+        "id": 4,
         "title": "Implement atomic IMAP operations",
         "description": "Ensure all email operations follow atomic patterns (select → copy → delete → expunge)",
         "details": "Implement atomic move operations using IMAP command sequence: SELECT source folder, COPY messages to destination, STORE delete flag on source messages, EXPUNGE to remove. Ensure all operations maintain ACID properties. Add proper error handling and rollback mechanisms. Track folder selection state in AsyncImapSessionWrapper.",
@@ -290,7 +290,7 @@
         ]
       },
       {
-        "id": "5",
+        "id": 5,
         "title": "Standardize JSON-RPC 2.0 error handling",
         "description": "Implement comprehensive error handling with proper JSON-RPC 2.0 error codes across all interfaces",
         "details": "Define error code ranges from -32700 to -32099 as specified in PRD. Map async-imap errors to appropriate JSON-RPC error codes. Implement consistent error response format across REST, MCP stdio, and MCP SSE interfaces. Add structured error details with operation context.",
@@ -363,7 +363,7 @@
         ]
       },
       {
-        "id": "6",
+        "id": 6,
         "title": "Complete core IMAP operations implementation",
         "description": "Finish implementation of all IMAP operations: list, search, fetch, move, delete with proper async-imap integration",
         "details": "Complete folder listing with hierarchical structure support. Implement server-side search using async-imap search methods. Add message fetching with MIME part handling. Complete move operations with atomic guarantees. Implement delete operations with proper flag handling and expunge.",
@@ -436,7 +436,7 @@
         ]
       },
       {
-        "id": "7",
+        "id": 7,
         "title": "Implement connection pooling and session management",
         "description": "Add proper connection pooling with session lifecycle tracking and cleanup",
         "details": "Implement connection pool using Arc<TokioMutex<>> pattern. Track active sessions with proper lifecycle management. Add connection health checking and automatic reconnection. Implement session timeout handling and cleanup on disconnection. Support concurrent session handling up to 100+ connections.",
@@ -511,7 +511,7 @@
         ]
       },
       {
-        "id": "8",
+        "id": 8,
         "title": "Migrate to official MCP Rust SDK",
         "description": "Replace custom MCP implementations with the official rust-sdk from modelcontextprotocol",
         "details": "Remove custom MCP transport implementations in src/mcp/adapters/legacy.rs. Integrate rmcp dependency from rust-sdk. Update service definitions using SDK tooling. Migrate stdio and SSE transports to use official SDK patterns. Ensure backward compatibility with existing MCP clients.",
@@ -583,7 +583,7 @@
         ]
       },
       {
-        "id": "9",
+        "id": 9,
         "title": "Complete REST API implementation",
         "description": "Finish REST API endpoints with proper error handling, authentication, and documentation",
         "details": "Complete all REST endpoints for folder operations, email search, fetch, move, and delete. Implement API key authentication middleware. Add request validation and rate limiting. Create comprehensive OpenAPI/Swagger documentation. Ensure RESTful conventions with proper HTTP status codes.",
@@ -662,7 +662,7 @@
         ]
       },
       {
-        "id": "10",
+        "id": 10,
         "title": "Implement dashboard backend services",
         "description": "Complete dashboard backend with metrics, client management, and configuration services",
         "details": "Complete metrics collection service using sysinfo crate. Implement client management service to track active connections and user agents. Add configuration service for runtime settings. Create SSE event broadcasting system for real-time updates. Implement system health monitoring.",
@@ -726,7 +726,7 @@
         ]
       },
       {
-        "id": "11",
+        "id": 11,
         "title": "Build and integrate dashboard frontend",
         "description": "Build the React dashboard frontend and integrate with backend services",
         "details": "Build the existing React frontend located in frontend/rustymail-app-main/ using Vite build system. Integrate built static files with Actix backend using actix-files middleware. Configure SSE EventSource connections for real-time updates. Implement stats display, client list, and configuration panels using existing React components.",
@@ -798,7 +798,7 @@
         ]
       },
       {
-        "id": "12",
+        "id": 12,
         "title": "Implement real-time SSE updates for dashboard",
         "description": "Add Server-Sent Events for real-time dashboard updates with proper connection management",
         "details": "Complete SSE implementation in dashboard/api/sse.rs. Add event broadcasting for metrics updates, client connections/disconnections, and system status changes. Implement proper SSE connection lifecycle management. Add event filtering and subscription management. Ensure browser reconnection handling.",
@@ -871,7 +871,7 @@
         ]
       },
       {
-        "id": "13",
+        "id": 13,
         "title": "Set up RIG framework for AI integration",
         "description": "Initialize RIG framework and configure LLM providers for natural language processing",
         "details": "Add RIG dependency to Cargo.toml. Configure OpenAI and OpenRouter providers in dashboard/services/ai/ modules. Set up LLM model selection and API key management. Create provider abstraction layer for multiple LLM services. Initialize conversation context management system.",
@@ -943,7 +943,7 @@
         ]
       },
       {
-        "id": "14",
+        "id": 14,
         "title": "Implement natural language to MCP conversion",
         "description": "Create pipeline to convert natural language queries into MCP operations",
         "details": "Implement natural language processing pipeline using RIG. Create prompt templates for email operations like 'show unread emails', 'emails from sender', 'move emails to folder'. Map natural language intents to specific MCP method calls. Add conversation context tracking for follow-up queries.",
@@ -1015,7 +1015,7 @@
         ]
       },
       {
-        "id": "15",
+        "id": 15,
         "title": "Build chatbot UI integration",
         "description": "Add chatbot interface to dashboard with conversation management",
         "details": "Extend existing ChatbotPanel.tsx component with full conversation interface. Add message history and conversation state management. Implement typing indicators and response streaming. Connect to backend AI service via SSE or WebSocket. Add conversation export and history features.",
@@ -1088,7 +1088,7 @@
         ]
       },
       {
-        "id": "16",
+        "id": 16,
         "title": "Create comprehensive test suite",
         "description": "Implement unit, integration, and end-to-end tests covering all functionality",
         "details": "Create unit tests for all IMAP operations using mock servers. Implement integration tests using real IMAP adapters for Gmail, Outlook, and standard servers. Add end-to-end tests covering complete user workflows through REST and MCP interfaces. Set up performance benchmarks for concurrent connection handling.",
@@ -1157,7 +1157,7 @@
         ]
       },
       {
-        "id": "17",
+        "id": 17,
         "title": "Configure CI/CD pipeline",
         "description": "Set up continuous integration and deployment with automated testing and releases",
         "details": "Configure GitHub Actions or similar CI/CD system. Set up automated testing on multiple Rust versions and platforms. Add security scanning and dependency vulnerability checks. Configure automated releases with proper versioning. Add Docker image building and container registry publishing.",
@@ -1234,7 +1234,7 @@
         ]
       },
       {
-        "id": "18",
+        "id": 18,
         "title": "Create deployment documentation and tooling",
         "description": "Document deployment procedures and create deployment automation tools",
         "details": "Create deployment guides for standalone binary, Docker, and Kubernetes. Document configuration options and environment variables. Create deployment scripts and Docker Compose files. Add monitoring and logging configuration examples. Document security best practices and TLS setup.",
@@ -1308,7 +1308,7 @@
         ]
       },
       {
-        "id": "19",
+        "id": 19,
         "title": "Fix configuration issues",
         "description": "Remove all hardcoded ports and ensure configuration is externalized",
         "details": "Update vite.config.ts to use environment variable DASHBOARD_PORT instead of hardcoded 8080. Add DASHBOARD_PORT=9440 to .env.example. Ensure all other configuration values are also externalized and not hardcoded in the codebase.",
@@ -1319,7 +1319,7 @@
         "subtasks": []
       },
       {
-        "id": "20",
+        "id": 20,
         "title": "Fix frontend-backend connectivity",
         "description": "Set up proper proxy configuration for frontend to communicate with backend",
         "details": "Add proxy configuration to vite.config.ts to forward /api requests to localhost:9437. Ensure CORS headers are properly set. Fix any API endpoint mismatches between frontend and backend.",
@@ -1332,7 +1332,7 @@
         "subtasks": []
       },
       {
-        "id": "21",
+        "id": 21,
         "title": "Fix IMAP connection issues",
         "description": "Debug and fix IMAP connection timeout errors",
         "details": "Investigate why IMAP connections to GoDaddy server are timing out (os error 60). Add better error handling and debugging. Implement retry logic with exponential backoff. Add mock fallback mode when real IMAP fails.",
@@ -1345,7 +1345,7 @@
         "subtasks": []
       },
       {
-        "id": "22",
+        "id": 22,
         "title": "Fix dashboard UI components",
         "description": "Fix empty IMAP adapter dropdown and other UI issues",
         "details": "Fix the IMAP adapter dropdown to show available adapters. Ensure stats and client list load properly. Fix any other UI components that are not displaying data correctly.",
@@ -1358,7 +1358,7 @@
         "subtasks": []
       },
       {
-        "id": "23",
+        "id": 23,
         "title": "Fix AI chatbot functionality",
         "description": "Fix MockAiProvider to return proper responses instead of errors",
         "details": "Update MockAiProvider implementation to return meaningful mock responses. Fix error handling in chatbot endpoints. Ensure chatbot can process queries and return responses even without real AI provider.",
@@ -1371,7 +1371,7 @@
         "subtasks": []
       },
       {
-        "id": "24",
+        "id": 24,
         "title": "Add comprehensive dashboard tests",
         "description": "Create tests for dashboard functionality that is currently untested",
         "details": "Add unit and integration tests for dashboard API endpoints, SSE streaming, frontend components, and IMAP connection handling. Ensure test coverage validates all critical dashboard features.",
@@ -1385,7 +1385,7 @@
         "subtasks": []
       },
       {
-        "id": "25",
+        "id": 25,
         "title": "Implement local email caching and IMAP synchronization",
         "description": "Create a proper email caching system that stores emails locally and syncs with IMAP like a real email client",
         "details": "Implement a local caching system for emails that:\n1. Stores all emails, folders, and metadata in a local database (SQLite or similar)\n2. Uses IMAP UIDVALIDITY and UIDNEXT for efficient synchronization\n3. Only fetches new/changed emails after initial sync\n4. Supports offline access to cached emails\n5. Handles folder synchronization and hierarchy\n6. Syncs message flags (read/unread, flagged, etc.)\n7. Handles deletions and moves properly\n8. Implements background sync service that periodically checks for updates\n9. Provides fast local search capabilities\n10. Manages storage efficiently with configurable retention policies\n\nThis should work exactly like traditional email clients (Thunderbird, Outlook, Apple Mail) where emails are stored locally and IMAP is used only for synchronization.",
@@ -1398,7 +1398,7 @@
         "subtasks": []
       },
       {
-        "id": "26",
+        "id": 26,
         "title": "Update Ollama base URL configuration to include /v1 suffix",
         "description": "Ollama offers OpenAI-compatible API at /v1/chat/completions endpoint. The OLLAMA_BASE_URL should include the /v1 suffix for proper OpenAI compatibility.",
         "details": "Update .env.example and ollama.rs to ensure base URL includes /v1 suffix. Change from http://localhost:11434 to http://localhost:11434/v1",
@@ -1409,7 +1409,7 @@
         "subtasks": []
       },
       {
-        "id": "27",
+        "id": 27,
         "title": "Implement tabbed UI interface for dashboard",
         "description": "Add tabbed interface with two tabs: Email tab (Inbox widget left, MCP Email Tools right, Email Assistant chatbot bottom) and System tab (System Statistics left, Connected Clients right with splitter, full vertical height)",
         "details": "Create tab navigation component in React. Reorganize existing widgets into proper tab layouts. Ensure proper responsive behavior and layout management.",
@@ -1420,7 +1420,7 @@
         "subtasks": []
       },
       {
-        "id": "28",
+        "id": 28,
         "title": "Add light/dark theme toggle to dashboard",
         "description": "Implement theme toggle in upper right corner of dashboard. Should default to system theme preference and allow manual override. All widgets should respect the selected theme.",
         "details": "Use React context for theme state. Implement system preference detection. Create theme-aware CSS variables. Update all components to support both themes.",
@@ -1431,7 +1431,7 @@
         "subtasks": []
       },
       {
-        "id": "29",
+        "id": 29,
         "title": "Convert Inbox widget to Folders widget with dropdown",
         "description": "Replace Inbox widget with Folders widget that includes a folder dropdown selector. Pagination should update when folder selection changes.",
         "details": "Add folder dropdown to widget header. Connect to backend folder listing API. Update pagination state on folder change. Maintain current page when appropriate.",
@@ -1442,7 +1442,7 @@
         "subtasks": []
       },
       {
-        "id": "30",
+        "id": 30,
         "title": "Add First and Last buttons to pagination controls",
         "description": "Enhance pagination controls by adding First and Last buttons in addition to existing Previous and Next buttons.",
         "details": "Update pagination component to include First (jump to page 1) and Last (jump to final page) buttons. Ensure proper disabled states for edge cases.",
@@ -1453,12 +1453,12 @@
         "subtasks": []
       },
       {
-        "id": "31",
+        "id": 31,
         "title": "Implement multiple email account support",
         "description": "Add support for multiple email accounts with auto-configuration based on email address and manual configuration fallback. Includes database schema changes and configuration UI.",
         "details": "Design multi-account database schema. Implement auto-config for common providers (Gmail, Outlook, etc.). Create accounts management UI. Support both IMAP and SMTP configuration. Add account switching functionality.",
         "testStrategy": "",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
         "subtasks": [
@@ -1506,9 +1506,9 @@
               "31.3"
             ],
             "details": "Design intuitive UI for account list, configuration forms (auto/manual), and account status. Ensure accessibility and responsive design. Integrate with backend for real-time updates.",
-            "status": "in-progress",
+            "status": "done",
             "testStrategy": "Conduct usability testing for account management flows. Verify all UI states (add, edit, remove, switch) and error handling. Test accessibility compliance.",
-            "updatedAt": "2025-10-02T17:31:39.514Z",
+            "updatedAt": "2025-10-02T18:22:23.913Z",
             "parentId": "undefined"
           },
           {
@@ -1518,16 +1518,17 @@
             "dependencies": [
               "31.4"
             ],
-            "details": "Ensure that switching accounts updates all relevant UI and backend session data. Handle concurrent sessions securely and efficiently. Maintain context for each account (e.g., selected folders, message state).",
-            "status": "pending",
+            "details": "Ensure that switching accounts updates all relevant UI and backend session data. Handle concurrent sessions securely and efficiently. Maintain context for each account (e.g., selected folders, message state).\n<info added on 2025-10-02T19:21:49.658Z>\nBased on my analysis of the codebase, I can see the comprehensive implementation of account switching functionality. Here's my assessment:\n\n**Implementation Details:**\n- Created AccountContext.tsx with React Context API providing currentAccount, accounts, loading state, switchAccount function, and refreshAccounts functionality\n- Built AccountSelector.tsx component with dropdown menu showing account names, email addresses, default badges, and active selection indicators\n- Integrated AccountSelector into TopBar.tsx navigation at line 111\n- Enhanced EmailList.tsx with account-aware functionality including useAccount hook integration, account_id query parameter in API requests, and automatic page/selection reset on account changes\n- Implemented localStorage persistence using 'rustymail_current_account_id' key for session continuity\n- Added proper error handling and loading states throughout the account switching flow\n- Email list component now filters by selected account and resets state when account changes to maintain clean user experience\n</info added on 2025-10-02T19:21:49.658Z>",
+            "status": "done",
             "testStrategy": "Test rapid switching between accounts, including edge cases (e.g., network errors, expired sessions). Verify session isolation and correct context restoration for each account.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-10-02T18:53:39.070Z"
           }
         ],
-        "updatedAt": "2025-10-02T17:31:39.514Z"
+        "updatedAt": "2025-10-02T18:53:39.070Z"
       },
       {
-        "id": "32",
+        "id": 32,
         "title": "Fix and verify all MCP email tools",
         "description": "There's a bug in the MCP tools - they're reporting incorrect information. Create subtasks to verify and fix each individual MCP email tool.",
         "details": "Systematically test each MCP tool (list_folders, search_emails, fetch_email, move_email, delete_email, etc.). Document expected vs actual behavior. Fix any bugs found. Add integration tests.",
@@ -1617,7 +1618,7 @@
         "updatedAt": "2025-10-02T16:00:47.981Z"
       },
       {
-        "id": "33",
+        "id": 33,
         "title": "Implement Automatic Cleanup of Stale API Clients",
         "description": "Add a backend background task that periodically removes inactive or disconnected API client entries based on their last_activity timestamp to prevent unbounded accumulation.",
         "details": "Implement a background cleanup service using the backend's asynchronous task scheduling mechanism (e.g., FastAPI's BackgroundTasks, Celery, or a custom async loop, depending on the stack). The service should:\n\n- Periodically (e.g., every 10 minutes) scan the client management datastore for entries where last_activity is older than a configurable threshold (e.g., 30 minutes).\n- Remove or mark as deleted all such stale client records.\n- Ensure the cleanup operation is safe for concurrent execution and does not interfere with active client sessions (use database transactions or atomic operations as appropriate).\n- Make the inactivity threshold and cleanup interval configurable via environment variables or application settings.\n- Log cleanup actions for auditability and debugging.\n- Integrate the cleanup logic with the existing client management service to ensure consistency with how clients are tracked and removed.\n- If using FastAPI, consider using a dedicated background task runner (such as a startup event with asyncio.create_task) for periodic jobs, as FastAPI's BackgroundTasks are request-scoped and not suitable for scheduled jobs[2][4].\n- Ensure the cleanup task is robust against failures (e.g., use try/except blocks, log errors, and avoid crashing the main application loop).\n\nExample (FastAPI with asyncio):\n```python\nimport asyncio\nfrom datetime import datetime, timedelta\nfrom myapp.db import get_stale_clients, remove_clients\n\nasync def cleanup_stale_clients(interval_seconds=600, inactivity_minutes=30):\n    while True:\n        try:\n            cutoff = datetime.utcnow() - timedelta(minutes=inactivity_minutes)\n            stale_clients = await get_stale_clients(last_activity_before=cutoff)\n            if stale_clients:\n                await remove_clients(stale_clients)\n                print(f\"Removed {len(stale_clients)} stale clients.\")\n        except Exception as e:\n            print(f\"Cleanup error: {e}\")\n        await asyncio.sleep(interval_seconds)\n\n@app.on_event(\"startup\")\nasync def start_cleanup_task():\n    asyncio.create_task(cleanup_stale_clients())\n```\nIf using another backend framework, adapt the scheduling and concurrency patterns accordingly. Ensure the cleanup logic is well-isolated and testable.",
@@ -1630,12 +1631,12 @@
         "subtasks": []
       },
       {
-        "id": "34",
+        "id": 34,
         "title": "Migrate MCP server from deprecated SSE transport to modern Streamable HTTP transport",
         "description": "Replace the current SSE-based MCP implementation with the new Streamable HTTP transport protocol using a single bidirectional /mcp endpoint to comply with 2025 MCP specification updates.",
         "details": "Replace the deprecated SSE-based MCP transport implementation in src/api/mcp_sse_real.rs with the modern Streamable HTTP transport as required by MCP specification version 2025-03-26. Create a new single HTTP endpoint at /mcp that supports both GET and POST methods for bidirectional communication. The POST method should handle JSON-RPC requests/responses/notifications with Accept headers supporting both application/json and text/event-stream. The GET method should provide optional SSE streaming capability. Implement proper session management using Mcp-Session-Id headers, connection resumability with Last-Event-ID support, and Origin header validation for DNS rebinding protection. Remove the separate /sse and /message endpoints and consolidate into the single /mcp endpoint pattern. Update all MCP client interfaces to use the new /mcp/v1 route structure. Ensure UTF-8 encoded JSON-RPC message handling and maintain backward compatibility during the transition period. Add proper error handling for the unified connection model and implement resumption token support for reliable network conditions.",
         "testStrategy": "Create integration tests that verify the new /mcp endpoint responds correctly to both GET and POST requests. Test JSON-RPC request/response cycles through the POST method with proper Accept headers. Verify SSE streaming works through the GET method with text/event-stream. Test session management by creating sessions and verifying Mcp-Session-Id header handling. Test connection resumability using Last-Event-ID to replay missed messages. Verify Origin header validation prevents DNS rebinding attacks. Create comprehensive MCP tool tests using the new endpoint structure (replacing the current /mcp/v1 route expectations). Test backward compatibility if maintaining both transport methods during transition. Performance test the unified connection model compared to the separate SSE/message endpoint approach.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           "8",
           "32"
@@ -1671,10 +1672,11 @@
             "dependencies": [
               "34.2"
             ],
-            "details": "Implement session tracking using Mcp-Session-Id headers for connection persistence. Add Origin header validation to prevent DNS rebinding attacks. Implement connection resumability with Last-Event-ID support for reliable network conditions. Add proper session lifecycle management and cleanup. Ensure localhost binding for local development security.",
-            "status": "pending",
+            "details": "Implement session tracking using Mcp-Session-Id headers for connection persistence. Add Origin header validation to prevent DNS rebinding attacks. Implement connection resumability with Last-Event-ID support for reliable network conditions. Add proper session lifecycle management and cleanup. Ensure localhost binding for local development security.\n<info added on 2025-10-02T19:26:49.851Z>\nLet me analyze the codebase to understand the current MCP implementation structure and provide a comprehensive update.Successfully implemented comprehensive session management with SessionData struct featuring 100-event circular buffer and 10-minute timeout. Added connection resumability through Last-Event-ID header parsing and missed event replay functionality. Background cleanup task running every minute removes expired sessions automatically. Both GET and POST handlers now track session activity on every request. Session cleanup task properly initialized in main.rs server startup. Implementation includes proper error handling for channel operations and validates Origin headers for DNS rebinding protection. All security features operational with localhost binding enforced.\n</info added on 2025-10-02T19:26:49.851Z>",
+            "status": "done",
             "testStrategy": "Test session creation and persistence across requests. Verify Origin header validation blocks malicious requests. Test connection resumption with Last-Event-ID. Test session cleanup and timeout handling.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-10-02T19:26:06.478Z"
           },
           {
             "id": 4,
@@ -1683,10 +1685,11 @@
             "dependencies": [
               "34.3"
             ],
-            "details": "Update all client-side MCP interfaces to connect to the new /mcp endpoint instead of separate /sse and /message endpoints. Implement /mcp/v1 routing structure for API versioning. Update client connection logic to handle the unified endpoint model. Ensure proper error handling for the new connection pattern.",
-            "status": "pending",
+            "details": "Update all client-side MCP interfaces to connect to the new /mcp endpoint instead of separate /sse and /message endpoints. Implement /mcp/v1 routing structure for API versioning. Update client connection logic to handle the unified endpoint model. Ensure proper error handling for the new connection pattern.\n<info added on 2025-10-02T19:30:37.137Z>\nI need to analyze the codebase to understand what was actually changed for this subtask update.Let me look at the key source files and scripts that were mentioned in the update:Based on my analysis of the codebase, I can now provide the appropriate update text for the subtask. The user has reported completing all the work for subtask 34.4, which involved updating client interfaces to use the new MCP endpoint structure. Here's the new information that should be appended:\n\nSuccessfully completed client interface migration to MCP Streamable HTTP transport. Updated test-mcp-sse.sh script with comprehensive endpoint tests for both /mcp and /mcp/v1 routes, including proper HTTP method validation (GET with Accept: text/event-stream, POST with JSON-RPC payloads). Implemented session management testing with Mcp-Session-Id header tracking and connection resumability verification. Updated README.md documentation with new endpoint URLs, usage examples for both GET SSE streaming and POST JSON-RPC requests. MCP routes properly configured in mcp_http.rs with configure_mcp_routes() function supporting unified endpoint model with bidirectional communication. All deprecated /sse and /message endpoint references replaced with modern /mcp structure.\n</info added on 2025-10-02T19:30:37.137Z>",
+            "status": "done",
             "testStrategy": "Test client connections to new /mcp endpoint. Verify /mcp/v1 routing works correctly. Test client error handling with new endpoint structure. Ensure backward compatibility during transition period.",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-10-02T19:29:35.798Z"
           },
           {
             "id": 5,
@@ -1700,10 +1703,11 @@
             "testStrategy": "Run full integration test suite covering all endpoint methods. Test specification compliance with MCP 2025-03-26 requirements. Verify session management and security features work correctly. Test error handling and edge cases. Validate performance under load conditions.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "updatedAt": "2025-10-02T19:29:35.798Z"
       },
       {
-        "id": "35",
+        "id": 35,
         "title": "Fix Tab1 dashboard UI splitter and widget issues",
         "description": "Fix multiple UI issues in the Email tab of the dashboard including rigid splitters, missing scrollbars, dropdown folder selection not working, and AI assistant folder access.",
         "details": "Based on codebase analysis, multiple UI issues exist in the Email tab (Tab1) of the Dashboard component:\n\n1. Replace the current custom splitter implementation in Dashboard.tsx with proper ResizablePanelGroup components from react-resizable-panels library that's already imported. Currently the splitter between top/bottom sections is rigid due to incorrect height calculations and container queries.\n\n2. Add horizontal splitter between EmailList and McpTools components in the top section using ResizablePanel components instead of the current grid layout.\n\n3. Fix EmailList widget scrollbar issue by ensuring the container has proper overflow-y-auto styles and height constraints. The current flex layout may be causing content to scroll out of viewport.\n\n4. Add proper scrollbar to McpTools widget by updating the container styles from 'overflow-y-auto' to ensure content doesn't overflow the widget bounds.\n\n5. Update EmailList component's query to use the currentFolder state variable. Currently the API call in lines 52-53 uses hardcoded endpoint without folder parameter. Need to add folder parameter to the fetch URL.\n\n6. Enhance ChatbotPanel to have access to folder information by updating the backend API call to include current folder context, allowing the AI assistant to provide folder-specific responses instead of generic \"I don't have detailed information\" messages.\n\nTechnical implementation:\n- Replace custom splitter logic with ResizablePanelGroup, ResizablePanel, and ResizableHandle components\n- Update EmailList API endpoint to include folder parameter: `/dashboard/emails/${currentFolder}?limit=${pageSize}&offset=${offset}`\n- Add folder context to chatbot API calls\n- Fix CSS height/overflow styles on widgets",
@@ -1779,7 +1783,7 @@
         ]
       },
       {
-        "id": "36",
+        "id": 36,
         "title": "Optimize list_cached_emails MCP tool for token efficiency",
         "description": "Modify list_cached_emails MCP tool to return email previews instead of full body content to reduce token usage.",
         "details": "Currently, the list_cached_emails tool in src/mcp_cache_tools.rs returns complete CachedEmail objects including full body_text and body_html fields from the cache service. This wastes tokens when users only need previews for list views. The optimization should: 1) Update CacheService::get_cached_emails method in src/dashboard/services/cache.rs to add a new parameter 'preview_mode: bool' that when true, truncates body_text and body_html to 150-200 characters with ellipsis. 2) Create a helper function to truncate text content intelligently (word boundaries, HTML-aware truncation). 3) Update the list_cached_emails_tool function to pass preview_mode=true by default, with an optional 'full_content' parameter to override. 4) Ensure get_email_by_uid and get_email_by_index tools continue to return full content since they're for individual email viewing. 5) Update any related SQL queries to use SUBSTR() for database-level truncation when in preview mode for better performance. The change should maintain backward compatibility and align with the web UI's pagination approach of showing previews in lists and full content on demand.",
@@ -1793,27 +1797,30 @@
         "subtasks": []
       },
       {
-        "id": "37",
+        "id": 37,
         "title": "Create persistent account configuration system separate from cache database",
         "description": "Implement a dedicated configuration file (accounts.json/accounts.toml) for storing account credentials and settings, keeping the cache database only for cached emails and sync state to allow safe cache deletion.",
         "details": "1. Create a new `ConfigAccountService` that manages accounts in a dedicated config file format (accounts.json or accounts.toml) in the config directory. 2. Design account configuration file structure with fields for account_name, email_address, provider_type, IMAP settings (host, port, user, pass, use_tls), SMTP settings, and metadata (is_active, is_default). 3. Implement file-based serialization/deserialization using serde for JSON or TOML format. 4. Update existing `AccountService` to migrate data from database to config file during startup. 5. Modify the account management APIs in `src/dashboard/api/accounts.rs` to use the new file-based system instead of database operations. 6. Update the account auto-configuration to save to config file instead of database. 7. Ensure proper file locking and atomic writes for concurrent access safety. 8. Update the `Settings` struct in `src/config.rs` to include accounts configuration file path. 9. Modify the cache database schema to remove account tables (accounts, provider_templates) and keep only email cache tables. 10. Add migration logic to move existing accounts from database to config file during first startup. 11. Update documentation to reflect the separation of concerns between config file (credentials) and cache database (emails).",
         "testStrategy": "1. Test config file creation with sample accounts data in both JSON and TOML formats. 2. Verify atomic write operations prevent corruption during concurrent access. 3. Test migration from database-stored accounts to config file format. 4. Verify cache database can be safely deleted without losing account configuration. 5. Test account CRUD operations work correctly with file-based storage. 6. Verify auto-configuration saves to config file instead of database. 7. Test file locking prevents concurrent modification issues. 8. Verify application startup works with existing config file. 9. Test backup/restore of configuration file maintains account settings. 10. Ensure account credentials are properly secured in config file with appropriate file permissions.",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [
           "31"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-10-02T19:22:50.469Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-10-02T17:31:39.516Z",
+      "lastModified": "2025-10-02T19:29:35.800Z",
       "taskCount": 37,
-      "completedCount": 31,
+      "completedCount": 33,
       "tags": [
         "master"
-      ]
+      ],
+      "created": "2025-10-02T19:29:49.943Z",
+      "description": "Tasks for master context"
     }
   }
 }

@@ -171,6 +171,11 @@ pub async fn init(
         error!("Failed to initialize account service: {}", e);
     }
 
+    // Auto-create account from environment variables if none exist
+    if let Err(e) = account_service.ensure_default_account_from_env(&config).await {
+        warn!("Failed to create default account from environment: {}", e);
+    }
+
     let account_service = Arc::new(TokioMutex::new(account_service));
 
     // Initialize AI Service with environment variables

@@ -18,6 +18,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { AccountSelector } from './AccountSelector';
 
 const TopBar: React.FC = () => {
   const { theme, setTheme } = useTheme();
@@ -107,6 +108,8 @@ const TopBar: React.FC = () => {
         </div>
         
         <div className="flex items-center space-x-4">
+          <AccountSelector />
+
           <div className="flex items-center space-x-3">
             <span className="text-sm text-muted-foreground">IMAP Adapter:</span>
 

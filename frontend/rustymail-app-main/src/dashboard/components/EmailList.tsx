@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { API_BASE_URL } from '../../config/api';
 import { config } from '../config';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
+import { useAccount } from '../../contexts/AccountContext';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import {
@@ -35,22 +36,27 @@ interface EmailListResponse {
 }
 
 const EmailList: React.FC = () => {
+  const { currentAccount } = useAccount();
   const [currentFolder, setCurrentFolder] = useState('INBOX');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const pageSize = 20;
 
-  // Reset to page 1 when folder changes
+  // Reset to page 1 when folder or account changes
   useEffect(() => {
     setCurrentPage(1);
-  }, [currentFolder]);
+    setSelectedEmail(null);
+  }, [currentFolder, currentAccount?.id]);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery<EmailListResponse>({
-    queryKey: ['emails', currentFolder, currentPage],
+    queryKey: ['emails', currentAccount?.id, currentFolder, currentPage],
     queryFn: async () => {
+      if (!currentAccount) {
+        throw new Error('No account selected');
+      }
       const offset = (currentPage - 1) * pageSize;
       const response = await fetch(
-        `${API_BASE_URL}/dashboard/emails?folder=${encodeURIComponent(currentFolder)}&limit=${pageSize}&offset=${offset}`,
+        `${API_BASE_URL}/dashboard/emails?account_id=${currentAccount.id}&folder=${encodeURIComponent(currentFolder)}&limit=${pageSize}&offset=${offset}`,
         {
           headers: {
             'X-API-Key': config.api.apiKey
@@ -62,6 +68,7 @@ const EmailList: React.FC = () => {
       }
       return response.json();
     },
+    enabled: !!currentAccount,
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
@@ -111,9 +118,31 @@ const EmailList: React.FC = () => {
     }
   }, [selectedEmail]);
 
+  if (!currentAccount) {
+    return (
+      <Card className="h-full flex flex-col min-h-0">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-3">
+            <Mail className="h-5 w-5" />
+            Email List
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="flex-1 flex items-center justify-center">
+          <p className="text-muted-foreground">No account selected. Please select an account to view emails.</p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   if (error) {
     return (
-      <Card>
+      <Card className="h-full flex flex-col min-h-0">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-3">
+            <Mail className="h-5 w-5" />
+            Email List
+          </CardTitle>
+        </CardHeader>
         <CardContent className="p-6">
           <p className="text-red-500">Error loading emails: {(error as Error).message}</p>
           <Button onClick={() => refetch()} className="mt-4">

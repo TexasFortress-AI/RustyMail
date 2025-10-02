@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use sqlx::{SqlitePool, Row};
 use log::{info, debug, error, warn};
 use thiserror::Error;
 use serde::{Serialize, Deserialize};
@@ -106,6 +106,69 @@ impl AccountService {
         Ok(())
     }
 
+    /// Create account from environment variables if no accounts exist
+    pub async fn ensure_default_account_from_env(&mut self, settings: &crate::config::Settings) -> Result<(), AccountError> {
+        use uuid::Uuid;
+        use chrono::Utc;
+        use crate::dashboard::services::account_store::{StoredAccount, ImapConfig};
+
+        // Check if we already have accounts
+        let existing_accounts = self.account_store.list_accounts().await?;
+        if !existing_accounts.is_empty() {
+            debug!("Accounts already exist, skipping environment auto-configuration");
+            return Ok(());
+        }
+
+        // Check if IMAP credentials are provided in environment
+        if settings.imap_user.is_empty() || settings.imap_pass.is_empty() {
+            debug!("No IMAP credentials in environment, skipping auto-configuration");
+            return Ok(());
+        }
+
+        info!("No accounts found, creating default account from environment variables");
+
+        // Extract email address from IMAP user (often it's the full email)
+        let email_address = if settings.imap_user.contains('@') {
+            settings.imap_user.clone()
+        } else {
+            format!("{}@{}", settings.imap_user, settings.imap_host)
+        };
+
+        // Create account from environment variables
+        let account = StoredAccount {
+            id: Uuid::new_v4().to_string(),
+            account_name: format!("Default ({})", email_address),
+            email_address: email_address.clone(),
+            provider_type: Some("custom".to_string()),
+            imap: ImapConfig {
+                host: settings.imap_host.clone(),
+                port: settings.imap_port,
+                username: settings.imap_user.clone(),
+                password: settings.imap_pass.clone(),
+                use_tls: true,
+            },
+            smtp: None,
+            is_active: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        match self.account_store.add_account(account.clone()).await {
+            Ok(()) => {
+                // Set as default account
+                if let Err(e) = self.account_store.set_default_account(&account.id).await {
+                    warn!("Failed to set default account: {}", e);
+                }
+                info!("Successfully created default account from environment: {}", account.email_address);
+                Ok(())
+            }
+            Err(e) => {
+                error!("Failed to create default account from environment: {}", e);
+                Err(AccountError::OperationFailed(e.to_string()))
+            }
+        }
+    }
+
     /// Migrate accounts from database to file storage (one-time operation)
     async fn migrate_accounts_from_db(&self) -> Result<(), AccountError> {
         let db = self.db()?;
@@ -129,8 +192,8 @@ impl AccountService {
             return Ok(());
         }
 
-        // Fetch accounts from database
-        let rows = sqlx::query!(
+        // Fetch accounts from database (using raw query to avoid compile-time checks)
+        let rows = sqlx::query(
             r#"
             SELECT
                 id, account_name, email_address, provider_type,
@@ -156,38 +219,56 @@ impl AccountService {
         let mut default_account_id: Option<String> = None;
 
         for row in rows {
-            let account_id = format!("account_{}", row.id);
+            let id: i64 = row.get("id");
+            let account_name: String = row.get("account_name");
+            let email_address: String = row.get("email_address");
+            let provider_type: Option<String> = row.get("provider_type");
+            let imap_host: String = row.get("imap_host");
+            let imap_port: i64 = row.get("imap_port");
+            let imap_user: String = row.get("imap_user");
+            let imap_pass: String = row.get("imap_pass");
+            let imap_use_tls: i32 = row.get("imap_use_tls");
+            let smtp_host: Option<String> = row.get("smtp_host");
+            let smtp_port: Option<i64> = row.get("smtp_port");
+            let smtp_user: Option<String> = row.get("smtp_user");
+            let smtp_pass: Option<String> = row.get("smtp_pass");
+            let smtp_use_tls: Option<i32> = row.get("smtp_use_tls");
+            let smtp_use_starttls: Option<i32> = row.get("smtp_use_starttls");
+            let is_active: i32 = row.get("is_active");
+            let is_default: i32 = row.get("is_default");
+
+            let account_id = format!("account_{}", id);
 
             let stored_account = StoredAccount {
                 id: account_id.clone(),
-                account_name: row.account_name,
-                email_address: row.email_address,
-                provider_type: row.provider_type,
+                account_name,
+                email_address,
+                provider_type,
                 imap: super::account_store::ImapConfig {
-                    host: row.imap_host,
-                    port: row.imap_port as u16,
-                    username: row.imap_user,
-                    password: row.imap_pass,
-                    use_tls: row.imap_use_tls,
+                    host: imap_host,
+                    port: imap_port as u16,
+                    username: imap_user,
+                    password: imap_pass,
+                    use_tls: imap_use_tls != 0,
                 },
-                smtp: row.smtp_host.map(|host| {
+                smtp: smtp_host.map(|host| {
                     super::account_store::SmtpConfig {
                         host,
-                        port: row.smtp_port.unwrap_or(587) as u16,
-                        username: row.smtp_user.unwrap_or_default(),
-                        password: row.smtp_pass.unwrap_or_default(),
-                        use_tls: row.smtp_use_tls.unwrap_or(true),
-                        use_starttls: row.smtp_use_starttls.unwrap_or(true),
+                        port: smtp_port.unwrap_or(587) as u16,
+                        username: smtp_user.unwrap_or_default(),
+                        password: smtp_pass.unwrap_or_default(),
+                        use_tls: smtp_use_tls.map(|v| v != 0).unwrap_or(true),
+                        use_starttls: smtp_use_starttls.map(|v| v != 0).unwrap_or(true),
                     }
                 }),
-                is_active: row.is_active,
+                is_active: is_active != 0,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
             };
 
             self.account_store.add_account(stored_account).await?;
 
-            if row.is_default {
+            if is_default != 0 {
                 default_account_id = Some(account_id);
             }
         }

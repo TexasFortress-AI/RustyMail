@@ -8,14 +8,25 @@ import ClientListPanel from './ClientListPanel';
 import ChatbotPanel from './ChatbotPanel';
 import McpTools from './McpTools';
 import EmailList from './EmailList';
+import { AccountListPanel } from './AccountListPanel';
+import { AccountFormDialog } from './AccountFormDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Account } from '@/types';
+import { useAccount } from '@/contexts/AccountContext';
 
 const Dashboard: React.FC = () => {
   // Initialize SSE event listener
   useSSEEvents();
 
+  // Get account context
+  const { refreshAccounts } = useAccount();
+
   // Active tab state
   const [activeTab, setActiveTab] = useState('email');
+
+  // Account management state
+  const [accountFormOpen, setAccountFormOpen] = useState(false);
+  const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
 
   // Splitter state for Email tab (vertical - top/bottom)
   const [emailTopHeight, setEmailTopHeight] = useState(60); // percentage for top section
@@ -193,8 +204,9 @@ const Dashboard: React.FC = () => {
         data-testid="dashboard-container"
       >
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-          <TabsList className="grid w-full max-w-md grid-cols-2 mb-4">
+          <TabsList className="grid w-full max-w-xl grid-cols-3 mb-4">
             <TabsTrigger value="email">Email</TabsTrigger>
+            <TabsTrigger value="accounts">Accounts</TabsTrigger>
             <TabsTrigger value="system">System</TabsTrigger>
           </TabsList>
 
@@ -257,6 +269,22 @@ const Dashboard: React.FC = () => {
             </div>
           </TabsContent>
 
+          {/* Accounts Tab */}
+          <TabsContent value="accounts" className="flex-1 flex flex-col min-h-0 mt-0 data-[state=inactive]:hidden">
+            <div className="flex-1 overflow-auto">
+              <AccountListPanel
+                onAddAccount={() => {
+                  setSelectedAccount(null);
+                  setAccountFormOpen(true);
+                }}
+                onEditAccount={(account) => {
+                  setSelectedAccount(account);
+                  setAccountFormOpen(true);
+                }}
+              />
+            </div>
+          </TabsContent>
+
           {/* System Tab */}
           <TabsContent value="system" className="flex-1 flex gap-6 min-h-0 mt-0 data-[state=inactive]:hidden" data-testid="system-tab-container">
             {/* Left panel - StatsPanel */}
@@ -284,6 +312,18 @@ const Dashboard: React.FC = () => {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Account Form Dialog */}
+      <AccountFormDialog
+        open={accountFormOpen}
+        onOpenChange={setAccountFormOpen}
+        account={selectedAccount}
+        onSuccess={() => {
+          refreshAccounts();
+          setAccountFormOpen(false);
+          setSelectedAccount(null);
+        }}
+      />
     </div>
   );
 };
