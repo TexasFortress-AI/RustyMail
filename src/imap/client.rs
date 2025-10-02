@@ -124,6 +124,14 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         self.session.expunge().await
     }
 
+    pub async fn mark_as_deleted(&self, uids: &[u32]) -> Result<(), ImapError> {
+        self.session.mark_as_deleted(uids).await
+    }
+
+    pub async fn undelete_messages(&self, uids: &[u32]) -> Result<(), ImapError> {
+        self.session.undelete_messages(uids).await
+    }
+
     pub async fn logout(&self) -> Result<(), ImapError> {
         self.session.logout().await
     }

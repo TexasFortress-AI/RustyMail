@@ -545,6 +545,214 @@ pub async fn execute_mcp_tool(
                 })
             }
         }
+        "atomic_move_message" => {
+            let uid = params.get("uid")
+                .and_then(|v| v.as_u64())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'uid' parameter".to_string()))? as u32;
+            let from_folder = params.get("from_folder")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'from_folder' parameter".to_string()))?;
+            let to_folder = params.get("to_folder")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'to_folder' parameter".to_string()))?;
+
+            match email_service.atomic_move_message(uid, from_folder, to_folder).await {
+                Ok(_) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": {
+                            "uid": uid,
+                            "from_folder": from_folder,
+                            "to_folder": to_folder
+                        },
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to move message: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "atomic_batch_move" => {
+            let uids = params.get("uids")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'uids' parameter".to_string()))?
+                .iter()
+                .filter_map(|v| v.as_u64())
+                .map(|v| v as u32)
+                .collect::<Vec<u32>>();
+            let from_folder = params.get("from_folder")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'from_folder' parameter".to_string()))?;
+            let to_folder = params.get("to_folder")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'to_folder' parameter".to_string()))?;
+
+            if uids.is_empty() {
+                return Err(ApiError::BadRequest("'uids' parameter cannot be empty".to_string()));
+            }
+
+            match email_service.atomic_batch_move(&uids, from_folder, to_folder).await {
+                Ok(_) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": {
+                            "uids": uids,
+                            "from_folder": from_folder,
+                            "to_folder": to_folder,
+                            "count": uids.len()
+                        },
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to batch move messages: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "mark_as_deleted" => {
+            let uids = params.get("uids")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'uids' parameter".to_string()))?
+                .iter()
+                .filter_map(|v| v.as_u64())
+                .map(|v| v as u32)
+                .collect::<Vec<u32>>();
+            let folder = params.get("folder")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'folder' parameter".to_string()))?;
+
+            if uids.is_empty() {
+                return Err(ApiError::BadRequest("'uids' parameter cannot be empty".to_string()));
+            }
+
+            match email_service.mark_as_deleted(folder, &uids).await {
+                Ok(_) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": {
+                            "uids": uids,
+                            "folder": folder,
+                            "count": uids.len()
+                        },
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to mark messages as deleted: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "delete_messages" => {
+            let uids = params.get("uids")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'uids' parameter".to_string()))?
+                .iter()
+                .filter_map(|v| v.as_u64())
+                .map(|v| v as u32)
+                .collect::<Vec<u32>>();
+            let folder = params.get("folder")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'folder' parameter".to_string()))?;
+
+            if uids.is_empty() {
+                return Err(ApiError::BadRequest("'uids' parameter cannot be empty".to_string()));
+            }
+
+            match email_service.delete_messages(folder, &uids).await {
+                Ok(_) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": {
+                            "uids": uids,
+                            "folder": folder,
+                            "count": uids.len()
+                        },
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to delete messages: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "undelete_messages" => {
+            let uids = params.get("uids")
+                .and_then(|v| v.as_array())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'uids' parameter".to_string()))?
+                .iter()
+                .filter_map(|v| v.as_u64())
+                .map(|v| v as u32)
+                .collect::<Vec<u32>>();
+            let folder = params.get("folder")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'folder' parameter".to_string()))?;
+
+            if uids.is_empty() {
+                return Err(ApiError::BadRequest("'uids' parameter cannot be empty".to_string()));
+            }
+
+            match email_service.undelete_messages(folder, &uids).await {
+                Ok(_) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": {
+                            "uids": uids,
+                            "folder": folder,
+                            "count": uids.len()
+                        },
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to undelete messages: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "expunge" => {
+            let folder = params.get("folder")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'folder' parameter".to_string()))?;
+
+            match email_service.expunge(folder).await {
+                Ok(_) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": {
+                            "folder": folder
+                        },
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to expunge folder: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
         _ => {
             // For other tools not yet implemented
             serde_json::json!({

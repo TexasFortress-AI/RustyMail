@@ -243,4 +243,95 @@ impl EmailService {
             attachments: Vec::new(), // Attachments loaded separately
         }
     }
+
+    /// Atomically move a single email from one folder to another
+    pub async fn atomic_move_message(&self, uid: u32, from_folder: &str, to_folder: &str) -> Result<(), EmailServiceError> {
+        debug!("Atomically moving email {} from {} to {}", uid, from_folder, to_folder);
+
+        let client = self.imap_factory.create_session().await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+
+        // Use atomic operations - extract the session from the client
+        let session = client.session_arc();
+        let atomic_ops = crate::imap::atomic::AtomicImapOperations::new((*session).clone());
+        atomic_ops.atomic_move(uid, from_folder, to_folder).await?;
+
+        // Note: Cache will be invalidated naturally on next access
+        info!("Successfully moved email {} from {} to {}", uid, from_folder, to_folder);
+        Ok(())
+    }
+
+    /// Atomically move multiple emails from one folder to another
+    pub async fn atomic_batch_move(&self, uids: &[u32], from_folder: &str, to_folder: &str) -> Result<(), EmailServiceError> {
+        debug!("Atomically moving {} emails from {} to {}", uids.len(), from_folder, to_folder);
+
+        let client = self.imap_factory.create_session().await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+
+        // Use atomic operations - extract the session from the client
+        let session = client.session_arc();
+        let atomic_ops = crate::imap::atomic::AtomicImapOperations::new((*session).clone());
+        atomic_ops.atomic_batch_move(uids, from_folder, to_folder).await?;
+
+        // Note: Cache will be invalidated naturally on next access
+        info!("Successfully moved {} emails from {} to {}", uids.len(), from_folder, to_folder);
+        Ok(())
+    }
+
+    /// Mark email(s) as deleted (sets \Deleted flag)
+    pub async fn mark_as_deleted(&self, folder: &str, uids: &[u32]) -> Result<(), EmailServiceError> {
+        debug!("Marking {} emails as deleted in {}", uids.len(), folder);
+
+        let client = self.imap_factory.create_session().await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+
+        client.select_folder(folder).await?;
+        client.mark_as_deleted(uids).await?;
+
+        // Note: Cache will be invalidated naturally on next access
+        info!("Successfully marked {} emails as deleted", uids.len());
+        Ok(())
+    }
+
+    /// Permanently delete messages (mark as deleted and expunge)
+    pub async fn delete_messages(&self, folder: &str, uids: &[u32]) -> Result<(), EmailServiceError> {
+        debug!("Deleting {} messages in {}", uids.len(), folder);
+
+        // First mark as deleted
+        self.mark_as_deleted(folder, uids).await?;
+
+        // Then expunge
+        self.expunge(folder).await?;
+
+        info!("Successfully deleted {} messages", uids.len());
+        Ok(())
+    }
+
+    /// Remove \Deleted flag from messages
+    pub async fn undelete_messages(&self, folder: &str, uids: &[u32]) -> Result<(), EmailServiceError> {
+        debug!("Undeleting {} messages in {}", uids.len(), folder);
+
+        let client = self.imap_factory.create_session().await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+
+        client.select_folder(folder).await?;
+        client.undelete_messages(uids).await?;
+
+        info!("Successfully undeleted {} messages", uids.len());
+        Ok(())
+    }
+
+    /// Expunge deleted messages from a folder
+    pub async fn expunge(&self, folder: &str) -> Result<(), EmailServiceError> {
+        debug!("Expunging deleted messages from {}", folder);
+
+        let client = self.imap_factory.create_session().await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+
+        client.select_folder(folder).await?;
+        client.expunge().await?;
+
+        info!("Successfully expunged messages from {}", folder);
+        Ok(())
+    }
 }
