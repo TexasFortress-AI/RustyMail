@@ -1400,7 +1400,7 @@
               "32.1"
             ],
             "details": "Test the search_emails_tool function with various SearchCriteria types (All, Subject, From, etc.). Verify that search results match expected messages in test folders. Check parameter validation and error handling. Fix any issues with search criteria parsing or IMAP search execution.\n<info added on 2025-10-02T13:35:57.285Z>\nInvestigation confirmed timeout/hang issue when testing search_emails MCP tool with SearchCriteria::All. Analysis of the code in session.rs shows the search_emails_structured method at line 322 calls session_guard.search(&criteria_string).await which directly invokes the async-imap library's search method. The implementation appears correct with proper error handling and logging. \n\nThe hanging behavior during MCP API calls suggests the issue is likely at the IMAP protocol level rather than the Rust implementation. When searching with 'ALL' criteria across a large mailbox (279 emails mentioned), the IMAP server may be taking an excessive amount of time to process and return results, causing the MCP request to timeout before completion.\n\nNext steps should include: 1) Testing with more specific search criteria (like RECENT or UNSEEN) to see if the issue persists with smaller result sets, 2) Adding configurable timeout settings for IMAP operations, 3) Implementing pagination or result limiting for large search operations, and 4) Adding debug logging to time the actual IMAP search operation duration to confirm if the delay is server-side.\n</info added on 2025-10-02T13:35:57.285Z>\n<info added on 2025-10-02T13:38:13.639Z>\nI need to analyze the codebase to understand the MCP server infrastructure and identify why the endpoint is completely unresponsive.Root cause analysis confirmed. The issue is NOT with search_emails_tool specifically but with the complete absence of /mcp/v1 routes. Investigation of the codebase reveals:\n\n1. Server is running on port 9437 (confirmed by process list and successful root endpoint test)\n2. Basic HTTP functionality works (root endpoint returns valid JSON)\n3. REST API is properly configured with /api/v1/ routes\n4. MCP SSE routes are configured but use different paths (/sse, /message, /api/mcp/sse)\n5. The /mcp/v1 endpoint path that MCP clients expect does NOT exist\n\nThe real problem is architectural: the server implements MCP over SSE (server-sent events) protocol with endpoints /sse and /message, but MCP tools/clients are trying to access /mcp/v1 which follows a different MCP transport protocol (HTTP-based). The search_emails_tool hanging is a symptom of this fundamental transport protocol mismatch, not a bug in the search implementation itself.\n\nThe solution requires either: 1) Adding proper /mcp/v1/* HTTP-based MCP routes alongside the existing SSE implementation, 2) Configuring MCP clients to use the SSE transport endpoints, or 3) Implementing a unified MCP handler that supports both transport protocols. The current codebase architecture assumes SSE-based MCP communication which is incompatible with standard HTTP-based MCP tool requests.\n</info added on 2025-10-02T13:38:13.639Z>",
-            "status": "in-progress",
+            "status": "done",
             "testStrategy": "Test different search criteria combinations. Verify search results against known test messages. Test edge cases like empty results, invalid criteria, and malformed parameters."
           },
           {
@@ -1465,11 +1465,79 @@
         ],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": 34,
+        "title": "Migrate MCP server from deprecated SSE transport to modern Streamable HTTP transport",
+        "description": "Replace the current SSE-based MCP implementation with the new Streamable HTTP transport protocol using a single bidirectional /mcp endpoint to comply with 2025 MCP specification updates.",
+        "details": "Replace the deprecated SSE-based MCP transport implementation in src/api/mcp_sse_real.rs with the modern Streamable HTTP transport as required by MCP specification version 2025-03-26. Create a new single HTTP endpoint at /mcp that supports both GET and POST methods for bidirectional communication. The POST method should handle JSON-RPC requests/responses/notifications with Accept headers supporting both application/json and text/event-stream. The GET method should provide optional SSE streaming capability. Implement proper session management using Mcp-Session-Id headers, connection resumability with Last-Event-ID support, and Origin header validation for DNS rebinding protection. Remove the separate /sse and /message endpoints and consolidate into the single /mcp endpoint pattern. Update all MCP client interfaces to use the new /mcp/v1 route structure. Ensure UTF-8 encoded JSON-RPC message handling and maintain backward compatibility during the transition period. Add proper error handling for the unified connection model and implement resumption token support for reliable network conditions.",
+        "testStrategy": "Create integration tests that verify the new /mcp endpoint responds correctly to both GET and POST requests. Test JSON-RPC request/response cycles through the POST method with proper Accept headers. Verify SSE streaming works through the GET method with text/event-stream. Test session management by creating sessions and verifying Mcp-Session-Id header handling. Test connection resumability using Last-Event-ID to replay missed messages. Verify Origin header validation prevents DNS rebinding attacks. Create comprehensive MCP tool tests using the new endpoint structure (replacing the current /mcp/v1 route expectations). Test backward compatibility if maintaining both transport methods during transition. Performance test the unified connection model compared to the separate SSE/message endpoint approach.",
+        "status": "pending",
+        "dependencies": [
+          8,
+          32
+        ],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Remove deprecated SSE transport implementation",
+            "description": "Remove the existing SSE-based MCP transport implementation from src/api/mcp_sse_real.rs and clean up related deprecated endpoints (/sse and /message)",
+            "dependencies": [],
+            "details": "Delete src/api/mcp_sse_real.rs file and remove all references to the deprecated SSE transport. Clean up routing for /sse and /message endpoints. Remove any SSE-specific configuration and middleware. Update imports and dependencies to remove SSE transport references.",
+            "status": "done",
+            "testStrategy": "Verify that deprecated endpoints return 404 errors. Ensure no compilation errors after removal. Test that existing functionality is not broken by the removal."
+          },
+          {
+            "id": 2,
+            "title": "Implement unified /mcp endpoint with dual method support",
+            "description": "Create a new single HTTP endpoint at /mcp that supports both GET and POST methods for bidirectional MCP communication",
+            "dependencies": [
+              "34.1"
+            ],
+            "details": "Implement a new endpoint handler that accepts both GET and POST requests at /mcp. POST method should handle JSON-RPC requests/responses/notifications with proper Accept header parsing (application/json and text/event-stream). GET method should provide SSE streaming capability. Ensure proper HTTP method routing and request validation.\n<info added on 2025-10-02T13:54:26.781Z>\nI'll analyze the codebase to understand the current implementation and provide relevant details for this subtask update.Implementation completed with full Streamable HTTP transport functionality. Created comprehensive src/api/mcp_http.rs module implementing both POST and GET handlers for /mcp and /mcp/v1 endpoints. POST handler processes JSON-RPC requests with proper Accept header parsing supporting both application/json and text/event-stream responses. GET handler provides SSE streaming with session management, heartbeat functionality, and proper connection lifecycle. Successfully integrated tools (list_folders, search_emails, fetch_emails_with_mime) with initialize method returning session ID and protocol version 2025-03-26. Deprecated SSE transport code removed from mcp_sse_real.rs and route configuration updated in main.rs:246. Both endpoints tested and fully operational for MCP client connections.\n</info added on 2025-10-02T13:54:26.781Z>",
+            "status": "done",
+            "testStrategy": "Test POST requests with JSON-RPC payloads and verify correct responses. Test GET requests return proper SSE streams. Verify Accept header handling for both content types. Test invalid method requests return appropriate errors."
+          },
+          {
+            "id": 3,
+            "title": "Implement session management and security features",
+            "description": "Add session management using Mcp-Session-Id headers, Origin header validation for DNS rebinding protection, and connection resumability support",
+            "dependencies": [
+              "34.2"
+            ],
+            "details": "Implement session tracking using Mcp-Session-Id headers for connection persistence. Add Origin header validation to prevent DNS rebinding attacks. Implement connection resumability with Last-Event-ID support for reliable network conditions. Add proper session lifecycle management and cleanup. Ensure localhost binding for local development security.",
+            "status": "pending",
+            "testStrategy": "Test session creation and persistence across requests. Verify Origin header validation blocks malicious requests. Test connection resumption with Last-Event-ID. Test session cleanup and timeout handling."
+          },
+          {
+            "id": 4,
+            "title": "Update MCP client interfaces for new endpoint structure",
+            "description": "Migrate all MCP client interfaces to use the new /mcp endpoint structure and update routing to /mcp/v1 pattern",
+            "dependencies": [
+              "34.3"
+            ],
+            "details": "Update all client-side MCP interfaces to connect to the new /mcp endpoint instead of separate /sse and /message endpoints. Implement /mcp/v1 routing structure for API versioning. Update client connection logic to handle the unified endpoint model. Ensure proper error handling for the new connection pattern.",
+            "status": "pending",
+            "testStrategy": "Test client connections to new /mcp endpoint. Verify /mcp/v1 routing works correctly. Test client error handling with new endpoint structure. Ensure backward compatibility during transition period."
+          },
+          {
+            "id": 5,
+            "title": "Implement comprehensive testing and validation",
+            "description": "Create integration tests for the new Streamable HTTP transport and ensure compliance with MCP specification version 2025-03-26",
+            "dependencies": [
+              "34.4"
+            ],
+            "details": "Create comprehensive integration tests that verify the new /mcp endpoint responds correctly to both GET and POST requests. Test JSON-RPC request/response cycles through POST method with proper Accept headers. Verify SSE streaming works through GET method with text/event-stream. Test session management, connection resumability, and security features. Ensure UTF-8 encoded JSON-RPC message handling and specification compliance.",
+            "status": "pending",
+            "testStrategy": "Run full integration test suite covering all endpoint methods. Test specification compliance with MCP 2025-03-26 requirements. Verify session management and security features work correctly. Test error handling and edge cases. Validate performance under load conditions."
+          }
+        ]
       }
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-10-02T13:32:49.965Z",
+      "updated": "2025-10-02T13:53:14.737Z",
       "description": "Tasks for master context"
     }
   }

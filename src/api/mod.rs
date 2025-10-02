@@ -9,6 +9,6 @@ pub mod validation;
 pub mod sse;
 pub mod mcp_stdio;
 pub mod mcp_sse;
-pub mod mcp_sse_real;
+pub mod mcp_http;  // MCP Streamable HTTP transport
 
 // pub mod sse; // Will be added later 

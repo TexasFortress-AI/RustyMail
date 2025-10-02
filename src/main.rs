@@ -14,16 +14,12 @@ use log::{info, error, warn};
 use rustymail::mcp::handler::McpHandler;
 use rustymail::mcp::adapters::sdk::SdkMcpAdapter;
 // --- End imports ---
-// SSE imports - will need to implement mcp_sse module
-use tokio::sync::Mutex as TokioMutex;
 use env_logger;
 use rustymail::dashboard;
 use rustymail::dashboard::api::SseManager;
 use rustymail::api::openapi_docs;
-// --- Add imports for factory --- 
+// --- Add imports for factory ---
 use rustymail::imap::client::ImapClient; // Needed for the factory closure
-use std::future::Future;
-use std::pin::Pin;
 // --- End imports for factory --- 
 // Remove non-existent imports
 // use rustymail::mcp::adapters::stdio::run_stdio_handler;
@@ -247,7 +243,7 @@ async fn main() -> std::io::Result<()> {
             .configure(openapi_docs::configure_openapi)       // OpenAPI/Swagger documentation
             // .configure(configure_sse_service)              // SSE not implemented yet
             .configure(|cfg| dashboard::api::init_routes(cfg)) // Dashboard API routes
-            .configure(rustymail::api::mcp_sse_real::configure_mcp_sse_routes); // MCP SSE routes
+            .configure(rustymail::api::mcp_http::configure_mcp_routes); // MCP Streamable HTTP transport
 
         // Serve static dashboard files (logic remains the same)
         if let Some(dashboard_config) = &config.dashboard {
