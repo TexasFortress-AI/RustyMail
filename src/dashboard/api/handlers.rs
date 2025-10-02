@@ -943,22 +943,26 @@ pub async fn set_ai_model(
 pub async fn trigger_email_sync(
     state: Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    info!("Triggering full email sync");
+    info!("Triggering full email sync for all folders");
 
     // Clone the sync service Arc to move into the async task
     let sync_service = state.sync_service.clone();
 
     // Spawn the sync task in the background
     tokio::spawn(async move {
-        info!("Starting full sync of INBOX");
-        match sync_service.full_sync_folder("INBOX").await {
-            Ok(()) => info!("Full sync completed successfully"),
-            Err(e) => error!("Full sync failed: {}", e),
+        let folders = vec!["INBOX", "INBOX.Sent", "INBOX.Drafts", "INBOX.Trash", "INBOX.spam"];
+        for folder in folders {
+            info!("Starting full sync of {}", folder);
+            match sync_service.full_sync_folder(folder).await {
+                Ok(()) => info!("{} sync completed successfully", folder),
+                Err(e) => error!("{} sync failed: {}", folder, e),
+            }
         }
+        info!("All folder syncs completed");
     });
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
-        "message": "Email sync started in background",
+        "message": "Email sync started in background for all folders",
         "status": "syncing"
     })))
 }

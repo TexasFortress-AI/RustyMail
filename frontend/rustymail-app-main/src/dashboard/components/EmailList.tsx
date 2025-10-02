@@ -136,10 +136,10 @@ const EmailList: React.FC = () => {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="INBOX">Inbox</SelectItem>
-              <SelectItem value="Sent">Sent</SelectItem>
-              <SelectItem value="Drafts">Drafts</SelectItem>
-              <SelectItem value="Trash">Trash</SelectItem>
-              <SelectItem value="Spam">Spam</SelectItem>
+              <SelectItem value="INBOX.Sent">Sent</SelectItem>
+              <SelectItem value="INBOX.Drafts">Drafts</SelectItem>
+              <SelectItem value="INBOX.Trash">Trash</SelectItem>
+              <SelectItem value="INBOX.spam">Spam</SelectItem>
             </SelectContent>
           </Select>
           <span className="text-sm font-normal text-muted-foreground">

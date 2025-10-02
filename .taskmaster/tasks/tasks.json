@@ -1571,7 +1571,7 @@
             "title": "Fix folders widget scrollbar scrolling content out of sight",
             "description": "The folders widget has a scrollbar but content scrolls out of view - needs proper container constraints",
             "details": "Fix CSS/styling on folders widget to ensure scrollbar keeps content visible and contained within the widget bounds. Check overflow and height properties.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 35
           },
@@ -1580,7 +1580,7 @@
             "title": "Add scrollbar to MCP Email Tools widget",
             "description": "MCP Email Tools widget is missing a scrollbar when content overflows",
             "details": "Add overflow-y: auto or scroll styling to MCP Email Tools widget container to enable scrolling when content exceeds visible area.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 35
           },
@@ -1607,7 +1607,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-10-02T14:35:09.552Z",
+      "updated": "2025-10-02T14:48:36.314Z",
       "description": "Tasks for master context"
     }
   }
