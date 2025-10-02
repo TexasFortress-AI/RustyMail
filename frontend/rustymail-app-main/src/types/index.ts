@@ -104,3 +104,56 @@ export interface SSEEvent {
   timestamp: Date;
   data: any;
 }
+
+// Account Types
+export interface Account {
+  id: string;
+  account_name: string;
+  email_address: string;
+  provider_type?: string;
+  imap_host: string;
+  imap_port: number;
+  imap_user: string;
+  imap_use_tls: boolean;
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_user?: string;
+  smtp_use_tls?: boolean;
+  smtp_use_starttls?: boolean;
+  is_active: boolean;
+  is_default: boolean;
+}
+
+export interface AutoConfigResult {
+  provider_found: boolean;
+  provider_type?: string;
+  display_name?: string;
+  imap_host?: string;
+  imap_port?: number;
+  imap_use_tls?: boolean;
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_use_tls?: boolean;
+  smtp_use_starttls?: boolean;
+  supports_oauth: boolean;
+  oauth_provider?: string;
+}
+
+export interface AccountFormData {
+  account_name: string;
+  email_address: string;
+  provider_type?: string;
+  imap_host: string;
+  imap_port: number;
+  imap_user: string;
+  imap_pass: string;
+  imap_use_tls: boolean;
+  smtp_host?: string;
+  smtp_port?: number;
+  smtp_user?: string;
+  smtp_pass?: string;
+  smtp_use_tls?: boolean;
+  smtp_use_starttls?: boolean;
+  is_default: boolean;
+  validate_connection?: boolean;
+}
