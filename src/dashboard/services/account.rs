@@ -1,5 +1,5 @@
 use sqlx::SqlitePool;
-use log::{info, debug, error};
+use log::{info, debug, error, warn};
 use thiserror::Error;
 use serde::{Serialize, Deserialize};
 use std::time::Duration;
@@ -96,7 +96,108 @@ impl AccountService {
     pub async fn initialize(&mut self, db_pool: SqlitePool) -> Result<(), AccountError> {
         self.db_pool = Some(db_pool);
         self.account_store.initialize().await?;
+
+        // Attempt to migrate accounts from database to file storage
+        if let Err(e) = self.migrate_accounts_from_db().await {
+            warn!("Account migration from database failed: {}. Continuing with file-based storage.", e);
+        }
+
         info!("Account service initialized with file-based storage");
+        Ok(())
+    }
+
+    /// Migrate accounts from database to file storage (one-time operation)
+    async fn migrate_accounts_from_db(&self) -> Result<(), AccountError> {
+        let db = self.db()?;
+
+        // Check if accounts table exists in database
+        let table_exists = sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='accounts'"
+        )
+        .fetch_one(db)
+        .await? > 0;
+
+        if !table_exists {
+            debug!("No accounts table in database, skipping migration");
+            return Ok(());
+        }
+
+        // Check if we already have accounts in file storage
+        let existing_accounts = self.account_store.list_accounts().await?;
+        if !existing_accounts.is_empty() {
+            debug!("Accounts already exist in file storage, skipping migration");
+            return Ok(());
+        }
+
+        // Fetch accounts from database
+        let rows = sqlx::query!(
+            r#"
+            SELECT
+                id, account_name, email_address, provider_type,
+                imap_host, imap_port, imap_user, imap_pass, imap_use_tls,
+                smtp_host, smtp_port, smtp_user, smtp_pass,
+                smtp_use_tls, smtp_use_starttls,
+                is_active, is_default
+            FROM accounts
+            "#
+        )
+        .fetch_all(db)
+        .await?;
+
+        if rows.is_empty() {
+            debug!("No accounts in database to migrate");
+            return Ok(());
+        }
+
+        let account_count = rows.len();
+        info!("Migrating {} accounts from database to file storage", account_count);
+
+        // Migrate each account
+        let mut default_account_id: Option<String> = None;
+
+        for row in rows {
+            let account_id = format!("account_{}", row.id);
+
+            let stored_account = StoredAccount {
+                id: account_id.clone(),
+                account_name: row.account_name,
+                email_address: row.email_address,
+                provider_type: row.provider_type,
+                imap: super::account_store::ImapConfig {
+                    host: row.imap_host,
+                    port: row.imap_port as u16,
+                    username: row.imap_user,
+                    password: row.imap_pass,
+                    use_tls: row.imap_use_tls,
+                },
+                smtp: row.smtp_host.map(|host| {
+                    super::account_store::SmtpConfig {
+                        host,
+                        port: row.smtp_port.unwrap_or(587) as u16,
+                        username: row.smtp_user.unwrap_or_default(),
+                        password: row.smtp_pass.unwrap_or_default(),
+                        use_tls: row.smtp_use_tls.unwrap_or(true),
+                        use_starttls: row.smtp_use_starttls.unwrap_or(true),
+                    }
+                }),
+                is_active: row.is_active,
+                created_at: Utc::now(),
+                updated_at: Utc::now(),
+            };
+
+            self.account_store.add_account(stored_account).await?;
+
+            if row.is_default {
+                default_account_id = Some(account_id);
+            }
+        }
+
+        // Set default account if one was marked
+        if let Some(default_id) = default_account_id {
+            self.account_store.set_default_account(&default_id).await?;
+        }
+
+        info!("Successfully migrated {} accounts to file storage", account_count);
         Ok(())
     }
 
