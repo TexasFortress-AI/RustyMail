@@ -126,7 +126,7 @@ const EmailList: React.FC = () => {
   }
 
   return (
-    <Card className="h-full flex flex-col">
+    <Card className="h-full flex flex-col min-h-0">
       <CardHeader className="flex flex-row items-center justify-between flex-shrink-0">
         <CardTitle className="flex items-center gap-3">
           <Mail className="h-5 w-5" />
@@ -164,39 +164,41 @@ const EmailList: React.FC = () => {
             <RefreshCw className="h-8 w-8 animate-spin text-gray-400" />
           </div>
         ) : (
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="space-y-2 flex-1 overflow-y-auto">
-              {data?.emails.map((email) => (
-                <div
-                  key={email.id}
-                  className="border rounded-lg p-3 hover:bg-gray-50 cursor-pointer transition-colors"
-                  onClick={() => setSelectedEmail(email)}
-                >
-                  <div className="flex justify-between items-start mb-1">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-sm">
-                          {email.from_name || email.from_address || 'Unknown sender'}
-                        </span>
-                        {email.flags.includes('\\Seen') ? null : (
-                          <Badge variant="default" className="text-xs">Unread</Badge>
+          <>
+            <div className="flex-1 overflow-y-auto min-h-0">
+              <div className="space-y-2">
+                {data?.emails.map((email) => (
+                  <div
+                    key={email.id}
+                    className="border rounded-lg p-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                    onClick={() => setSelectedEmail(email)}
+                  >
+                    <div className="flex justify-between items-start mb-1">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-medium text-sm">
+                            {email.from_name || email.from_address || 'Unknown sender'}
+                          </span>
+                          {email.flags.includes('\\Seen') ? null : (
+                            <Badge variant="default" className="text-xs">Unread</Badge>
+                          )}
+                        </div>
+                        <div className="text-sm font-semibold mt-1">
+                          {email.subject || '(No subject)'}
+                        </div>
+                        {email.body_text && (
+                          <div className="text-xs text-gray-600 mt-1">
+                            {truncateText(email.body_text, 100)}
+                          </div>
                         )}
                       </div>
-                      <div className="text-sm font-semibold mt-1">
-                        {email.subject || '(No subject)'}
+                      <div className="text-xs text-gray-500">
+                        {formatDate(email.date, email.internal_date)}
                       </div>
-                      {email.body_text && (
-                        <div className="text-xs text-gray-600 mt-1">
-                          {truncateText(email.body_text, 100)}
-                        </div>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      {formatDate(email.date, email.internal_date)}
                     </div>
                   </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
 
             {/* Pagination */}
@@ -245,7 +247,7 @@ const EmailList: React.FC = () => {
                 </Button>
               </div>
             </div>
-          </div>
+          </>
         )}
 
         {/* Email Preview Modal */}

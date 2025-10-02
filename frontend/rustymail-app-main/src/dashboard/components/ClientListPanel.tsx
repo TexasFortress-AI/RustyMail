@@ -25,9 +25,10 @@ import {
   PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { useClients } from '@/dashboard/api/hooks';
 import { formatDistanceToNow } from 'date-fns';
-import { Loader2, Clock, User, Filter } from 'lucide-react';
+import { Loader2, Clock, User, Filter, ChevronsLeft, ChevronsRight } from 'lucide-react';
 
 const ClientListPanel: React.FC = () => {
   const [page, setPage] = useState(1);
@@ -188,53 +189,50 @@ const ClientListPanel: React.FC = () => {
             </div>
             
             {data && data.pagination.totalPages > 1 && (
-              <div className="flex justify-center mt-4 animate-slide-up" style={{ animationDelay: '0.3s' }}>
-                <Pagination>
-                  <PaginationContent>
-                    <PaginationItem>
-                      <PaginationPrevious 
-                        onClick={() => handlePageChange(page - 1)}
-                        className={page <= 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                      />
-                    </PaginationItem>
-                    
-                    {Array.from({ length: Math.min(5, data.pagination.totalPages) }).map((_, i) => {
-                      // Show pages around current page
-                      let pageNum = page;
-                      if (page <= 3) {
-                        pageNum = i + 1;
-                      } else if (page >= data.pagination.totalPages - 2) {
-                        pageNum = data.pagination.totalPages - 4 + i;
-                      } else {
-                        pageNum = page - 2 + i;
-                      }
-                      
-                      // Don't show negative page numbers
-                      if (pageNum <= 0 || pageNum > data.pagination.totalPages) {
-                        return null;
-                      }
-                      
-                      return (
-                        <PaginationItem key={pageNum}>
-                          <PaginationLink
-                            onClick={() => handlePageChange(pageNum)}
-                            isActive={pageNum === page}
-                            className="cursor-pointer"
-                          >
-                            {pageNum}
-                          </PaginationLink>
-                        </PaginationItem>
-                      );
-                    })}
-                    
-                    <PaginationItem>
-                      <PaginationNext 
-                        onClick={() => handlePageChange(page + 1)}
-                        className={page >= data.pagination.totalPages ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                      />
-                    </PaginationItem>
-                  </PaginationContent>
-                </Pagination>
+              <div className="flex items-center justify-between mt-4 animate-slide-up" style={{ animationDelay: '0.3s' }}>
+                <div className="flex gap-1">
+                  <Button
+                    onClick={() => handlePageChange(1)}
+                    disabled={page === 1}
+                    size="sm"
+                    variant="outline"
+                    title="First page"
+                  >
+                    <ChevronsLeft className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    onClick={() => handlePageChange(page - 1)}
+                    disabled={page === 1}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Previous
+                  </Button>
+                </div>
+
+                <span className="text-sm text-muted-foreground">
+                  Page {page} of {data.pagination.totalPages}
+                </span>
+
+                <div className="flex gap-1">
+                  <Button
+                    onClick={() => handlePageChange(page + 1)}
+                    disabled={page >= data.pagination.totalPages}
+                    size="sm"
+                    variant="outline"
+                  >
+                    Next
+                  </Button>
+                  <Button
+                    onClick={() => handlePageChange(data.pagination.totalPages)}
+                    disabled={page >= data.pagination.totalPages}
+                    size="sm"
+                    variant="outline"
+                    title="Last page"
+                  >
+                    <ChevronsRight className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             )}
           </>

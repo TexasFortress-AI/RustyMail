@@ -147,20 +147,11 @@ const Dashboard: React.FC = () => {
           </TabsList>
 
           {/* Email Tab */}
-          <TabsContent value="email" className="flex-1 flex flex-col min-h-0 mt-0" data-testid="email-tab-container">
+          <TabsContent value="email" className="flex-1 flex flex-col min-h-0 mt-0 data-[state=inactive]:hidden" data-testid="email-tab-container">
             {/* Top section - EmailList and McpTools */}
-            <div
-              className="flex flex-col min-h-0"
-              style={{ height: `${emailTopHeight}%` }}
-            >
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 overflow-hidden">
-                <div className="flex flex-col min-h-0">
-                  <EmailList />
-                </div>
-                <div className="flex flex-col min-h-0">
-                  <McpTools />
-                </div>
-              </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1 overflow-hidden min-h-0">
+              <EmailList />
+              <McpTools />
             </div>
 
             {/* Splitter */}
@@ -177,45 +168,34 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Bottom section - Chatbot */}
-            <div
-              className="flex flex-col min-h-0"
-              style={{ height: `calc(${100 - emailTopHeight}% - 1rem)` }}
-            >
+            <div className="flex-1 overflow-hidden min-h-0">
               <ChatbotPanel />
             </div>
           </TabsContent>
 
           {/* System Tab */}
-          <TabsContent value="system" className="flex-1 flex flex-col min-h-0 mt-0" data-testid="system-tab-container">
-            <div className="flex flex-1 gap-6 min-h-0 overflow-hidden">
-              {/* Left panel - StatsPanel */}
-              <div
-                className="flex flex-col min-h-0"
-                style={{ width: `${systemLeftWidth}%` }}
-              >
-                <StatsPanel />
-              </div>
+          <TabsContent value="system" className="flex-1 flex gap-6 min-h-0 mt-0 data-[state=inactive]:hidden" data-testid="system-tab-container">
+            {/* Left panel - StatsPanel */}
+            <div className="flex-1 overflow-hidden min-h-0">
+              <StatsPanel />
+            </div>
 
-              {/* Vertical Splitter */}
-              <div
-                className={`
-                  relative w-4 px-1 bg-muted/30 cursor-ew-resize flex items-center justify-center
-                  hover:bg-muted/50 transition-colors duration-150 select-none flex-shrink-0
-                  ${isResizingSystem ? 'bg-primary/20' : ''}
-                `}
-                onMouseDown={handleSystemResizeStart}
-                title="Drag to resize panels"
-              >
-                <div className="h-full w-px bg-muted-foreground/20" />
-              </div>
+            {/* Vertical Splitter */}
+            <div
+              className={`
+                relative w-4 px-1 bg-muted/30 cursor-ew-resize flex items-center justify-center
+                hover:bg-muted/50 transition-colors duration-150 select-none flex-shrink-0
+                ${isResizingSystem ? 'bg-primary/20' : ''}
+              `}
+              onMouseDown={handleSystemResizeStart}
+              title="Drag to resize panels"
+            >
+              <div className="h-full w-px bg-muted-foreground/20" />
+            </div>
 
-              {/* Right panel - ClientListPanel */}
-              <div
-                className="flex flex-col min-h-0"
-                style={{ width: `calc(${100 - systemLeftWidth}% - 1.5rem)` }}
-              >
-                <ClientListPanel />
-              </div>
+            {/* Right panel - ClientListPanel */}
+            <div className="flex-1 overflow-hidden min-h-0">
+              <ClientListPanel />
             </div>
           </TabsContent>
         </Tabs>
