@@ -1,8 +1,8 @@
-use std::sync::Arc;
 use sqlx::SqlitePool;
 use log::{info, debug, error};
 use thiserror::Error;
 use serde::{Serialize, Deserialize};
+use std::time::Duration;
 
 #[derive(Error, Debug)]
 pub enum AccountError {
@@ -498,5 +498,35 @@ impl AccountService {
 
         info!("Set default account to ID: {}", account_id);
         Ok(())
+    }
+
+    /// Validate account credentials by attempting to connect
+    pub async fn validate_connection(&self, account: &Account) -> Result<(), AccountError> {
+        debug!("Validating connection for account: {}", account.account_name);
+
+        // Attempt to connect using the provided credentials with 10 second timeout
+        let timeout = Duration::from_secs(10);
+        let connect_result = crate::imap::client::connect(
+            &account.imap_host,
+            account.imap_port as u16,
+            &account.imap_user,
+            &account.imap_pass,
+            timeout,
+        ).await;
+
+        match connect_result {
+            Ok(client) => {
+                // Successfully connected, logout gracefully
+                if let Err(e) = client.logout().await {
+                    debug!("Logout error during validation (non-critical): {}", e);
+                }
+                info!("Connection validation successful for: {}", account.account_name);
+                Ok(())
+            }
+            Err(e) => {
+                error!("Connection validation failed for {}: {}", account.account_name, e);
+                Err(AccountError::OperationFailed(format!("Connection failed: {}", e)))
+            }
+        }
     }
 }

@@ -1,5 +1,6 @@
 use actix_web::{web, Scope};
 use super::handlers;
+use super::accounts;
 use super::sse;
 use super::config;
 use super::health;
@@ -30,6 +31,16 @@ pub fn configure_routes() -> Scope {
         // Email cache endpoints
         .route("/emails", web::get().to(handlers::get_cached_emails))
         .route("/events", web::get().to(sse::sse_handler))
+        // Account management endpoints
+        .route("/accounts/auto-config", web::post().to(accounts::auto_configure))
+        .route("/accounts", web::post().to(accounts::create_account))
+        .route("/accounts", web::get().to(accounts::list_accounts))
+        .route("/accounts/default", web::get().to(accounts::get_default_account))
+        .route("/accounts/{id}", web::get().to(accounts::get_account))
+        .route("/accounts/{id}", web::put().to(accounts::update_account))
+        .route("/accounts/{id}", web::delete().to(accounts::delete_account))
+        .route("/accounts/{id}/default", web::post().to(accounts::set_default_account))
+        .route("/accounts/{id}/validate", web::post().to(accounts::validate_connection))
         // Subscription management endpoints
         .route("/events/types", web::get().to(handlers::get_available_event_types))
         .route("/clients/{client_id}/subscriptions", web::get().to(handlers::get_client_subscriptions))
