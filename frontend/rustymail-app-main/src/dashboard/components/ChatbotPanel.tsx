@@ -39,7 +39,12 @@ const saveConversation = (messages: ChatMessage[]): void => {
   }
 };
 
-const ChatbotPanel: React.FC = () => {
+interface ChatbotPanelProps {
+  currentFolder?: string;
+  accountId?: string;
+}
+
+const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId }) => {
   const [inputText, setInputText] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>(loadConversation);
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
@@ -144,7 +149,9 @@ const ChatbotPanel: React.FC = () => {
       chatbotMutation.mutate(
         {
           query: queryText,
-          conversation_id: conversationId
+          conversation_id: conversationId,
+          current_folder: currentFolder,
+          account_id: accountId
         },
         {
           onSuccess: (response) => {

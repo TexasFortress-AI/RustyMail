@@ -214,10 +214,12 @@ impl CacheService {
         // Not in cache, check database
         let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
 
+        // TODO: Pass account_id properly instead of hardcoding to 1
         let folder = sqlx::query_as::<_, (i64, String, Option<String>, Option<String>, Option<i64>, Option<i64>, i32, i32, Option<DateTime<Utc>>)>(
-            "SELECT id, name, delimiter, attributes, uidvalidity, uidnext, total_messages, unseen_messages, last_sync FROM folders WHERE name = ?"
+            "SELECT id, name, delimiter, attributes, uidvalidity, uidnext, total_messages, unseen_messages, last_sync FROM folders WHERE name = ? AND account_id = ?"
         )
         .bind(name)
+        .bind(1i64) // Default account ID
         .fetch_optional(pool)
         .await?;
 
@@ -245,9 +247,11 @@ impl CacheService {
             Ok(cached_folder)
         } else {
             // Create new folder in database
+            // TODO: Pass account_id properly instead of hardcoding to 1
             let id = sqlx::query_scalar::<_, i64>(
-                "INSERT INTO folders (name, delimiter, attributes) VALUES (?, NULL, '[]') RETURNING id"
+                "INSERT INTO folders (account_id, name, delimiter, attributes) VALUES (?, ?, NULL, '[]') RETURNING id"
             )
+            .bind(1i64) // Default account ID
             .bind(name)
             .fetch_one(pool)
             .await?;

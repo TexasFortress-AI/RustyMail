@@ -35,9 +35,13 @@ interface EmailListResponse {
   count: number;
 }
 
-const EmailList: React.FC = () => {
+interface EmailListProps {
+  currentFolder: string;
+  setCurrentFolder: (folder: string) => void;
+}
+
+const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }) => {
   const { currentAccount } = useAccount();
-  const [currentFolder, setCurrentFolder] = useState('INBOX');
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const pageSize = 20;

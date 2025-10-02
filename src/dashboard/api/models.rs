@@ -102,6 +102,8 @@ pub struct ChatbotQuery {
     pub conversation_id: Option<String>,
     pub provider_override: Option<String>,
     pub model_override: Option<String>,
+    pub current_folder: Option<String>,
+    pub account_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

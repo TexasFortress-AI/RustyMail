@@ -199,8 +199,11 @@ impl AiService {
         let query_text = query.query.clone();
         let provider_override = query.provider_override.clone();
         let model_override = query.model_override.clone();
+        let current_folder = query.current_folder.clone();
+        let account_id = query.account_id.clone();
 
-        debug!("Processing chatbot query for conversation {}: {}", conversation_id, query_text);
+        debug!("Processing chatbot query for conversation {}: {} (folder: {:?}, account: {:?})",
+               conversation_id, query_text, current_folder, account_id);
 
         // Always use MCP tools to fetch email context (no longer dependent on email_service)
         let email_context = self.fetch_email_context_mcp(&query_text).await;
@@ -228,6 +231,16 @@ impl AiService {
         // Add a system message that clarifies this is an email assistant
         if messages_history.is_empty() || !messages_history.iter().any(|m| m.role == "system") {
             let mut system_content = "You are RustyMail Assistant, an email management AI. You have full access to the user's email account through the RustyMail system. You can list folders, read emails, search messages, and perform all email operations. Respond naturally to email-related queries.".to_string();
+
+            // Add current folder context if available
+            if let Some(ref folder) = current_folder {
+                system_content.push_str(&format!("\n\nThe user is currently viewing the '{}' folder in their email account.", folder));
+            }
+
+            // Add account context if available
+            if let Some(ref acc_id) = account_id {
+                system_content.push_str(&format!("\n\nThe user is using account ID: {}", acc_id));
+            }
 
             // Add email context if available
             if let Some(context) = email_context {

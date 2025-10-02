@@ -19,10 +19,13 @@ const Dashboard: React.FC = () => {
   useSSEEvents();
 
   // Get account context
-  const { refreshAccounts } = useAccount();
+  const { refreshAccounts, currentAccount } = useAccount();
 
   // Active tab state
   const [activeTab, setActiveTab] = useState('email');
+
+  // Current folder state (shared between EmailList and ChatbotPanel)
+  const [currentFolder, setCurrentFolder] = useState('INBOX');
 
   // Account management state
   const [accountFormOpen, setAccountFormOpen] = useState(false);
@@ -222,7 +225,10 @@ const Dashboard: React.FC = () => {
                 className="overflow-hidden min-h-0"
                 style={{ width: `${emailListWidth}%` }}
               >
-                <EmailList />
+                <EmailList
+                  currentFolder={currentFolder}
+                  setCurrentFolder={setCurrentFolder}
+                />
               </div>
 
               {/* Horizontal Splitter between EmailList and McpTools */}
@@ -265,7 +271,10 @@ const Dashboard: React.FC = () => {
               className="overflow-hidden min-h-0"
               style={{ height: `${100 - emailTopHeight}%` }}
             >
-              <ChatbotPanel />
+              <ChatbotPanel
+                currentFolder={currentFolder}
+                accountId={currentAccount?.id}
+              />
             </div>
           </TabsContent>
 
