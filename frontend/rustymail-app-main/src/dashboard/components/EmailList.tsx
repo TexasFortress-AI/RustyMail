@@ -46,11 +46,11 @@ const EmailList: React.FC = () => {
   }, [currentFolder]);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery<EmailListResponse>({
-    queryKey: ['emails', currentPage],
+    queryKey: ['emails', currentFolder, currentPage],
     queryFn: async () => {
       const offset = (currentPage - 1) * pageSize;
       const response = await fetch(
-        `${API_BASE_URL}/dashboard/emails?limit=${pageSize}&offset=${offset}`,
+        `${API_BASE_URL}/dashboard/emails?folder=${encodeURIComponent(currentFolder)}&limit=${pageSize}&offset=${offset}`,
         {
           headers: {
             'X-API-Key': config.api.apiKey

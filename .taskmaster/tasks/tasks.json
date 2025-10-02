@@ -1553,7 +1553,7 @@
             "title": "Fix rigid splitter between top and bottom sections on Tab1",
             "description": "The splitter between top and bottom sections is not draggable - needs to be made interactive so users can resize the panels",
             "details": "Investigate the splitter component implementation in Tab1. Ensure it has proper drag handlers and state management for resizing. Check CSS and event listeners.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 35
           },
@@ -1562,7 +1562,7 @@
             "title": "Add missing splitter between two top widgets on Tab1",
             "description": "Add a splitter between the folders widget and the email list widget in the top section",
             "details": "Implement a vertical splitter between the left (folders) and right (email list) widgets in the top section to allow resizing.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 35
           },
@@ -1589,7 +1589,7 @@
             "title": "Fix folder dropdown not updating email list",
             "description": "Changing folder selection in dropdown doesn't update the displayed email list",
             "details": "Wire up the folder dropdown change event to trigger email list refresh. Ensure the selected folder value is passed to the email fetching logic and the list updates when folder changes.",
-            "status": "pending",
+            "status": "done",
             "dependencies": [],
             "parentTaskId": 35
           },
@@ -1607,7 +1607,7 @@
     ],
     "metadata": {
       "created": "2025-09-22T13:45:57.433Z",
-      "updated": "2025-10-02T14:07:24.322Z",
+      "updated": "2025-10-02T14:35:09.552Z",
       "description": "Tasks for master context"
     }
   }
