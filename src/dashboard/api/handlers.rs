@@ -299,7 +299,17 @@ pub async fn execute_mcp_tool(
     // Execute the appropriate tool
     let result = match tool_name {
         "list_folders" => {
-            match email_service.list_folders().await {
+            // Get account ID from request or use default
+            let account_id = match get_account_id_to_use(&params, &state).await {
+                Ok(id) => id,
+                Err(e) => return Ok(HttpResponse::Ok().json(serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })))
+            };
+
+            match email_service.list_folders_for_account(&account_id).await {
                 Ok(folders) => {
                     serde_json::json!({
                         "success": true,
@@ -317,8 +327,18 @@ pub async fn execute_mcp_tool(
             }
         }
         "list_folders_hierarchical" => {
+            // Get account ID from request or use default
+            let account_id = match get_account_id_to_use(&params, &state).await {
+                Ok(id) => id,
+                Err(e) => return Ok(HttpResponse::Ok().json(serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })))
+            };
+
             // For now, just use regular list_folders since hierarchical is not implemented
-            match email_service.list_folders().await {
+            match email_service.list_folders_for_account(&account_id).await {
                 Ok(folders) => {
                     serde_json::json!({
                         "success": true,
@@ -344,8 +364,18 @@ pub async fn execute_mcp_tool(
                 .and_then(|v| v.as_str())
                 .unwrap_or("ALL");
 
+            // Get account ID from request or use default
+            let account_id = match get_account_id_to_use(&params, &state).await {
+                Ok(id) => id,
+                Err(e) => return Ok(HttpResponse::Ok().json(serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })))
+            };
+
             // search_emails returns UIDs, not full emails
-            match email_service.search_emails(folder, query).await {
+            match email_service.search_emails_for_account(folder, query, &account_id).await {
                 Ok(uids) => {
                     // Optionally limit results
                     let max_results = params.get("max_results")
@@ -381,8 +411,18 @@ pub async fn execute_mcp_tool(
                 .and_then(|v| v.as_u64())
                 .ok_or_else(|| ApiError::BadRequest("Missing 'uid' parameter".to_string()))? as u32;
 
+            // Get account ID from request or use default
+            let account_id = match get_account_id_to_use(&params, &state).await {
+                Ok(id) => id,
+                Err(e) => return Ok(HttpResponse::Ok().json(serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })))
+            };
+
             // fetch_emails expects an array of UIDs
-            match email_service.fetch_emails(folder, &[uid]).await {
+            match email_service.fetch_emails_for_account(folder, &[uid], &account_id).await {
                 Ok(emails) => {
                     // Return just the first email if found
                     let email_data = emails.into_iter().next();
@@ -418,20 +458,33 @@ pub async fn execute_mcp_tool(
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true);  // Default to preview mode for token efficiency
 
-            match state.cache_service.get_cached_emails(folder, limit, offset, preview_mode).await {
-                Ok(emails) => {
-                    serde_json::json!({
-                        "success": true,
-                        "data": emails,
-                        "folder": folder,
-                        "count": emails.len(),
-                        "tool": tool_name
-                    })
+            // Get account ID from request or use default
+            match get_account_id_to_use(&params, &state).await {
+                Ok(account_id) => {
+                    let db_account_id = account_uuid_to_db_id(&account_id);
+                    match state.cache_service.get_cached_emails_for_account(folder, db_account_id, limit, offset, preview_mode).await {
+                        Ok(emails) => {
+                            serde_json::json!({
+                                "success": true,
+                                "data": emails,
+                                "folder": folder,
+                                "count": emails.len(),
+                                "tool": tool_name
+                            })
+                        }
+                        Err(e) => {
+                            serde_json::json!({
+                                "success": false,
+                                "error": format!("Failed to get cached emails: {}", e),
+                                "tool": tool_name
+                            })
+                        }
+                    }
                 }
                 Err(e) => {
                     serde_json::json!({
                         "success": false,
-                        "error": format!("Failed to get cached emails: {}", e),
+                        "error": format!("Failed to determine account: {}", e),
                         "tool": tool_name
                     })
                 }
@@ -445,36 +498,49 @@ pub async fn execute_mcp_tool(
                 .and_then(|v| v.as_u64())
                 .map(|v| v as u32);
 
-            if let Some(uid) = uid {
-                match state.cache_service.get_email_by_uid(folder, uid).await {
-                    Ok(Some(email)) => {
-                        serde_json::json!({
-                            "success": true,
-                            "data": email,
-                            "tool": tool_name
-                        })
-                    }
-                    Ok(None) => {
+            // Get account ID from request or use default
+            match get_account_id_to_use(&params, &state).await {
+                Ok(account_id) => {
+                    let db_account_id = account_uuid_to_db_id(&account_id);
+                    if let Some(uid) = uid {
+                        match state.cache_service.get_email_by_uid_for_account(folder, uid, db_account_id).await {
+                            Ok(Some(email)) => {
+                                serde_json::json!({
+                                    "success": true,
+                                    "data": email,
+                                    "tool": tool_name
+                                })
+                            }
+                            Ok(None) => {
+                                serde_json::json!({
+                                    "success": false,
+                                    "error": format!("Email with UID {} not found in {}", uid, folder),
+                                    "tool": tool_name
+                                })
+                            }
+                            Err(e) => {
+                                serde_json::json!({
+                                    "success": false,
+                                    "error": format!("Failed to get email by UID: {}", e),
+                                    "tool": tool_name
+                                })
+                            }
+                        }
+                    } else {
                         serde_json::json!({
                             "success": false,
-                            "error": format!("Email with UID {} not found in {}", uid, folder),
-                            "tool": tool_name
-                        })
-                    }
-                    Err(e) => {
-                        serde_json::json!({
-                            "success": false,
-                            "error": format!("Failed to get email by UID: {}", e),
+                            "error": "UID parameter is required",
                             "tool": tool_name
                         })
                     }
                 }
-            } else {
-                serde_json::json!({
-                    "success": false,
-                    "error": "UID parameter is required",
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             }
         }
         "get_email_by_index" => {
@@ -485,10 +551,14 @@ pub async fn execute_mcp_tool(
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize);
 
-            if let Some(index) = index {
-                // Get emails sorted by date DESC, then select by index
-                // Dashboard UI needs full content for display
-                match state.cache_service.get_cached_emails(folder, index + 1, index, false).await {
+            // Get account ID from request or use default
+            match get_account_id_to_use(&params, &state).await {
+                Ok(account_id) => {
+                    let db_account_id = account_uuid_to_db_id(&account_id);
+                    if let Some(index) = index {
+                        // Get emails sorted by date DESC, then select by index
+                        // Dashboard UI needs full content for display
+                        match state.cache_service.get_cached_emails_for_account(folder, db_account_id, index + 1, index, false).await {
                     Ok(emails) if !emails.is_empty() => {
                         serde_json::json!({
                             "success": true,
@@ -510,13 +580,22 @@ pub async fn execute_mcp_tool(
                             "tool": tool_name
                         })
                     }
+                        }
+                    } else {
+                        serde_json::json!({
+                            "success": false,
+                            "error": "index parameter is required",
+                            "tool": tool_name
+                        })
+                    }
                 }
-            } else {
+                Err(e) => {
                 serde_json::json!({
                     "success": false,
-                    "error": "index parameter is required",
+                    "error": format!("Failed to determine account: {}", e),
                     "tool": tool_name
                 })
+                }
             }
         }
         "count_emails_in_folder" => {
@@ -524,7 +603,12 @@ pub async fn execute_mcp_tool(
                 .and_then(|v| v.as_str())
                 .unwrap_or("INBOX");
 
-            match state.cache_service.count_emails_in_folder(folder).await {
+            // Get account ID from request or use default
+            match get_account_id_to_use(&params, &state).await {
+                Ok(account_id) => {
+                    let db_account_id = account_uuid_to_db_id(&account_id);
+
+            match state.cache_service.count_emails_in_folder_for_account(folder, db_account_id).await {
                 Ok(count) => {
                     serde_json::json!({
                         "success": true,
@@ -543,13 +627,27 @@ pub async fn execute_mcp_tool(
                     })
                 }
             }
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
         }
         "get_folder_stats" => {
             let folder = params.get("folder")
                 .and_then(|v| v.as_str())
                 .unwrap_or("INBOX");
 
-            match state.cache_service.get_folder_stats(folder).await {
+            // Get account ID from request or use default
+            match get_account_id_to_use(&params, &state).await {
+                Ok(account_id) => {
+                    let db_account_id = account_uuid_to_db_id(&account_id);
+
+            match state.cache_service.get_folder_stats_for_account(folder, db_account_id).await {
                 Ok(stats) => {
                     serde_json::json!({
                         "success": true,
@@ -561,6 +659,15 @@ pub async fn execute_mcp_tool(
                     serde_json::json!({
                         "success": false,
                         "error": format!("Failed to get folder stats: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
                         "tool": tool_name
                     })
                 }
@@ -577,8 +684,13 @@ pub async fn execute_mcp_tool(
                 .map(|v| v as usize)
                 .unwrap_or(20);
 
+            // Get account ID from request or use default
+            match get_account_id_to_use(&params, &state).await {
+                Ok(account_id) => {
+                    let db_account_id = account_uuid_to_db_id(&account_id);
+
             if let Some(query) = query {
-                match state.cache_service.search_cached_emails(folder, query, limit).await {
+                match state.cache_service.search_cached_emails_for_account(folder, query, limit, db_account_id).await {
                     Ok(emails) => {
                         serde_json::json!({
                             "success": true,
@@ -603,6 +715,15 @@ pub async fn execute_mcp_tool(
                     "error": "query parameter is required",
                     "tool": tool_name
                 })
+            }
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             }
         }
         "atomic_move_message" => {

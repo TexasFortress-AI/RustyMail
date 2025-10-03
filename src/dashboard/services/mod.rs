@@ -133,12 +133,39 @@ pub async fn init(
     }
     let cache_service = Arc::new(cache_service);
 
-    // Initialize Email Service with cache
+    // Initialize Account Service with file-based storage
+    let accounts_config_path = std::env::var("ACCOUNTS_CONFIG_PATH")
+        .unwrap_or_else(|_| "config/accounts.json".to_string());
+
+    let mut account_service_temp = AccountService::new(&accounts_config_path);
+
+    // Get database pool for provider templates (temporary - using cache database)
+    let cache_db_url = std::env::var("CACHE_DATABASE_URL")
+        .unwrap_or_else(|_| "sqlite:data/email_cache.db".to_string());
+
+    let account_db_pool = SqlitePool::connect(&cache_db_url)
+        .await
+        .expect("Failed to create database pool for account service");
+
+    if let Err(e) = account_service_temp.initialize(account_db_pool).await {
+        error!("Failed to initialize account service: {}", e);
+    }
+
+    // Auto-create account from environment variables if none exist
+    if let Err(e) = account_service_temp.ensure_default_account_from_env(&config).await {
+        warn!("Failed to create default account from environment: {}", e);
+    }
+
+    let account_service = Arc::new(TokioMutex::new(account_service_temp));
+
+    // Initialize Email Service with cache and account service
     let email_service = Arc::new(
         EmailService::new(
             imap_session_factory.clone(),
             connection_pool.clone(),
-        ).with_cache(cache_service.clone())
+        )
+        .with_cache(cache_service.clone())
+        .with_account_service(account_service.clone())
     );
 
     // Initialize Sync Service
@@ -152,31 +179,6 @@ pub async fn init(
         cache_service.clone(),
         sync_interval,
     ));
-
-    // Initialize Account Service with file-based storage
-    let accounts_config_path = std::env::var("ACCOUNTS_CONFIG_PATH")
-        .unwrap_or_else(|_| "config/accounts.json".to_string());
-
-    let mut account_service = AccountService::new(&accounts_config_path);
-
-    // Get database pool for provider templates (temporary - using cache database)
-    let cache_db_url = std::env::var("CACHE_DATABASE_URL")
-        .unwrap_or_else(|_| "sqlite:data/email_cache.db".to_string());
-
-    let account_db_pool = SqlitePool::connect(&cache_db_url)
-        .await
-        .expect("Failed to create database pool for account service");
-
-    if let Err(e) = account_service.initialize(account_db_pool).await {
-        error!("Failed to initialize account service: {}", e);
-    }
-
-    // Auto-create account from environment variables if none exist
-    if let Err(e) = account_service.ensure_default_account_from_env(&config).await {
-        warn!("Failed to create default account from environment: {}", e);
-    }
-
-    let account_service = Arc::new(TokioMutex::new(account_service));
 
     // Initialize AI Service with environment variables
     let openai_api_key = std::env::var("OPENAI_API_KEY").ok();

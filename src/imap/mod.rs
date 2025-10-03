@@ -17,7 +17,7 @@ pub use session::{AsyncImapOps, AsyncImapSessionWrapper};
 pub use types::{
     Address, Email, Envelope, FlagOperation, Flags, Folder, MailboxInfo, SearchCriteria,
     // Re-export necessary payload types if they are part of the public API
-    AppendEmailPayload, ModifyFlagsPayload, 
+    AppendEmailPayload, ModifyFlagsPayload,
 };
 
 // --- Type Aliases (Consider if these are truly needed publicly) ---
@@ -52,8 +52,30 @@ impl CloneableImapSessionFactory {
         }
     }
 
+    /// Create a session using the default factory (credentials from .env)
     pub async fn create_session(&self) -> ImapSessionFactoryResult {
         (self.factory)().await
+    }
+
+    /// Create a session for a specific account (using account's credentials)
+    pub async fn create_session_for_account(
+        &self,
+        account: &crate::dashboard::services::account::Account,
+    ) -> ImapSessionFactoryResult {
+        use crate::imap::client::ImapClient;
+        use log::debug;
+
+        debug!("Creating IMAP session for account: {} ({})", account.email_address, account.imap_host);
+
+        // Create a new IMAP client with account-specific credentials
+        let client = ImapClient::<AsyncImapSessionWrapper>::connect(
+            &account.imap_host,
+            account.imap_port as u16,
+            &account.imap_user,
+            &account.imap_pass,
+        ).await?;
+
+        Ok(client)
     }
 }
 

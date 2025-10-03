@@ -5,6 +5,8 @@ use crate::imap::types::Email;
 use crate::prelude::CloneableImapSessionFactory;
 use crate::connection_pool::ConnectionPool;
 use crate::dashboard::services::cache::{CacheService, CachedEmail};
+use crate::dashboard::services::account::{AccountService, Account, AccountError};
+use tokio::sync::Mutex as TokioMutex;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -15,12 +17,17 @@ pub enum EmailServiceError {
     ConnectionError(String),
     #[error("No IMAP connection available")]
     NoConnection,
+    #[error("Account error: {0}")]
+    AccountError(#[from] AccountError),
+    #[error("Account not found: {0}")]
+    AccountNotFound(String),
 }
 
 pub struct EmailService {
     imap_factory: CloneableImapSessionFactory,
     connection_pool: Arc<ConnectionPool>,
     cache_service: Option<Arc<CacheService>>,
+    account_service: Option<Arc<TokioMutex<AccountService>>>,
 }
 
 impl EmailService {
@@ -29,6 +36,7 @@ impl EmailService {
             imap_factory,
             connection_pool,
             cache_service: None,
+            account_service: None,
         }
     }
 
@@ -37,11 +45,44 @@ impl EmailService {
         self
     }
 
-    /// List all folders in the email account
-    pub async fn list_folders(&self) -> Result<Vec<String>, EmailServiceError> {
-        debug!("Listing email folders");
+    pub fn with_account_service(mut self, account_service: Arc<TokioMutex<AccountService>>) -> Self {
+        self.account_service = Some(account_service);
+        self
+    }
 
-        // Get a session from the factory
+    /// Get account by ID from AccountService
+    async fn get_account(&self, account_id: &str) -> Result<Account, EmailServiceError> {
+        let account_service = self.account_service.as_ref()
+            .ok_or_else(|| EmailServiceError::AccountNotFound("Account service not available".to_string()))?;
+
+        let account_service = account_service.lock().await;
+        let account = account_service.get_account(account_id).await?;
+        Ok(account)
+    }
+
+    /// List all folders for a specific account
+    pub async fn list_folders_for_account(&self, account_id: &str) -> Result<Vec<String>, EmailServiceError> {
+        debug!("Listing email folders for account: {}", account_id);
+
+        // Get account credentials
+        let account = self.get_account(account_id).await?;
+
+        // Create session with account-specific credentials
+        let session = self.imap_factory.create_session_for_account(&account).await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session for account {}: {}", account_id, e)))?;
+
+        // List folders
+        let folders = session.list_folders().await?;
+
+        info!("Listed {} folders for account {}", folders.len(), account_id);
+        Ok(folders)
+    }
+
+    /// List all folders in the email account (uses default account)
+    pub async fn list_folders(&self) -> Result<Vec<String>, EmailServiceError> {
+        debug!("Listing email folders (default account)");
+
+        // Get a session from the factory (uses .env credentials for backwards compatibility)
         let session = self.imap_factory.create_session().await
             .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
 
@@ -52,7 +93,28 @@ impl EmailService {
         Ok(folders)
     }
 
-    /// Search for emails in a specific folder
+    /// Search for emails in a specific folder for a specific account
+    pub async fn search_emails_for_account(&self, folder: &str, criteria: &str, account_id: &str) -> Result<Vec<u32>, EmailServiceError> {
+        debug!("Searching emails in folder '{}' with criteria: {} for account {}", folder, criteria, account_id);
+
+        // Get account credentials
+        let account = self.get_account(account_id).await?;
+
+        // Create session with account-specific credentials
+        let session = self.imap_factory.create_session_for_account(&account).await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session for account {}: {}", account_id, e)))?;
+
+        // Select the folder first
+        session.select_folder(folder).await?;
+
+        // Search for emails
+        let uids = session.search_emails(criteria).await?;
+
+        info!("Found {} emails matching criteria for account {}", uids.len(), account_id);
+        Ok(uids)
+    }
+
+    /// Search for emails in a specific folder (uses default account)
     pub async fn search_emails(&self, folder: &str, criteria: &str) -> Result<Vec<u32>, EmailServiceError> {
         debug!("Searching emails in folder '{}' with criteria: {}", folder, criteria);
 
@@ -69,7 +131,44 @@ impl EmailService {
         Ok(uids)
     }
 
-    /// Fetch emails by their UIDs
+    /// Fetch emails by their UIDs for a specific account
+    pub async fn fetch_emails_for_account(&self, folder: &str, uids: &[u32], account_id: &str) -> Result<Vec<Email>, EmailServiceError> {
+        debug!("Fetching {} emails from folder '{}' for account {}", uids.len(), folder, account_id);
+
+        if uids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Get account credentials
+        let account = self.get_account(account_id).await?;
+
+        let mut emails = Vec::new();
+        let mut uids_to_fetch = Vec::new();
+
+        // Note: Cache checking would need account_id support - skipping for now
+        // For now, fetch directly from IMAP
+        uids_to_fetch = uids.to_vec();
+
+        // Fetch emails from IMAP
+        if !uids_to_fetch.is_empty() {
+            let session = self.imap_factory.create_session_for_account(&account).await
+                .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session for account {}: {}", account_id, e)))?;
+
+            // Select the folder first
+            session.select_folder(folder).await?;
+
+            // Fetch the emails
+            let fetched_emails = session.fetch_emails(&uids_to_fetch).await?;
+
+            // TODO: Cache emails with account_id support
+            emails.extend(fetched_emails);
+        }
+
+        info!("Fetched {} emails for account {}", emails.len(), account_id);
+        Ok(emails)
+    }
+
+    /// Fetch emails by their UIDs (uses default account)
     pub async fn fetch_emails(&self, folder: &str, uids: &[u32]) -> Result<Vec<Email>, EmailServiceError> {
         debug!("Fetching {} emails from folder '{}'", uids.len(), folder);
 
