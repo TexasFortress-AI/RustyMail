@@ -358,8 +358,11 @@ pub async fn execute_mcp_tool(
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize)
                 .unwrap_or(0);
+            let preview_mode = params.get("preview_mode")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);  // Default to preview mode for token efficiency
 
-            match state.cache_service.get_cached_emails(folder, limit, offset).await {
+            match state.cache_service.get_cached_emails(folder, limit, offset, preview_mode).await {
                 Ok(emails) => {
                     serde_json::json!({
                         "success": true,
@@ -428,7 +431,8 @@ pub async fn execute_mcp_tool(
 
             if let Some(index) = index {
                 // Get emails sorted by date DESC, then select by index
-                match state.cache_service.get_cached_emails(folder, index + 1, index).await {
+                // Dashboard UI needs full content for display
+                match state.cache_service.get_cached_emails(folder, index + 1, index, false).await {
                     Ok(emails) if !emails.is_empty() => {
                         serde_json::json!({
                             "success": true,
@@ -1229,7 +1233,8 @@ pub async fn get_cached_emails(
 
     info!("Getting cached emails for folder: {}, limit: {}, offset: {}", folder, limit, offset);
 
-    match state.cache_service.get_cached_emails(folder, limit, offset).await {
+    // Dashboard UI needs full content for display
+    match state.cache_service.get_cached_emails(folder, limit, offset, false).await {
         Ok(emails) => {
             info!("Retrieved {} cached emails", emails.len());
             Ok(HttpResponse::Ok().json(serde_json::json!({

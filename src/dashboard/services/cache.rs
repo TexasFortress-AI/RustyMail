@@ -460,7 +460,7 @@ impl CacheService {
     }
 
     /// Get cached emails with pagination support
-    pub async fn get_cached_emails(&self, folder_name: &str, limit: usize, offset: usize) -> Result<Vec<CachedEmail>, CacheError> {
+    pub async fn get_cached_emails(&self, folder_name: &str, limit: usize, offset: usize, preview_mode: bool) -> Result<Vec<CachedEmail>, CacheError> {
         let folder = match self.get_folder_from_cache(folder_name).await {
             Some(f) => f,
             None => return Ok(Vec::new()),
@@ -468,11 +468,21 @@ impl CacheService {
 
         let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
 
-        let emails = sqlx::query_as::<_, (
-            i64, i64, i64, Option<String>, Option<String>, Option<String>, Option<String>,
-            String, String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>,
-            String, Option<String>, Option<String>, DateTime<Utc>
-        )>(
+        // When in preview mode, truncate body text/html to 200 characters to save tokens
+        let query = if preview_mode {
+            r#"
+            SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
+                   to_addresses, cc_addresses, date, internal_date, size,
+                   flags,
+                   CASE WHEN body_text IS NOT NULL THEN SUBSTR(body_text, 1, 200) || '...' ELSE NULL END as body_text,
+                   CASE WHEN body_html IS NOT NULL THEN SUBSTR(body_html, 1, 200) || '...' ELSE NULL END as body_html,
+                   cached_at
+            FROM emails
+            WHERE folder_id = ?
+            ORDER BY COALESCE(date, internal_date) DESC
+            LIMIT ? OFFSET ?
+            "#
+        } else {
             r#"
             SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
                    to_addresses, cc_addresses, date, internal_date, size,
@@ -482,7 +492,13 @@ impl CacheService {
             ORDER BY COALESCE(date, internal_date) DESC
             LIMIT ? OFFSET ?
             "#
-        )
+        };
+
+        let emails = sqlx::query_as::<_, (
+            i64, i64, i64, Option<String>, Option<String>, Option<String>, Option<String>,
+            String, String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>,
+            String, Option<String>, Option<String>, DateTime<Utc>
+        )>(query)
         .bind(folder.id)
         .bind(limit as i64)
         .bind(offset as i64)

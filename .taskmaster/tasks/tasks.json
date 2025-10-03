@@ -1791,13 +1791,14 @@
         "description": "Modify list_cached_emails MCP tool to return email previews instead of full body content to reduce token usage.",
         "details": "Currently, the list_cached_emails tool in src/mcp_cache_tools.rs returns complete CachedEmail objects including full body_text and body_html fields from the cache service. This wastes tokens when users only need previews for list views. The optimization should: 1) Update CacheService::get_cached_emails method in src/dashboard/services/cache.rs to add a new parameter 'preview_mode: bool' that when true, truncates body_text and body_html to 150-200 characters with ellipsis. 2) Create a helper function to truncate text content intelligently (word boundaries, HTML-aware truncation). 3) Update the list_cached_emails_tool function to pass preview_mode=true by default, with an optional 'full_content' parameter to override. 4) Ensure get_email_by_uid and get_email_by_index tools continue to return full content since they're for individual email viewing. 5) Update any related SQL queries to use SUBSTR() for database-level truncation when in preview mode for better performance. The change should maintain backward compatibility and align with the web UI's pagination approach of showing previews in lists and full content on demand.",
         "testStrategy": "Test list_cached_emails returns truncated previews by default. Verify full content still available via get_email_by_uid/get_email_by_index. Test with emails containing large body_text and body_html content. Confirm token usage reduction in MCP responses. Test preview_mode parameter functionality. Verify HTML truncation doesn't break markup. Test SQL query performance with SUBSTR operations.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "6",
           "7"
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-10-03T02:05:57.030Z"
       },
       {
         "id": "37",
@@ -1816,9 +1817,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-10-02T22:55:03.337Z",
+      "lastModified": "2025-10-03T02:05:57.031Z",
       "taskCount": 37,
-      "completedCount": 36,
+      "completedCount": 37,
       "tags": [
         "master"
       ]

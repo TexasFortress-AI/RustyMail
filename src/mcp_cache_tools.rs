@@ -25,7 +25,7 @@ pub async fn list_cached_emails_tool(
         .ok_or_else(|| JsonRpcError::internal_error("Cache service not available"))?;
 
     // Extract parameters
-    let (folder, limit, offset) = if let Some(ref p) = params {
+    let (folder, limit, offset, preview_mode) = if let Some(ref p) = params {
         let folder = p.get("folder")
             .and_then(|v| v.as_str())
             .unwrap_or("INBOX");
@@ -37,12 +37,15 @@ pub async fn list_cached_emails_tool(
             .and_then(|v| v.as_u64())
             .map(|v| v as usize)
             .unwrap_or(0);
-        (folder, limit, offset)
+        let preview_mode = p.get("preview_mode")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);  // Default to preview mode for token efficiency
+        (folder, limit, offset, preview_mode)
     } else {
-        ("INBOX", 20, 0)
+        ("INBOX", 20, 0, true)  // Default to preview mode
     };
 
-    match cache_service.get_cached_emails(folder, limit, offset).await {
+    match cache_service.get_cached_emails(folder, limit, offset, preview_mode).await {
         Ok(emails) => {
             Ok(json!({
                 "success": true,
@@ -126,7 +129,8 @@ pub async fn get_email_by_index_tool(
         .ok_or_else(|| JsonRpcError::invalid_params("index parameter is required"))?;
 
     // Get emails sorted by date DESC, then select by index
-    match cache_service.get_cached_emails(folder, index + 1, index).await {
+    // Use full content (preview_mode=false) for individual email requests
+    match cache_service.get_cached_emails(folder, index + 1, index, false).await {
         Ok(emails) if !emails.is_empty() => {
             Ok(json!({
                 "success": true,
