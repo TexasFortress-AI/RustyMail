@@ -235,6 +235,49 @@ pub async fn list_mcp_tools(
     })))
 }
 
+/// Helper function to get account_id from request parameters with fallback to default account
+/// Priority: 1) account_id from params, 2) default account, 3) first account
+/// Returns the account ID as a String (UUID format)
+async fn get_account_id_to_use(
+    params: &serde_json::Value,
+    state: &web::Data<DashboardState>,
+) -> Result<String, ApiError> {
+    // First, check if account_id is explicitly provided in parameters
+    if let Some(account_id) = params.get("account_id").and_then(|v| v.as_str()) {
+        return Ok(account_id.to_string());
+    }
+
+    // Otherwise, get the default account or first account from AccountService
+    let account_service = state.account_service.lock().await;
+
+    // Try to get default account first
+    if let Ok(Some(default_account)) = account_service.get_default_account().await {
+        return Ok(default_account.id);
+    }
+
+    // If no default, use the first account
+    if let Ok(accounts) = account_service.list_accounts().await {
+        if let Some(first_account) = accounts.first() {
+            return Ok(first_account.id.clone());
+        }
+    }
+
+    // If no accounts exist, return error
+    Err(ApiError::InternalError(
+        "No email accounts configured. Please add an account first.".to_string()
+    ))
+}
+
+/// Convert account UUID string to database integer ID
+/// For now, we use a simple mapping: all accounts use DB account_id=1
+/// TODO: Migrate database schema to use TEXT for account_id to match file storage UUIDs
+fn account_uuid_to_db_id(_account_uuid: &str) -> i64 {
+    // Temporary: All accounts map to database account_id=1
+    // This will work correctly for single-account setups
+    // Multi-account support requires database schema migration
+    1
+}
+
 // Handler for executing MCP tools
 pub async fn execute_mcp_tool(
     state: web::Data<DashboardState>,
