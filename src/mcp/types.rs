@@ -58,6 +58,9 @@ pub struct McpPortState {
     /// The name of the currently selected IMAP folder, if any.
     /// This is used as the default source folder for operations like `moveEmail`.
     pub selected_folder: Option<String>,
+    /// The ID of the currently selected account for MCP operations.
+    /// This mirrors the account context pattern used in the web UI.
+    pub current_account_id: Option<String>,
     session_id: Option<String>,
     session_manager: Arc<SessionManager>,
     /// Cache service for database operations
@@ -68,6 +71,7 @@ impl McpPortState {
     pub fn new(session_manager: Arc<SessionManager>) -> Self {
         Self {
             selected_folder: None,
+            current_account_id: None,
             session_id: None,
             session_manager,
             cache_service: None,
@@ -78,6 +82,7 @@ impl McpPortState {
     pub fn with_cache_service(session_manager: Arc<SessionManager>, cache_service: Arc<CacheService>) -> Self {
         Self {
             selected_folder: None,
+            current_account_id: None,
             session_id: None,
             session_manager,
             cache_service: Some(cache_service),

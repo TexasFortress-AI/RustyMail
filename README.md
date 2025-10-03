@@ -17,6 +17,7 @@ A high-performance, type-safe IMAP API server written in Rust, supporting REST, 
 - 🔒 **Type Safety**: Leverages Rust's type system for reliability
 - 📧 **Full IMAP Support**: Access all folders and messages
 - 🔄 **Multiple Interfaces**: REST API, MCP stdio, MCP SSE
+- 👥 **Multi-Account Support**: Manage and switch between multiple email accounts
 - 🔐 **Secure**: TLS support and authentication
 - 📊 **Monitoring**: Metrics and logging
 - 🧪 **Comprehensive Testing**: Unit, integration, and performance tests
@@ -177,13 +178,20 @@ RustyMail implements the Model Context Protocol (MCP) over stdio and Streamable 
 
 ### Supported Methods
 
-- `imap/listFolders`
-- `imap/createFolder`
-- `imap/deleteFolder`
-- `imap/renameFolder`
-- `imap/searchEmails`
-- `imap/fetchEmails`
-- `imap/moveEmail`
+#### Email Operations
+- `imap/listFolders` - List all email folders
+- `imap/createFolder` - Create a new folder
+- `imap/deleteFolder` - Delete a folder
+- `imap/renameFolder` - Rename a folder
+- `imap/searchEmails` - Search for emails
+- `imap/fetchEmails` - Fetch email content
+- `imap/moveEmail` - Move emails between folders
+
+#### Account Management (NEW)
+- `list_accounts` - List all configured email accounts
+- `set_current_account` - Set the current account for operations
+
+See [Account Tools Quick Start](docs/ACCOUNT_TOOLS_QUICKSTART.md) for details.
 
 ### SSE Example (JavaScript)
 

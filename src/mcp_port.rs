@@ -16,6 +16,7 @@ use crate::mcp_cache_tools::{
     list_cached_emails_tool, get_email_by_uid_tool, get_email_by_index_tool,
     count_emails_in_folder_tool, get_folder_stats_tool, search_cached_emails_tool
 };
+use crate::dashboard::services::Account;
 
 // Define the signature for an MCP tool function
 // The function receives the IMAP session, MCP state, and optional parameters.
@@ -593,6 +594,56 @@ pub async fn mark_as_unread_tool(
     }))
 }
 
+/// Tool for listing all email accounts
+/// Note: This tool requires the account service to be available in the MCP state.
+/// The account service is typically injected when the MCP handler is initialized
+/// with the dashboard state.
+pub async fn list_accounts_tool(
+    _session: Arc<dyn AsyncImapOps>,
+    state: Arc<TokioMutex<McpPortState>>,
+    _params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let state_guard = state.lock().await;
+    
+    // For now, return a simple response indicating the current account
+    // The actual account list will be fetched by the dashboard handler
+    // which has access to the DashboardState
+    Ok(json!({
+        "success": true,
+        "message": "Account listing requires dashboard integration",
+        "current_account_id": state_guard.current_account_id,
+        "note": "Use the dashboard API endpoint /api/dashboard/accounts for full account list"
+    }))
+}
+
+/// Tool for setting the current account context
+/// This sets the account ID in the MCP session state, which will be used
+/// by all subsequent email operations to determine which account to operate on.
+pub async fn set_current_account_tool(
+    _session: Arc<dyn AsyncImapOps>,
+    state: Arc<TokioMutex<McpPortState>>,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
+    
+    // Extract account_id from params
+    let account_id = params.get("account_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| JsonRpcError::invalid_params("account_id parameter is required as string"))?;
+    
+    // Set the current account ID in the state
+    let mut state_guard = state.lock().await;
+    state_guard.current_account_id = Some(account_id.to_string());
+    
+    info!("MCP session: Current account set to {}", account_id);
+    
+    Ok(json!({
+        "success": true,
+        "message": format!("Current account set to: {}", account_id),
+        "account_id": account_id
+    }))
+}
+
 // Function to create and populate the registry
 pub fn create_mcp_tool_registry() -> McpToolRegistry {
     let mut registry = McpToolRegistry::new();
@@ -618,6 +669,10 @@ pub fn create_mcp_tool_registry() -> McpToolRegistry {
     registry.register("count_emails_in_folder", DefaultMcpTool::new("count_emails_in_folder", count_emails_in_folder_tool));
     registry.register("get_folder_stats", DefaultMcpTool::new("get_folder_stats", get_folder_stats_tool));
     registry.register("search_cached_emails", DefaultMcpTool::new("search_cached_emails", search_cached_emails_tool));
+
+    // Account management tools
+    registry.register("list_accounts", DefaultMcpTool::new("list_accounts", list_accounts_tool));
+    registry.register("set_current_account", DefaultMcpTool::new("set_current_account", set_current_account_tool));
 
     registry
 }

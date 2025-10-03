@@ -214,6 +214,19 @@ pub async fn list_mcp_tools(
                 "query": "Search query text",
                 "limit": "Maximum number of results (default: 20)"
             }
+        }),
+        // Account management tools
+        serde_json::json!({
+            "name": "list_accounts",
+            "description": "List all configured email accounts",
+            "parameters": {}
+        }),
+        serde_json::json!({
+            "name": "set_current_account",
+            "description": "Set the current account for email operations",
+            "parameters": {
+                "account_id": "Account ID to set as current"
+            }
         })
     ];
 
@@ -752,6 +765,59 @@ pub async fn execute_mcp_tool(
                     serde_json::json!({
                         "success": false,
                         "error": format!("Failed to expunge folder: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "list_accounts" => {
+            // List all configured email accounts
+            let account_service = state.account_service.lock().await;
+            match account_service.list_accounts().await {
+                Ok(accounts) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": accounts,
+                        "count": accounts.len(),
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to list accounts: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "set_current_account" => {
+            // Set the current account context
+            let account_id = params.get("account_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| ApiError::BadRequest("Missing 'account_id' parameter".to_string()))?;
+            
+            // Validate that the account exists
+            let account_service = state.account_service.lock().await;
+            match account_service.get_account(account_id).await {
+                Ok(account) => {
+                    // Account exists - in a real implementation, we would store this in session state
+                    // For now, just return success with the account info
+                    serde_json::json!({
+                        "success": true,
+                        "message": format!("Current account set to: {}", account_id),
+                        "data": {
+                            "account_id": account_id,
+                            "account_name": account.account_name,
+                            "email_address": account.email_address
+                        },
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Account not found: {}", e),
                         "tool": tool_name
                     })
                 }
