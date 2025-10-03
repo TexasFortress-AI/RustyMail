@@ -94,56 +94,56 @@ const McpTools: React.FC = () => {
   };
 
   return (
-    <div className="bg-gray-800 rounded-lg p-4 h-full flex flex-col">
+    <div className="bg-card border rounded-lg p-4 h-full flex flex-col">
       <div className="flex items-center gap-2 mb-4 flex-shrink-0">
-        <Terminal className="w-5 h-5 text-blue-400" />
-        <h3 className="text-lg font-semibold text-white">MCP Email Tools</h3>
-        <span className="text-xs text-gray-400 ml-auto">
+        <Terminal className="w-5 h-5 text-primary" />
+        <h3 className="text-lg font-semibold">MCP Email Tools</h3>
+        <span className="text-xs text-muted-foreground ml-auto">
           {tools.length} tools available
         </span>
       </div>
 
       {error && (
-        <div className="bg-red-500/10 border border-red-500/50 rounded p-3 mb-4 flex-shrink-0">
-          <p className="text-red-400 text-sm">{error}</p>
+        <div className="bg-destructive/10 border border-destructive/50 rounded p-3 mb-4 flex-shrink-0">
+          <p className="text-destructive text-sm">{error}</p>
         </div>
       )}
 
       <div className="space-y-2 flex-1 overflow-y-auto">
         {tools.map(tool => (
-          <div key={tool.name} className="border border-gray-700 rounded overflow-hidden">
+          <div key={tool.name} className="border rounded overflow-hidden">
             {/* Tool Header */}
             <button
               onClick={() => toggleTool(tool.name)}
-              className="w-full flex items-center gap-2 p-3 bg-gray-750 hover:bg-gray-700 transition-colors"
+              className="w-full flex items-center gap-2 p-3 bg-muted hover:bg-muted/80 transition-colors"
             >
               {expandedTool === tool.name ?
-                <ChevronDown className="w-4 h-4 text-gray-400" /> :
-                <ChevronRight className="w-4 h-4 text-gray-400" />
+                <ChevronDown className="w-4 h-4 text-muted-foreground" /> :
+                <ChevronRight className="w-4 h-4 text-muted-foreground" />
               }
-              <Code className="w-4 h-4 text-blue-400" />
-              <span className="text-white font-mono text-sm">{tool.name}</span>
-              <span className="text-gray-400 text-xs ml-auto">{tool.description}</span>
+              <Code className="w-4 h-4 text-primary" />
+              <span className="font-mono text-sm">{tool.name}</span>
+              <span className="text-muted-foreground text-xs ml-auto">{tool.description}</span>
             </button>
 
             {/* Tool Body */}
             {expandedTool === tool.name && (
-              <div className="p-4 bg-gray-900/50 border-t border-gray-700">
+              <div className="p-4 bg-muted/50 border-t">
                 {/* Parameters */}
                 {Object.keys(tool.parameters).length > 0 && (
                   <div className="mb-4">
-                    <h4 className="text-xs font-semibold text-gray-400 mb-2">PARAMETERS</h4>
+                    <h4 className="text-xs font-semibold text-muted-foreground mb-2">PARAMETERS</h4>
                     <div className="space-y-2">
                       {Object.entries(tool.parameters).map(([paramName, paramDesc]) => (
                         <div key={paramName}>
-                          <label className="block text-xs text-gray-400 mb-1">
-                            {paramName}: <span className="text-gray-500">{paramDesc}</span>
+                          <label className="block text-xs text-muted-foreground mb-1">
+                            {paramName}: <span className="text-muted-foreground/70">{paramDesc}</span>
                           </label>
                           <input
                             type="text"
                             value={parameters[tool.name]?.[paramName] || ''}
                             onChange={(e) => updateParameter(tool.name, paramName, e.target.value)}
-                            className="w-full px-2 py-1 bg-gray-800 border border-gray-700 rounded text-white text-sm focus:outline-none focus:border-blue-500"
+                            className="w-full px-2 py-1 bg-background border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                             placeholder={`Enter ${paramName}`}
                           />
                         </div>
@@ -156,11 +156,11 @@ const McpTools: React.FC = () => {
                 <button
                   onClick={() => executeTool(tool.name)}
                   disabled={executing === tool.name}
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:opacity-50 text-white text-sm rounded transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 disabled:bg-muted disabled:opacity-50 text-primary-foreground text-sm rounded transition-colors"
                 >
                   {executing === tool.name ? (
                     <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
                       Executing...
                     </>
                   ) : (
@@ -173,9 +173,9 @@ const McpTools: React.FC = () => {
 
                 {/* Results */}
                 {results[tool.name] && (
-                  <div className="mt-4 p-3 bg-gray-800 rounded border border-gray-700">
-                    <h4 className="text-xs font-semibold text-gray-400 mb-2">RESULT</h4>
-                    <pre className="text-xs text-gray-300 overflow-x-auto">
+                  <div className="mt-4 p-3 bg-muted rounded border">
+                    <h4 className="text-xs font-semibold text-muted-foreground mb-2">RESULT</h4>
+                    <pre className="text-xs overflow-x-auto">
                       {JSON.stringify(results[tool.name], null, 2)}
                     </pre>
                   </div>
@@ -187,7 +187,7 @@ const McpTools: React.FC = () => {
       </div>
 
       {tools.length === 0 && !error && (
-        <div className="text-center py-8 text-gray-500">
+        <div className="text-center py-8 text-muted-foreground">
           <Terminal className="w-12 h-12 mx-auto mb-2 opacity-50" />
           <p className="text-sm">Loading MCP tools...</p>
         </div>
