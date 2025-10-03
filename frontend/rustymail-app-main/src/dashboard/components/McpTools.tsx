@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, Play, Terminal, Code } from 'lucide-react';
 import config from '../config';
+import { useAccount } from '../../contexts/AccountContext';
 
 interface McpTool {
   name: string;
@@ -9,6 +10,7 @@ interface McpTool {
 }
 
 const McpTools: React.FC = () => {
+  const { currentAccount } = useAccount();
   const [tools, setTools] = useState<McpTool[]>([]);
   const [expandedTool, setExpandedTool] = useState<string | null>(null);
   const [executing, setExecuting] = useState<string | null>(null);
@@ -55,6 +57,12 @@ const McpTools: React.FC = () => {
     setResults(prev => ({ ...prev, [toolName]: null }));
 
     try {
+      // Merge user parameters with account_id
+      const toolParameters = {
+        ...parameters[toolName] || {},
+        ...(currentAccount ? { account_id: currentAccount.id } : {})
+      };
+
       const response = await fetch(`${config.api.baseUrl}/dashboard/mcp/execute`, {
         method: 'POST',
         headers: {
@@ -63,7 +71,7 @@ const McpTools: React.FC = () => {
         },
         body: JSON.stringify({
           tool: toolName,
-          parameters: parameters[toolName] || {}
+          parameters: toolParameters
         })
       });
 
