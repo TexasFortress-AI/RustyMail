@@ -44,6 +44,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }
   const { currentAccount } = useAccount();
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
+  const [hasAutoSynced, setHasAutoSynced] = useState<Set<string>>(new Set());
   const pageSize = 20;
 
   // Reset to page 1 when folder or account changes
@@ -89,6 +90,31 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }
       console.error('Failed to trigger sync:', error);
     }
   };
+
+  // Auto-sync when cache is empty for the current account/folder combination
+  useEffect(() => {
+    if (!currentAccount) return;
+
+    // Create unique key for this account+folder combination
+    const cacheKey = `${currentAccount.id}:${currentFolder}`;
+
+    // Only auto-sync if:
+    // 1. We have data loaded
+    // 2. The cache is empty (0 emails)
+    // 3. Not currently fetching
+    // 4. On first page
+    // 5. Haven't already auto-synced for this account+folder combination
+    if (data && data.emails.length === 0 && !isFetching && currentPage === 1 && !hasAutoSynced.has(cacheKey)) {
+      console.log(`Cache is empty for account ${currentAccount.email_address} folder ${currentFolder}, triggering automatic sync...`);
+
+      // Mark this account+folder as auto-synced
+      setHasAutoSynced(prev => new Set(prev).add(cacheKey));
+
+      // Trigger the sync
+      handleSync();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, isFetching, currentPage, currentAccount?.id, currentFolder]);
 
   const totalPages = Math.ceil(279 / pageSize); // We know there are 279 emails
 
