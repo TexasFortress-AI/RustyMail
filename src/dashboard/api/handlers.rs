@@ -1384,28 +1384,40 @@ pub async fn set_ai_model(
 /// Trigger a full email sync
 pub async fn trigger_email_sync(
     state: Data<DashboardState>,
+    query: web::Query<serde_json::Value>,
 ) -> Result<impl Responder, ApiError> {
-    info!("Triggering full email sync for all folders");
+    // Get account ID from query parameters or use default
+    let account_id = match get_account_id_to_use(&query.0, &state).await {
+        Ok(id) => id,
+        Err(e) => {
+            error!("Failed to determine account for sync: {}", e);
+            return Err(e);
+        }
+    };
 
-    // Clone the sync service Arc to move into the async task
+    info!("Triggering full email sync for all folders for account: {}", account_id);
+
+    // Clone the sync service Arc and account_id to move into the async task
     let sync_service = state.sync_service.clone();
+    let account_id_for_task = account_id.clone();
 
     // Spawn the sync task in the background
     tokio::spawn(async move {
         let folders = vec!["INBOX", "INBOX.Sent", "INBOX.Drafts", "INBOX.Trash", "INBOX.spam"];
         for folder in folders {
-            info!("Starting full sync of {}", folder);
+            info!("Starting full sync of {} for account {}", folder, account_id_for_task);
             match sync_service.full_sync_folder(folder).await {
-                Ok(()) => info!("{} sync completed successfully", folder),
-                Err(e) => error!("{} sync failed: {}", folder, e),
+                Ok(()) => info!("{} sync completed successfully for account {}", folder, account_id_for_task),
+                Err(e) => error!("{} sync failed for account {}: {}", folder, account_id_for_task, e),
             }
         }
-        info!("All folder syncs completed");
+        info!("All folder syncs completed for account {}", account_id_for_task);
     });
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
-        "message": "Email sync started in background for all folders",
-        "status": "syncing"
+        "message": format!("Email sync started in background for all folders for account {}", account_id),
+        "status": "syncing",
+        "account_id": account_id
     })))
 }
 
@@ -1461,16 +1473,32 @@ pub async fn get_cached_emails(
         .map(|v| v as usize)
         .unwrap_or(0);
 
-    info!("Getting cached emails for folder: {}, limit: {}, offset: {}", folder, limit, offset);
+    // Get account ID from query parameters or use default
+    let account_id = match get_account_id_to_use(&query.0, &state).await {
+        Ok(id) => id,
+        Err(e) => {
+            error!("Failed to determine account: {}", e);
+            return Err(e);
+        }
+    };
+
+    let db_account_id = account_uuid_to_db_id(&account_id);
+
+    info!("Getting cached emails for folder: {}, account: {}, limit: {}, offset: {}",
+          folder, account_id, limit, offset);
 
     // Dashboard UI needs full content for display
-    match state.cache_service.get_cached_emails(folder, limit, offset, false).await {
+    match state.cache_service.get_cached_emails_for_account(folder, db_account_id, limit, offset, false).await {
         Ok(emails) => {
-            info!("Retrieved {} cached emails", emails.len());
+            // Get total count for this folder and account
+            let total_count = state.cache_service.count_emails_in_folder_for_account(folder, db_account_id).await
+                .unwrap_or(0);
+
+            info!("Retrieved {} of {} cached emails", emails.len(), total_count);
             Ok(HttpResponse::Ok().json(serde_json::json!({
                 "emails": emails,
                 "folder": folder,
-                "count": emails.len(),
+                "count": total_count,
             })))
         }
         Err(e) => {

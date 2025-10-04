@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/select';
 import { RefreshCw, Mail, ChevronLeft, ChevronRight, X, ChevronsLeft, ChevronsRight } from 'lucide-react';
 import { format } from 'date-fns';
+import { useToast } from '../../hooks/use-toast';
 
 interface Email {
   id: number;
@@ -42,6 +43,7 @@ interface EmailListProps {
 
 const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }) => {
   const { currentAccount } = useAccount();
+  const { toast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const [hasAutoSynced, setHasAutoSynced] = useState<Set<string>>(new Set());
@@ -78,16 +80,50 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }
   });
 
   const handleSync = async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/dashboard/sync/trigger`, {
-        method: 'POST',
+    if (!currentAccount) {
+      toast({
+        title: "No Account Selected",
+        description: "Please select an account before syncing.",
+        variant: "destructive",
       });
+      return;
+    }
+
+    try {
+      toast({
+        title: "Syncing...",
+        description: `Starting sync for ${currentAccount.email_address}`,
+      });
+
+      const response = await fetch(`${API_BASE_URL}/dashboard/sync/trigger?account_id=${currentAccount.id}`, {
+        method: 'POST',
+        headers: {
+          'X-API-Key': config.api.apiKey
+        }
+      });
+
       if (response.ok) {
+        toast({
+          title: "Sync Started",
+          description: "Email sync is running in the background. This may take a few moments.",
+        });
         // Wait a moment then refetch
         setTimeout(() => refetch(), 2000);
+      } else {
+        const errorText = await response.text();
+        toast({
+          title: "Sync Failed",
+          description: errorText || "Failed to start email sync",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       console.error('Failed to trigger sync:', error);
+      toast({
+        title: "Sync Error",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive",
+      });
     }
   };
 
@@ -116,7 +152,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, isFetching, currentPage, currentAccount?.id, currentFolder]);
 
-  const totalPages = Math.ceil(279 / pageSize); // We know there are 279 emails
+  const totalPages = Math.ceil((data?.count || 0) / pageSize);
 
   const formatDate = (dateStr: string | null, internalDateStr: string | null) => {
     const dateToUse = dateStr || internalDateStr;
@@ -202,7 +238,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }
             </SelectContent>
           </Select>
           <span className="text-sm font-normal text-muted-foreground">
-            ({data?.emails.length || 0} of 279 emails)
+            ({data?.emails.length || 0} of {data?.count || 0} emails)
           </span>
         </CardTitle>
         <div className="flex gap-2">

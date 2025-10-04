@@ -100,14 +100,14 @@ mod tests {
     #[test]
     fn test_decode_q_encoding() {
         let input = "=?UTF-8?Q?We=E2=80=99re_Updating_our_Consumer_Terms_and_Privacy_Policy?=";
-        let expected = "We're Updating our Consumer Terms and Privacy Policy";
+        let expected = "We\u{2019}re Updating our Consumer Terms and Privacy Policy";  // U+2019 right single quotation mark
         assert_eq!(decode_mime_header(input), expected);
     }
 
     #[test]
     fn test_decode_b_encoding() {
         let input = "=?UTF-8?B?V2XigJlyZSBVcGRhdGluZyBvdXIgQ29uc3VtZXIgVGVybXMgYW5kIFByaXZhY3kgUG9saWN5?=";
-        let expected = "We're Updating our Consumer Terms and Privacy Policy";
+        let expected = "We\u{2019}re Updating our Consumer Terms and Privacy Policy";  // U+2019 right single quotation mark
         assert_eq!(decode_mime_header(input), expected);
     }
 

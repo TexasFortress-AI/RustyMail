@@ -4,9 +4,11 @@ Perform a complete rebuild and restart of the RustyMail backend, frontend, and M
 
 Steps:
 
-1. Kill all running processes:
-   - Kill backend server (rustymail-server)
-   - Kill frontend dev server (vite on port 5173 or 9439)
+1. Kill all running processes by port (from .env.example):
+   - Kill backend on port 9437: `lsof -ti:9437 | xargs kill -9 2>/dev/null || true`
+   - Kill SSE server on port 9438: `lsof -ti:9438 | xargs kill -9 2>/dev/null || true`
+   - Kill frontend on port 9439: `lsof -ti:9439 | xargs kill -9 2>/dev/null || true`
+   - Note: Using port-based killing ensures we only kill RustyMail processes, not other projects. The `|| true` prevents errors if no process is on that port.
 
 2. Rebuild all components:
    - Build backend: `cargo build --release --bin rustymail-server`
@@ -14,7 +16,7 @@ Steps:
    - Build MCP stdio: `cargo build --release --bin rustymail-mcp-stdio`
 
 3. Run tests:
-   - Run Rust tests: `cargo test --workspace` (note: some tests may fail due to outdated test code, production code is fine)
+   - Run Rust tests: `cargo test --workspace` (note: limit output with timeout and head to avoid context overflow)
 
 4. Restart services:
    - Start backend: `./target/release/rustymail-server` (run in background)
@@ -28,4 +30,5 @@ Important notes:
 - Always use full absolute paths when starting services in background
 - Wait for builds to complete before starting services
 - Check logs to ensure services started correctly
-- Unit tests may have compilation errors but production code compiles fine
+- If unit tests fail to compile, fix them.
+- If unit tests prove that the software is broken, fix the software.

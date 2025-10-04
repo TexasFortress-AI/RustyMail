@@ -335,13 +335,22 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
     async fn fetch_emails(&self, uids: &[u32]) -> Result<Vec<Email>, ImapError> {
         let mut session_guard = self.session.lock().await;
         let sequence = uids.iter().map(|uid| uid.to_string()).collect::<Vec<_>>().join(",");
+        debug!("Fetching {} UIDs: {:?}", uids.len(), uids);
         let mut fetch_stream = session_guard.uid_fetch(&sequence, "(FLAGS ENVELOPE INTERNALDATE BODY[])")
             .await
             .map_err(ImapError::from)?;
-        
+
         let mut emails = Vec::new();
         while let Some(fetch_result) = fetch_stream.try_next().await.map_err(ImapError::from)? {
-            emails.push(Email::from(fetch_result)); 
+            let email = Email::from(fetch_result);
+            debug!("Fetched email UID: {}", email.uid);
+            emails.push(email);
+        }
+        debug!("Fetch complete: requested {} UIDs, received {} emails", uids.len(), emails.len());
+        if emails.len() != uids.len() {
+            warn!("UID mismatch: requested {}, received {}. Missing UIDs: {:?}",
+                  uids.len(), emails.len(),
+                  uids.iter().filter(|uid| !emails.iter().any(|e| e.uid == **uid)).collect::<Vec<_>>());
         }
         Ok(emails)
     }
