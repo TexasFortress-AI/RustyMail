@@ -1514,30 +1514,33 @@ pub async fn get_sync_status(
 }
 
 /// Get cached emails from the database
+#[derive(serde::Deserialize)]
+pub struct EmailQueryParams {
+    folder: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+    account_id: Option<String>,
+}
+
 pub async fn get_cached_emails(
     state: Data<DashboardState>,
-    query: web::Query<serde_json::Value>,
+    query: web::Query<EmailQueryParams>,
 ) -> Result<impl Responder, ApiError> {
-    let folder = query.get("folder")
-        .and_then(|v| v.as_str())
-        .unwrap_or("INBOX");
-
-    let limit = query.get("limit")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize)
-        .unwrap_or(50);
-
-    let offset = query.get("offset")
-        .and_then(|v| v.as_u64())
-        .map(|v| v as usize)
-        .unwrap_or(0);
+    let folder = query.folder.as_deref().unwrap_or("INBOX");
+    let limit = query.limit.unwrap_or(50);
+    let offset = query.offset.unwrap_or(0);
 
     // Get account ID from query parameters or use default
-    let account_id = match get_account_id_to_use(&query.0, &state).await {
-        Ok(id) => id,
-        Err(e) => {
-            error!("Failed to determine account: {}", e);
-            return Err(e);
+    let account_id = match query.account_id.as_ref() {
+        Some(id) => id.clone(),
+        None => {
+            // Get default account if no account_id provided
+            let account_service = state.account_service.lock().await;
+            match account_service.get_default_account().await {
+                Ok(Some(account)) => account.id,
+                Ok(None) => return Err(ApiError::NotFound("No default account configured".to_string())),
+                Err(e) => return Err(ApiError::InternalError(format!("Failed to get default account: {}", e))),
+            }
         }
     };
 

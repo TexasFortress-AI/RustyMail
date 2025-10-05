@@ -479,9 +479,10 @@ impl CacheService {
 
     /// Get cached emails with pagination support for a specific account
     pub async fn get_cached_emails_for_account(&self, folder_name: &str, account_id: i64, limit: usize, offset: usize, preview_mode: bool) -> Result<Vec<CachedEmail>, CacheError> {
-        let folder = match self.get_folder_from_cache_for_account(folder_name, account_id).await {
-            Some(f) => f,
-            None => return Ok(Vec::new()),
+        // Get folder from cache or database (don't create if it doesn't exist)
+        let folder = match self.get_or_create_folder_for_account(folder_name, account_id).await {
+            Ok(f) => f,
+            Err(_) => return Ok(Vec::new()), // Folder doesn't exist, return empty list
         };
 
         let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;

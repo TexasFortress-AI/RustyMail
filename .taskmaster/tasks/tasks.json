@@ -1843,15 +1843,15 @@
       {
         "id": 40,
         "title": "Fix frontend pagination offset calculation in EmailList.tsx",
-        "description": "Fix the pagination state management issue where the offset parameter is not properly calculated when currentPage changes, causing pagination to always show results from offset 0.",
-        "details": "The current implementation correctly calculates offset = (currentPage - 1) * pageSize on line 64, but there appears to be a state management issue where the offset is not being recalculated when currentPage changes. Investigation reveals the queryKey includes currentPage (line 59), which should trigger refetch when the page changes. The issue may be in the React Query cache or the backend API. Fix steps: 1) Add debugging logs to track currentPage and calculated offset values. 2) Verify the queryKey dependency array is properly triggering refetch on page changes. 3) Check if the backend API endpoint at /dashboard/emails is correctly receiving and processing the offset parameter. 4) Test that the offset calculation (currentPage - 1) * pageSize is producing expected values (page 1 = offset 0, page 2 = offset 20, etc). 5) Ensure setCurrentPage state updates are properly triggering component re-renders. 6) Consider adding a useEffect to log offset changes for debugging.",
-        "testStrategy": "1. Test pagination by navigating to different pages and verifying the API calls include correct offset values (page 1: offset=0, page 2: offset=20, page 3: offset=40). 2. Use browser dev tools to monitor network requests and confirm offset parameter changes. 3. Test edge cases like navigating directly to last page, first page, and middle pages. 4. Verify the query is refetching when currentPage changes by checking React Query cache updates. 5. Add temporary console.log statements to track currentPage state and calculated offset values.",
-        "status": "pending",
+        "description": "Investigation reveals the frontend pagination is working correctly - offset is properly calculated as (currentPage - 1) * pageSize and sent in API calls. The actual issue is in the backend cache service get_cached_emails_for_account() method which appears to have a folder cache key mismatch causing it to return empty results instead of properly paginated data.",
+        "status": "done",
         "dependencies": [
           11,
           20
         ],
         "priority": "high",
+        "details": "Frontend analysis shows pagination working correctly: Page 1 sends offset=0, Page 2 sends offset=20, etc. The API handler at handlers.rs:483 correctly extracts limit and offset parameters and passes them to get_cached_emails_for_account(). The cache method at cache.rs:522-523 correctly binds these parameters to the SQL query with LIMIT ? OFFSET ?. However, there's a folder cache key mismatch issue: load_folders_to_cache() at line 199 populates cache with non-prefixed keys (just folder name) while get_folder_from_cache_for_account() expects account-prefixed keys (format: '{account_id}:{folder_name}'). This mismatch causes the cache method to fail finding folders and return empty results. Fix steps: 1) Update load_folders_to_cache() to query folders with account_id and populate cache using account-prefixed keys. 2) Modify the folder query to SELECT account_id. 3) Update cache insertion to use format('{}:{}', account_id, name). 4) Test that pagination works after fixing the cache key mismatch.",
+        "testStrategy": "1. Test folder lookup for multiple accounts to ensure folders are found in cache with correct account-prefixed keys. 2. Verify get_cached_emails_for_account returns paginated results for different accounts after cache key fix. 3. Test cache loading at startup populates folders with account-prefixed keys. 4. Confirm pagination works correctly: page 1 returns first 20 emails, page 2 returns emails 21-40, etc. 5. Test edge cases like last page with fewer than limit emails. 6. Verify existing functionality with default account_id=1 still works after changes.",
         "subtasks": []
       },
       {
@@ -1912,6 +1912,34 @@
         ],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": 45,
+        "title": "Fix folder cache key mismatch for multi-account support",
+        "description": "Resolve cache key inconsistency where folder_cache uses account-prefixed keys but load_folders_to_cache populates cache with non-prefixed keys, causing folder lookups to fail.",
+        "details": "The issue is in the load_folders_to_cache() method at line 199 which populates the folder cache with non-prefixed keys (just folder name) while get_folder_from_cache_for_account() expects account-prefixed keys (format: '{account_id}:{folder_name}'). This mismatch causes get_cached_emails_for_account() to return empty results even when folders exist. The fix requires: 1) Update load_folders_to_cache() to query folders with their associated account_id from the database and populate cache using account-prefixed keys. 2) Modify the query to SELECT account_id along with other folder fields. 3) Update the cache insertion logic to use the correct format('{}:{}', account_id, name) instead of just the folder name. 4) Consider adding a cache migration utility to rebuild existing cache entries with proper key format. 5) Update any other methods that may be using the old non-prefixed key format for consistency.",
+        "testStrategy": "Test folder lookup for multiple accounts to ensure folders are found in cache. Verify get_cached_emails_for_account returns correct results for different accounts. Test cache loading at startup populates folders with account-prefixed keys. Confirm existing functionality with default account_id=1 still works. Test scenarios where same folder name exists for different accounts.",
+        "status": "done",
+        "dependencies": [
+          25,
+          38
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 46,
+        "title": "Fix offset query parameter parsing in get_cached_emails handler",
+        "description": "Fix the backend get_cached_emails handler to properly parse the offset query parameter from URL instead of always returning 0, causing pagination to fail.",
+        "details": "The issue is in the get_cached_emails handler at src/dashboard/api/handlers.rs:1530-1533. The handler uses web::Query<serde_json::Value> which may not correctly parse numeric query parameters from the URL string. When the frontend sends offset=20, the backend logs show 'offset: 0' indicating the parsing fails. Two potential solutions: 1) Create a dedicated struct for query parameters (similar to the existing ClientQueryParams struct at line 21-25) with properly typed fields: struct CacheQueryParams { folder: Option<String>, limit: Option<usize>, offset: Option<usize>, account_id: Option<String> }. Replace web::Query<serde_json::Value> with web::Query<CacheQueryParams> and access fields directly. 2) Fix the current serde_json::Value parsing by debugging why .as_u64() fails on URL query string values, possibly needing to parse string values first. The preferred solution is option 1 as it provides better type safety and follows the existing pattern used by get_connected_clients handler.",
+        "testStrategy": "Test pagination with various offset values (0, 10, 20, 50) to ensure correct parsing. Verify backend logs show correct offset values instead of always 0. Test with different limit values to ensure all query parameters parse correctly. Test with missing offset parameter to ensure default of 0 works. Test with invalid offset values to ensure graceful error handling. Verify pagination returns different result sets when offset changes. Test frontend pagination controls advance through different pages successfully.",
+        "status": "done",
+        "dependencies": [
+          25,
+          45
+        ],
+        "priority": "high",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -1924,7 +1952,7 @@
       ],
       "created": "2025-10-05T09:39:31.250Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-05T09:55:05.969Z"
+      "updated": "2025-10-05T10:36:56.804Z"
     }
   }
 }
