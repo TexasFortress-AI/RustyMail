@@ -269,13 +269,23 @@ async fn get_account_id_to_use(
 }
 
 /// Convert account UUID string to database integer ID
-/// For now, we use a simple mapping: all accounts use DB account_id=1
-/// TODO: Migrate database schema to use TEXT for account_id to match file storage UUIDs
-fn account_uuid_to_db_id(_account_uuid: &str) -> i64 {
-    // Temporary: All accounts map to database account_id=1
-    // This will work correctly for single-account setups
-    // Multi-account support requires database schema migration
-    1
+/// Looks up the account by UUID, then maps its email address to the database account ID
+async fn account_uuid_to_db_id(
+    account_uuid: &str,
+    state: &DashboardState,
+) -> Result<i64, ApiError> {
+    // Get the account from AccountService to get the email address
+    let account_service = state.account_service.lock().await;
+    let account = account_service.get_account(account_uuid).await
+        .map_err(|e| ApiError::NotFound(format!("Account not found: {}", e)))?;
+    let email_address = account.email_address.clone();
+    drop(account_service); // Release lock
+
+    // Look up the database ID using the email address
+    let db_account_id = state.cache_service.get_account_id_by_email(&email_address).await
+        .map_err(|e| ApiError::InternalError(format!("Failed to lookup account database ID: {}", e)))?;
+
+    Ok(db_account_id)
 }
 
 // Handler for executing MCP tools
@@ -461,7 +471,15 @@ pub async fn execute_mcp_tool(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state).await {
                 Ok(account_id) => {
-                    let db_account_id = account_uuid_to_db_id(&account_id);
+                    let db_account_id = match account_uuid_to_db_id(&account_id, &state).await {
+                        Ok(id) => id,
+                        Err(e) => {
+                            return Ok(HttpResponse::Ok().json(serde_json::json!({
+                                "success": false,
+                                "error": format!("Failed to lookup account: {}", e)
+                            })));
+                        }
+                    };
                     match state.cache_service.get_cached_emails_for_account(folder, db_account_id, limit, offset, preview_mode).await {
                         Ok(emails) => {
                             serde_json::json!({
@@ -501,7 +519,15 @@ pub async fn execute_mcp_tool(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state).await {
                 Ok(account_id) => {
-                    let db_account_id = account_uuid_to_db_id(&account_id);
+                    let db_account_id = match account_uuid_to_db_id(&account_id, &state).await {
+                        Ok(id) => id,
+                        Err(e) => {
+                            return Ok(HttpResponse::Ok().json(serde_json::json!({
+                                "success": false,
+                                "error": format!("Failed to lookup account: {}", e)
+                            })));
+                        }
+                    };
                     if let Some(uid) = uid {
                         match state.cache_service.get_email_by_uid_for_account(folder, uid, db_account_id).await {
                             Ok(Some(email)) => {
@@ -554,7 +580,15 @@ pub async fn execute_mcp_tool(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state).await {
                 Ok(account_id) => {
-                    let db_account_id = account_uuid_to_db_id(&account_id);
+                    let db_account_id = match account_uuid_to_db_id(&account_id, &state).await {
+                        Ok(id) => id,
+                        Err(e) => {
+                            return Ok(HttpResponse::Ok().json(serde_json::json!({
+                                "success": false,
+                                "error": format!("Failed to lookup account: {}", e)
+                            })));
+                        }
+                    };
                     if let Some(index) = index {
                         // Get emails sorted by date DESC, then select by index
                         // Dashboard UI needs full content for display
@@ -606,7 +640,15 @@ pub async fn execute_mcp_tool(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state).await {
                 Ok(account_id) => {
-                    let db_account_id = account_uuid_to_db_id(&account_id);
+                    let db_account_id = match account_uuid_to_db_id(&account_id, &state).await {
+                        Ok(id) => id,
+                        Err(e) => {
+                            return Ok(HttpResponse::Ok().json(serde_json::json!({
+                                "success": false,
+                                "error": format!("Failed to lookup account: {}", e)
+                            })));
+                        }
+                    };
 
             match state.cache_service.count_emails_in_folder_for_account(folder, db_account_id).await {
                 Ok(count) => {
@@ -645,7 +687,15 @@ pub async fn execute_mcp_tool(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state).await {
                 Ok(account_id) => {
-                    let db_account_id = account_uuid_to_db_id(&account_id);
+                    let db_account_id = match account_uuid_to_db_id(&account_id, &state).await {
+                        Ok(id) => id,
+                        Err(e) => {
+                            return Ok(HttpResponse::Ok().json(serde_json::json!({
+                                "success": false,
+                                "error": format!("Failed to lookup account: {}", e)
+                            })));
+                        }
+                    };
 
             match state.cache_service.get_folder_stats_for_account(folder, db_account_id).await {
                 Ok(stats) => {
@@ -687,7 +737,15 @@ pub async fn execute_mcp_tool(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state).await {
                 Ok(account_id) => {
-                    let db_account_id = account_uuid_to_db_id(&account_id);
+                    let db_account_id = match account_uuid_to_db_id(&account_id, &state).await {
+                        Ok(id) => id,
+                        Err(e) => {
+                            return Ok(HttpResponse::Ok().json(serde_json::json!({
+                                "success": false,
+                                "error": format!("Failed to lookup account: {}", e)
+                            })));
+                        }
+                    };
 
             if let Some(query) = query {
                 match state.cache_service.search_cached_emails_for_account(folder, query, limit, db_account_id).await {
@@ -1483,7 +1541,13 @@ pub async fn get_cached_emails(
         }
     };
 
-    let db_account_id = account_uuid_to_db_id(&account_id);
+    let db_account_id = match account_uuid_to_db_id(&account_id, &state).await {
+        Ok(id) => id,
+        Err(e) => {
+            error!("Failed to lookup database account ID: {}", e);
+            return Err(e);
+        }
+    };
 
     info!("Getting cached emails for folder: {}, account: {}, limit: {}, offset: {}",
           folder, account_id, limit, offset);

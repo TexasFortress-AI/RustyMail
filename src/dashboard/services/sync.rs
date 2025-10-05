@@ -204,7 +204,7 @@ impl SyncService {
                     match session.fetch_emails(&[uid]).await {
                         Ok(retry_emails) => {
                             for email in retry_emails {
-                                if let Err(e) = self.cache_service.cache_email(folder_name, &email).await {
+                                if let Err(e) = self.cache_service.cache_email(folder_name, &email, db_account_id).await {
                                     error!("Failed to cache retried email {}: {}", email.uid, e);
                                 } else {
                                     debug!("Successfully fetched and cached previously missing UID: {}", uid);
@@ -222,7 +222,7 @@ impl SyncService {
             }
 
             for email in emails {
-                if let Err(e) = self.cache_service.cache_email(folder_name, &email).await {
+                if let Err(e) = self.cache_service.cache_email(folder_name, &email, db_account_id).await {
                     error!("Failed to cache email {}: {}", email.uid, e);
                 } else {
                     if email.uid > last_uid {

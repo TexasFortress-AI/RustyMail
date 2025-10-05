@@ -145,47 +145,25 @@ impl EmailService {
         let mut emails = Vec::new();
         let mut uids_to_fetch = Vec::new();
 
-        // Note: Cache checking would need account_id support - skipping for now
-        // For now, fetch directly from IMAP
-        uids_to_fetch = uids.to_vec();
-
-        // Fetch emails from IMAP
-        if !uids_to_fetch.is_empty() {
-            let session = self.imap_factory.create_session_for_account(&account).await
-                .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session for account {}: {}", account_id, e)))?;
-
-            // Select the folder first
-            session.select_folder(folder).await?;
-
-            // Fetch the emails
-            let fetched_emails = session.fetch_emails(&uids_to_fetch).await?;
-
-            // TODO: Cache emails with account_id support
-            emails.extend(fetched_emails);
-        }
-
-        info!("Fetched {} emails for account {}", emails.len(), account_id);
-        Ok(emails)
-    }
-
-    /// Fetch emails by their UIDs (uses default account)
-    pub async fn fetch_emails(&self, folder: &str, uids: &[u32]) -> Result<Vec<Email>, EmailServiceError> {
-        debug!("Fetching {} emails from folder '{}'", uids.len(), folder);
-
-        if uids.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        let mut emails = Vec::new();
-        let mut uids_to_fetch = Vec::new();
+        // Get the database account ID for caching
+        let db_account_id = if let Some(cache) = &self.cache_service {
+            match cache.get_account_id_by_email(&account.email_address).await {
+                Ok(id) => Some(id),
+                Err(e) => {
+                    warn!("Failed to lookup account ID for caching: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         // Check cache first if available
-        if let Some(cache) = &self.cache_service {
+        if let (Some(cache), Some(db_id)) = (&self.cache_service, db_account_id) {
             for &uid in uids {
                 match cache.get_cached_email(folder, uid).await {
                     Ok(Some(cached_email)) => {
                         debug!("Email {} found in cache", uid);
-                        // Convert CachedEmail to Email
                         emails.push(self.cached_email_to_email(cached_email));
                     }
                     Ok(None) => {
@@ -202,10 +180,10 @@ impl EmailService {
             uids_to_fetch = uids.to_vec();
         }
 
-        // Fetch missing emails from IMAP
+        // Fetch emails from IMAP
         if !uids_to_fetch.is_empty() {
-            let session = self.imap_factory.create_session().await
-                .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+            let session = self.imap_factory.create_session_for_account(&account).await
+                .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session for account {}: {}", account_id, e)))?;
 
             // Select the folder first
             session.select_folder(folder).await?;
@@ -213,10 +191,10 @@ impl EmailService {
             // Fetch the emails
             let fetched_emails = session.fetch_emails(&uids_to_fetch).await?;
 
-            // Cache the fetched emails
-            if let Some(cache) = &self.cache_service {
+            // Cache emails with account_id support
+            if let (Some(cache), Some(db_id)) = (&self.cache_service, db_account_id) {
                 for email in &fetched_emails {
-                    if let Err(e) = cache.cache_email(folder, email).await {
+                    if let Err(e) = cache.cache_email(folder, email, db_id).await {
                         warn!("Failed to cache email {}: {}", email.uid, e);
                     }
                 }
@@ -225,10 +203,35 @@ impl EmailService {
             emails.extend(fetched_emails);
         }
 
-        info!("Fetched {} emails ({} from cache, {} from IMAP)",
-              emails.len(),
+        info!("Fetched {} emails for account {} ({} from cache, {} from IMAP)",
+              emails.len(), account_id,
               uids.len() - uids_to_fetch.len(),
               uids_to_fetch.len());
+        Ok(emails)
+    }
+
+    /// Fetch emails by their UIDs (uses default account)
+    /// DEPRECATED: Use fetch_emails_for_account instead for proper multi-account support
+    #[allow(dead_code)]
+    pub async fn fetch_emails(&self, folder: &str, uids: &[u32]) -> Result<Vec<Email>, EmailServiceError> {
+        debug!("Fetching {} emails from folder '{}'", uids.len(), folder);
+
+        if uids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // NOTE: This method doesn't support caching properly because it lacks account_id context
+        // Fetching directly from IMAP without cache
+        let session = self.imap_factory.create_session().await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+
+        // Select the folder first
+        session.select_folder(folder).await?;
+
+        // Fetch the emails
+        let emails = session.fetch_emails(uids).await?;
+
+        info!("Fetched {} emails from IMAP (no cache support)", emails.len());
         Ok(emails)
     }
 

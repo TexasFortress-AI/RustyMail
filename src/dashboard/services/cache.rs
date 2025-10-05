@@ -294,8 +294,8 @@ impl CacheService {
         self.get_or_create_folder_for_account(name, 1).await
     }
 
-    pub async fn cache_email(&self, folder_name: &str, email: &Email) -> Result<(), CacheError> {
-        let folder = self.get_or_create_folder(folder_name).await?;
+    pub async fn cache_email(&self, folder_name: &str, email: &Email, account_id: i64) -> Result<(), CacheError> {
+        let folder = self.get_or_create_folder_for_account(folder_name, account_id).await?;
         let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
 
         // Extract data from envelope
@@ -393,12 +393,12 @@ impl CacheService {
             cached_at: Utc::now(),
         };
 
-        // Add to memory cache
-        let cache_key = format!("{}:{}", folder_name, email.uid);
+        // Add to memory cache with account_id to prevent cross-account data leakage
+        let cache_key = format!("{}:{}:{}", account_id, folder_name, email.uid);
         let mut memory_cache = self.memory_cache.write().await;
         memory_cache.put(cache_key, cached_email);
 
-        debug!("Cached email {} in folder {}", email.uid, folder_name);
+        debug!("Cached email {} in folder {} for account {}", email.uid, folder_name, account_id);
         Ok(())
     }
 
