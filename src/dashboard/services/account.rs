@@ -102,6 +102,11 @@ impl AccountService {
             warn!("Account migration from database failed: {}. Continuing with file-based storage.", e);
         }
 
+        // Sync accounts FROM file storage TO database
+        if let Err(e) = self.sync_accounts_to_db().await {
+            warn!("Failed to sync accounts to database: {}", e);
+        }
+
         info!("Account service initialized with file-based storage");
         Ok(())
     }
@@ -279,6 +284,100 @@ impl AccountService {
         }
 
         info!("Successfully migrated {} accounts to file storage", account_count);
+        Ok(())
+    }
+
+    /// Sync accounts FROM file storage TO database cache
+    async fn sync_accounts_to_db(&self) -> Result<(), AccountError> {
+        let db = self.db()?;
+
+        // Get all accounts from file storage
+        let file_accounts = self.account_store.list_accounts().await?;
+
+        if file_accounts.is_empty() {
+            debug!("No accounts in file storage to sync");
+            return Ok(());
+        }
+
+        info!("Syncing {} accounts from file storage to database", file_accounts.len());
+
+        for account in file_accounts {
+            // Check if account already exists in database by email_address
+            let exists = sqlx::query_scalar::<_, i64>(
+                "SELECT COUNT(*) FROM accounts WHERE email_address = ?"
+            )
+            .bind(&account.email_address)
+            .fetch_one(db)
+            .await? > 0;
+
+            if exists {
+                // Update existing account
+                sqlx::query(
+                    r#"
+                    UPDATE accounts
+                    SET account_name = ?, provider_type = ?,
+                        imap_host = ?, imap_port = ?, imap_user = ?, imap_pass = ?, imap_use_tls = ?,
+                        smtp_host = ?, smtp_port = ?, smtp_user = ?, smtp_pass = ?,
+                        smtp_use_tls = ?, smtp_use_starttls = ?,
+                        is_active = ?, updated_at = CURRENT_TIMESTAMP
+                    WHERE email_address = ?
+                    "#
+                )
+                .bind(&account.account_name)
+                .bind(&account.provider_type)
+                .bind(&account.imap.host)
+                .bind(account.imap.port as i64)
+                .bind(&account.imap.username)
+                .bind(&account.imap.password)
+                .bind(if account.imap.use_tls { 1 } else { 0 })
+                .bind(account.smtp.as_ref().map(|s| &s.host))
+                .bind(account.smtp.as_ref().map(|s| s.port as i64))
+                .bind(account.smtp.as_ref().map(|s| &s.username))
+                .bind(account.smtp.as_ref().map(|s| &s.password))
+                .bind(account.smtp.as_ref().map(|s| if s.use_tls { 1 } else { 0 }))
+                .bind(account.smtp.as_ref().map(|s| if s.use_starttls { 1 } else { 0 }))
+                .bind(if account.is_active { 1 } else { 0 })
+                .bind(&account.email_address)
+                .execute(db)
+                .await?;
+
+                debug!("Updated account {} in database", account.email_address);
+            } else {
+                // Insert new account (id will be auto-generated)
+                sqlx::query(
+                    r#"
+                    INSERT INTO accounts (
+                        account_name, email_address, provider_type,
+                        imap_host, imap_port, imap_user, imap_pass, imap_use_tls,
+                        smtp_host, smtp_port, smtp_user, smtp_pass,
+                        smtp_use_tls, smtp_use_starttls,
+                        is_active, is_default, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    "#
+                )
+                .bind(&account.account_name)
+                .bind(&account.email_address)
+                .bind(&account.provider_type)
+                .bind(&account.imap.host)
+                .bind(account.imap.port as i64)
+                .bind(&account.imap.username)
+                .bind(&account.imap.password)
+                .bind(if account.imap.use_tls { 1 } else { 0 })
+                .bind(account.smtp.as_ref().map(|s| &s.host))
+                .bind(account.smtp.as_ref().map(|s| s.port as i64))
+                .bind(account.smtp.as_ref().map(|s| &s.username))
+                .bind(account.smtp.as_ref().map(|s| &s.password))
+                .bind(account.smtp.as_ref().map(|s| if s.use_tls { 1 } else { 0 }))
+                .bind(account.smtp.as_ref().map(|s| if s.use_starttls { 1 } else { 0 }))
+                .bind(if account.is_active { 1 } else { 0 })
+                .execute(db)
+                .await?;
+
+                info!("Added account {} to database", account.email_address);
+            }
+        }
+
+        info!("Successfully synced accounts to database");
         Ok(())
     }
 

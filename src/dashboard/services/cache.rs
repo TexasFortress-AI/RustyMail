@@ -202,6 +202,19 @@ impl CacheService {
         Ok(())
     }
 
+    /// Get account's numeric ID by email address
+    pub async fn get_account_id_by_email(&self, email: &str) -> Result<i64, CacheError> {
+        let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
+
+        sqlx::query_scalar::<_, i64>(
+            "SELECT id FROM accounts WHERE email_address = ?"
+        )
+        .bind(email)
+        .fetch_optional(pool)
+        .await?
+        .ok_or_else(|| CacheError::OperationFailed(format!("Account {} not found in database", email)))
+    }
+
     /// Get or create a folder for a specific account
     pub async fn get_or_create_folder_for_account(&self, name: &str, account_id: i64) -> Result<CachedFolder, CacheError> {
         // Check memory cache first (keyed by account_id:folder_name for multi-account support)

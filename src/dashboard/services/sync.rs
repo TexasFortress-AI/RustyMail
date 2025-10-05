@@ -128,6 +128,18 @@ impl SyncService {
         // Select the folder
         session.select_folder(folder_name).await?;
 
+        // Look up the account's numeric ID in the database using email_address
+        // The account_id param is a UUID string, but database uses INTEGER id
+        let db_account_id = self.cache_service.get_account_id_by_email(&account.email_address).await
+            .map_err(|e| SyncError::CacheError(format!("Failed to lookup account {}: {}", account.email_address, e)))?;
+
+        // Ensure folder exists in database with correct account_id BEFORE caching emails
+        // This prevents FOREIGN KEY constraint failures
+        if let Err(e) = self.cache_service.get_or_create_folder_for_account(folder_name, db_account_id).await {
+            error!("Failed to create folder {} for account {}: {}", folder_name, db_account_id, e);
+            return Err(SyncError::CacheError(format!("Failed to create folder: {}", e)));
+        }
+
         // Get the sync state from cache
         let sync_state = self.cache_service.get_sync_state(folder_name).await
             .map_err(|e| SyncError::CacheError(e.to_string()))?;
