@@ -15,9 +15,9 @@ fn main() {
 
     // Get backend API configuration from environment
     let api_base_url = std::env::var("RUSTYMAIL_API_URL")
-        .unwrap_or_else(|_| "http://localhost:9437/api/dashboard".to_string());
+        .expect("RUSTYMAIL_API_URL environment variable must be set");
     let api_key = std::env::var("RUSTYMAIL_API_KEY")
-        .unwrap_or_else(|_| "test-rustymail-key-2024".to_string());
+        .expect("RUSTYMAIL_API_KEY environment variable must be set");
 
     info!("Backend API: {}", api_base_url);
 

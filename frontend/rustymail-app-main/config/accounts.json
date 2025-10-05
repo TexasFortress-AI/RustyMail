@@ -1,5 +1,23 @@
 {
   "version": "1.0",
-  "default_account_id": null,
-  "accounts": []
+  "default_account_id": "9fc375a8-3086-435a-ae3f-48814f6e760c",
+  "accounts": [
+    {
+      "id": "9fc375a8-3086-435a-ae3f-48814f6e760c",
+      "account_name": "Default (chris@texasfortress.ai)",
+      "email_address": "chris@texasfortress.ai",
+      "provider_type": "custom",
+      "imap": {
+        "host": "p3plzcpnl505455.prod.phx3.secureserver.net",
+        "port": 993,
+        "username": "chris@texasfortress.ai",
+        "password": "D.6WVnz&zVJh",
+        "use_tls": true
+      },
+      "smtp": null,
+      "is_active": true,
+      "created_at": "2025-10-05T03:21:40.537929Z",
+      "updated_at": "2025-10-05T03:21:40.537929Z"
+    }
+  ]
 }

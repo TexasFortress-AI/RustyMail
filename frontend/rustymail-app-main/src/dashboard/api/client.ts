@@ -114,12 +114,12 @@ export const apiClient = {
       settings: {
         dashboard: {
           enabled: data.dashboard?.enabled || false,
-          port: data.dashboard?.port || 9439,
+          port: data.dashboard?.port || parseInt(import.meta.env.VITE_DASHBOARD_PORT || '0'),
         },
         rest: {
           enabled: data.rest?.enabled || false,
-          host: data.rest?.host || '0.0.0.0',
-          port: data.rest?.port || 9437,
+          host: data.rest?.host || import.meta.env.VITE_REST_HOST || '',
+          port: data.rest?.port || parseInt(import.meta.env.VITE_REST_PORT || '0'),
         }
       }
     };

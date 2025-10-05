@@ -76,9 +76,10 @@ impl AiService {
             email_service: None,
             mock_mode: true, // Force mock mode
             http_client: Client::new(),
-            mcp_base_url: "http://localhost:9437/api".to_string(),
+            mcp_base_url: std::env::var("RUSTYMAIL_API_URL")
+                .unwrap_or_else(|_| String::new()),
             api_key: std::env::var("RUSTYMAIL_API_KEY")
-                .unwrap_or_else(|_| "test-rustymail-key-2024".to_string()),
+                .unwrap_or_else(|_| String::new()),
         }
     }
 
