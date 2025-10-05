@@ -1,23 +1,5 @@
 {
   "version": "1.0",
-  "default_account_id": "account_1",
-  "accounts": [
-    {
-      "id": "account_1",
-      "account_name": "Default Account",
-      "email_address": "default@example.com",
-      "provider_type": "other",
-      "imap": {
-        "host": "localhost",
-        "port": 993,
-        "username": "default_user",
-        "password": "default_pass",
-        "use_tls": true
-      },
-      "smtp": null,
-      "is_active": true,
-      "created_at": "2025-10-04T08:05:47.080842Z",
-      "updated_at": "2025-10-04T08:05:47.080842Z"
-    }
-  ]
+  "default_account_id": null,
+  "accounts": []
 }
