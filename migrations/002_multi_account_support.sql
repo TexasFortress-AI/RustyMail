@@ -68,8 +68,9 @@ CREATE TABLE IF NOT EXISTS folders_new (
     UNIQUE(account_id, name)
 );
 
--- Copy existing data to new table with a default account
--- We'll create a default account for existing data
+-- Migrate existing folders to the new table
+-- Only insert folders if there are any to migrate
+-- If folders exist, create a temporary default account for backward compatibility
 INSERT INTO accounts (
     account_name,
     email_address,
@@ -80,9 +81,10 @@ INSERT INTO accounts (
     imap_pass,
     is_active,
     is_default
-) VALUES (
+)
+SELECT
     'Default Account',
-    'default@example.com', -- This should be updated by migration script
+    'default@example.com',
     'other',
     'localhost',
     993,
@@ -90,9 +92,9 @@ INSERT INTO accounts (
     'default_pass',
     TRUE,
     TRUE
-);
+WHERE EXISTS (SELECT 1 FROM folders LIMIT 1);
 
--- Migrate existing folders to the new table
+-- Migrate existing folders to the new table (only if folders exist)
 INSERT INTO folders_new (
     id, account_id, name, delimiter, attributes,
     uidvalidity, uidnext, total_messages, unseen_messages,

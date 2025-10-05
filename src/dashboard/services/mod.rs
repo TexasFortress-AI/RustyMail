@@ -177,6 +177,7 @@ pub async fn init(
     let sync_service = Arc::new(SyncService::new(
         imap_session_factory.clone(),
         cache_service.clone(),
+        account_service.clone(),
         sync_interval,
     ));
 

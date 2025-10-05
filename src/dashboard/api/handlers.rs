@@ -1405,8 +1405,9 @@ pub async fn trigger_email_sync(
     tokio::spawn(async move {
         let folders = vec!["INBOX", "INBOX.Sent", "INBOX.Drafts", "INBOX.Trash", "INBOX.spam"];
         for folder in folders {
-            info!("Starting full sync of {} for account {}", folder, account_id_for_task);
-            match sync_service.full_sync_folder(folder).await {
+            info!("Starting incremental sync of {} for account {}", folder, account_id_for_task);
+            // Use incremental sync (None = no limit) instead of full_sync which clears cache
+            match sync_service.sync_folder_with_limit(&account_id_for_task, folder, None).await {
                 Ok(()) => info!("{} sync completed successfully for account {}", folder, account_id_for_task),
                 Err(e) => error!("{} sync failed for account {}: {}", folder, account_id_for_task, e),
             }
