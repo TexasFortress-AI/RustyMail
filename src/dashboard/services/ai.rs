@@ -187,10 +187,14 @@ impl AiService {
             email_service: None,
             mock_mode: !has_real_provider, // Set mock mode if no real providers
             http_client: Client::new(),
-            mcp_base_url: "http://localhost:9437/api".to_string(),
+            mcp_base_url: format!(
+                "http://localhost:{}/api",
+                std::env::var("REST_PORT")
+                    .expect("REST_PORT environment variable must be set")
+            ),
             api_key: api_key.unwrap_or_else(||
                 std::env::var("RUSTYMAIL_API_KEY")
-                    .unwrap_or_else(|_| "test-rustymail-key-2024".to_string())
+                    .expect("RUSTYMAIL_API_KEY environment variable must be set")
             ),
         })
     }

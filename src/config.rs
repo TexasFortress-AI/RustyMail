@@ -77,22 +77,16 @@ impl Settings {
             
             // REST defaults
             .set_default("rest.host", "127.0.0.1")?
-            .set_default("rest.port", 9437)?  // Updated to match .env.example
             .set_default("rest.enabled", true)?
 
             // SSE defaults
             .set_default("sse.host", "127.0.0.1")?
-            .set_default("sse.port", 9438)?  // Updated to match .env.example
             .set_default("sse.enabled", false)?
-            
+
             // Dashboard defaults
             .set_default("dashboard.enabled", false)?
-            .set_default("dashboard.port", 9439)?  // Updated to match .env.example
             // Log defaults
-            .set_default("log.level", "info")?
-
-            // API key default
-            .set_default("api_key", "test-rustymail-key-2024")?;
+            .set_default("log.level", "info")?;
         
         // Add configuration from file
         if let Some(path) = config_path {
@@ -162,7 +156,10 @@ impl Default for RestConfig {
         Self {
             enabled: true,
             host: "127.0.0.1".to_string(),
-            port: 9437,  // Updated to match .env.example
+            port: std::env::var("REST_PORT")
+                .expect("REST_PORT environment variable must be set")
+                .parse()
+                .expect("REST_PORT must be a valid port number"),
         }
     }
 }
@@ -172,7 +169,10 @@ impl Default for SseConfig {
         Self {
             enabled: false,
             host: "127.0.0.1".to_string(),
-            port: 9438,  // Updated to match .env.example
+            port: std::env::var("SSE_PORT")
+                .expect("SSE_PORT environment variable must be set")
+                .parse()
+                .expect("SSE_PORT must be a valid port number"),
         }
     }
 }
@@ -189,7 +189,10 @@ impl Default for DashboardConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            port: 9439,  // Updated to match .env.example
+            port: std::env::var("DASHBOARD_PORT")
+                .expect("DASHBOARD_PORT environment variable must be set")
+                .parse()
+                .expect("DASHBOARD_PORT must be a valid port number"),
             path: None,
         }
     }
@@ -208,7 +211,10 @@ impl Default for Settings {
             mcp_stdio: Some(McpStdioConfig::default()),
             sse: Some(SseConfig::default()),
             dashboard: Some(DashboardConfig::default()),
-            api_key: Some("test-rustymail-key-2024".to_string()),
+            api_key: Some(
+                std::env::var("RUSTYMAIL_API_KEY")
+                    .expect("RUSTYMAIL_API_KEY environment variable must be set")
+            ),
         }
     }
 }

@@ -4,26 +4,39 @@ import path from "path";
 import { componentTagger } from "lovable-tagger";
 
 // https://vitejs.dev/config/
-export default defineConfig(({ mode }) => ({
-  server: {
-    host: process.env.DASHBOARD_HOST || "0.0.0.0",
-    port: parseInt(process.env.DASHBOARD_PORT || "9439"),
-    proxy: {
-      '/api': {
-        target: `http://localhost:${process.env.REST_PORT || '9437'}`,
-        changeOrigin: true,
-        secure: false,
+export default defineConfig(({ mode }) => {
+  const dashboardPort = process.env.DASHBOARD_PORT;
+  const restPort = process.env.REST_PORT;
+
+  if (!dashboardPort) {
+    throw new Error('DASHBOARD_PORT environment variable is required');
+  }
+  if (!restPort) {
+    throw new Error('REST_PORT environment variable is required');
+  }
+
+  return {
+    envDir: path.resolve(__dirname, '../../'),
+    server: {
+      host: process.env.DASHBOARD_HOST || "0.0.0.0",
+      port: parseInt(dashboardPort),
+      proxy: {
+        '/api': {
+          target: `http://localhost:${restPort}`,
+          changeOrigin: true,
+          secure: false,
+        }
       }
-    }
-  },
-  plugins: [
-    react(),
-    mode === 'development' &&
-    componentTagger(),
-  ].filter(Boolean),
-  resolve: {
-    alias: {
-      "@": path.resolve(__dirname, "./src"),
     },
-  },
-}));
+    plugins: [
+      react(),
+      mode === 'development' &&
+      componentTagger(),
+    ].filter(Boolean),
+    resolve: {
+      alias: {
+        "@": path.resolve(__dirname, "./src"),
+      },
+    },
+  };
+});
