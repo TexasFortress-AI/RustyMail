@@ -1860,7 +1860,7 @@
         "description": "Create a second test email account in config/accounts.json to expose hardcoded account_id=1 bugs and verify multi-account functionality works correctly across the system.",
         "details": "Based on the existing accounts.json file which contains one account (chris@texasfortress.ai with ID 08c3cb97-1508-4d39-ad2f-71190cb306c7), add a second test account to the accounts array. The new account should: 1) Have a unique UUID-format ID (different from the existing one), 2) Use a different email address and account name, 3) Use the same or different IMAP provider settings for testing, 4) Be marked as active (is_active: true), 5) Include proper timestamps for created_at and updated_at. This addition will immediately expose any remaining hardcoded account_id=1 references throughout the codebase, particularly in the dashboard handlers and cache service where account_uuid_to_db_id() function calls occur. The second account will enable testing of multi-account functionality in the UI, API endpoints, email caching, folder management, and IMAP operations. Example format: Add an account with id like 'b7e4d8f2-9a3c-4e1b-8f6a-2d5c7e9f1a3b', account_name like 'Test Account (test@example.com)', and email_address 'test@example.com' with appropriate IMAP configuration.",
         "testStrategy": "1. Add the second account to config/accounts.json and restart the server. 2. Test API endpoints like /api/folders, /api/emails, /api/send-email with both account UUIDs to verify they work correctly. 3. Use the dashboard UI to switch between accounts and verify folder lists, email lists, and account-specific operations work. 4. Monitor server logs for any errors related to account_id lookup or hardcoded values. 5. Test email operations (list folders, fetch emails, cache emails) with both accounts to ensure proper account separation. 6. Verify that emails cached for one account don't appear when viewing the other account. 7. Test the account_uuid_to_db_id() function specifically with both account UUIDs to ensure it returns different database IDs rather than always returning 1.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           37,
           39
@@ -1952,7 +1952,7 @@
       ],
       "created": "2025-10-05T09:39:31.250Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-05T10:36:56.804Z"
+      "updated": "2025-10-06T04:45:43.797Z"
     }
   }
 }
