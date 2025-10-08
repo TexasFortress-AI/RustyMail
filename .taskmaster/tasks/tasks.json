@@ -69,7 +69,10 @@
             "testStrategy": "Run cargo check, cargo build, and the full test suite. Manually test IMAP operations if necessary to confirm correct async-imap integration.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 4,
+        "recommendedSubtasks": 5,
+        "expansionPrompt": "Break down the systematic removal of imap-types dependency: 1) Remove from Cargo.toml, 2) Find and eliminate all imap-types imports across 80+ Rust files, 3) Replace imap-types types with async-imap equivalents in client.rs and session.rs, 4) Update type conversions and error handling, 5) Verify compilation succeeds"
       },
       {
         "id": 2,
@@ -139,7 +142,10 @@
             "testStrategy": "Run cargo check and cargo build. Confirm zero compilation errors and that all modules are properly integrated.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 3,
+        "recommendedSubtasks": 4,
+        "expansionPrompt": "Address specific compilation errors: 1) Fix missing lifetime specifier in api/sse.rs Context type around line 80-90, 2) Add missing validate_api_key function in api/rest.rs (referenced but not implemented), 3) Add missing Mutex import in imap/session.rs, 4) Run cargo check to verify all fixes"
       },
       {
         "id": 3,
@@ -214,7 +220,10 @@
             "testStrategy": "Run all tests and confirm that each IMAP operation works as expected and that error handling is robust.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 6,
+        "recommendedSubtasks": 7,
+        "expansionPrompt": "Refactor IMAP client architecture: 1) Update client.rs to use only async-imap types, 2) Remove dual-library type conversion functions, 3) Standardize AsyncImapSessionWrapper pattern in session.rs, 4) Update connection handling in client.rs lines 90-155, 5) Map async-imap errors to domain errors, 6) Update all IMAP operations to use async-imap exclusively, 7) Test connection lifecycle and operations"
       },
       {
         "id": 4,
@@ -287,7 +296,10 @@
             "testStrategy": "Run tests against mock and real IMAP servers, verify no message loss or corruption, and ensure all ACID properties are maintained.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 7,
+        "recommendedSubtasks": 8,
+        "expansionPrompt": "Design atomic IMAP command sequences: 1) Research IMAP atomic operation patterns, 2) Implement SELECT-COPY-STORE-EXPUNGE sequence for moves, 3) Add transaction-like error handling with rollback, 4) Track folder selection state in AsyncImapSessionWrapper, 5) Implement operation state management, 6) Add concurrent access protection, 7) Create atomic operation tests, 8) Verify ACID properties in error scenarios"
       },
       {
         "id": 5,
@@ -360,7 +372,10 @@
             "testStrategy": "Execute end-to-end tests for each operation type, simulating error conditions and verifying error propagation and response accuracy.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 5,
+        "recommendedSubtasks": 6,
+        "expansionPrompt": "Implement comprehensive error system: 1) Define error code ranges (-32700 to -32099) following JSON-RPC 2.0 spec, 2) Create error mapping from async-imap errors to JSON-RPC codes, 3) Implement consistent error response format across REST/MCP interfaces, 4) Add structured error details with operation context, 5) Update existing error handling in rest.rs and mcp modules, 6) Test error propagation through all interface layers"
       },
       {
         "id": 6,
@@ -433,7 +448,10 @@
             "testStrategy": "Delete messages and verify they are removed after expunge. Test with different IMAP servers to ensure consistent behavior.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 8,
+        "recommendedSubtasks": 10,
+        "expansionPrompt": "Implement comprehensive IMAP operations: 1) Complete folder listing with hierarchical structure, 2) Implement server-side search using async-imap search methods, 3) Add message fetching with MIME part handling, 4) Complete atomic move operations with guarantees, 5) Implement delete operations with proper flag handling, 6) Add EXPUNGE operations, 7) Create integration tests for each operation, 8) Test with multiple IMAP server types (Gmail, Outlook), 9) Optimize for performance requirements (<500ms folder list, <200ms email fetch), 10) Add comprehensive error handling for each operation"
       },
       {
         "id": 7,
@@ -508,7 +526,10 @@
             "testStrategy": "Run load tests with 100+ concurrent sessions. Measure throughput, latency, and verify no connection or session leaks.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 7,
+        "recommendedSubtasks": 8,
+        "expansionPrompt": "Build robust connection management: 1) Design connection pool using Arc<TokioMutex<>> pattern, 2) Implement session lifecycle tracking and cleanup, 3) Add connection health checking mechanisms, 4) Implement automatic reconnection logic, 5) Add session timeout handling, 6) Support concurrent session handling up to 100+ connections, 7) Create connection leak prevention, 8) Add performance monitoring and load testing for concurrent connections"
       },
       {
         "id": 8,
@@ -580,7 +601,10 @@
             "testStrategy": "Run integration tests with existing MCP clients and verify seamless operation across all supported features.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 6,
+        "recommendedSubtasks": 7,
+        "expansionPrompt": "Replace custom MCP implementation with official SDK: 1) Remove custom MCP transport implementations in legacy.rs, 2) Integrate rmcp dependency from rust-sdk (already in Cargo.toml), 3) Study official SDK patterns and API, 4) Update service definitions using SDK tooling, 5) Migrate stdio transport to use SDK patterns, 6) Migrate SSE transport to use SDK patterns, 7) Ensure backward compatibility with existing MCP clients and test integration"
       },
       {
         "id": 9,
@@ -659,7 +683,10 @@
             "testStrategy": "Verify documentation accuracy by comparing with implemented endpoints and using tools to validate the OpenAPI schema.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 6,
+        "recommendedSubtasks": 8,
+        "expansionPrompt": "Finish REST API development: 1) Complete remaining REST endpoints for folder operations, 2) Implement email search, fetch, move, and delete endpoints, 3) Add API key authentication middleware (validate_api_key function missing), 4) Add request validation and rate limiting, 5) Implement proper HTTP status codes following REST conventions, 6) Create comprehensive OpenAPI/Swagger documentation, 7) Add end-to-end tests for all endpoints, 8) Performance test under load conditions"
       },
       {
         "id": 10,
@@ -723,7 +750,10 @@
             "testStrategy": "Simulate service failures and resource exhaustion to verify health monitoring accuracy and alerting functionality.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 5,
+        "recommendedSubtasks": 6,
+        "expansionPrompt": "Complete dashboard backend functionality: 1) Complete metrics collection service using sysinfo crate, 2) Implement client management service for tracking active connections, 3) Add configuration service for runtime settings, 4) Create SSE event broadcasting system for real-time updates, 5) Implement system health monitoring, 6) Test metrics accuracy and SSE broadcasting with multiple clients"
       },
       {
         "id": 11,
@@ -795,7 +825,10 @@
             "testStrategy": "Run manual and automated tests in Chrome, Firefox, Edge, and Safari. Validate all dashboard features and real-time updates.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 4,
+        "recommendedSubtasks": 5,
+        "expansionPrompt": "Complete frontend integration: 1) Build React frontend using Vite in frontend/rustymail-app-main/ directory, 2) Configure build output for production, 3) Integrate static files with Actix backend using actix-files middleware, 4) Configure SSE EventSource connections for real-time updates, 5) Test frontend build process and backend integration across different browsers"
       },
       {
         "id": 12,
@@ -868,7 +901,10 @@
             "testStrategy": "Run automated and manual tests to ensure reliability, correctness, and performance of the SSE implementation.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 5,
+        "recommendedSubtasks": 6,
+        "expansionPrompt": "Complete SSE implementation: 1) Finish SSE implementation in dashboard/api/sse.rs, 2) Add event broadcasting for metrics updates and client connections, 3) Implement proper SSE connection lifecycle management, 4) Add event filtering and subscription management, 5) Ensure browser reconnection handling, 6) Test SSE stability under network conditions and with multiple concurrent clients"
       },
       {
         "id": 13,
@@ -940,7 +976,10 @@
             "testStrategy": "Test multi-turn conversations for correct context retention and ensure context is correctly passed to LLM providers.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 3,
+        "recommendedSubtasks": 4,
+        "expansionPrompt": "Initialize AI integration framework: 1) Add RIG dependency to Cargo.toml, 2) Configure OpenAI and OpenRouter providers in dashboard/services/ai/ modules, 3) Set up LLM model selection and API key management, 4) Create provider abstraction layer and test connectivity with configured providers"
       },
       {
         "id": 14,
@@ -1012,7 +1051,10 @@
             "testStrategy": "Perform integration tests, user acceptance tests, and edge case evaluations to confirm end-to-end functionality and reliability.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 6,
+        "recommendedSubtasks": 7,
+        "expansionPrompt": "Build NLP to MCP pipeline: 1) Design natural language processing pipeline using RIG, 2) Create prompt templates for common email operations ('show unread emails', 'emails from sender', 'move emails to folder'), 3) Implement intent recognition and mapping to MCP method calls, 4) Add conversation context tracking for follow-up queries, 5) Create query parsing and validation, 6) Test natural language understanding with various query formats, 7) Verify correct MCP operation mapping and context maintenance"
       },
       {
         "id": 15,
@@ -1085,7 +1127,10 @@
             "testStrategy": "Test export feature for accuracy and format. Verify history browsing and retrieval works as expected.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 4,
+        "recommendedSubtasks": 5,
+        "expansionPrompt": "Complete chatbot interface: 1) Extend existing ChatbotPanel.tsx component with full conversation interface, 2) Add message history and conversation state management, 3) Implement typing indicators and response streaming, 4) Connect to backend AI service via SSE or WebSocket, 5) Add conversation export and history features, and test UI responsiveness"
       },
       {
         "id": 16,
@@ -1154,7 +1199,10 @@
             "testStrategy": "Verify all tests run automatically on each pipeline execution. Ensure failures and regressions are reported and block deployments if quality thresholds are not met.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 8,
+        "recommendedSubtasks": 12,
+        "expansionPrompt": "Implement full testing strategy: 1) Create unit tests for all IMAP operations using mock servers, 2) Set up mock IMAP server infrastructure, 3) Implement integration tests using real IMAP adapters for Gmail, 4) Add integration tests for Outlook servers, 5) Add integration tests for standard IMAP servers, 6) Create end-to-end tests covering complete user workflows through REST interface, 7) Create end-to-end tests for MCP interface workflows, 8) Set up performance benchmarks for concurrent connection handling, 9) Achieve >90% code coverage across all modules, 10) Test all error scenarios and edge cases, 11) Implement performance tests meeting requirements (<500ms folder list, <200ms email fetch, 100+ concurrent connections), 12) Set up continuous testing infrastructure"
       },
       {
         "id": 17,
@@ -1231,7 +1279,10 @@
             "testStrategy": "Trigger a workflow run and verify that the Docker image is built and published to the configured registry with the correct tags.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 5,
+        "recommendedSubtasks": 6,
+        "expansionPrompt": "Set up automated development pipeline: 1) Configure GitHub Actions or similar CI/CD system, 2) Set up automated testing on multiple Rust versions and platforms, 3) Add security scanning and dependency vulnerability checks, 4) Configure automated releases with proper semantic versioning, 5) Add Docker image building and container registry publishing, 6) Test CI/CD pipeline with pull requests and verify deployment automation"
       },
       {
         "id": 18,
@@ -1305,7 +1356,10 @@
             "testStrategy": "Follow documentation to set up secure deployments. Validate that security controls and TLS are correctly implemented and functional.",
             "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 3,
+        "recommendedSubtasks": 4,
+        "expansionPrompt": "Complete deployment resources: 1) Create deployment guides for standalone binary, Docker, and Kubernetes, 2) Document all configuration options and environment variables, 3) Create deployment scripts and Docker Compose files, 4) Add monitoring, logging configuration examples, and security best practices documentation"
       },
       {
         "id": 19,
@@ -1822,7 +1876,7 @@
         "testStrategy": "1. Test cache_email() with different account_id values to ensure emails are stored under correct accounts. 2. Verify get_or_create_folder_for_account() is called instead of get_or_create_folder(). 3. Test memory cache key generation includes account_id to prevent cross-account data leakage. 4. Ensure all existing callers in email.rs and sync.rs compile and work correctly with the new signature. 5. Test multi-account scenarios where emails from different accounts in same folder name don't interfere. 6. Verify backwards compatibility by testing with single account scenarios.",
         "status": "done",
         "dependencies": [
-          37
+          "37"
         ],
         "priority": "high",
         "subtasks": []
@@ -1835,7 +1889,7 @@
         "testStrategy": "1. Test the function with valid UUIDs from existing accounts to verify correct database ID lookup. 2. Test with invalid/non-existent UUIDs to ensure proper error handling. 3. Test all API endpoints that use account_uuid_to_db_id() (lines 464, 504, 557, 609, 648, 690, 1486) with different account UUIDs to verify multi-account support works. 4. Verify the function performance with multiple accounts and consider adding integration tests for UUID->ID mapping. 5. Test that cached emails and other account-specific data are properly segregated by the correct database account ID.",
         "status": "done",
         "dependencies": [
-          37
+          "37"
         ],
         "priority": "high",
         "subtasks": []
@@ -1846,8 +1900,8 @@
         "description": "Investigation reveals the frontend pagination is working correctly - offset is properly calculated as (currentPage - 1) * pageSize and sent in API calls. The actual issue is in the backend cache service get_cached_emails_for_account() method which appears to have a folder cache key mismatch causing it to return empty results instead of properly paginated data.",
         "status": "done",
         "dependencies": [
-          11,
-          20
+          "11",
+          "20"
         ],
         "priority": "high",
         "details": "Frontend analysis shows pagination working correctly: Page 1 sends offset=0, Page 2 sends offset=20, etc. The API handler at handlers.rs:483 correctly extracts limit and offset parameters and passes them to get_cached_emails_for_account(). The cache method at cache.rs:522-523 correctly binds these parameters to the SQL query with LIMIT ? OFFSET ?. However, there's a folder cache key mismatch issue: load_folders_to_cache() at line 199 populates cache with non-prefixed keys (just folder name) while get_folder_from_cache_for_account() expects account-prefixed keys (format: '{account_id}:{folder_name}'). This mismatch causes the cache method to fail finding folders and return empty results. Fix steps: 1) Update load_folders_to_cache() to query folders with account_id and populate cache using account-prefixed keys. 2) Modify the folder query to SELECT account_id. 3) Update cache insertion to use format('{}:{}', account_id, name). 4) Test that pagination works after fixing the cache key mismatch.",
@@ -1862,8 +1916,8 @@
         "testStrategy": "1. Add the second account to config/accounts.json and restart the server. 2. Test API endpoints like /api/folders, /api/emails, /api/send-email with both account UUIDs to verify they work correctly. 3. Use the dashboard UI to switch between accounts and verify folder lists, email lists, and account-specific operations work. 4. Monitor server logs for any errors related to account_id lookup or hardcoded values. 5. Test email operations (list folders, fetch emails, cache emails) with both accounts to ensure proper account separation. 6. Verify that emails cached for one account don't appear when viewing the other account. 7. Test the account_uuid_to_db_id() function specifically with both account UUIDs to ensure it returns different database IDs rather than always returning 1.",
         "status": "done",
         "dependencies": [
-          37,
-          39
+          "37",
+          "39"
         ],
         "priority": "high",
         "subtasks": []
@@ -1876,10 +1930,10 @@
         "testStrategy": "1. Set up test database with clean state and load both accounts from config/accounts.json. 2. Create mock IMAP sessions for both accounts with different folder structures and email content. 3. Run sync operations for each account separately and verify database contains correct account_id associations in folders and emails tables. 4. Test API endpoints with both account UUIDs to verify complete data isolation - folders from account A should never appear when requesting account B's data. 5. Verify pagination works correctly: offset=10&limit=5 for account A should return emails 11-15 for account A only, not mixed results. 6. Test error handling: requests with non-existent account IDs should return 404, not crash or return other account's data. 7. Verify account_uuid_to_db_id() function maps correctly to database integer IDs. 8. Run cargo test --test multi_account_sync to execute the comprehensive test suite.",
         "status": "pending",
         "dependencies": [
-          25,
-          31,
-          37,
-          41
+          "25",
+          "31",
+          "37",
+          "41"
         ],
         "priority": "high",
         "subtasks": []
@@ -1892,8 +1946,8 @@
         "testStrategy": "1. Run `cargo test hardcoded_detection` to verify all hardcoded detection tests pass initially (before fixing hardcoded values). 2. Temporarily add hardcoded `account_id=1` values to test functions and verify tests correctly fail. 3. Test that the static analysis catches hardcoded values during compilation with `cargo clippy -- -D clippy::hardcoded_literals`. 4. Verify build script integration by running `cargo build` and checking that hardcoded patterns are detected and reported. 5. Test multi-account scenarios using both test accounts from `config/accounts.json` to ensure the detection works in realistic conditions. 6. Run full test suite to verify existing functionality remains unaffected by the new linting rules.",
         "status": "pending",
         "dependencies": [
-          41,
-          42
+          "41",
+          "42"
         ],
         "priority": "medium",
         "subtasks": []
@@ -1904,14 +1958,15 @@
         "description": "Debug email fetch failures affecting 23 out of 48 emails in INBOX.Sent folder with 'Retrying missing UIDs' warnings, identifying root cause and improving retry logic and error handling.",
         "details": "The IMAP client is experiencing fetch failures specifically in the INBOX.Sent folder where 23 out of 48 emails fail to fetch with 'Retrying missing UIDs' warnings. This task requires: 1) Add comprehensive logging to src/imap/session.rs in the fetch_emails() implementation to track which specific UIDs are failing and why. 2) Investigate potential causes including: network timeouts (current timeout in src/imap/client.rs:156-158 may be insufficient for large Sent folder operations), server-side UID consistency issues, IMAP protocol handling bugs in the async-imap library integration, and folder-specific quirks with Sent folders. 3) Enhance the retry logic in AsyncImapSessionWrapper::fetch_emails() to implement exponential backoff with configurable max retries, add retry-specific error handling for missing UIDs, and implement partial success handling (return successfully fetched emails even if some UIDs fail). 4) Improve error reporting by distinguishing between permanent failures (non-existent UIDs) and transient failures (network/timeout), adding structured error context with specific failed UID information, and implementing warning-level logging for partial failures vs error-level for complete failures. 5) Add fetch operation timeout configuration separate from connection timeout, implement chunked fetching for large UID sets to avoid server timeouts, and add circuit breaker pattern for repeated failures to specific folders. The implementation should maintain backward compatibility with existing fetch_emails() API while adding internal resilience.",
         "testStrategy": "1. Create integration test that reproduces the INBOX.Sent fetch failure scenario with 48 email UIDs where 23 should fail. 2. Test retry logic by simulating transient network failures and verifying exponential backoff behavior with configurable max retries. 3. Verify partial success handling returns successfully fetched emails when some UIDs fail, and that error context includes specific failed UID information. 4. Test timeout scenarios with mock IMAP server that delays responses to verify separate fetch timeout vs connection timeout handling. 5. Test chunked fetching with large UID sets (50+ emails) to ensure server timeout prevention. 6. Verify logging output includes specific UID failure details and retry attempts. 7. Test against real IMAP servers (GoDaddy based on existing connection code) to ensure compatibility. 8. Performance test to ensure fetch operations meet <200ms per email requirement from task 6 even with retry logic.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
-          21,
-          25,
-          6
+          "21",
+          "25",
+          "6"
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-10-08T03:42:23.048Z"
       },
       {
         "id": 45,
@@ -1921,8 +1976,8 @@
         "testStrategy": "Test folder lookup for multiple accounts to ensure folders are found in cache. Verify get_cached_emails_for_account returns correct results for different accounts. Test cache loading at startup populates folders with account-prefixed keys. Confirm existing functionality with default account_id=1 still works. Test scenarios where same folder name exists for different accounts.",
         "status": "done",
         "dependencies": [
-          25,
-          38
+          "25",
+          "38"
         ],
         "priority": "high",
         "subtasks": []
@@ -1935,24 +1990,128 @@
         "testStrategy": "Test pagination with various offset values (0, 10, 20, 50) to ensure correct parsing. Verify backend logs show correct offset values instead of always 0. Test with different limit values to ensure all query parameters parse correctly. Test with missing offset parameter to ensure default of 0 works. Test with invalid offset values to ensure graceful error handling. Verify pagination returns different result sets when offset changes. Test frontend pagination controls advance through different pages successfully.",
         "status": "done",
         "dependencies": [
-          25,
-          45
+          "25",
+          "45"
         ],
         "priority": "high",
         "subtasks": []
+      },
+      {
+        "id": 47,
+        "title": "Fix account deletion functionality - deletion is currently failing when user tries to delete an account from the UI",
+        "description": "Update the delete_account API handler to properly connect to the AccountService and handle string-based UUID account IDs instead of integer IDs.",
+        "details": "The delete_account handler in src/dashboard/api/accounts.rs:154-165 currently returns a 'not implemented' error instead of actually deleting accounts. After Task #37's migration to file-based account storage, the system now uses UUID strings as account IDs, but the API handler still expects i64 parameters and doesn't connect to the AccountService.\n\nRequired changes:\n1. Update the delete_account handler path parameter from web::Path<i64> to web::Path<String> to handle UUID strings\n2. Replace the placeholder implementation with actual AccountService integration by accessing state.account_service.lock().await\n3. Call account_service.delete_account(account_id.as_str()).await with proper error handling\n4. Return appropriate JSON responses for success/failure cases matching the existing API pattern\n5. Update other account API handlers (get_account, update_account, set_default_account, validate_connection) to use String instead of i64 parameters for consistency\n6. Ensure the frontend accountsApi.deleteAccount() call in frontend/rustymail-app-main/src/dashboard/api/accounts.ts:105-114 passes the correct string ID format\n\nThe AccountService is already properly initialized in DashboardState (src/dashboard/services/mod.rs:83,159) and the underlying AccountStore.delete_account() method works correctly with string IDs (src/dashboard/services/account_store.rs:218-236).",
+        "testStrategy": "1. Test account deletion via the UI with existing accounts from config/accounts.json to verify the HTTP DELETE request succeeds. 2. Verify that deleted accounts are removed from the accounts.json config file and no longer appear in account listings. 3. Test deletion of default accounts to ensure the default_account_id field is properly cleared. 4. Test error handling with invalid account IDs to ensure proper error responses. 5. Test account deletion with multiple accounts to ensure only the specified account is deleted. 6. Verify that after deletion, other API endpoints (get_account, list_accounts) reflect the changes correctly. 7. Test the complete UI flow: delete account → confirmation dialog → API call → success notification → account list refresh.",
+        "status": "pending",
+        "dependencies": [
+          "37",
+          "39",
+          "41"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 48,
+        "title": "Implement email account autodiscovery",
+        "description": "Add email autodiscovery using RFC 6186 and Mozilla Autoconfig protocols when creating accounts through the Basic tab, with password field and fallback to manual IMAP/SMTP configuration only if autodiscovery fails.",
+        "details": "Implement comprehensive email autodiscovery system that follows RFC 6186 (DNS SRV records) and Mozilla Autoconfig standards for automatic email server configuration discovery:\n\n1. **Backend Autodiscovery Service** (extend existing AccountService in src/dashboard/services/account.rs):\n   - Implement RFC 6186 autodiscovery: query DNS SRV records for _imap._tcp, _imaps._tcp, _submission._tcp, _smtp._tcp\n   - Add Mozilla Autoconfig support: fetch XML from autoconfig.$domain/mail/config-v1.1.xml and $domain/.well-known/autoconfig/mail/config-v1.1.xml\n   - Implement Thunderbird/Outlook database fallback for common providers\n   - Add connection validation to verify discovered settings work\n   - Update auto_configure method to use real autodiscovery instead of database-only lookup\n\n2. **Frontend UI Enhancements** (AccountFormDialog.tsx):\n   - Add password field to Basic tab (currently missing but referenced in error)\n   - Implement automatic autodiscovery trigger when email and password are entered\n   - Show autodiscovery progress with clear status indicators\n   - Only enable IMAP/SMTP tabs if autodiscovery fails or user chooses manual config\n   - Fix 'required fields missing' validation error by ensuring all Basic tab fields are properly validated\n\n3. **Backend API Integration**:\n   - Complete auto_configure endpoint implementation in dashboard/api/accounts.rs\n   - Add password parameter to autodiscovery requests\n   - Return comprehensive configuration including security settings\n   - Add endpoint for testing discovered settings before account creation\n\n4. **Autodiscovery Protocol Implementation**:\n   - DNS SRV lookup library integration (trust-dns-resolver or similar)\n   - HTTP client for fetching Mozilla autoconfig XML\n   - XML parsing for autoconfig responses\n   - Fallback priority: RFC 6186 → Mozilla Autoconfig → Provider database → Manual\n\n5. **Error Handling & UX**:\n   - Clear progress indicators during autodiscovery\n   - Informative error messages when autodiscovery fails\n   - Graceful fallback to manual configuration\n   - Connection validation before saving account\n\nThis implementation should significantly improve user experience by automatically configuring email accounts with minimal user input, following established email autodiscovery standards.",
+        "testStrategy": "Test autodiscovery with major email providers (Gmail, Outlook, Yahoo, custom domains). Verify DNS SRV record parsing works correctly. Test Mozilla Autoconfig XML parsing with real provider responses. Validate that manual configuration still works when autodiscovery fails. Test connection validation prevents saving invalid configurations. Verify UI shows proper error messages and progress indicators. Test form validation ensures required fields are properly checked. Ensure IMAP/SMTP tabs are only accessible when needed.",
+        "status": "pending",
+        "dependencies": [
+          "31"
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 49,
+        "title": "Fix Sent folder showing only 25 emails when there are actually 48",
+        "description": "Investigate and fix the issue where the Sent folder displays only 25 emails in RustyMail when Thunderbird shows 48 messages for chris@texasfortress.ai account.",
+        "status": "done",
+        "dependencies": [
+          "25",
+          "38",
+          "45"
+        ],
+        "priority": "medium",
+        "details": "Investigation complete: The issue is NOT related to hardcoded limits or pagination. Database analysis shows INBOX.Sent has UIDs 1-9 and 33-48 cached (25 total), but UIDs 10-32 are missing (23 emails). The sync_state.last_uid_synced=48 confirms sync found all 48 UIDs correctly. The root cause is IMAP fetch failures in fetch_emails() method in src/imap/session.rs:335-355.\n\nThis is the same root cause as Task #44 - IMAP fetch_emails() is silently failing for UIDs 10-32 during batch fetch operations. The retry logic is also failing to recover these emails. The implementation in AsyncImapSessionWrapper::fetch_emails() shows:\n- Line 337: sequence built correctly from UIDs\n- Line 339-341: uid_fetch stream created with proper flags\n- Line 344-348: fetch stream processed\n- Line 350-355: mismatch detection with warning log, but no retry mechanism\n\nThe fetch_emails() method detects the UID mismatch (line 351-354) and logs missing UIDs but does not implement retry logic. When 23 out of 48 UIDs fail to fetch, the method simply returns the 25 successfully fetched emails without attempting to recover the failed UIDs.\n\nSpecific technical issues identified:\n1. No retry mechanism in fetch_emails() for failed UID fetches\n2. Silent failures - method returns partial results without error indication\n3. Potential IMAP server timeout or batch size issues affecting consecutive UIDs 10-32\n4. Missing exponential backoff for transient network/server issues\n5. No chunked fetching to prevent server-side timeout on large UID ranges\n\nThe fix requires implementing robust retry logic with exponential backoff, chunked fetching for large UID sets, and proper error handling to distinguish between permanent (non-existent UID) and transient (network/timeout) failures.",
+        "testStrategy": "1. Query database to verify exactly which UIDs are missing: `SELECT uid FROM emails e JOIN folders f ON e.folder_id = f.id WHERE f.name = 'Sent' AND f.account_id = (SELECT id FROM accounts WHERE email_address = 'chris@texasfortress.ai') ORDER BY uid;` 2. Test fetch_emails() directly with the missing UID range (10-32) to reproduce the failure. 3. Add comprehensive logging to fetch_emails() to track which specific UIDs fail during batch operations. 4. Test retry logic by simulating transient failures and verifying recovery of missing UIDs. 5. Test chunked fetching with different batch sizes to identify optimal chunk size that prevents server timeouts. 6. Verify that after implementing retry logic, all 48 emails are successfully cached. 7. Test against real IMAP server to ensure compatibility with GoDaddy IMAP implementation. 8. Performance test to ensure fetch operations with retry logic still meet acceptable response times.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add comprehensive logging to fetch_emails method",
+            "description": "Add detailed debug logging to track UID fetch failures and identify specific failing UIDs in the fetch_emails method.",
+            "dependencies": [],
+            "details": "Enhance logging in src/imap/session.rs:335-355 AsyncImapSessionWrapper::fetch_emails() to track: 1) Individual UID fetch attempts and results, 2) Specific UIDs that fail during batch fetch, 3) IMAP server response details for failed fetches, 4) Network timeout vs server error distinction, 5) Batch composition and chunking information. Replace the simple warn! statement at line 351-354 with comprehensive error context including attempted UIDs, successfully fetched UIDs, and specific failure reasons.",
+            "status": "pending",
+            "testStrategy": "Test logging output with known failing UID range (10-32) to verify detailed failure information is captured. Verify log levels are appropriate (debug for normal operations, warn for partial failures, error for complete failures).",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Implement retry logic with exponential backoff",
+            "description": "Add retry mechanism to fetch_emails method to handle transient IMAP server failures and network issues.",
+            "dependencies": [
+              1
+            ],
+            "details": "Implement retry logic in fetch_emails() method with: 1) Exponential backoff starting at 100ms, doubling up to 3.2s max delay, 2) Maximum of 3 retry attempts for transient failures, 3) Distinguish between permanent failures (non-existent UIDs) and transient failures (network/timeout), 4) Retry only failed UIDs, not the entire batch, 5) Implement partial success handling to return successfully fetched emails even if some UIDs permanently fail. Add configuration for retry parameters and timeout settings.",
+            "status": "pending",
+            "testStrategy": "Test retry logic with mock IMAP failures to verify exponential backoff timing. Test partial success scenarios where some UIDs fail permanently. Verify retry attempts are logged appropriately and don't cause infinite loops.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 3,
+            "title": "Implement chunked fetching for large UID sets",
+            "description": "Break large UID fetch requests into smaller chunks to prevent IMAP server timeouts.",
+            "dependencies": [
+              1
+            ],
+            "details": "Modify fetch_emails() to process UIDs in chunks of configurable size (default 20) to prevent server-side timeouts: 1) Split UID array into chunks, 2) Process each chunk separately with individual retry logic, 3) Aggregate results from all chunks, 4) Add chunk size configuration parameter, 5) Maintain order of returned emails matching input UID order, 6) Handle cross-chunk failures gracefully. This should prevent the consecutive UID failure pattern (10-32) seen in INBOX.Sent.",
+            "status": "pending",
+            "testStrategy": "Test chunked fetching with large UID sets (50+ emails) to verify no timeouts occur. Test that email order is preserved across chunks. Test chunk boundary error handling. Verify optimal chunk size through performance testing.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 4,
+            "title": "Update sync service to handle partial fetch failures",
+            "description": "Modify sync service to properly handle and report partial fetch failures from fetch_emails method.",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Update src/dashboard/services/sync.rs to handle partial fetch failures: 1) Detect when fetch_emails returns fewer emails than expected UIDs, 2) Log sync warnings for partial failures without failing entire folder sync, 3) Update sync statistics to track fetch success/failure rates, 4) Implement fallback sync strategies for repeatedly failing UIDs, 5) Add sync status reporting for partially synced folders. Ensure sync continues processing other UIDs/folders even when some emails fail to fetch.",
+            "status": "pending",
+            "testStrategy": "Test sync service behavior when fetch_emails returns partial results. Verify sync continues with other folders when one folder has fetch failures. Test sync status reporting includes partial failure information.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 5,
+            "title": "Test fix with INBOX.Sent folder and verify all 48 emails",
+            "description": "Validate the complete fix by testing against the original INBOX.Sent folder issue and confirming all 48 emails are successfully cached.",
+            "dependencies": [
+              4
+            ],
+            "details": "Comprehensive end-to-end testing: 1) Clear existing INBOX.Sent cache for chris@texasfortress.ai account, 2) Trigger full resync of INBOX.Sent folder, 3) Verify all 48 emails are successfully fetched and cached, 4) Confirm no missing UID gaps in the 1-48 range, 5) Test that the fix works for other folders and accounts, 6) Performance regression testing to ensure retry logic doesn't significantly impact sync times, 7) Verify UI displays all 48 emails correctly after fix.",
+            "status": "pending",
+            "testStrategy": "Query final email count and UID range in database after fix. Test folder display in frontend shows all 48 emails. Compare with Thunderbird email list to ensure complete parity. Test performance impact of retry logic on large folders.",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2025-10-08T03:40:34.299Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-10-03T02:05:57.031Z",
-      "taskCount": 37,
-      "completedCount": 37,
+      "lastModified": "2025-10-08T03:42:23.049Z",
+      "taskCount": 49,
+      "completedCount": 44,
       "tags": [
         "master"
       ],
-      "created": "2025-10-05T09:39:31.250Z",
+      "created": "2025-10-08T03:49:51.985Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-06T04:45:43.797Z"
+      "updated": "2025-10-08T03:49:51.985Z"
     }
   }
 }
