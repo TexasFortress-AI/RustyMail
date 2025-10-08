@@ -93,12 +93,16 @@ pub async fn list_mcp_tools(
         serde_json::json!({
             "name": "list_folders",
             "description": "List all email folders in the account",
-            "parameters": {}
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+            }
         }),
         serde_json::json!({
             "name": "list_folders_hierarchical",
             "description": "List folders with hierarchical structure",
-            "parameters": {}
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+            }
         }),
         serde_json::json!({
             "name": "search_emails",
@@ -106,7 +110,8 @@ pub async fn list_mcp_tools(
             "parameters": {
                 "folder": "Folder to search in (e.g., INBOX)",
                 "query": "Search query (e.g., FROM user@example.com)",
-                "max_results": "Maximum number of results (optional)"
+                "max_results": "Maximum number of results (optional)",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         }),
         serde_json::json!({
@@ -114,7 +119,8 @@ pub async fn list_mcp_tools(
             "description": "Fetch email content with MIME data",
             "parameters": {
                 "folder": "Folder containing the email",
-                "uid": "Email UID"
+                "uid": "Email UID",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         }),
         serde_json::json!({
@@ -123,7 +129,8 @@ pub async fn list_mcp_tools(
             "parameters": {
                 "source_folder": "Source folder",
                 "target_folder": "Target folder",
-                "uid": "Message UID to move"
+                "uid": "Message UID to move",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         }),
         serde_json::json!({
@@ -132,7 +139,8 @@ pub async fn list_mcp_tools(
             "parameters": {
                 "source_folder": "Source folder",
                 "target_folder": "Target folder",
-                "uids": "Comma-separated list of UIDs"
+                "uids": "Comma-separated list of UIDs",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         }),
         serde_json::json!({
@@ -140,7 +148,8 @@ pub async fn list_mcp_tools(
             "description": "Mark messages as deleted",
             "parameters": {
                 "folder": "Folder containing messages",
-                "uids": "Comma-separated list of UIDs"
+                "uids": "Comma-separated list of UIDs",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         }),
         serde_json::json!({
@@ -148,7 +157,8 @@ pub async fn list_mcp_tools(
             "description": "Permanently delete messages",
             "parameters": {
                 "folder": "Folder containing messages",
-                "uids": "Comma-separated list of UIDs"
+                "uids": "Comma-separated list of UIDs",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         }),
         serde_json::json!({
@@ -156,14 +166,16 @@ pub async fn list_mcp_tools(
             "description": "Unmark messages as deleted",
             "parameters": {
                 "folder": "Folder containing messages",
-                "uids": "Comma-separated list of UIDs"
+                "uids": "Comma-separated list of UIDs",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         }),
         serde_json::json!({
             "name": "expunge",
             "description": "Expunge deleted messages from folder",
             "parameters": {
-                "folder": "Folder to expunge"
+                "folder": "Folder to expunge",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         }),
         // Cache-based tools
@@ -173,7 +185,8 @@ pub async fn list_mcp_tools(
             "parameters": {
                 "folder": "Folder name (default: INBOX)",
                 "limit": "Maximum number of emails (default: 20)",
-                "offset": "Pagination offset (default: 0)"
+                "offset": "Pagination offset (default: 0)",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         }),
         serde_json::json!({
@@ -181,7 +194,8 @@ pub async fn list_mcp_tools(
             "description": "Get full cached email by UID",
             "parameters": {
                 "folder": "Folder name (default: INBOX)",
-                "uid": "Email UID"
+                "uid": "Email UID",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         }),
         serde_json::json!({
@@ -189,21 +203,24 @@ pub async fn list_mcp_tools(
             "description": "Get cached email by position index",
             "parameters": {
                 "folder": "Folder name (default: INBOX)",
-                "index": "Zero-based position index"
+                "index": "Zero-based position index",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         }),
         serde_json::json!({
             "name": "count_emails_in_folder",
             "description": "Count total emails in cached folder",
             "parameters": {
-                "folder": "Folder name (default: INBOX)"
+                "folder": "Folder name (default: INBOX)",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         }),
         serde_json::json!({
             "name": "get_folder_stats",
             "description": "Get statistics about cached folder",
             "parameters": {
-                "folder": "Folder name (default: INBOX)"
+                "folder": "Folder name (default: INBOX)",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         }),
         serde_json::json!({
@@ -212,7 +229,8 @@ pub async fn list_mcp_tools(
             "parameters": {
                 "folder": "Folder name (default: INBOX)",
                 "query": "Search query text",
-                "limit": "Maximum number of results (default: 20)"
+                "limit": "Maximum number of results (default: 20)",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         }),
         // Account management tools
@@ -235,54 +253,38 @@ pub async fn list_mcp_tools(
     })))
 }
 
-/// Helper function to get account_id from request parameters with fallback to default account
-/// Priority: 1) account_id from params, 2) default account, 3) first account
-/// Returns the account ID as a String (UUID format)
+/// Helper function to get account_id from request parameters
+/// REQUIRES account_id to be provided as an email address
+/// Returns the email address directly (no UUID lookup)
 async fn get_account_id_to_use(
     params: &serde_json::Value,
-    state: &web::Data<DashboardState>,
+    _state: &web::Data<DashboardState>,
 ) -> Result<String, ApiError> {
-    // First, check if account_id is explicitly provided in parameters
+    // account_id is REQUIRED and must be an email address
     if let Some(account_id) = params.get("account_id").and_then(|v| v.as_str()) {
         return Ok(account_id.to_string());
     }
 
-    // Otherwise, get the default account or first account from AccountService
-    let account_service = state.account_service.lock().await;
-
-    // Try to get default account first
-    if let Ok(Some(default_account)) = account_service.get_default_account().await {
-        return Ok(default_account.id);
-    }
-
-    // If no default, use the first account
-    if let Ok(accounts) = account_service.list_accounts().await {
-        if let Some(first_account) = accounts.first() {
-            return Ok(first_account.id.clone());
-        }
-    }
-
-    // If no accounts exist, return error
-    Err(ApiError::InternalError(
-        "No email accounts configured. Please add an account first.".to_string()
+    // If account_id not provided, return error
+    Err(ApiError::BadRequest(
+        "account_id parameter is required and must be an email address (e.g., user@example.com)".to_string()
     ))
 }
 
-/// Convert account UUID string to database integer ID
-/// Looks up the account by UUID, then maps its email address to the database account ID
+/// Validate and return the account email address
+/// Since account_id is now the email address, this just validates it exists
 async fn account_uuid_to_email(
-    account_uuid: &str,
+    account_id: &str,
     state: &DashboardState,
 ) -> Result<String, ApiError> {
-    // Get the account from AccountService to get the email address
+    // Verify the account exists by looking it up
     let account_service = state.account_service.lock().await;
-    let account = account_service.get_account(account_uuid).await
+    let _account = account_service.get_account(account_id).await
         .map_err(|e| ApiError::NotFound(format!("Account not found: {}", e)))?;
-    let email_address = account.email_address.clone();
     drop(account_service); // Release lock
 
-    // Return the email address directly (no more numeric ID lookup needed)
-    Ok(email_address)
+    // Return the email address (which is the account_id itself)
+    Ok(account_id.to_string())
 }
 
 // Handler for executing MCP tools
