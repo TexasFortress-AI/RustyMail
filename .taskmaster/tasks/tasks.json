@@ -2289,9 +2289,9 @@
             "id": 1,
             "title": "Parse MCP tool responses into EmailData structure",
             "description": "Modify fetch_email_context_mcp() method in ai.rs to parse JSON responses from MCP tools and convert them into EmailData, EmailMessage, and EmailFolder structures",
-            "status": "in-progress",
+            "status": "done",
             "dependencies": [],
-            "details": "Currently fetch_email_context_mcp() returns raw string context, but MCP tools return structured JSON that should be parsed into the EmailData model. Need to deserialize list_folders responses into EmailFolder objects, list_cached_emails into EmailMessage objects, and count_emails_in_folder into count fields.",
+            "details": "Currently fetch_email_context_mcp() returns raw string context, but MCP tools return structured JSON that should be parsed into the EmailData model. Need to deserialize list_folders responses into EmailFolder objects, list_cached_emails into EmailMessage objects, and count_emails_in_folder into count fields.\n<info added on 2025-10-08T19:49:19.338Z>\nImplementation completed successfully with proper EmailData structure replacement. The hardcoded None in process_query() has been replaced with populated EmailData from MCP tool responses. Implementation includes:\n\n- EmailContextData struct to hold both string context and structured EmailData\n- New fetch_email_context_with_data() method that parses MCP responses \n- Updated process_query() to use structured email_data from EmailContextData instead of hardcoded None\n- Proper field mapping from MCP format to EmailMessage/EmailFolder structs\n- Working compilation and build verification\n- Both message list and folder list parsing with accurate counts and metadata\n\nThe subtask is complete and ready for the next phase.\n</info added on 2025-10-08T19:49:19.338Z>",
             "testStrategy": ""
           },
           {
@@ -2410,7 +2410,7 @@
       ],
       "created": "2025-10-08T03:49:51.985Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-08T19:27:42.790Z"
+      "updated": "2025-10-08T19:49:39.966Z"
     }
   }
 }
