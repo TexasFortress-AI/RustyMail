@@ -2275,16 +2275,44 @@
         "id": 57,
         "title": "Implement Email Assistant chatbot backend endpoint at /api/dashboard/chatbot/query",
         "description": "Create a chatbot endpoint that processes natural language queries about emails by calling existing MCP tools and returns structured responses with email data and followup suggestions.",
-        "details": "Implement a POST endpoint at `/api/dashboard/chatbot/query` that accepts ChatbotQuery payloads containing account_id (email), current_folder, query, and conversation_id parameters. The endpoint should:\n\n1. **Request Processing**: Accept ChatbotQuery struct with required account_id (email address), query string, and optional current_folder and conversation_id parameters\n\n2. **MCP Tool Integration**: Call existing MCP tools from src/dashboard/api/handlers.rs including:\n   - list_folders/list_folders_hierarchical for folder queries\n   - search_emails/search_cached_emails for email search\n   - list_cached_emails/get_email_by_uid for email listing\n   - count_emails_in_folder/get_folder_stats for folder statistics\n   - fetch_emails_with_mime for full email content\n\n3. **Natural Language Processing**: Use the existing AiService.process_query() method to:\n   - Parse natural language queries (\"show unread emails\", \"emails from john@example.com\", \"move emails to spam\")\n   - Generate contextual email data using fetch_email_context_mcp() method\n   - Return structured ChatbotResponse with text, email_data, and followup_suggestions\n\n4. **Response Structure**: Return ChatbotResponse matching frontend expectations:\n   - text: AI-generated response text\n   - conversation_id: unique conversation identifier\n   - email_data: structured EmailData with messages/folders/count\n   - followup_suggestions: array of suggested follow-up queries\n\n5. **Account Context**: Use account_id parameter to call MCP tools with proper account context, leveraging existing get_account_id_to_use() and account_uuid_to_email() helper functions\n\n6. **Error Handling**: Wrap AI service errors in ApiError format and return appropriate HTTP status codes\n\nThe endpoint already exists in handlers.rs:74 but needs to be enhanced to fully utilize the existing MCP tool ecosystem and return properly structured responses for the frontend chatbot interface.",
-        "testStrategy": "1. Test endpoint with various natural language queries: \"show my unread emails\", \"how many emails in inbox\", \"list all folders\", \"search emails from john@example.com\"\n2. Verify MCP tool integration by checking that appropriate tools are called based on query content (list_cached_emails for inbox queries, search_cached_emails for search queries, etc.)\n3. Test account_id parameter validation - ensure endpoint returns appropriate errors for missing/invalid account_id\n4. Test response structure matches ChatbotResponse schema with proper email_data population\n5. Test conversation_id handling for multi-turn conversations\n6. Test error scenarios: invalid account_id, MCP tool failures, AI service errors\n7. Integration test with frontend chatbot component to ensure responses display correctly\n8. Performance test with large email datasets to ensure reasonable response times\n9. Test various folder contexts (INBOX, Sent, Drafts) with current_folder parameter",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           14,
           10,
           25
         ],
         "priority": "medium",
-        "subtasks": []
+        "details": "The chatbot endpoint is 95% implemented with only one remaining issue. Current implementation status:\n\n✅ **COMPLETED COMPONENTS:**\n- POST endpoint at `/api/dashboard/chatbot/query` exists in handlers.rs:74\n- ChatbotQuery and ChatbotResponse data structures defined in models.rs:110-127\n- Full MCP tool integration in ai.rs:454-553 via fetch_email_context_mcp() method\n- MCP tool calls include list_folders, count_emails_in_folder, list_cached_emails\n- Account context handling with proper account_id parameter passing\n- Conversation history tracking and context management (ai.rs:232-260)\n- AI provider integration with system prompts and user queries\n- Error handling wrapped in ApiError format\n- Returns ChatbotResponse with text and conversation_id fields\n\n❌ **REMAINING ISSUE:**\n- The email_data field in ChatbotResponse is hardcoded to None at ai.rs:322\n- Despite MCP tools returning structured email data via fetch_email_context_mcp(), this data is not being parsed and populated into the EmailData structure\n- Frontend expects structured email data for rich display of messages, folders, and counts\n\n**IMPLEMENTATION NEEDED:**\n1. Parse MCP tool responses in fetch_email_context_mcp() method\n2. Convert MCP JSON responses into EmailData structure with messages, folders, and count fields\n3. Return populated EmailData instead of None in process_query() method at ai.rs:322\n4. Ensure EmailMessage and EmailFolder structures match MCP tool response formats",
+        "testStrategy": "1. **Core Functionality Tests** (Already Passing):\n   - Test endpoint with natural language queries: \"show my unread emails\", \"how many emails in inbox\", \"list all folders\"\n   - Verify MCP tool integration calls appropriate tools based on query content\n   - Test account_id parameter validation and error handling\n   - Test conversation_id handling for multi-turn conversations\n\n2. **Email Data Population Tests** (Currently Failing):\n   - Verify email_data field is populated (not None) in ChatbotResponse\n   - Test that EmailData.messages contains actual email objects from list_cached_emails MCP responses\n   - Test that EmailData.folders contains folder list from list_folders MCP responses  \n   - Test that EmailData.count reflects accurate email counts from count_emails_in_folder\n   - Validate EmailMessage structure matches MCP tool JSON format\n\n3. **Integration Tests**:\n   - Test frontend chatbot component displays structured email data correctly\n   - Test various folder contexts (INBOX, Sent, Drafts) populate appropriate email_data\n   - Performance test with large email datasets to ensure reasonable response times",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Parse MCP tool responses into EmailData structure",
+            "description": "Modify fetch_email_context_mcp() method in ai.rs to parse JSON responses from MCP tools and convert them into EmailData, EmailMessage, and EmailFolder structures",
+            "status": "in-progress",
+            "dependencies": [],
+            "details": "Currently fetch_email_context_mcp() returns raw string context, but MCP tools return structured JSON that should be parsed into the EmailData model. Need to deserialize list_folders responses into EmailFolder objects, list_cached_emails into EmailMessage objects, and count_emails_in_folder into count fields.",
+            "testStrategy": ""
+          },
+          {
+            "id": 2,
+            "title": "Replace hardcoded None with populated EmailData in process_query()",
+            "description": "Update ai.rs:322 to return the parsed EmailData structure instead of hardcoded None",
+            "status": "pending",
+            "dependencies": [],
+            "details": "The process_query() method currently sets email_data: None regardless of available MCP data. Need to modify this to use the EmailData parsed from MCP responses in the previous subtask.",
+            "testStrategy": ""
+          },
+          {
+            "id": 3,
+            "title": "Validate EmailData structure matches frontend expectations",
+            "description": "Test that the populated EmailData structure renders correctly in the frontend chatbot interface",
+            "status": "pending",
+            "dependencies": [],
+            "details": "Ensure that EmailMessage and EmailFolder fields contain all necessary data for frontend display, including message subjects, senders, timestamps, folder names, and message counts.",
+            "testStrategy": ""
+          }
+        ]
       },
       {
         "id": 58,
@@ -2382,7 +2410,7 @@
       ],
       "created": "2025-10-08T03:49:51.985Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-08T19:02:52.958Z"
+      "updated": "2025-10-08T19:27:42.790Z"
     }
   }
 }
