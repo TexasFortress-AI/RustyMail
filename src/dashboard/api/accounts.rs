@@ -11,7 +11,7 @@ pub struct AutoConfigRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateAccountRequest {
-    pub account_name: String,
+    pub display_name: String,
     pub email_address: String,
     pub provider_type: Option<String>,
     pub imap_host: String,
@@ -31,7 +31,7 @@ pub struct CreateAccountRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateAccountRequest {
-    pub account_name: Option<String>,
+    pub display_name: Option<String>,
     pub email_address: Option<String>,
     pub provider_type: Option<String>,
     pub imap_host: Option<String>,
@@ -130,14 +130,14 @@ pub async fn create_account(
     state: web::Data<DashboardState>,
     req: web::Json<CreateAccountRequest>,
 ) -> HttpResponse {
-    info!("Creating account: {}", req.account_name);
+    info!("Creating account: {}", req.display_name);
 
     let account_service = state.account_service.lock().await;
 
     // Build Account struct from request
     let new_account = Account {
         id: uuid::Uuid::new_v4().to_string(),
-        account_name: req.account_name.clone(),
+        display_name: req.display_name.clone(),
         email_address: req.email_address.clone(),
         provider_type: req.provider_type.clone(),
         imap_host: req.imap_host.clone(),
@@ -158,7 +158,7 @@ pub async fn create_account(
     // Validate connection if requested
     if req.validate_connection.unwrap_or(true) {
         if let Err(e) = account_service.validate_connection(&new_account).await {
-            error!("Connection validation failed for account {}: {}", req.account_name, e);
+            error!("Connection validation failed for account {}: {}", req.display_name, e);
             return HttpResponse::BadRequest().json(serde_json::json!({
                 "success": false,
                 "error": format!("Connection validation failed: {}", e)
@@ -169,7 +169,7 @@ pub async fn create_account(
     // Create the account
     match account_service.create_account(new_account.clone()).await {
         Ok(account_id) => {
-            info!("Successfully created account {} with ID {}", req.account_name, account_id);
+            info!("Successfully created account {} with ID {}", req.display_name, account_id);
 
             // If this is marked as default, set it
             if req.is_default {
@@ -185,7 +185,7 @@ pub async fn create_account(
             })
         },
         Err(e) => {
-            error!("Failed to create account {}: {}", req.account_name, e);
+            error!("Failed to create account {}: {}", req.display_name, e);
             HttpResponse::InternalServerError().json(serde_json::json!({
                 "success": false,
                 "error": format!("Failed to create account: {}", e)
@@ -271,8 +271,8 @@ pub async fn update_account(
     };
 
     // Apply updates from request (only non-None fields)
-    if let Some(name) = &req.account_name {
-        account.account_name = name.clone();
+    if let Some(name) = &req.display_name {
+        account.display_name = name.clone();
     }
     if let Some(email) = &req.email_address {
         account.email_address = email.clone();

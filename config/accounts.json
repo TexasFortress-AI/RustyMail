@@ -4,7 +4,7 @@
   "accounts": [
     {
       "id": "252922d8-caf6-4b8a-ac08-c57223b18299",
-      "account_name": "Default (chris@texasfortress.ai)",
+      "display_name": "Default (chris@texasfortress.ai)",
       "email_address": "chris@texasfortress.ai",
       "provider_type": "custom",
       "imap": {
@@ -21,7 +21,7 @@
     },
     {
       "id": "shannon@texasfortress.ai",
-      "account_name": "Shannon (TexasFortress.ai)",
+      "display_name": "Shannon (TexasFortress.ai)",
       "email_address": "shannon@texasfortress.ai",
       "provider_type": "Auto-discovered",
       "imap": {

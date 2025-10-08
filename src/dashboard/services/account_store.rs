@@ -47,7 +47,7 @@ pub struct SmtpConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredAccount {
     pub id: String,
-    pub account_name: String,
+    pub display_name: String,
     pub email_address: String,
     pub provider_type: Option<String>,
     pub imap: ImapConfig,
@@ -290,7 +290,7 @@ mod tests {
         // Add account
         let account = StoredAccount {
             id: "test_1".to_string(),
-            account_name: "Test Account".to_string(),
+            display_name: "Test Account".to_string(),
             email_address: "test@example.com".to_string(),
             provider_type: Some("gmail".to_string()),
             imap: ImapConfig {

@@ -388,19 +388,19 @@ impl CacheService {
         Ok(())
     }
 
-    pub async fn get_cached_email(&self, folder_name: &str, uid: u32) -> Result<Option<CachedEmail>, CacheError> {
+    pub async fn get_cached_email(&self, folder_name: &str, uid: u32, account_id: &str) -> Result<Option<CachedEmail>, CacheError> {
         // Check memory cache first
-        let cache_key = format!("{}:{}", folder_name, uid);
+        let cache_key = format!("{}:{}:{}", account_id, folder_name, uid);
         {
             let mut memory_cache = self.memory_cache.write().await;
             if let Some(email) = memory_cache.get(&cache_key) {
-                debug!("Email {} found in memory cache", uid);
+                debug!("Email {} found in memory cache for account {}", uid, account_id);
                 return Ok(Some(email.clone()));
             }
         }
 
         // Not in memory, check database
-        let folder = match self.get_folder_from_cache(folder_name).await {
+        let folder = match self.get_folder_from_cache_for_account(folder_name, account_id).await {
             Some(f) => f,
             None => return Ok(None),
         };
@@ -542,14 +542,6 @@ impl CacheService {
         Ok(cached_emails)
     }
 
-
-                cached_at,
-            });
-        }
-
-        Ok(cached_emails)
-    }
-
     /// Get folder from cache for a specific account
     async fn get_folder_from_cache_for_account(&self, name: &str, account_id: &str) -> Option<CachedFolder> {
         let cache_key = format!("{}:{}", account_id, name);
@@ -558,8 +550,8 @@ impl CacheService {
     }
 
 
-    pub async fn update_sync_state(&self, folder_name: &str, last_uid: u32, status: SyncStatus) -> Result<(), CacheError> {
-        let folder = self.get_or_create_folder(folder_name).await?;
+    pub async fn update_sync_state(&self, folder_name: &str, last_uid: u32, status: SyncStatus, account_id: &str) -> Result<(), CacheError> {
+        let folder = self.get_or_create_folder_for_account(folder_name, account_id).await?;
         let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
 
         let status_str = match status {
@@ -588,8 +580,8 @@ impl CacheService {
         Ok(())
     }
 
-    pub async fn get_sync_state(&self, folder_name: &str) -> Result<Option<SyncState>, CacheError> {
-        let folder = match self.get_folder_from_cache(folder_name).await {
+    pub async fn get_sync_state(&self, folder_name: &str, account_id: &str) -> Result<Option<SyncState>, CacheError> {
+        let folder = match self.get_folder_from_cache_for_account(folder_name, account_id).await {
             Some(f) => f,
             None => return Ok(None),
         };
@@ -624,8 +616,8 @@ impl CacheService {
         }
     }
 
-    pub async fn clear_folder_cache(&self, folder_name: &str) -> Result<(), CacheError> {
-        let folder = match self.get_folder_from_cache(folder_name).await {
+    pub async fn clear_folder_cache(&self, folder_name: &str, account_id: &str) -> Result<(), CacheError> {
+        let folder = match self.get_folder_from_cache_for_account(folder_name, account_id).await {
             Some(f) => f,
             None => return Ok(()),
         };

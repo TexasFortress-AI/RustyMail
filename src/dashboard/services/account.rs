@@ -27,7 +27,7 @@ pub enum AccountError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
     pub id: String,
-    pub account_name: String,
+    pub display_name: String,
     pub email_address: String,
     pub provider_type: Option<String>,
     pub imap_host: String,
@@ -142,7 +142,7 @@ impl AccountService {
         // Create account from environment variables
         let account = StoredAccount {
             id: Uuid::new_v4().to_string(),
-            account_name: format!("Default ({})", email_address),
+            display_name: format!("Default ({})", email_address),
             email_address: email_address.clone(),
             provider_type: Some("custom".to_string()),
             imap: ImapConfig {
@@ -201,7 +201,7 @@ impl AccountService {
         let rows = sqlx::query(
             r#"
             SELECT
-                id, account_name, email_address, provider_type,
+                id, display_name, email_address, provider_type,
                 imap_host, imap_port, imap_user, imap_pass, imap_use_tls,
                 smtp_host, smtp_port, smtp_user, smtp_pass,
                 smtp_use_tls, smtp_use_starttls,
@@ -225,7 +225,7 @@ impl AccountService {
 
         for row in rows {
             let id: i64 = row.get("id");
-            let account_name: String = row.get("account_name");
+            let display_name: String = row.get("display_name");
             let email_address: String = row.get("email_address");
             let provider_type: Option<String> = row.get("provider_type");
             let imap_host: String = row.get("imap_host");
@@ -246,7 +246,7 @@ impl AccountService {
 
             let stored_account = StoredAccount {
                 id: account_id.clone(),
-                account_name,
+                display_name,
                 email_address,
                 provider_type,
                 imap: super::account_store::ImapConfig {
@@ -315,7 +315,7 @@ impl AccountService {
                 sqlx::query(
                     r#"
                     UPDATE accounts
-                    SET account_name = ?, provider_type = ?,
+                    SET display_name = ?, provider_type = ?,
                         imap_host = ?, imap_port = ?, imap_user = ?, imap_pass = ?, imap_use_tls = ?,
                         smtp_host = ?, smtp_port = ?, smtp_user = ?, smtp_pass = ?,
                         smtp_use_tls = ?, smtp_use_starttls = ?,
@@ -323,7 +323,7 @@ impl AccountService {
                     WHERE email_address = ?
                     "#
                 )
-                .bind(&account.account_name)
+                .bind(&account.display_name)
                 .bind(&account.provider_type)
                 .bind(&account.imap.host)
                 .bind(account.imap.port as i64)
@@ -347,7 +347,7 @@ impl AccountService {
                 sqlx::query(
                     r#"
                     INSERT INTO accounts (
-                        account_name, email_address, provider_type,
+                        display_name, email_address, provider_type,
                         imap_host, imap_port, imap_user, imap_pass, imap_use_tls,
                         smtp_host, smtp_port, smtp_user, smtp_pass,
                         smtp_use_tls, smtp_use_starttls,
@@ -355,7 +355,7 @@ impl AccountService {
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     "#
                 )
-                .bind(&account.account_name)
+                .bind(&account.display_name)
                 .bind(&account.email_address)
                 .bind(&account.provider_type)
                 .bind(&account.imap.host)
@@ -392,7 +392,7 @@ impl AccountService {
     fn stored_to_account(stored: StoredAccount) -> Account {
         Account {
             id: stored.id.clone(),
-            account_name: stored.account_name,
+            display_name: stored.display_name,
             email_address: stored.email_address,
             provider_type: stored.provider_type,
             imap_host: stored.imap.host,
@@ -528,7 +528,7 @@ impl AccountService {
 
         let stored_account = StoredAccount {
             id: account_id.clone(),
-            account_name: account.account_name.clone(),
+            display_name: account.display_name.clone(),
             email_address: account.email_address.clone(),
             provider_type: account.provider_type.clone(),
             imap: super::account_store::ImapConfig {
@@ -554,7 +554,7 @@ impl AccountService {
         };
 
         self.account_store.add_account(stored_account).await?;
-        info!("Created account: {} ({})", account.account_name, account.email_address);
+        info!("Created account: {} ({})", account.display_name, account.email_address);
 
         // Sync to database cache so the account is immediately available for email operations
         if let Err(e) = self.sync_accounts_to_db().await {
@@ -615,7 +615,7 @@ impl AccountService {
 
         let updated = StoredAccount {
             id: existing.id,
-            account_name: account.account_name.clone(),
+            display_name: account.display_name.clone(),
             email_address: account.email_address.clone(),
             provider_type: account.provider_type.clone(),
             imap: super::account_store::ImapConfig {
@@ -641,7 +641,7 @@ impl AccountService {
         };
 
         self.account_store.update_account(updated).await?;
-        info!("Updated account: {} ({})", account.account_name, account.email_address);
+        info!("Updated account: {} ({})", account.display_name, account.email_address);
         Ok(())
     }
 
@@ -661,7 +661,7 @@ impl AccountService {
 
     /// Validate account credentials by attempting to connect
     pub async fn validate_connection(&self, account: &Account) -> Result<(), AccountError> {
-        debug!("Validating connection for account: {}", account.account_name);
+        debug!("Validating connection for account: {}", account.display_name);
 
         // Attempt to connect using the provided credentials with 10 second timeout
         let timeout = Duration::from_secs(10);
@@ -679,11 +679,11 @@ impl AccountService {
                 if let Err(e) = client.logout().await {
                     debug!("Logout error during validation (non-critical): {}", e);
                 }
-                info!("Connection validation successful for: {}", account.account_name);
+                info!("Connection validation successful for: {}", account.display_name);
                 Ok(())
             }
             Err(e) => {
-                error!("Connection validation failed for {}: {}", account.account_name, e);
+                error!("Connection validation failed for {}: {}", account.display_name, e);
                 Err(AccountError::OperationFailed(format!("Connection failed: {}", e)))
             }
         }

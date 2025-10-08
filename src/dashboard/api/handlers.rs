@@ -1027,7 +1027,7 @@ pub async fn execute_mcp_tool(
                         "message": format!("Current account set to: {}", account_id),
                         "data": {
                             "account_id": account_id,
-                            "account_name": account.account_name,
+                            "display_name": account.display_name,
                             "email_address": account.email_address
                         },
                         "tool": tool_name
@@ -1480,9 +1480,34 @@ pub async fn trigger_email_sync(
 /// Get the current sync status
 pub async fn get_sync_status(
     state: Data<DashboardState>,
+    query: web::Query<EmailQueryParams>,
 ) -> Result<impl Responder, ApiError> {
-    // Get sync state for INBOX
-    match state.cache_service.get_sync_state("INBOX").await {
+    // Get account ID from query parameters or use default
+    let account_id = match query.account_id.as_ref() {
+        Some(id) => id.clone(),
+        None => {
+            // Get default account if no account_id provided
+            let account_service = state.account_service.lock().await;
+            match account_service.get_default_account().await {
+                Ok(Some(account)) => account.id,
+                Ok(None) => return Err(ApiError::NotFound("No default account configured".to_string())),
+                Err(e) => return Err(ApiError::InternalError(format!("Failed to get default account: {}", e))),
+            }
+        }
+    };
+
+    let account_email = match account_uuid_to_email(&account_id, &state).await {
+        Ok(id) => id,
+        Err(e) => {
+            error!("Failed to lookup database account ID: {}", e);
+            return Err(e);
+        }
+    };
+
+    let folder = query.folder.as_deref().unwrap_or("INBOX");
+
+    // Get sync state for folder
+    match state.cache_service.get_sync_state(folder, &account_email).await {
         Ok(Some(sync_state)) => {
             Ok(HttpResponse::Ok().json(serde_json::json!({
                 "folder": "INBOX",

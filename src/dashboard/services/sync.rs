@@ -111,25 +111,25 @@ impl SyncService {
     pub async fn sync_folder_with_limit(&self, account_id: &str, folder_name: &str, limit: Option<usize>) -> Result<(), SyncError> {
         debug!("Syncing folder: {} for account: {} (limit: {:?})", folder_name, account_id, limit);
 
-        // Update sync status
-        if let Err(e) = self.cache_service.update_sync_state(folder_name, 0, SyncStatus::Syncing).await {
-            warn!("Failed to update sync state: {}", e);
-        }
-
-        // Get account credentials
+        // Get account credentials first (need account_email for sync state)
         let account_service = self.account_service.lock().await;
         let account = account_service.get_account(account_id).await
             .map_err(|e| SyncError::AccountError(format!("Failed to get account: {}", e)))?;
         drop(account_service); // Release lock before creating session
+
+        // Use the email address directly as the account ID
+        let account_email = &account.email_address;
+
+        // Update sync status
+        if let Err(e) = self.cache_service.update_sync_state(folder_name, 0, SyncStatus::Syncing, account_email).await {
+            warn!("Failed to update sync state: {}", e);
+        }
 
         let session = self.imap_factory.create_session_for_account(&account).await
             .map_err(|e| SyncError::ImapError(e))?;
 
         // Select the folder
         session.select_folder(folder_name).await?;
-
-        // Use the email address directly as the account ID
-        let account_email = &account.email_address;
 
         // Ensure folder exists in database with correct account_id BEFORE caching emails
         // This prevents FOREIGN KEY constraint failures
@@ -139,7 +139,7 @@ impl SyncService {
         }
 
         // Get the sync state from cache
-        let sync_state = self.cache_service.get_sync_state(folder_name).await
+        let sync_state = self.cache_service.get_sync_state(folder_name, account_email).await
             .map_err(|e| SyncError::CacheError(e.to_string()))?;
 
         let last_uid_synced = sync_state.and_then(|s| s.last_uid_synced).unwrap_or(0);
@@ -156,7 +156,7 @@ impl SyncService {
 
         if uids.is_empty() {
             debug!("No new emails to sync in folder {}", folder_name);
-            if let Err(e) = self.cache_service.update_sync_state(folder_name, last_uid_synced, SyncStatus::Idle).await {
+            if let Err(e) = self.cache_service.update_sync_state(folder_name, last_uid_synced, SyncStatus::Idle, account_email).await {
                 warn!("Failed to update sync state: {}", e);
             }
             return Ok(());
@@ -231,7 +231,7 @@ impl SyncService {
         }
 
         // Update sync state with the highest UID synced
-        if let Err(e) = self.cache_service.update_sync_state(folder_name, last_uid, SyncStatus::Idle).await {
+        if let Err(e) = self.cache_service.update_sync_state(folder_name, last_uid, SyncStatus::Idle, account_email).await {
             warn!("Failed to update sync state: {}", e);
         }
 
@@ -244,7 +244,7 @@ impl SyncService {
         info!("Performing full sync of folder: {} for account: {}", folder_name, account_id);
 
         // Clear the folder cache
-        if let Err(e) = self.cache_service.clear_folder_cache(folder_name).await {
+        if let Err(e) = self.cache_service.clear_folder_cache(folder_name, account_id).await {
             error!("Failed to clear folder cache: {}", e);
         }
 

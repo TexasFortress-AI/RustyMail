@@ -2214,6 +2214,35 @@
             "testStrategy": "Comprehensive code review to ensure no legacy ID translation code remains. Test all entry points validate email addresses properly. Verify documentation accurately reflects the new system. Run full integration tests to ensure system works end-to-end with email-based identification."
           }
         ]
+      },
+      {
+        "id": 53,
+        "title": "Fix nested transaction bug in database migration system",
+        "description": "Resolve the 'cannot start a transaction within a transaction' error that prevents schema creation during cache service initialization in the migration system.",
+        "details": "The error occurs during cache service initialization in src/dashboard/services/cache.rs:160-163 when sqlx::migrate!() is called. SQLite migrations automatically wrap operations in transactions, but if the calling context (like cache service initialization) is already within a transaction, this creates nested transactions which SQLite doesn't support. The issue manifests when the CacheService::initialize() method is called from within another database transaction context.\n\nRequired fixes:\n1. **Audit transaction contexts**: Review all callers of CacheService::initialize() to identify if any are already within database transactions. Check dashboard service initialization, account service setup, and any background tasks that might trigger cache initialization.\n2. **Modify migration execution**: Replace the direct sqlx::migrate!().run(&pool) call with a transaction-aware version that checks if a transaction is already active. Use sqlx::Connection::transaction() with proper nesting detection.\n3. **Implement migration wrapper**: Create a migration helper function that can detect existing transaction contexts and either:\n   - Execute migrations outside the current transaction context\n   - Use savepoints for nested transaction support if SQLite version supports it\n   - Defer migrations until after the current transaction commits\n4. **Fix initialization sequence**: Ensure cache service initialization happens at the right point in the application lifecycle, potentially during startup before any transactional operations begin.\n5. **Add connection pooling safeguards**: Verify that the connection pool creation doesn't interfere with ongoing transactions and that migrations use a dedicated connection.\n6. **Update error handling**: Improve error messages to distinguish between migration failures and transaction nesting issues for better debugging.",
+        "testStrategy": "1. **Reproduce the error**: Create unit tests that simulate the nested transaction scenario by calling CacheService::initialize() within an active SQLite transaction context. 2. **Test migration isolation**: Verify migrations can run successfully both with and without existing transaction contexts. Test with fresh databases and existing schemas. 3. **Concurrent initialization**: Test multiple concurrent cache service initializations to ensure no race conditions or transaction conflicts occur. 4. **Integration testing**: Run full application startup sequences that previously triggered the error to verify the fix resolves the issue. 5. **Transaction state verification**: Add logging and tests to verify transaction nesting levels before and after migration execution. 6. **Rollback scenarios**: Test that partial migration failures don't leave the database in an inconsistent state and that proper cleanup occurs.",
+        "status": "pending",
+        "dependencies": [
+          25,
+          31,
+          52
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 54,
+        "title": "Fix schema mismatch between 'account_name' and 'display_name' in account service files",
+        "description": "Update all code references that expect 'account_name' column in database to use 'display_name' instead, ensuring consistency between the API layer and database schema.",
+        "details": "The analysis reveals a schema mismatch where the code expects an 'account_name' column but the database schemas actually have 'display_name' columns in the provider_templates table. The issue affects multiple files:\n\n1. **src/dashboard/services/account.rs**: Lines 53, 70, 427, 431, 448, 481, 506 use display_name for ProviderTemplate and AutoConfigResult structs, but the Account struct still uses account_name (line 30). The database migration and sync queries (lines 204, 228, 318, 326, 350, 358) all reference account_name.\n\n2. **src/dashboard/api/accounts.rs**: Lines 14, 34, 101, 133, 140, 172, 188, 274-275 use account_name consistently.\n\n3. **Database schema**: The provider_templates table uses 'display_name' (migrations/001_initial_schema.sql line 147), but the accounts table uses 'account_name' (line 8).\n\nThe fix requires:\n- Update all database queries and struct fields to consistently use either 'account_name' or 'display_name'\n- Update the Account struct field name if changing to display_name\n- Ensure API endpoints and serialization use the corrected field name\n- Update any logging or error messages that reference the old field name\n- Verify that the account configuration file format (accounts.json) uses the correct field name\n\nRecommended approach: Keep 'account_name' as the standard and update any 'display_name' references to 'account_name' for consistency across the codebase.",
+        "testStrategy": "1. Run existing unit tests to ensure no regressions in account creation and management. 2. Test account creation via API endpoints to verify JSON serialization uses correct field names. 3. Test account listing and retrieval APIs to ensure consistent field naming. 4. Verify that provider template auto-configuration still works correctly. 5. Test database migrations and ensure no foreign key constraint violations. 6. Test the account configuration file loading and saving to ensure correct field mapping. 7. Create integration tests that create accounts through multiple pathways (environment variables, API, file config) and verify consistent field usage.",
+        "status": "pending",
+        "dependencies": [
+          37,
+          41
+        ],
+        "priority": "high",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -2226,7 +2255,7 @@
       ],
       "created": "2025-10-08T03:49:51.985Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-08T15:59:27.730Z"
+      "updated": "2025-10-08T17:13:52.672Z"
     }
   }
 }

@@ -151,7 +151,7 @@ impl EmailService {
         // Check cache first if available
         if let Some(cache) = &self.cache_service {
             for &uid in uids {
-                match cache.get_cached_email(folder, uid).await {
+                match cache.get_cached_email(folder, uid, account_email).await {
                     Ok(Some(cached_email)) => {
                         debug!("Email {} found in cache", uid);
                         emails.push(self.cached_email_to_email(cached_email));
