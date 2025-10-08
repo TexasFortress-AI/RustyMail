@@ -11,18 +11,23 @@ const headers = {
 
 export const accountsApi = {
   // Auto-configure account settings from email address
-  async autoConfig(emailAddress: string): Promise<AutoConfigResult> {
+  async autoConfig(emailAddress: string, password?: string): Promise<AutoConfigResult> {
     const response = await fetch(`${API_BASE}/accounts/auto-config`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ email_address: emailAddress }),
+      body: JSON.stringify({
+        email_address: emailAddress,
+        password: password
+      }),
     });
 
     if (!response.ok) {
-      throw new Error(`Auto-config failed: ${response.statusText}`);
+      const error = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(error.error || `Auto-config failed: ${response.statusText}`);
     }
 
-    return response.json();
+    const result = await response.json();
+    return result.config || result;
   },
 
   // List all accounts

@@ -118,40 +118,51 @@ export function AccountFormDialog({
 
     try {
       setAutoConfiguring(true);
-      const result = await accountsApi.autoConfig(formData.email_address);
+      const result = await accountsApi.autoConfig(formData.email_address, formData.imap_pass);
       setAutoConfigResult(result);
 
-      if (result.provider_found && result.imap_host && result.smtp_host) {
+      // Check if autodiscovery succeeded (new format)
+      const hasConfig = result.imap_host && (result.smtp_host || result.smtp_host === '');
+
+      if (hasConfig) {
         setFormData((prev) => ({
           ...prev,
-          provider_type: result.provider_type,
+          provider_type: result.provider_name || result.provider_type || 'Auto-discovered',
           imap_host: result.imap_host!,
-          imap_port: result.imap_port!,
-          imap_use_tls: result.imap_use_tls!,
+          imap_port: result.imap_port || 993,
+          imap_use_tls: result.imap_use_tls !== undefined ? result.imap_use_tls : true,
           imap_user: prev.email_address,
-          smtp_host: result.smtp_host!,
-          smtp_port: result.smtp_port!,
-          smtp_use_tls: result.smtp_use_tls!,
-          smtp_use_starttls: result.smtp_use_starttls!,
+          smtp_host: result.smtp_host || '',
+          smtp_port: result.smtp_port || 587,
+          smtp_use_tls: result.smtp_use_tls !== undefined ? result.smtp_use_tls : false,
+          smtp_use_starttls: result.smtp_use_starttls !== undefined ? result.smtp_use_starttls : true,
           smtp_user: prev.email_address,
-          account_name: result.display_name || prev.email_address,
+          account_name: result.display_name || result.provider_name || prev.email_address,
         }));
 
         toast({
           title: 'Auto-Configuration Successful',
-          description: `Found settings for ${result.display_name || result.provider_type}`,
+          description: `Found settings for ${result.display_name || result.provider_name || 'your email provider'}`,
         });
       } else {
-        toast({
-          title: 'Provider Not Found',
-          description: 'Please configure settings manually',
-        });
+        // Fallback to old format check
+        if (result.provider_found) {
+          toast({
+            title: 'Provider Found',
+            description: `Settings for ${result.display_name || result.provider_type} found`,
+          });
+        } else {
+          toast({
+            title: 'Provider Not Found',
+            description: 'Could not auto-discover email settings. Please configure manually.',
+          });
+        }
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Auto-config failed:', error);
       toast({
         title: 'Auto-Configuration Failed',
-        description: 'Please configure settings manually',
+        description: error.message || 'Could not auto-discover email settings. Please configure manually.',
         variant: 'destructive',
       });
     } finally {
@@ -313,6 +324,23 @@ export function AccountFormDialog({
                   placeholder="Personal Gmail"
                   required
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="password">Password *</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={formData.imap_pass}
+                  onChange={(e) =>
+                    setFormData({ ...formData, imap_pass: e.target.value, smtp_pass: e.target.value })
+                  }
+                  placeholder="Enter your email password"
+                  required={!account}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Used for both IMAP and SMTP authentication
+                </p>
               </div>
 
               <div className="flex items-center space-x-2">

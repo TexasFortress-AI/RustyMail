@@ -20,6 +20,7 @@ use sqlx::SqlitePool;
 pub mod account;
 pub mod account_store;
 pub mod ai;
+pub mod autodiscovery;
 pub mod cache;
 pub mod clients;
 pub mod config;

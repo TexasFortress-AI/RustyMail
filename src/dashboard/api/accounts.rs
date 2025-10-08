@@ -6,6 +6,7 @@ use crate::dashboard::services::{DashboardState, Account, AutoConfigResult};
 #[derive(Debug, Deserialize)]
 pub struct AutoConfigRequest {
     pub email_address: String,
+    pub password: Option<String>, // Optional for now, required for actual connection validation
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,17 +70,59 @@ pub struct AutoConfigResponse {
 
 /// Auto-configure email settings based on email address
 pub async fn auto_configure(
-    state: web::Data<DashboardState>,
+    _state: web::Data<DashboardState>,
     req: web::Json<AutoConfigRequest>,
 ) -> HttpResponse {
+    use crate::dashboard::services::autodiscovery::AutodiscoveryService;
+
     info!("Auto-configuring for email: {}", req.email_address);
 
-    // Note: AccountService needs to be initialized and added to DashboardState
-    // For now, return a placeholder response
-    HttpResponse::NotImplemented().json(serde_json::json!({
-        "success": false,
-        "error": "AccountService not yet integrated into DashboardState"
-    }))
+    // Create autodiscovery service
+    let autodiscovery_service = match AutodiscoveryService::new() {
+        Ok(svc) => svc,
+        Err(e) => {
+            error!("Failed to create autodiscovery service: {}", e);
+            return HttpResponse::InternalServerError().json(serde_json::json!({
+                "success": false,
+                "error": format!("Failed to initialize autodiscovery: {}", e)
+            }));
+        }
+    };
+
+    // Attempt autodiscovery
+    match autodiscovery_service.discover(&req.email_address).await {
+        Ok(config) => {
+            info!("Autodiscovery successful for {}", req.email_address);
+
+            // Convert EmailConfig to AutoConfigResult
+            let result = AutoConfigResult {
+                provider_found: true,
+                provider_type: Some("Auto-discovered".to_string()),
+                display_name: Some("Auto-discovered".to_string()),
+                imap_host: Some(config.imap_host),
+                imap_port: Some(config.imap_port as i64),
+                imap_use_tls: Some(config.imap_use_tls),
+                smtp_host: config.smtp_host,
+                smtp_port: config.smtp_port.map(|p| p as i64),
+                smtp_use_tls: config.smtp_use_tls,
+                smtp_use_starttls: config.smtp_use_starttls,
+                supports_oauth: false,
+                oauth_provider: None,
+            };
+
+            HttpResponse::Ok().json(AutoConfigResponse {
+                success: true,
+                config: result,
+            })
+        }
+        Err(e) => {
+            error!("Autodiscovery failed for {}: {}", req.email_address, e);
+            HttpResponse::NotFound().json(serde_json::json!({
+                "success": false,
+                "error": format!("Could not autodiscover email settings: {}", e)
+            }))
+        }
+    }
 }
 
 /// Create a new account

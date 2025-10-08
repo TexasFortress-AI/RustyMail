@@ -98,6 +98,10 @@ lru = "0.12" # For in-memory LRU cache
 # Dashboard dependencies
 sysinfo = "0.30" # For system metrics
 
+# Email autodiscovery
+hickory-resolver = "0.26.0-alpha.1" # DNS SRV record lookups
+quick-xml = { version = "0.36", features = ["serialize"] } # Mozilla Autoconfig XML parsing
+
 # Lazy static for MIME decoder
 lazy_static = "1.4"
 rand = "0.8" # For random number generation in example metrics
