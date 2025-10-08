@@ -523,7 +523,8 @@ impl AccountService {
 
     /// Create a new account
     pub async fn create_account(&self, account: Account) -> Result<String, AccountError> {
-        let account_id = AccountStore::generate_account_id();
+        // Use email address as the account ID for consistency
+        let account_id = account.email_address.clone();
 
         let stored_account = StoredAccount {
             id: account_id.clone(),

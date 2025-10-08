@@ -2017,7 +2017,7 @@
         "description": "Add email autodiscovery using RFC 6186 and Mozilla Autoconfig protocols when creating accounts through the Basic tab, with password field and fallback to manual IMAP/SMTP configuration only if autodiscovery fails.",
         "details": "Implement comprehensive email autodiscovery system that follows RFC 6186 (DNS SRV records) and Mozilla Autoconfig standards for automatic email server configuration discovery:\n\n1. **Backend Autodiscovery Service** (extend existing AccountService in src/dashboard/services/account.rs):\n   - Implement RFC 6186 autodiscovery: query DNS SRV records for _imap._tcp, _imaps._tcp, _submission._tcp, _smtp._tcp\n   - Add Mozilla Autoconfig support: fetch XML from autoconfig.$domain/mail/config-v1.1.xml and $domain/.well-known/autoconfig/mail/config-v1.1.xml\n   - Implement Thunderbird/Outlook database fallback for common providers\n   - Add connection validation to verify discovered settings work\n   - Update auto_configure method to use real autodiscovery instead of database-only lookup\n\n2. **Frontend UI Enhancements** (AccountFormDialog.tsx):\n   - Add password field to Basic tab (currently missing but referenced in error)\n   - Implement automatic autodiscovery trigger when email and password are entered\n   - Show autodiscovery progress with clear status indicators\n   - Only enable IMAP/SMTP tabs if autodiscovery fails or user chooses manual config\n   - Fix 'required fields missing' validation error by ensuring all Basic tab fields are properly validated\n\n3. **Backend API Integration**:\n   - Complete auto_configure endpoint implementation in dashboard/api/accounts.rs\n   - Add password parameter to autodiscovery requests\n   - Return comprehensive configuration including security settings\n   - Add endpoint for testing discovered settings before account creation\n\n4. **Autodiscovery Protocol Implementation**:\n   - DNS SRV lookup library integration (trust-dns-resolver or similar)\n   - HTTP client for fetching Mozilla autoconfig XML\n   - XML parsing for autoconfig responses\n   - Fallback priority: RFC 6186 → Mozilla Autoconfig → Provider database → Manual\n\n5. **Error Handling & UX**:\n   - Clear progress indicators during autodiscovery\n   - Informative error messages when autodiscovery fails\n   - Graceful fallback to manual configuration\n   - Connection validation before saving account\n\nThis implementation should significantly improve user experience by automatically configuring email accounts with minimal user input, following established email autodiscovery standards.",
         "testStrategy": "Test autodiscovery with major email providers (Gmail, Outlook, Yahoo, custom domains). Verify DNS SRV record parsing works correctly. Test Mozilla Autoconfig XML parsing with real provider responses. Validate that manual configuration still works when autodiscovery fails. Test connection validation prevents saving invalid configurations. Verify UI shows proper error messages and progress indicators. Test form validation ensures required fields are properly checked. Ensure IMAP/SMTP tabs are only accessible when needed.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "31"
         ],
@@ -2099,6 +2099,35 @@
           }
         ],
         "updatedAt": "2025-10-08T03:40:34.299Z"
+      },
+      {
+        "id": 50,
+        "title": "Use email address as account ID instead of generating UUID",
+        "description": "Replace the UUID-based account ID generation with email address-based IDs to prevent account ID mismatches between dashboard account creation and email loading endpoints.",
+        "details": "The current system generates UUID-based account IDs using `AccountStore::generate_account_id()` in src/dashboard/services/account_store.rs:265-272, which creates timestamp-based IDs like 'account_1234567890'. This causes ID mismatches between the dashboard account creation endpoint and email loading endpoints, as they operate with different ID systems.\n\nRequired changes:\n1. **Update AccountStore::generate_account_id()** in src/dashboard/services/account_store.rs:265-272:\n   - Change function signature from `pub fn generate_account_id() -> String` to `pub fn generate_account_id(email_address: &str) -> String`\n   - Replace the timestamp-based UUID generation with email address normalization\n   - Return the normalized email address as the account ID (e.g., convert to lowercase, validate format)\n   - Add email validation to ensure the provided email is valid before using as ID\n\n2. **Update create_account() function** in src/dashboard/services/account.rs:525:\n   - Change `let account_id = AccountStore::generate_account_id();` to pass the email address: `let account_id = AccountStore::generate_account_id(&account.email_address);`\n   - Update the StoredAccount creation to use the email-based ID\n\n3. **Update account creation API handler** in src/dashboard/api/accounts.rs around line 170:\n   - Ensure the API handler passes the email address to the account creation process\n   - Update any validation logic that expects UUID format IDs\n\n4. **Update existing account ID lookups**:\n   - Review account_uuid_to_db_id() function in src/dashboard/api/handlers.rs:474 to handle email-based IDs\n   - Update any hardcoded account ID references to work with email addresses\n   - Ensure email loading endpoints can properly resolve email-based account IDs\n\n5. **Add migration support**:\n   - Consider how existing accounts with UUID IDs will be handled\n   - May need to add a migration path or support both ID formats temporarily\n\nThis change will create a consistent ID system where the account ID is always the email address, eliminating the mismatch between different parts of the system.",
+        "testStrategy": "1. Test account creation through the dashboard UI with various email addresses to ensure account IDs match the email addresses. 2. Verify that email loading endpoints (like /api/emails, /api/folders) can successfully resolve accounts using email-based IDs. 3. Test that existing API endpoints continue to work with the new email-based ID system. 4. Validate that duplicate email addresses are still properly rejected during account creation. 5. Test account deletion, update, and listing operations with email-based IDs. 6. Verify that the account_uuid_to_db_id() function correctly maps email addresses to database IDs. 7. Test with edge cases like email addresses with special characters, different case variations, and international domains. 8. Ensure backward compatibility if any existing UUID-based accounts exist in the system.",
+        "status": "done",
+        "dependencies": [
+          31,
+          39,
+          41,
+          47
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 51,
+        "title": "Fix account list not refreshing automatically after account creation",
+        "description": "Investigate and fix the issue where the AccountListPanel does not refresh its local account list after a new account is created via the AccountFormDialog onSuccess callback.",
+        "details": "The issue is that AccountListPanel maintains its own local state for accounts (line 39) and only refreshes it when the component first mounts or when manual actions like deleteAccount are performed. When a new account is created through the AccountFormDialog, the onSuccess callback in Dashboard.tsx calls refreshAccounts() from the AccountContext (line 331), but this doesn't trigger the AccountListPanel to reload its local accounts state.\n\nRequired fixes:\n1. **Update AccountListPanel to use AccountContext**: Replace the local accounts state with the accounts from AccountContext, eliminating the duplicate state management:\n   - Remove local accounts state (line 39) and loadAccounts function (lines 45-60)\n   - Import and use useAccount hook to get accounts from context\n   - Remove the useEffect that calls loadAccounts on mount (lines 62-64)\n   - Update the handleSetDefault and handleDelete functions to call refreshAccounts from context instead of the local loadAccounts\n\n2. **Alternative approach - if keeping local state**: Add a refresh mechanism by:\n   - Exposing the loadAccounts function through a ref or callback prop\n   - Having Dashboard.tsx call this refresh function in addition to refreshAccounts()\n\nThe first approach is recommended as it eliminates state duplication and ensures consistency across the application. The AccountContext already provides the necessary accounts data and refresh functionality.",
+        "testStrategy": "1. Test account creation flow: Create a new account through the AccountFormDialog and verify the account appears immediately in the AccountListPanel without requiring a page refresh. 2. Test account editing: Edit an existing account and verify changes appear immediately in the account list. 3. Test account deletion: Delete an account and verify it's removed immediately from the list. 4. Test default account switching: Set a different account as default and verify the UI updates correctly. 5. Verify the accounts tab displays the same data as other parts of the application that use AccountContext. 6. Test browser refresh behavior to ensure account list loads correctly on page load.",
+        "status": "done",
+        "dependencies": [
+          31
+        ],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -2111,7 +2140,7 @@
       ],
       "created": "2025-10-08T03:49:51.985Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-08T04:39:46.720Z"
+      "updated": "2025-10-08T10:48:56.090Z"
     }
   }
 }
