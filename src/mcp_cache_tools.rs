@@ -25,7 +25,7 @@ pub async fn list_cached_emails_tool(
         .ok_or_else(|| JsonRpcError::internal_error("Cache service not available"))?;
 
     // Extract parameters
-    let (folder, limit, offset, preview_mode, account_id) = if let Some(ref p) = params {
+    let (folder, limit, offset, preview_mode, account_email) = if let Some(ref p) = params {
         let folder = p.get("folder")
             .and_then(|v| v.as_str())
             .unwrap_or("INBOX");
@@ -40,13 +40,16 @@ pub async fn list_cached_emails_tool(
         let preview_mode = p.get("preview_mode")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);  // Default to preview mode for token efficiency
-        let account_id = p.get("account_id")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(1);  // Default to account 1
-        (folder, limit, offset, preview_mode, account_id)
+        let account_email = p.get("account_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        (folder, limit, offset, preview_mode, account_email)
     } else {
-        ("INBOX", 20, 0, true, 1)  // Default to preview mode and account 1
+        ("INBOX", 20, 0, true, None)
     };
+
+    // Use the email address directly (or default to first account)
+    let account_id = account_email.as_deref().unwrap_or("chris@chrisfrewin.com");
 
     match cache_service.get_cached_emails_for_account(folder, account_id, limit, offset, preview_mode).await {
         Ok(emails) => {
@@ -87,7 +90,11 @@ pub async fn get_email_by_uid_tool(
         .map(|v| v as u32)
         .ok_or_else(|| JsonRpcError::invalid_params("uid parameter is required"))?;
 
-    match cache_service.get_email_by_uid(folder, uid).await {
+    let account_email = params.get("account_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| JsonRpcError::invalid_params("account_id parameter is required"))?;
+
+    match cache_service.get_email_by_uid_for_account(folder, uid, account_email).await {
         Ok(Some(email)) => {
             Ok(json!({
                 "success": true,
@@ -131,9 +138,13 @@ pub async fn get_email_by_index_tool(
         .map(|v| v as usize)
         .ok_or_else(|| JsonRpcError::invalid_params("index parameter is required"))?;
 
+    let account_email = params.get("account_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| JsonRpcError::invalid_params("account_id parameter is required"))?;
+
     // Get emails sorted by date DESC, then select by index
     // Use full content (preview_mode=false) for individual email requests
-    match cache_service.get_cached_emails(folder, index + 1, index, false).await {
+    match cache_service.get_cached_emails_for_account(folder, account_email, index + 1, index, false).await {
         Ok(emails) if !emails.is_empty() => {
             Ok(json!({
                 "success": true,
@@ -166,17 +177,20 @@ pub async fn count_emails_in_folder_tool(
     let cache_service = get_cache_service(&state).await
         .ok_or_else(|| JsonRpcError::internal_error("Cache service not available"))?;
 
-    let (folder, account_id) = if let Some(ref p) = params {
+    let (folder, account_email) = if let Some(ref p) = params {
         let folder = p.get("folder")
             .and_then(|v| v.as_str())
             .unwrap_or("INBOX");
-        let account_id = p.get("account_id")
-            .and_then(|v| v.as_i64())
-            .unwrap_or(1);  // Default to account 1
-        (folder, account_id)
+        let account_email = p.get("account_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        (folder, account_email)
     } else {
-        ("INBOX", 1)
+        ("INBOX", None)
     };
+
+    // Use the email address directly (or default to first account)
+    let account_id = account_email.as_deref().unwrap_or("chris@chrisfrewin.com");
 
     match cache_service.count_emails_in_folder_for_account(folder, account_id).await {
         Ok(count) => {
@@ -207,15 +221,17 @@ pub async fn get_folder_stats_tool(
     let cache_service = get_cache_service(&state).await
         .ok_or_else(|| JsonRpcError::internal_error("Cache service not available"))?;
 
-    let folder = if let Some(ref p) = params {
-        p.get("folder")
-            .and_then(|v| v.as_str())
-            .unwrap_or("INBOX")
-    } else {
-        "INBOX"
-    };
+    let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
 
-    match cache_service.get_folder_stats(folder).await {
+    let folder = params.get("folder")
+        .and_then(|v| v.as_str())
+        .unwrap_or("INBOX");
+
+    let account_email = params.get("account_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| JsonRpcError::invalid_params("account_id parameter is required"))?;
+
+    match cache_service.get_folder_stats_for_account(folder, account_email).await {
         Ok(stats) => {
             Ok(json!({
                 "success": true,
@@ -256,7 +272,11 @@ pub async fn search_cached_emails_tool(
         .map(|v| v as usize)
         .unwrap_or(20);
 
-    match cache_service.search_cached_emails(folder, query, limit).await {
+    let account_email = params.get("account_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| JsonRpcError::invalid_params("account_id parameter is required"))?;
+
+    match cache_service.search_cached_emails_for_account(folder, query, limit, account_email).await {
         Ok(emails) => {
             Ok(json!({
                 "success": true,

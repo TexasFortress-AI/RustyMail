@@ -454,14 +454,13 @@ impl AiService {
     async fn fetch_email_context_mcp(&self, query: &str, account_id: Option<&str>) -> Option<String> {
         let query_lower = query.to_lowercase();
 
-        // Parse account_id to integer if provided, default to 1
-        let account_num = account_id
-            .and_then(|id| id.parse::<i64>().ok())
-            .unwrap_or(1);
-
         // Check if query is about folders
         if query_lower.contains("folder") || query_lower.contains("mailbox") {
-            match self.call_mcp_tool("list_folders", json!({"account_id": account_num})).await {
+            let mut params = json!({});
+            if let Some(acc_id) = account_id {
+                params["account_id"] = json!(acc_id);
+            }
+            match self.call_mcp_tool("list_folders", params).await {
                 Ok(result) => {
                     if let Some(folders) = result.get("data").and_then(|d| d.as_array()) {
                         let folder_names: Vec<String> = folders.iter()
@@ -482,10 +481,11 @@ impl AiService {
         }
 
         // Get total email count first
-        let total_count = match self.call_mcp_tool("count_emails_in_folder", json!({
-            "folder": "INBOX",
-            "account_id": account_num
-        })).await {
+        let mut count_params = json!({"folder": "INBOX"});
+        if let Some(acc_id) = account_id {
+            count_params["account_id"] = json!(acc_id);
+        }
+        let total_count = match self.call_mcp_tool("count_emails_in_folder", count_params).await {
             Ok(result) => result.get("data")
                 .and_then(|d| d.get("count"))
                 .and_then(|c| c.as_i64())
@@ -497,12 +497,15 @@ impl AiService {
         };
 
         // Get recent emails
-        let emails_result = match self.call_mcp_tool("list_cached_emails", json!({
+        let mut list_params = json!({
             "folder": "INBOX",
             "limit": 10,
-            "offset": 0,
-            "account_id": account_num
-        })).await {
+            "offset": 0
+        });
+        if let Some(acc_id) = account_id {
+            list_params["account_id"] = json!(acc_id);
+        }
+        let emails_result = match self.call_mcp_tool("list_cached_emails", list_params).await {
             Ok(result) => result,
             Err(e) => {
                 error!("Failed to list emails via MCP: {}", e);

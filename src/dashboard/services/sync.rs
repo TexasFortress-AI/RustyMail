@@ -128,15 +128,13 @@ impl SyncService {
         // Select the folder
         session.select_folder(folder_name).await?;
 
-        // Look up the account's numeric ID in the database using email_address
-        // The account_id param is a UUID string, but database uses INTEGER id
-        let db_account_id = self.cache_service.get_account_id_by_email(&account.email_address).await
-            .map_err(|e| SyncError::CacheError(format!("Failed to lookup account {}: {}", account.email_address, e)))?;
+        // Use the email address directly as the account ID
+        let account_email = &account.email_address;
 
         // Ensure folder exists in database with correct account_id BEFORE caching emails
         // This prevents FOREIGN KEY constraint failures
-        if let Err(e) = self.cache_service.get_or_create_folder_for_account(folder_name, db_account_id).await {
-            error!("Failed to create folder {} for account {}: {}", folder_name, db_account_id, e);
+        if let Err(e) = self.cache_service.get_or_create_folder_for_account(folder_name, account_email).await {
+            error!("Failed to create folder {} for account {}: {}", folder_name, account_email, e);
             return Err(SyncError::CacheError(format!("Failed to create folder: {}", e)));
         }
 
@@ -204,7 +202,7 @@ impl SyncService {
                     match session.fetch_emails(&[uid]).await {
                         Ok(retry_emails) => {
                             for email in retry_emails {
-                                if let Err(e) = self.cache_service.cache_email(folder_name, &email, db_account_id).await {
+                                if let Err(e) = self.cache_service.cache_email(folder_name, &email, account_email).await {
                                     error!("Failed to cache retried email {}: {}", email.uid, e);
                                 } else {
                                     debug!("Successfully fetched and cached previously missing UID: {}", uid);
@@ -222,7 +220,7 @@ impl SyncService {
             }
 
             for email in emails {
-                if let Err(e) = self.cache_service.cache_email(folder_name, &email, db_account_id).await {
+                if let Err(e) = self.cache_service.cache_email(folder_name, &email, account_email).await {
                     error!("Failed to cache email {}: {}", email.uid, e);
                 } else {
                     if email.uid > last_uid {

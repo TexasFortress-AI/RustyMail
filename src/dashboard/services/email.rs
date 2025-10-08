@@ -145,21 +145,11 @@ impl EmailService {
         let mut emails = Vec::new();
         let mut uids_to_fetch = Vec::new();
 
-        // Get the database account ID for caching
-        let db_account_id = if let Some(cache) = &self.cache_service {
-            match cache.get_account_id_by_email(&account.email_address).await {
-                Ok(id) => Some(id),
-                Err(e) => {
-                    warn!("Failed to lookup account ID for caching: {}", e);
-                    None
-                }
-            }
-        } else {
-            None
-        };
+        // Use the email address directly for caching
+        let account_email = &account.email_address;
 
         // Check cache first if available
-        if let (Some(cache), Some(db_id)) = (&self.cache_service, db_account_id) {
+        if let Some(cache) = &self.cache_service {
             for &uid in uids {
                 match cache.get_cached_email(folder, uid).await {
                     Ok(Some(cached_email)) => {
@@ -192,9 +182,9 @@ impl EmailService {
             let fetched_emails = session.fetch_emails(&uids_to_fetch).await?;
 
             // Cache emails with account_id support
-            if let (Some(cache), Some(db_id)) = (&self.cache_service, db_account_id) {
+            if let Some(cache) = &self.cache_service {
                 for email in &fetched_emails {
-                    if let Err(e) = cache.cache_email(folder, email, db_id).await {
+                    if let Err(e) = cache.cache_email(folder, email, account_email).await {
                         warn!("Failed to cache email {}: {}", email.uid, e);
                     }
                 }

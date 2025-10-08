@@ -10,6 +10,10 @@ use thiserror::Error;
 use serde::{Serialize, Deserialize};
 use crate::imap::types::{Email, Address};
 
+// Default account email for backwards compatibility wrapper methods
+// This should match one of the actual accounts in the database
+const DEFAULT_ACCOUNT_EMAIL: &str = "chris@chrisfrewin.com";
+
 #[derive(Error, Debug)]
 pub enum CacheError {
     #[error("Database error: {0}")]
@@ -202,21 +206,9 @@ impl CacheService {
         Ok(())
     }
 
-    /// Get account's numeric ID by email address
-    pub async fn get_account_id_by_email(&self, email: &str) -> Result<i64, CacheError> {
-        let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
-
-        sqlx::query_scalar::<_, i64>(
-            "SELECT id FROM accounts WHERE email_address = ?"
-        )
-        .bind(email)
-        .fetch_optional(pool)
-        .await?
-        .ok_or_else(|| CacheError::OperationFailed(format!("Account {} not found in database", email)))
-    }
 
     /// Get or create a folder for a specific account
-    pub async fn get_or_create_folder_for_account(&self, name: &str, account_id: i64) -> Result<CachedFolder, CacheError> {
+    pub async fn get_or_create_folder_for_account(&self, name: &str, account_id: &str) -> Result<CachedFolder, CacheError> {
         // Check memory cache first (keyed by account_id:folder_name for multi-account support)
         let cache_key = format!("{}:{}", account_id, name);
         {
@@ -291,10 +283,10 @@ impl CacheService {
 
     /// Get or create a folder (defaults to account_id=1 for backwards compatibility)
     pub async fn get_or_create_folder(&self, name: &str) -> Result<CachedFolder, CacheError> {
-        self.get_or_create_folder_for_account(name, 1).await
+        self.get_or_create_folder_for_account(name, DEFAULT_ACCOUNT_EMAIL).await
     }
 
-    pub async fn cache_email(&self, folder_name: &str, email: &Email, account_id: i64) -> Result<(), CacheError> {
+    pub async fn cache_email(&self, folder_name: &str, email: &Email, account_id: &str) -> Result<(), CacheError> {
         let folder = self.get_or_create_folder_for_account(folder_name, account_id).await?;
         let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
 
@@ -478,7 +470,7 @@ impl CacheService {
     }
 
     /// Get cached emails with pagination support for a specific account
-    pub async fn get_cached_emails_for_account(&self, folder_name: &str, account_id: i64, limit: usize, offset: usize, preview_mode: bool) -> Result<Vec<CachedEmail>, CacheError> {
+    pub async fn get_cached_emails_for_account(&self, folder_name: &str, account_id: &str, limit: usize, offset: usize, preview_mode: bool) -> Result<Vec<CachedEmail>, CacheError> {
         // Get folder from cache or database (don't create if it doesn't exist)
         let folder = match self.get_or_create_folder_for_account(folder_name, account_id).await {
             Ok(f) => f,
@@ -556,9 +548,9 @@ impl CacheService {
         Ok(cached_emails)
     }
 
-    /// Get cached emails (defaults to account_id=1 for backwards compatibility)
+    /// Get cached emails (defaults to DEFAULT_ACCOUNT_EMAIL for backwards compatibility)
     pub async fn get_cached_emails(&self, folder_name: &str, limit: usize, offset: usize, preview_mode: bool) -> Result<Vec<CachedEmail>, CacheError> {
-        self.get_cached_emails_for_account(folder_name, 1, limit, offset, preview_mode).await
+        self.get_cached_emails_for_account(folder_name, DEFAULT_ACCOUNT_EMAIL, limit, offset, preview_mode).await
     }
 
     pub async fn get_cached_emails_for_folder(&self, folder_name: &str, limit: usize) -> Result<Vec<CachedEmail>, CacheError> {
@@ -622,7 +614,7 @@ impl CacheService {
     }
 
     /// Get folder from cache for a specific account
-    async fn get_folder_from_cache_for_account(&self, name: &str, account_id: i64) -> Option<CachedFolder> {
+    async fn get_folder_from_cache_for_account(&self, name: &str, account_id: &str) -> Option<CachedFolder> {
         let cache_key = format!("{}:{}", account_id, name);
         let folder_cache = self.folder_cache.read().await;
         folder_cache.get(&cache_key).cloned()
@@ -630,7 +622,7 @@ impl CacheService {
 
     /// Get folder from cache (defaults to account_id=1 for backwards compatibility)
     async fn get_folder_from_cache(&self, name: &str) -> Option<CachedFolder> {
-        self.get_folder_from_cache_for_account(name, 1).await
+        self.get_folder_from_cache_for_account(name, DEFAULT_ACCOUNT_EMAIL).await
     }
 
     pub async fn update_sync_state(&self, folder_name: &str, last_uid: u32, status: SyncStatus) -> Result<(), CacheError> {
@@ -768,7 +760,7 @@ impl CacheService {
 
     /// Get a specific email by UID
     /// Get an email by UID for a specific account
-    pub async fn get_email_by_uid_for_account(&self, folder_name: &str, uid: u32, account_id: i64) -> Result<Option<CachedEmail>, CacheError> {
+    pub async fn get_email_by_uid_for_account(&self, folder_name: &str, uid: u32, account_id: &str) -> Result<Option<CachedEmail>, CacheError> {
         let folder = match self.get_folder_from_cache_for_account(folder_name, account_id).await {
             Some(f) => f,
             None => return Ok(None),
@@ -826,7 +818,7 @@ impl CacheService {
 
     /// Get an email by UID (defaults to account_id=1 for backwards compatibility)
     pub async fn get_email_by_uid(&self, folder_name: &str, uid: u32) -> Result<Option<CachedEmail>, CacheError> {
-        self.get_email_by_uid_for_account(folder_name, uid, 1).await
+        self.get_email_by_uid_for_account(folder_name, uid, DEFAULT_ACCOUNT_EMAIL).await
     }
 
     // Old implementation kept for reference
@@ -888,7 +880,7 @@ impl CacheService {
     }
 
     /// Count emails in a folder for a specific account
-    pub async fn count_emails_in_folder_for_account(&self, folder_name: &str, account_id: i64) -> Result<i64, CacheError> {
+    pub async fn count_emails_in_folder_for_account(&self, folder_name: &str, account_id: &str) -> Result<i64, CacheError> {
         let folder = match self.get_folder_from_cache_for_account(folder_name, account_id).await {
             Some(f) => f,
             None => return Ok(0),
@@ -908,11 +900,11 @@ impl CacheService {
 
     /// Count emails in a folder (defaults to account_id=1 for backwards compatibility)
     pub async fn count_emails_in_folder(&self, folder_name: &str) -> Result<i64, CacheError> {
-        self.count_emails_in_folder_for_account(folder_name, 1).await
+        self.count_emails_in_folder_for_account(folder_name, DEFAULT_ACCOUNT_EMAIL).await
     }
 
     /// Get folder statistics for a specific account
-    pub async fn get_folder_stats_for_account(&self, folder_name: &str, account_id: i64) -> Result<serde_json::Map<String, serde_json::Value>, CacheError> {
+    pub async fn get_folder_stats_for_account(&self, folder_name: &str, account_id: &str) -> Result<serde_json::Map<String, serde_json::Value>, CacheError> {
         let folder = match self.get_folder_from_cache_for_account(folder_name, account_id).await {
             Some(f) => f,
             None => {
@@ -964,11 +956,11 @@ impl CacheService {
 
     /// Get folder statistics (defaults to account_id=1 for backwards compatibility)
     pub async fn get_folder_stats(&self, folder_name: &str) -> Result<serde_json::Map<String, serde_json::Value>, CacheError> {
-        self.get_folder_stats_for_account(folder_name, 1).await
+        self.get_folder_stats_for_account(folder_name, DEFAULT_ACCOUNT_EMAIL).await
     }
 
     /// Search cached emails for a specific account
-    pub async fn search_cached_emails_for_account(&self, folder_name: &str, query: &str, limit: usize, account_id: i64) -> Result<Vec<CachedEmail>, CacheError> {
+    pub async fn search_cached_emails_for_account(&self, folder_name: &str, query: &str, limit: usize, account_id: &str) -> Result<Vec<CachedEmail>, CacheError> {
         let folder = match self.get_folder_from_cache_for_account(folder_name, account_id).await {
             Some(f) => f,
             None => return Ok(Vec::new()),
@@ -1037,7 +1029,7 @@ impl CacheService {
 
     /// Search cached emails (defaults to account_id=1 for backwards compatibility)
     pub async fn search_cached_emails(&self, folder_name: &str, query: &str, limit: usize) -> Result<Vec<CachedEmail>, CacheError> {
-        self.search_cached_emails_for_account(folder_name, query, limit, 1).await
+        self.search_cached_emails_for_account(folder_name, query, limit, DEFAULT_ACCOUNT_EMAIL).await
     }
 
     // Old implementation kept for reference

@@ -2128,6 +2128,92 @@
         ],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": 52,
+        "title": "Refactor Account ID System to Use Email Address as Primary Key Across Application",
+        "description": "Migrate the entire account identification system to use email addresses as the primary key, updating database schema, cache layers, service interfaces, and removing legacy ID translation logic.",
+        "details": "1. **Database Schema Migration:** Design and implement a new schema where `email_address` is the primary key for the accounts table. Ensure all related tables reference `email_address` as a foreign key where appropriate. Use migration scripts to convert existing data, ensuring uniqueness and NOT NULL constraints on email addresses. Update ORM models and database access layers accordingly. While using a natural key (email) provides meaningful context, document and mitigate risks associated with potential email changes (e.g., enforce email immutability or provide a controlled update process)[3][2].\n\n2. **CacheService Refactor:** Refactor all cache-related code to use `&str` (email address) as the account identifier instead of `i64` or UUID. Update function signatures, key generation, and cache invalidation logic to use email addresses.\n\n3. **MCP Cache Tools Update:** Update all six MCP cache tools to require and operate on the email address as the account ID parameter. Refactor their interfaces, internal logic, and any downstream dependencies to accept and validate email addresses.\n\n4. **AI Service Integration:** Update the AI service to pass email addresses to MCP tools instead of legacy account IDs. Refactor any API contracts, serialization/deserialization logic, and ensure type safety throughout the service boundary.\n\n5. **Remove ID Translation Helpers:** Identify and remove all helper functions and code paths that translate between email, UUID, and integer account IDs. Clean up dead code and update documentation to reflect the new ID system.\n\n6. **Best Practices:** Ensure all new primary key and foreign key columns are indexed for performance[1][5]. Add comprehensive input validation for email addresses at all entry points. Document the rationale for using a natural key and the process for handling email changes, if allowed.\n\n7. **Code Quality:** Refactor incrementally with comprehensive unit and integration tests at each stage. Use feature flags or migration windows to minimize downtime and risk during deployment.",
+        "testStrategy": "1. **Database Migration:** Run migration scripts on a test database with legacy data. Verify all accounts are migrated with correct email addresses as primary keys and that all foreign key relationships remain intact. Attempt to insert duplicate or NULL email addresses and confirm constraints are enforced.\n\n2. **Cache Layer:** Write unit tests for CacheService and all MCP cache tools to ensure correct cache keying, retrieval, and invalidation using email addresses. Test with various valid and invalid email formats.\n\n3. **End-to-End Flow:** Create, update, and delete accounts through the full stack (UI, API, database) and verify all operations use email addresses as IDs. Confirm that all MCP tools and the AI service function correctly with the new ID system.\n\n4. **Legacy Code Removal:** Run static analysis and code coverage tools to ensure all ID translation helpers are removed and no code paths reference legacy account IDs.\n\n5. **Regression Testing:** Execute the full suite of integration and regression tests to ensure no functionality is broken by the migration. Test multi-account scenarios and edge cases (e.g., email address with unusual but valid formats).\n\n6. **Performance:** Benchmark cache and database operations before and after migration to ensure no significant regressions.",
+        "status": "pending",
+        "dependencies": [
+          31,
+          39,
+          41,
+          47,
+          50,
+          32
+        ],
+        "priority": "medium",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Update database schema migration to make email_address primary key",
+            "description": "Create and implement a new migration script to alter the accounts table, setting email_address as the primary key and ensuring all foreign key references in related tables use email_address instead of numeric IDs.",
+            "dependencies": [],
+            "details": "Based on the existing schema at migrations/001_create_schema.sql, the accounts table already uses email_address as primary key. However, need to ensure the migration handles any existing data properly and validates that all foreign key constraints in folders table reference account_id as TEXT (email_address). Update any existing numeric ID columns to be dropped and ensure proper indexing for performance. Test migration with existing data to ensure no data loss.",
+            "status": "pending",
+            "testStrategy": "Run migration on test database with sample data. Verify all accounts migrate correctly with email addresses as primary keys. Test foreign key constraints work properly. Ensure no duplicate email addresses cause migration failures."
+          },
+          {
+            "id": 2,
+            "title": "Refactor CacheService to use email address as account identifier",
+            "description": "Update all CacheService methods to use &str (email address) instead of i64 or numeric account IDs, including cache key generation and all account-specific operations.",
+            "dependencies": [
+              "52.1"
+            ],
+            "details": "Modify src/dashboard/services/cache.rs to replace all instances where account_id is treated as i64 with &str. Update methods like get_or_create_folder_for_account, cache_email, get_cached_emails_for_account, and all other account-specific methods. Change cache key generation from format!(\"{}:{}\", account_id, folder) to use email addresses directly. Update the backwards compatibility method get_or_create_folder to pass a default email address instead of \"1\".",
+            "status": "pending",
+            "testStrategy": "Unit tests for all cache methods with email addresses as account identifiers. Test cache key generation and collision avoidance. Verify backwards compatibility methods work correctly. Test multi-account cache isolation."
+          },
+          {
+            "id": 3,
+            "title": "Update MCP cache tools to accept email addresses",
+            "description": "Refactor all six MCP cache tools in mcp_cache_tools.rs to require email address as account_id parameter and update their internal logic to work with email addresses.",
+            "dependencies": [
+              "52.2"
+            ],
+            "details": "Update list_cached_emails_tool and other MCP tools to validate email address format for account_id parameter. Change parameter extraction from treating account_id as optional to required email address validation. Update all calls to cache service methods to pass email addresses. Add proper email validation and error handling for malformed email addresses.",
+            "status": "pending",
+            "testStrategy": "Test each MCP tool with valid email addresses. Test error handling for invalid email formats. Verify tools work correctly with multiple accounts. Test parameter validation and required field enforcement."
+          },
+          {
+            "id": 4,
+            "title": "Update AI service integration to use email addresses",
+            "description": "Modify the AI service in src/dashboard/services/ai.rs to pass email addresses to MCP tools instead of numeric account IDs, updating API contracts and serialization logic.",
+            "dependencies": [
+              "52.3"
+            ],
+            "details": "Update AI service to extract email addresses from account context and pass them to MCP cache tools. Modify any account ID resolution logic to work with email addresses. Update serialization/deserialization of account identifiers in AI service requests and responses. Ensure type safety throughout the service boundary with proper email address validation.",
+            "status": "pending",
+            "testStrategy": "Integration tests for AI service with email-based account identification. Test MCP tool calls from AI service use correct email addresses. Verify serialization/deserialization works correctly. Test error handling for invalid account references."
+          },
+          {
+            "id": 5,
+            "title": "Update AccountStore and related services to use email as primary identifier",
+            "description": "Refactor src/dashboard/services/account_store.rs and account service to use email_address as the primary lookup key, removing dependencies on generated account IDs.",
+            "dependencies": [
+              "52.1"
+            ],
+            "details": "Update AccountStore methods like get_account, delete_account, update_account to use email address instead of generated ID. Modify StoredAccount struct to remove or deprecate the id field. Update default account tracking to use email addresses. Remove generate_account_id method and update all callers to use email addresses directly. Update account service and related API endpoints accordingly.",
+            "status": "pending",
+            "testStrategy": "Test all CRUD operations work with email addresses as primary keys. Verify default account management works correctly. Test account uniqueness validation. Ensure backwards compatibility during transition period."
+          },
+          {
+            "id": 6,
+            "title": "Remove legacy ID translation helpers and clean up dead code",
+            "description": "Identify and remove all helper functions and code paths that translate between email, UUID, and integer account IDs, cleaning up obsolete code and updating documentation.",
+            "dependencies": [
+              "52.2",
+              "52.3",
+              "52.4",
+              "52.5"
+            ],
+            "details": "Search codebase for any ID translation functions or UUID-to-email conversion logic. Remove obsolete helper methods and clean up any remaining references to numeric account IDs. Update API documentation and code comments to reflect email-based identification system. Add comprehensive input validation for email addresses at all service entry points. Document the rationale for using natural keys and any email change policies.",
+            "status": "pending",
+            "testStrategy": "Comprehensive code review to ensure no legacy ID translation code remains. Test all entry points validate email addresses properly. Verify documentation accurately reflects the new system. Run full integration tests to ensure system works end-to-end with email-based identification."
+          }
+        ]
       }
     ],
     "metadata": {
@@ -2140,7 +2226,7 @@
       ],
       "created": "2025-10-08T03:49:51.985Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-08T10:48:56.090Z"
+      "updated": "2025-10-08T15:59:27.730Z"
     }
   }
 }
