@@ -39,6 +39,7 @@ export function AccountFormDialog({
     success: boolean;
     message?: string;
   } | null>(null);
+  const [autoDiscoveryCompleted, setAutoDiscoveryCompleted] = useState(false);
 
   const [formData, setFormData] = useState<AccountFormData>({
     account_name: '',
@@ -106,6 +107,14 @@ export function AccountFormDialog({
     }
   }, [account, open]);
 
+  // Auto-save after successful autodiscovery
+  useEffect(() => {
+    if (autoDiscoveryCompleted && formData.imap_host) {
+      setAutoDiscoveryCompleted(false); // Reset flag
+      saveAccount(); // Automatically save the account
+    }
+  }, [autoDiscoveryCompleted, formData.imap_host]);
+
   const handleAutoConfig = async () => {
     if (!formData.email_address) {
       toast({
@@ -137,8 +146,11 @@ export function AccountFormDialog({
           smtp_use_tls: result.smtp_use_tls !== undefined ? result.smtp_use_tls : false,
           smtp_use_starttls: result.smtp_use_starttls !== undefined ? result.smtp_use_starttls : true,
           smtp_user: prev.email_address,
-          account_name: result.display_name || result.provider_name || prev.email_address,
+          account_name: prev.account_name || result.display_name || result.provider_name || prev.email_address,
         }));
+
+        // Set flag to trigger automatic save after autodiscovery
+        setAutoDiscoveryCompleted(true);
 
         toast({
           title: 'Auto-Configuration Successful',
@@ -201,18 +213,8 @@ export function AccountFormDialog({
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!formData.account_name || !formData.email_address || !formData.imap_host || !formData.imap_pass) {
-      toast({
-        title: 'Required Fields Missing',
-        description: 'Please fill in all required fields',
-        variant: 'destructive',
-      });
-      return;
-    }
-
+  // Extract save logic into a separate function
+  const saveAccount = async () => {
     try {
       setLoading(true);
 
@@ -244,6 +246,46 @@ export function AccountFormDialog({
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // Check basic required fields
+    // Password is only required when creating a new account, not when editing
+    if (!formData.account_name || !formData.email_address || (!formData.imap_pass && !account)) {
+      toast({
+        title: 'Required Fields Missing',
+        description: 'Please fill in all required fields',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // If IMAP host is not set, try autodiscovery first
+    if (!formData.imap_host) {
+      toast({
+        title: 'Auto-discovering settings...',
+        description: 'Please wait while we detect your email server configuration',
+      });
+
+      try {
+        await handleAutoConfig();
+        // After autodiscovery completes, the autoDiscoveryCompleted flag will be set
+        // which triggers a useEffect to continue with saving
+        return;
+      } catch (error) {
+        toast({
+          title: 'Auto-discovery Failed',
+          description: 'Please manually configure IMAP/SMTP settings in the IMAP and SMTP tabs',
+          variant: 'destructive',
+        });
+        return;
+      }
+    }
+
+    // Proceed with saving the account
+    await saveAccount();
   };
 
   return (

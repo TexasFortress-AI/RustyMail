@@ -554,6 +554,13 @@ impl AccountService {
 
         self.account_store.add_account(stored_account).await?;
         info!("Created account: {} ({})", account.account_name, account.email_address);
+
+        // Sync to database cache so the account is immediately available for email operations
+        if let Err(e) = self.sync_accounts_to_db().await {
+            warn!("Failed to sync new account to database cache: {}", e);
+            // Don't fail the account creation, but warn about it
+        }
+
         Ok(account_id)
     }
 

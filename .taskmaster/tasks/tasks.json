@@ -2002,7 +2002,7 @@
         "description": "Update the delete_account API handler to properly connect to the AccountService and handle string-based UUID account IDs instead of integer IDs.",
         "details": "The delete_account handler in src/dashboard/api/accounts.rs:154-165 currently returns a 'not implemented' error instead of actually deleting accounts. After Task #37's migration to file-based account storage, the system now uses UUID strings as account IDs, but the API handler still expects i64 parameters and doesn't connect to the AccountService.\n\nRequired changes:\n1. Update the delete_account handler path parameter from web::Path<i64> to web::Path<String> to handle UUID strings\n2. Replace the placeholder implementation with actual AccountService integration by accessing state.account_service.lock().await\n3. Call account_service.delete_account(account_id.as_str()).await with proper error handling\n4. Return appropriate JSON responses for success/failure cases matching the existing API pattern\n5. Update other account API handlers (get_account, update_account, set_default_account, validate_connection) to use String instead of i64 parameters for consistency\n6. Ensure the frontend accountsApi.deleteAccount() call in frontend/rustymail-app-main/src/dashboard/api/accounts.ts:105-114 passes the correct string ID format\n\nThe AccountService is already properly initialized in DashboardState (src/dashboard/services/mod.rs:83,159) and the underlying AccountStore.delete_account() method works correctly with string IDs (src/dashboard/services/account_store.rs:218-236).",
         "testStrategy": "1. Test account deletion via the UI with existing accounts from config/accounts.json to verify the HTTP DELETE request succeeds. 2. Verify that deleted accounts are removed from the accounts.json config file and no longer appear in account listings. 3. Test deletion of default accounts to ensure the default_account_id field is properly cleared. 4. Test error handling with invalid account IDs to ensure proper error responses. 5. Test account deletion with multiple accounts to ensure only the specified account is deleted. 6. Verify that after deletion, other API endpoints (get_account, list_accounts) reflect the changes correctly. 7. Test the complete UI flow: delete account → confirmation dialog → API call → success notification → account list refresh.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "37",
           "39",
@@ -2111,7 +2111,7 @@
       ],
       "created": "2025-10-08T03:49:51.985Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-08T03:49:51.985Z"
+      "updated": "2025-10-08T04:39:46.720Z"
     }
   }
 }

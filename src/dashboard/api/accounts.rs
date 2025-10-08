@@ -132,11 +132,66 @@ pub async fn create_account(
 ) -> HttpResponse {
     info!("Creating account: {}", req.account_name);
 
-    // Placeholder - AccountService needs to be added to DashboardState
-    HttpResponse::NotImplemented().json(serde_json::json!({
-        "success": false,
-        "error": "AccountService not yet integrated into DashboardState"
-    }))
+    let account_service = state.account_service.lock().await;
+
+    // Build Account struct from request
+    let new_account = Account {
+        id: uuid::Uuid::new_v4().to_string(),
+        account_name: req.account_name.clone(),
+        email_address: req.email_address.clone(),
+        provider_type: req.provider_type.clone(),
+        imap_host: req.imap_host.clone(),
+        imap_port: req.imap_port,
+        imap_user: req.imap_user.clone(),
+        imap_pass: req.imap_pass.clone(),
+        imap_use_tls: req.imap_use_tls,
+        smtp_host: req.smtp_host.clone(),
+        smtp_port: req.smtp_port,
+        smtp_user: req.smtp_user.clone(),
+        smtp_pass: req.smtp_pass.clone(),
+        smtp_use_tls: req.smtp_use_tls,
+        smtp_use_starttls: req.smtp_use_starttls,
+        is_active: true,
+        is_default: req.is_default,
+    };
+
+    // Validate connection if requested
+    if req.validate_connection.unwrap_or(true) {
+        if let Err(e) = account_service.validate_connection(&new_account).await {
+            error!("Connection validation failed for account {}: {}", req.account_name, e);
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "success": false,
+                "error": format!("Connection validation failed: {}", e)
+            }));
+        }
+    }
+
+    // Create the account
+    match account_service.create_account(new_account.clone()).await {
+        Ok(account_id) => {
+            info!("Successfully created account {} with ID {}", req.account_name, account_id);
+
+            // If this is marked as default, set it
+            if req.is_default {
+                if let Err(e) = account_service.set_default_account(&account_id).await {
+                    error!("Failed to set default account {}: {}", account_id, e);
+                }
+            }
+
+            HttpResponse::Ok().json(AccountResponse {
+                success: true,
+                message: "Account created successfully".to_string(),
+                account: Some(new_account),
+            })
+        },
+        Err(e) => {
+            error!("Failed to create account {}: {}", req.account_name, e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "success": false,
+                "error": format!("Failed to create account: {}", e)
+            }))
+        }
+    }
 }
 
 /// Get account by ID

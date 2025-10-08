@@ -18,6 +18,30 @@
       "is_active": true,
       "created_at": "2025-10-05T03:21:40.537929Z",
       "updated_at": "2025-10-05T03:21:40.537929Z"
+    },
+    {
+      "id": "account_1759917118804",
+      "account_name": "Auto-discovered",
+      "email_address": "shannon@texasfortress.ai",
+      "provider_type": "Auto-discovered",
+      "imap": {
+        "host": "p3plzcpnl505455.prod.phx3.secureserver.net",
+        "port": 993,
+        "username": "shannon@texasfortress.ai",
+        "password": "){T3?oLN(*k1",
+        "use_tls": true
+      },
+      "smtp": {
+        "host": "p3plzcpnl505455.prod.phx3.secureserver.net",
+        "port": 465,
+        "username": "shannon@texasfortress.ai",
+        "password": "){T3?oLN(*k1",
+        "use_tls": true,
+        "use_starttls": false
+      },
+      "is_active": true,
+      "created_at": "2025-10-08T09:51:58.804334Z",
+      "updated_at": "2025-10-08T09:51:58.804334Z"
     }
   ]
 }
