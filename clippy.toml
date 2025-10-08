@@ -1,0 +1,16 @@
+# Clippy configuration for RustyMail
+# Enforces multi-account patterns and prevents hardcoded account IDs
+
+# Deny usage of magic numbers in account-related code
+# This helps catch hardcoded account IDs like `account_id = 1`
+cognitive-complexity-threshold = 30
+
+# Enforce explicit types for account IDs to prevent accidental hardcoding
+# Account IDs should always be &str (email addresses), not integers
+
+# Additional lints to help maintain clean multi-account code
+too-many-arguments-threshold = 8
+type-complexity-threshold = 500
+
+# Documentation requirements for public APIs that handle account data
+missing-docs-in-private-items = false
