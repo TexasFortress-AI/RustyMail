@@ -211,7 +211,7 @@ impl AiService {
                conversation_id, query_text, current_folder, account_id);
 
         // Always use MCP tools to fetch email context (no longer dependent on email_service)
-        let email_context = self.fetch_email_context_mcp(&query_text).await;
+        let email_context = self.fetch_email_context_mcp(&query_text, account_id.as_deref()).await;
 
         // DISABLED NLP processor - it's injecting system messages that cause refusals
         // Go directly to the AI provider without NLP interference
@@ -451,12 +451,17 @@ impl AiService {
     }
 
     /// Fetch email context using MCP tools
-    async fn fetch_email_context_mcp(&self, query: &str) -> Option<String> {
+    async fn fetch_email_context_mcp(&self, query: &str, account_id: Option<&str>) -> Option<String> {
         let query_lower = query.to_lowercase();
+
+        // Parse account_id to integer if provided, default to 1
+        let account_num = account_id
+            .and_then(|id| id.parse::<i64>().ok())
+            .unwrap_or(1);
 
         // Check if query is about folders
         if query_lower.contains("folder") || query_lower.contains("mailbox") {
-            match self.call_mcp_tool("list_folders", json!({})).await {
+            match self.call_mcp_tool("list_folders", json!({"account_id": account_num})).await {
                 Ok(result) => {
                     if let Some(folders) = result.get("data").and_then(|d| d.as_array()) {
                         let folder_names: Vec<String> = folders.iter()
@@ -477,7 +482,10 @@ impl AiService {
         }
 
         // Get total email count first
-        let total_count = match self.call_mcp_tool("count_emails_in_folder", json!({"folder": "INBOX"})).await {
+        let total_count = match self.call_mcp_tool("count_emails_in_folder", json!({
+            "folder": "INBOX",
+            "account_id": account_num
+        })).await {
             Ok(result) => result.get("data")
                 .and_then(|d| d.get("count"))
                 .and_then(|c| c.as_i64())
@@ -492,7 +500,8 @@ impl AiService {
         let emails_result = match self.call_mcp_tool("list_cached_emails", json!({
             "folder": "INBOX",
             "limit": 10,
-            "offset": 0
+            "offset": 0,
+            "account_id": account_num
         })).await {
             Ok(result) => result,
             Err(e) => {

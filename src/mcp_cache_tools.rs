@@ -25,7 +25,7 @@ pub async fn list_cached_emails_tool(
         .ok_or_else(|| JsonRpcError::internal_error("Cache service not available"))?;
 
     // Extract parameters
-    let (folder, limit, offset, preview_mode) = if let Some(ref p) = params {
+    let (folder, limit, offset, preview_mode, account_id) = if let Some(ref p) = params {
         let folder = p.get("folder")
             .and_then(|v| v.as_str())
             .unwrap_or("INBOX");
@@ -40,12 +40,15 @@ pub async fn list_cached_emails_tool(
         let preview_mode = p.get("preview_mode")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);  // Default to preview mode for token efficiency
-        (folder, limit, offset, preview_mode)
+        let account_id = p.get("account_id")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(1);  // Default to account 1
+        (folder, limit, offset, preview_mode, account_id)
     } else {
-        ("INBOX", 20, 0, true)  // Default to preview mode
+        ("INBOX", 20, 0, true, 1)  // Default to preview mode and account 1
     };
 
-    match cache_service.get_cached_emails(folder, limit, offset, preview_mode).await {
+    match cache_service.get_cached_emails_for_account(folder, account_id, limit, offset, preview_mode).await {
         Ok(emails) => {
             Ok(json!({
                 "success": true,
@@ -163,15 +166,19 @@ pub async fn count_emails_in_folder_tool(
     let cache_service = get_cache_service(&state).await
         .ok_or_else(|| JsonRpcError::internal_error("Cache service not available"))?;
 
-    let folder = if let Some(ref p) = params {
-        p.get("folder")
+    let (folder, account_id) = if let Some(ref p) = params {
+        let folder = p.get("folder")
             .and_then(|v| v.as_str())
-            .unwrap_or("INBOX")
+            .unwrap_or("INBOX");
+        let account_id = p.get("account_id")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(1);  // Default to account 1
+        (folder, account_id)
     } else {
-        "INBOX"
+        ("INBOX", 1)
     };
 
-    match cache_service.count_emails_in_folder(folder).await {
+    match cache_service.count_emails_in_folder_for_account(folder, account_id).await {
         Ok(count) => {
             Ok(json!({
                 "success": true,
