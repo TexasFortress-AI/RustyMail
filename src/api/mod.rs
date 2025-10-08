@@ -7,7 +7,6 @@ pub mod openapi_docs;  // OpenAPI documentation
 pub mod rest;
 pub mod validation;
 pub mod sse;
-pub mod mcp_stdio;
 pub mod mcp_sse;
 pub mod mcp_http;  // MCP Streamable HTTP transport
 

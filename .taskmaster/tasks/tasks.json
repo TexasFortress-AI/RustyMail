@@ -2243,6 +2243,19 @@
         ],
         "priority": "high",
         "subtasks": []
+      },
+      {
+        "id": 55,
+        "title": "Update legacy account validation function to match email-first architecture",
+        "description": "Remove the misleading account_uuid_to_email function and simplify account validation to directly use email addresses as account identifiers throughout MCP tools.",
+        "details": "The task involves refactoring the MCP tool validation system to eliminate the confusing account_uuid_to_email function which is a legacy from UUID-based account identification. Since account_id is now required to be an email address (as specified in the user request), this function is redundant and misleading:\n\n1. **Remove account_uuid_to_email function** at src/dashboard/api/handlers.rs:276-288 since it's no longer needed when account_id is always an email address.\n\n2. **Update all MCP tool handlers** to directly use the email address returned by get_account_id_to_use() without the additional validation step. This affects handlers for:\n   - list_cached_emails (line 473)\n   - get_email_by_uid (line 521) \n   - get_email_by_index (line 582)\n   - count_emails_in_folder (line 642)\n   - get_folder_stats (line 689)\n   - search_cached_emails (line 739)\n\n3. **Simplify validation logic** by removing the extra account lookup step and directly validating that the required account_id parameter is present and is an email address format.\n\n4. **Update comments and documentation** to reflect that account_id is the email address itself, not a UUID that needs to be converted.\n\n5. **Remove redundant account service lookups** in the handlers since get_account_id_to_use already validates account existence.\n\n6. **Update get_sync_status and get_cached_emails handlers** (lines 1501 and 1571) to also use the simplified validation pattern.",
+        "testStrategy": "1. **Unit Tests:** Create tests that verify MCP tools properly validate account_id as email addresses and reject invalid formats. Test that all MCP tools work correctly with valid email addresses. 2. **Integration Tests:** Test all affected MCP tool endpoints (list_cached_emails, get_email_by_uid, etc.) to ensure they function correctly with email address account_ids. Verify error handling for missing or invalid account_id parameters. 3. **API Testing:** Test the MCP tool API endpoints via HTTP requests to ensure they return appropriate errors when account_id is missing and work correctly when provided with valid email addresses. 4. **Regression Testing:** Ensure existing functionality still works after removing the account_uuid_to_email function. Test that account validation still occurs properly through the account service.",
+        "status": "pending",
+        "dependencies": [
+          52
+        ],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -2255,7 +2268,7 @@
       ],
       "created": "2025-10-08T03:49:51.985Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-08T17:13:52.672Z"
+      "updated": "2025-10-08T18:01:45.163Z"
     }
   }
 }
