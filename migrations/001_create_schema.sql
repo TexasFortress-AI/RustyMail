@@ -7,7 +7,7 @@ BEGIN TRANSACTION;
 CREATE TABLE accounts (
     -- Account identification - email is the primary key
     email_address TEXT PRIMARY KEY,
-    account_name TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL UNIQUE,
 
     -- Provider information
     provider_type TEXT,

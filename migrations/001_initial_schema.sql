@@ -5,7 +5,7 @@
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     -- Account identification
-    account_name TEXT NOT NULL UNIQUE,
+    display_name TEXT NOT NULL UNIQUE,
     email_address TEXT NOT NULL UNIQUE,
 
     -- Provider information
