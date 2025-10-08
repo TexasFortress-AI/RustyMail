@@ -10,8 +10,7 @@ use thiserror::Error;
 use serde::{Serialize, Deserialize};
 use crate::imap::types::{Email, Address};
 
-// Default account email for backwards compatibility wrapper methods
-// This should match one of the actual accounts in the database
+
 #[derive(Error, Debug)]
 pub enum CacheError {
     #[error("Database error: {0}")]
@@ -279,7 +278,6 @@ impl CacheService {
         }
     }
 
-
     pub async fn cache_email(&self, folder_name: &str, email: &Email, account_id: &str) -> Result<(), CacheError> {
         let folder = self.get_or_create_folder_for_account(folder_name, account_id).await?;
         let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
@@ -542,7 +540,59 @@ impl CacheService {
         Ok(cached_emails)
     }
 
+    pub async fn update_sync_state(&self, folder_name: &str, last_uid: u32, status: SyncStatus, account_id: &str) -> Result<(), CacheError> {
+        let folder = self.get_or_create_folder_for_account(folder_name, account_id).await?;
+            Some(f) => f,
+            None => return Ok(Vec::new()),
+        };
 
+        let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
+
+        let emails = sqlx::query_as::<_, (
+            i64, i64, i64, Option<String>, Option<String>, Option<String>, Option<String>,
+            String, String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>,
+            String, Option<String>, Option<String>, DateTime<Utc>
+        )>(
+            r#"
+            SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
+                   to_addresses, cc_addresses, date, internal_date, size,
+                   flags, body_text, body_html, cached_at
+            FROM emails
+            WHERE folder_id = ?
+            ORDER BY COALESCE(date, internal_date) DESC
+            LIMIT ?
+            "#
+        )
+        .bind(folder.id)
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await?;
+
+        let mut cached_emails = Vec::new();
+        for (id, folder_id, uid, message_id, subject, from_address, from_name,
+             to_json, cc_json, date, internal_date, size, flags_json,
+             body_text, body_html, cached_at) in emails {
+
+            let to_addresses: Vec<String> = serde_json::from_str(&to_json).unwrap_or_default();
+            let cc_addresses: Vec<String> = serde_json::from_str(&cc_json).unwrap_or_default();
+            let flags: Vec<String> = serde_json::from_str(&flags_json).unwrap_or_default();
+
+            cached_emails.push(CachedEmail {
+                id,
+                folder_id,
+                uid: uid as u32,
+                message_id,
+                subject,
+                from_address,
+                from_name,
+                to_addresses,
+                cc_addresses,
+                date,
+                internal_date,
+                size,
+                flags,
+                body_text,
+                body_html,
                 cached_at,
             });
         }
@@ -556,7 +606,6 @@ impl CacheService {
         let folder_cache = self.folder_cache.read().await;
         folder_cache.get(&cache_key).cloned()
     }
-
 
     pub async fn update_sync_state(&self, folder_name: &str, last_uid: u32, status: SyncStatus) -> Result<(), CacheError> {
         let folder = self.get_or_create_folder(folder_name).await?;
@@ -749,7 +798,63 @@ impl CacheService {
         }
     }
 
+    // Old implementation kept for reference
+    async fn get_email_by_uid_old(&self, folder_name: &str, uid: u32) -> Result<Option<CachedEmail>, CacheError> {
+        let folder = match self.get_folder_from_cache(folder_name).await {
+            Some(f) => f,
+            None => return Ok(None),
+        };
 
+        let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
+
+        let email = sqlx::query_as::<_, (
+            i64, i64, i64, Option<String>, Option<String>, Option<String>, Option<String>,
+            String, String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>,
+            String, Option<String>, Option<String>, DateTime<Utc>
+        )>(
+            r#"
+            SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
+                   to_addresses, cc_addresses, date, internal_date, size,
+                   flags, body_text, body_html, cached_at
+            FROM emails
+            WHERE folder_id = ? AND uid = ?
+            "#
+        )
+        .bind(folder.id)
+        .bind(uid as i64)
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some((id, folder_id, uid, message_id, subject, from_address, from_name,
+                     to_json, cc_json, date, internal_date, size, flags_json,
+                     body_text, body_html, cached_at)) = email {
+
+            let to_addresses: Vec<String> = serde_json::from_str(&to_json).unwrap_or_default();
+            let cc_addresses: Vec<String> = serde_json::from_str(&cc_json).unwrap_or_default();
+            let flags: Vec<String> = serde_json::from_str(&flags_json).unwrap_or_default();
+
+            Ok(Some(CachedEmail {
+                id,
+                folder_id,
+                uid: uid as u32,
+                message_id,
+                subject,
+                from_address,
+                from_name,
+                to_addresses,
+                cc_addresses,
+                date,
+                internal_date,
+                size,
+                flags,
+                body_text,
+                body_html,
+                cached_at,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
 
     /// Count emails in a folder for a specific account
     pub async fn count_emails_in_folder_for_account(&self, folder_name: &str, account_id: &str) -> Result<i64, CacheError> {
@@ -769,7 +874,6 @@ impl CacheService {
 
         Ok(count)
     }
-
 
     /// Get folder statistics for a specific account
     pub async fn get_folder_stats_for_account(&self, folder_name: &str, account_id: &str) -> Result<serde_json::Map<String, serde_json::Value>, CacheError> {
@@ -821,7 +925,6 @@ impl CacheService {
 
         Ok(stats)
     }
-
 
     /// Search cached emails for a specific account
     pub async fn search_cached_emails_for_account(&self, folder_name: &str, query: &str, limit: usize, account_id: &str) -> Result<Vec<CachedEmail>, CacheError> {
@@ -891,5 +994,71 @@ impl CacheService {
         Ok(cached_emails)
     }
 
+    // Old implementation kept for reference
+    async fn search_cached_emails_old(&self, folder_name: &str, query: &str, limit: usize) -> Result<Vec<CachedEmail>, CacheError> {
+        let folder = match self.get_folder_from_cache(folder_name).await {
+            Some(f) => f,
+            None => return Ok(Vec::new()),
+        };
 
+        let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
+
+        let search_pattern = format!("%{}%", query);
+
+        let emails = sqlx::query_as::<_, (
+            i64, i64, i64, Option<String>, Option<String>, Option<String>, Option<String>,
+            String, String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>,
+            String, Option<String>, Option<String>, DateTime<Utc>
+        )>(
+            r#"
+            SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
+                   to_addresses, cc_addresses, date, internal_date, size,
+                   flags, body_text, body_html, cached_at
+            FROM emails
+            WHERE folder_id = ?
+            AND (subject LIKE ? OR from_address LIKE ? OR from_name LIKE ? OR body_text LIKE ?)
+            ORDER BY COALESCE(date, internal_date) DESC
+            LIMIT ?
+            "#
+        )
+        .bind(folder.id)
+        .bind(&search_pattern)
+        .bind(&search_pattern)
+        .bind(&search_pattern)
+        .bind(&search_pattern)
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await?;
+
+        let mut cached_emails = Vec::new();
+        for (id, folder_id, uid, message_id, subject, from_address, from_name,
+             to_json, cc_json, date, internal_date, size, flags_json,
+             body_text, body_html, cached_at) in emails {
+
+            let to_addresses: Vec<String> = serde_json::from_str(&to_json).unwrap_or_default();
+            let cc_addresses: Vec<String> = serde_json::from_str(&cc_json).unwrap_or_default();
+            let flags: Vec<String> = serde_json::from_str(&flags_json).unwrap_or_default();
+
+            cached_emails.push(CachedEmail {
+                id,
+                folder_id,
+                uid: uid as u32,
+                message_id,
+                subject,
+                from_address,
+                from_name,
+                to_addresses,
+                cc_addresses,
+                date,
+                internal_date,
+                size,
+                flags,
+                body_text,
+                body_html,
+                cached_at,
+            });
+        }
+
+        Ok(cached_emails)
+    }
 }

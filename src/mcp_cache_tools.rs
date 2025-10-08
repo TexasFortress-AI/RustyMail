@@ -48,8 +48,9 @@ pub async fn list_cached_emails_tool(
         ("INBOX", 20, 0, true, None)
     };
 
-    // Use the email address directly (or default to first account)
-    let account_id = account_email.as_deref().unwrap_or("chris@chrisfrewin.com");
+    // Require account_id parameter - no defaults
+    let account_id = account_email.as_deref()
+        .ok_or_else(|| JsonRpcError::invalid_params("account_id parameter is required"))?;
 
     match cache_service.get_cached_emails_for_account(folder, account_id, limit, offset, preview_mode).await {
         Ok(emails) => {
@@ -189,8 +190,9 @@ pub async fn count_emails_in_folder_tool(
         ("INBOX", None)
     };
 
-    // Use the email address directly (or default to first account)
-    let account_id = account_email.as_deref().unwrap_or("chris@chrisfrewin.com");
+    // Require account_id parameter - no defaults
+    let account_id = account_email.as_deref()
+        .ok_or_else(|| JsonRpcError::invalid_params("account_id parameter is required"))?;
 
     match cache_service.count_emails_in_folder_for_account(folder, account_id).await {
         Ok(count) => {
