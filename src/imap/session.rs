@@ -299,7 +299,9 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
 
     async fn search_emails(&self, criteria: &str) -> Result<Vec<u32>, ImapError> {
         let mut session_guard = self.session.lock().await;
-        let sequence_set = session_guard.search(criteria)
+        // Use UID SEARCH to get UIDs, not message sequence numbers
+        // This is critical because fetch_emails uses UID FETCH
+        let sequence_set = session_guard.uid_search(criteria)
             .await
             .map_err(ImapError::from)?;
         Ok(sequence_set.into_iter().collect())
@@ -318,11 +320,12 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
 
         let mut session_guard = self.session.lock().await;
 
-        // Execute the search on the server
-        let sequence_set = session_guard.search(&criteria_string)
+        // Execute the search on the server using UID SEARCH
+        // This is critical because fetch_emails uses UID FETCH
+        let sequence_set = session_guard.uid_search(&criteria_string)
             .await
             .map_err(|e| {
-                error!("IMAP search failed for criteria '{}': {}", criteria_string, e);
+                error!("IMAP UID search failed for criteria '{}': {}", criteria_string, e);
                 ImapError::InvalidCriteria(format!("Search failed: {}", e))
             })?;
 
