@@ -233,6 +233,8 @@ impl AutodiscoveryService {
 
         #[derive(Debug, Deserialize)]
         struct OutgoingServer {
+            #[serde(rename = "type")]
+            server_type: String,
             hostname: String,
             port: u16,
             #[serde(rename = "socketType")]
@@ -296,7 +298,7 @@ mod tests {
 
         let xml = r#"<?xml version="1.0" encoding="UTF-8"?>
 <clientConfig version="1.1">
-  <emailProvider id="example.com">
+  <emailProvider id="example.com" type="generic">
     <incomingServer type="imap">
       <hostname>imap.example.com</hostname>
       <port>993</port>

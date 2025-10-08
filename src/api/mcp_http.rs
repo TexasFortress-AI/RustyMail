@@ -195,61 +195,14 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>) ->
             })
         },
         "tools/list" => {
+            // Get all tools in MCP JSON-RPC format from dashboard handlers
+            let tools = crate::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
+
             json!({
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "result": {
-                    "tools": [
-                        {
-                            "name": "list_folders",
-                            "description": "List all email folders",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {},
-                                "required": []
-                            }
-                        },
-                        {
-                            "name": "search_emails",
-                            "description": "Search emails with various criteria",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "folder": {
-                                        "type": "string",
-                                        "default": "INBOX"
-                                    },
-                                    "search": {
-                                        "type": "string",
-                                        "default": "ALL"
-                                    },
-                                    "limit": {
-                                        "type": "integer",
-                                        "default": 10
-                                    }
-                                },
-                                "required": []
-                            }
-                        },
-                        {
-                            "name": "fetch_emails_with_mime",
-                            "description": "Fetch emails with MIME content",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "folder": {
-                                        "type": "string",
-                                        "default": "INBOX"
-                                    },
-                                    "message_ids": {
-                                        "type": "array",
-                                        "items": {"type": "integer"}
-                                    }
-                                },
-                                "required": ["message_ids"]
-                            }
-                        }
-                    ]
+                    "tools": tools
                 }
             })
         },

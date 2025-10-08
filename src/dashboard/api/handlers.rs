@@ -85,6 +85,380 @@ pub async fn query_chatbot(
 }
 
 // Handler for listing available MCP tools
+/// Get MCP tools in JSON-RPC format for MCP protocol
+/// Returns tools with inputSchema following JSON Schema spec
+pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
+    vec![
+        serde_json::json!({
+            "name": "list_folders",
+            "description": "List all email folders in the account",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "list_folders_hierarchical",
+            "description": "List folders with hierarchical structure",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "search_emails",
+            "description": "Search for emails matching criteria",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder to search in (e.g., INBOX)"
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Search query (e.g., FROM user@example.com)"
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum number of results (optional)"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "fetch_emails_with_mime",
+            "description": "Fetch email content with MIME data",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder containing the email"
+                    },
+                    "uid": {
+                        "type": "integer",
+                        "description": "Email UID"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "atomic_move_message",
+            "description": "Move a single message to another folder",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source_folder": {
+                        "type": "string",
+                        "description": "Source folder"
+                    },
+                    "target_folder": {
+                        "type": "string",
+                        "description": "Target folder"
+                    },
+                    "uid": {
+                        "type": "integer",
+                        "description": "Message UID to move"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["source_folder", "target_folder", "uid", "account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "atomic_batch_move",
+            "description": "Move multiple messages to another folder",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "source_folder": {
+                        "type": "string",
+                        "description": "Source folder"
+                    },
+                    "target_folder": {
+                        "type": "string",
+                        "description": "Target folder"
+                    },
+                    "uids": {
+                        "type": "string",
+                        "description": "Comma-separated list of UIDs"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["source_folder", "target_folder", "uids", "account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "mark_as_deleted",
+            "description": "Mark messages as deleted",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder containing messages"
+                    },
+                    "uids": {
+                        "type": "string",
+                        "description": "Comma-separated list of UIDs"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["folder", "uids", "account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "delete_messages",
+            "description": "Permanently delete messages",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder containing messages"
+                    },
+                    "uids": {
+                        "type": "string",
+                        "description": "Comma-separated list of UIDs"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["folder", "uids", "account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "undelete_messages",
+            "description": "Unmark messages as deleted",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder containing messages"
+                    },
+                    "uids": {
+                        "type": "string",
+                        "description": "Comma-separated list of UIDs"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["folder", "uids", "account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "expunge",
+            "description": "Expunge deleted messages from folder",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder to expunge"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["folder", "account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "list_cached_emails",
+            "description": "List cached emails from database",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder name (default: INBOX)"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of emails (default: 20)"
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Pagination offset (default: 0)"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "get_email_by_uid",
+            "description": "Get full cached email by UID",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder name (default: INBOX)"
+                    },
+                    "uid": {
+                        "type": "integer",
+                        "description": "Email UID"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["uid", "account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "get_email_by_index",
+            "description": "Get cached email by position index",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder name (default: INBOX)"
+                    },
+                    "index": {
+                        "type": "integer",
+                        "description": "Zero-based position index"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["index", "account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "count_emails_in_folder",
+            "description": "Count total emails in cached folder",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder name (default: INBOX)"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "get_folder_stats",
+            "description": "Get statistics about cached folder",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder name (default: INBOX)"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "search_cached_emails",
+            "description": "Search within cached emails",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder name (default: INBOX)"
+                    },
+                    "query": {
+                        "type": "string",
+                        "description": "Search query text"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results (default: 20)"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["query", "account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "list_accounts",
+            "description": "List all configured email accounts",
+            "inputSchema": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            }
+        }),
+        serde_json::json!({
+            "name": "set_current_account",
+            "description": "Set the current account for email operations",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "Account ID to set as current"
+                    }
+                },
+                "required": ["account_id"]
+            }
+        })
+    ]
+}
+
 pub async fn list_mcp_tools(
     _state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {

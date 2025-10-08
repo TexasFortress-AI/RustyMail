@@ -157,7 +157,7 @@ impl Default for RestConfig {
             enabled: true,
             host: "127.0.0.1".to_string(),
             port: std::env::var("REST_PORT")
-                .expect("REST_PORT environment variable must be set")
+                .unwrap_or_else(|_| "9437".to_string())
                 .parse()
                 .expect("REST_PORT must be a valid port number"),
         }
@@ -170,7 +170,7 @@ impl Default for SseConfig {
             enabled: false,
             host: "127.0.0.1".to_string(),
             port: std::env::var("SSE_PORT")
-                .expect("SSE_PORT environment variable must be set")
+                .unwrap_or_else(|_| "9438".to_string())
                 .parse()
                 .expect("SSE_PORT must be a valid port number"),
         }
@@ -190,7 +190,7 @@ impl Default for DashboardConfig {
         Self {
             enabled: false,
             port: std::env::var("DASHBOARD_PORT")
-                .expect("DASHBOARD_PORT environment variable must be set")
+                .unwrap_or_else(|_| "9439".to_string())
                 .parse()
                 .expect("DASHBOARD_PORT must be a valid port number"),
             path: None,
