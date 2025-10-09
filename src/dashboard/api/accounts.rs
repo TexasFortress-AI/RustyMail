@@ -136,7 +136,6 @@ pub async fn create_account(
 
     // Build Account struct from request
     let new_account = Account {
-        id: uuid::Uuid::new_v4().to_string(),
         display_name: req.display_name.clone(),
         email_address: req.email_address.clone(),
         provider_type: req.provider_type.clone(),

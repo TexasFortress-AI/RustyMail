@@ -1865,7 +1865,7 @@ pub async fn get_sync_status(
             // Get default account if no account_id provided
             let account_service = state.account_service.lock().await;
             match account_service.get_default_account().await {
-                Ok(Some(account)) => account.id,
+                Ok(Some(account)) => account.email_address,
                 Ok(None) => return Err(ApiError::NotFound("No default account configured".to_string())),
                 Err(e) => return Err(ApiError::InternalError(format!("Failed to get default account: {}", e))),
             }
@@ -1935,7 +1935,7 @@ pub async fn get_cached_emails(
             // Get default account if no account_id provided
             let account_service = state.account_service.lock().await;
             match account_service.get_default_account().await {
-                Ok(Some(account)) => account.id,
+                Ok(Some(account)) => account.email_address,
                 Ok(None) => return Err(ApiError::NotFound("No default account configured".to_string())),
                 Err(e) => return Err(ApiError::InternalError(format!("Failed to get default account: {}", e))),
             }

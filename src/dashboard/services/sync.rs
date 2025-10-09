@@ -56,7 +56,7 @@ impl SyncService {
                 let account_service = self.account_service.lock().await;
                 match account_service.get_default_account().await {
                     Ok(Some(account)) => {
-                        let account_id = account.id.clone();
+                        let account_id = account.email_address.clone();
                         drop(account_service); // Release lock before sync
 
                         if let Err(e) = self.sync_all_folders(&account_id).await {

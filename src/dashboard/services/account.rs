@@ -26,7 +26,7 @@ pub enum AccountError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
-    pub id: String,
+    // email_address is the primary identifier - id field removed
     pub display_name: String,
     pub email_address: String,
     pub provider_type: Option<String>,
@@ -113,7 +113,6 @@ impl AccountService {
 
     /// Create account from environment variables if no accounts exist
     pub async fn ensure_default_account_from_env(&mut self, settings: &crate::config::Settings) -> Result<(), AccountError> {
-        use uuid::Uuid;
         use chrono::Utc;
         use crate::dashboard::services::account_store::{StoredAccount, ImapConfig};
 
@@ -139,9 +138,8 @@ impl AccountService {
             format!("{}@{}", settings.imap_user, settings.imap_host)
         };
 
-        // Create account from environment variables
+        // Create account from environment variables (email_address is the primary identifier)
         let account = StoredAccount {
-            id: Uuid::new_v4().to_string(),
             display_name: format!("Default ({})", email_address),
             email_address: email_address.clone(),
             provider_type: Some("custom".to_string()),
@@ -161,7 +159,7 @@ impl AccountService {
         match self.account_store.add_account(account.clone()).await {
             Ok(()) => {
                 // Set as default account
-                if let Err(e) = self.account_store.set_default_account(&account.id).await {
+                if let Err(e) = self.account_store.set_default_account(&account.email_address).await {
                     warn!("Failed to set default account: {}", e);
                 }
                 info!("Successfully created default account from environment: {}", account.email_address);
@@ -242,12 +240,9 @@ impl AccountService {
             let is_active: i32 = row.get("is_active");
             let is_default: i32 = row.get("is_default");
 
-            let account_id = format!("account_{}", id);
-
             let stored_account = StoredAccount {
-                id: account_id.clone(),
-                display_name,
-                email_address,
+                display_name: display_name.clone(),
+                email_address: email_address.clone(),
                 provider_type,
                 imap: super::account_store::ImapConfig {
                     host: imap_host,
@@ -274,7 +269,7 @@ impl AccountService {
             self.account_store.add_account(stored_account).await?;
 
             if is_default != 0 {
-                default_account_id = Some(account_id);
+                default_account_id = Some(email_address);
             }
         }
 
@@ -391,7 +386,6 @@ impl AccountService {
     /// Convert StoredAccount to Account (for API responses)
     fn stored_to_account(stored: StoredAccount) -> Account {
         Account {
-            id: stored.id.clone(),
             display_name: stored.display_name,
             email_address: stored.email_address,
             provider_type: stored.provider_type,
@@ -524,10 +518,7 @@ impl AccountService {
     /// Create a new account
     pub async fn create_account(&self, account: Account) -> Result<String, AccountError> {
         // Use email address as the account ID for consistency
-        let account_id = account.email_address.clone();
-
         let stored_account = StoredAccount {
-            id: account_id.clone(),
             display_name: account.display_name.clone(),
             email_address: account.email_address.clone(),
             provider_type: account.provider_type.clone(),
@@ -553,6 +544,9 @@ impl AccountService {
             updated_at: Utc::now(),
         };
 
+        // Clone email_address before moving stored_account
+        let account_email = stored_account.email_address.clone();
+
         self.account_store.add_account(stored_account).await?;
         info!("Created account: {} ({})", account.display_name, account.email_address);
 
@@ -562,7 +556,7 @@ impl AccountService {
             // Don't fail the account creation, but warn about it
         }
 
-        Ok(account_id)
+        Ok(account_email)
     }
 
     /// Get account by ID
@@ -586,7 +580,7 @@ impl AccountService {
         let accounts = stored_accounts
             .into_iter()
             .map(|stored| {
-                let is_default = config.default_account_id.as_deref() == Some(&stored.id);
+                let is_default = config.default_account_id.as_deref() == Some(&stored.email_address);
                 let mut account = Self::stored_to_account(stored);
                 account.is_default = is_default;
                 account
@@ -610,11 +604,10 @@ impl AccountService {
 
     /// Update account (requires account_id as string)
     pub async fn update_account(&self, account_id: &str, account: Account) -> Result<(), AccountError> {
-        // Get existing account to preserve id
+        // Get existing account to preserve created_at timestamp
         let existing = self.account_store.get_account(account_id).await?;
 
         let updated = StoredAccount {
-            id: existing.id,
             display_name: account.display_name.clone(),
             email_address: account.email_address.clone(),
             provider_type: account.provider_type.clone(),
