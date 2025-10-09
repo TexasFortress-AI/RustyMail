@@ -562,6 +562,7 @@ impl AiService {
 
     /// Fetch email context with structured data for the chatbot
     async fn fetch_email_context_with_data(&self, query: &str, account_id: Option<&str>) -> Option<EmailContextData> {
+        info!("fetch_email_context_with_data called with query: '{}'", query);
         let query_lower = query.to_lowercase();
         let mut email_messages: Vec<EmailMessage> = Vec::new();
         let mut email_folders: Vec<EmailFolder> = Vec::new();
@@ -569,6 +570,7 @@ impl AiService {
 
         // Check if query is about folders
         if query_lower.contains("folder") || query_lower.contains("mailbox") {
+            info!("Taking folder query path");
             let mut params = json!({});
             if let Some(acc_id) = account_id {
                 params["account_id"] = json!(acc_id);
@@ -602,6 +604,7 @@ impl AiService {
                             email_folders.len(),
                             email_folders.iter().map(|f| format!("{} ({} emails)", f.name, f.count)).collect::<Vec<_>>().join("\n"));
 
+                        info!("Returning Some(EmailContextData) with {} folders", email_folders.len());
                         return Some(EmailContextData {
                             context_string: context,
                             email_data: EmailData {
@@ -619,115 +622,129 @@ impl AiService {
             }
         }
 
-        // Get total email count
-        let mut count_params = json!({"folder": "INBOX"});
-        if let Some(acc_id) = account_id {
-            count_params["account_id"] = json!(acc_id);
-        }
-        total_count = match self.call_mcp_tool("count_emails_in_folder", count_params).await {
-            Ok(result) => result.get("data")
-                .and_then(|d| d.get("count"))
-                .and_then(|c| c.as_u64())
-                .map(|c| c as u32),
-            Err(e) => {
-                error!("Failed to get email count via MCP: {}", e);
-                return None;
+        // Check if query is about emails/inbox/messages
+        if query_lower.contains("email") || query_lower.contains("inbox") || query_lower.contains("message") ||
+           query_lower.contains("how many") || query_lower.contains("unread") || query_lower.contains("count") {
+            info!("Taking email query path");
+
+            // Get total email count
+            let mut count_params = json!({"folder": "INBOX"});
+            if let Some(acc_id) = account_id {
+                count_params["account_id"] = json!(acc_id);
             }
-        };
-
-        // Get recent emails
-        let mut list_params = json!({
-            "folder": "INBOX",
-            "limit": 10,
-            "offset": 0
-        });
-        if let Some(acc_id) = account_id {
-            list_params["account_id"] = json!(acc_id);
-        }
-        let emails_result = match self.call_mcp_tool("list_cached_emails", list_params).await {
-            Ok(result) => result,
-            Err(e) => {
-                error!("Failed to list emails via MCP: {}", e);
-                return None;
-            }
-        };
-
-        // Parse emails into EmailMessage structs
-        if let Some(emails) = emails_result.get("data").and_then(|e| e.as_array()) {
-            for email in emails.iter() {
-                let id = email.get("id")
-                    .or_else(|| email.get("uid"))
-                    .and_then(|i| i.as_u64())
-                    .map(|i| i.to_string())
-                    .unwrap_or_else(|| "0".to_string());
-
-                let subject = email.get("subject")
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("(No subject)")
-                    .to_string();
-
-                let from = email.get("from_address")
-                    .and_then(|f| f.as_str())
-                    .unwrap_or("Unknown")
-                    .to_string();
-
-                let date = email.get("date")
-                    .and_then(|d| d.as_str())
-                    .or_else(|| email.get("internal_date").and_then(|d| d.as_str()))
-                    .unwrap_or("Unknown date")
-                    .to_string();
-
-                let flags = email.get("flags")
-                    .and_then(|f| f.as_array())
-                    .map(|arr| arr.iter()
-                        .filter_map(|v| v.as_str())
-                        .collect::<Vec<_>>())
-                    .unwrap_or_default();
-
-                let is_read = flags.iter().any(|f| f.contains("Seen"));
-
-                // Extract snippet from body or preview
-                let snippet = email.get("body_preview")
-                    .or_else(|| email.get("snippet"))
-                    .and_then(|s| s.as_str())
-                    .unwrap_or("")
-                    .chars()
-                    .take(150)
-                    .collect::<String>();
-
-                email_messages.push(EmailMessage {
-                    id,
-                    subject,
-                    from,
-                    date,
-                    snippet,
-                    is_read,
-                });
-            }
-
-            let mut context = format!("You have {} total emails in your inbox.\n", total_count.unwrap_or(0));
-            if !email_messages.is_empty() {
-                context.push_str(&format!("Here are the {} most recent emails:\n", email_messages.len()));
-                for (i, msg) in email_messages.iter().enumerate() {
-                    context.push_str(&format!(
-                        "{}. Subject: {}, From: {}, Date: {}{}\n",
-                        i + 1, msg.subject, msg.from, msg.date,
-                        if !msg.is_read { " [UNREAD]" } else { "" }
-                    ));
+            total_count = match self.call_mcp_tool("count_emails_in_folder", count_params).await {
+                Ok(result) => result.get("data")
+                    .and_then(|d| d.get("count"))
+                    .and_then(|c| c.as_u64())
+                    .map(|c| c as u32),
+                Err(e) => {
+                    error!("Failed to get email count via MCP: {}", e);
+                    return None;
                 }
+            };
+    
+            // Get recent emails
+            let mut list_params = json!({
+                "folder": "INBOX",
+                "limit": 10,
+                "offset": 0
+            });
+            if let Some(acc_id) = account_id {
+                list_params["account_id"] = json!(acc_id);
             }
+            let emails_result = match self.call_mcp_tool("list_cached_emails", list_params).await {
+                Ok(result) => result,
+                Err(e) => {
+                    error!("Failed to list emails via MCP: {}", e);
+                    return None;
+                }
+            };
 
-            Some(EmailContextData {
-                context_string: context,
-                email_data: EmailData {
-                    messages: Some(email_messages),
-                    count: total_count,
-                    folders: None,
-                },
-            })
-        } else {
-            None
+            info!("MCP list_cached_emails returned: {}", serde_json::to_string(&emails_result).unwrap_or_else(|_| "serialization failed".to_string()));
+
+            // Parse emails into EmailMessage structs
+            if let Some(emails) = emails_result.get("data").and_then(|e| e.as_array()) {
+                info!("Successfully parsed emails array with {} items", emails.len());
+                for email in emails.iter() {
+                    let id = email.get("id")
+                        .or_else(|| email.get("uid"))
+                        .and_then(|i| i.as_u64())
+                        .map(|i| i.to_string())
+                        .unwrap_or_else(|| "0".to_string());
+    
+                    let subject = email.get("subject")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("(No subject)")
+                        .to_string();
+    
+                    let from = email.get("from_address")
+                        .and_then(|f| f.as_str())
+                        .unwrap_or("Unknown")
+                        .to_string();
+    
+                    let date = email.get("date")
+                        .and_then(|d| d.as_str())
+                        .or_else(|| email.get("internal_date").and_then(|d| d.as_str()))
+                        .unwrap_or("Unknown date")
+                        .to_string();
+    
+                    let flags = email.get("flags")
+                        .and_then(|f| f.as_array())
+                        .map(|arr| arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .collect::<Vec<_>>())
+                        .unwrap_or_default();
+    
+                    let is_read = flags.iter().any(|f| f.contains("Seen"));
+    
+                    // Extract snippet from body or preview
+                    let snippet = email.get("body_preview")
+                        .or_else(|| email.get("snippet"))
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("")
+                        .chars()
+                        .take(150)
+                        .collect::<String>();
+    
+                    email_messages.push(EmailMessage {
+                        id,
+                        subject,
+                        from,
+                        date,
+                        snippet,
+                        is_read,
+                    });
+                }
+    
+                let mut context = format!("You have {} total emails in your inbox.\n", total_count.unwrap_or(0));
+                if !email_messages.is_empty() {
+                    context.push_str(&format!("Here are the {} most recent emails:\n", email_messages.len()));
+                    for (i, msg) in email_messages.iter().enumerate() {
+                        context.push_str(&format!(
+                            "{}. Subject: {}, From: {}, Date: {}{}\n",
+                            i + 1, msg.subject, msg.from, msg.date,
+                            if !msg.is_read { " [UNREAD]" } else { "" }
+                        ));
+                    }
+                }
+
+                info!("Returning Some(EmailContextData) with {} messages and count {:?}", email_messages.len(), total_count);
+                return Some(EmailContextData {
+                    context_string: context,
+                    email_data: EmailData {
+                        messages: Some(email_messages),
+                        count: total_count,
+                        folders: None,
+                    },
+                });
+            } else {
+                error!("Failed to parse emails array from MCP response - 'data' field is not an array or is missing");
+            }
         }
+
+        // Query doesn't match any known email-related patterns
+        info!("Returning None - no keyword match");
+        None
     }
 
     /// Fetch email context based on the query (legacy - uses direct email service)
