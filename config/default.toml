@@ -7,10 +7,3 @@ host = "imap.example.com"
 port = 993
 user = "default_user"
 pass = "default_pass"
-[rest]
-enabled = true
-host = "127.0.0.1"
-port = 8080
-[mcp_stdio]
-enabled = false
-        
