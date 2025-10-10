@@ -12,7 +12,7 @@ mod multi_account_sync_tests {
     use sqlx::SqlitePool;
     use chrono::Utc;
 
-    const TEST_DB_PATH: &str = "sqlite::memory:";
+    const TEST_DB_PATH: &str = "sqlite:file::memory:?cache=shared";
     const ACCOUNT1_EMAIL: &str = "chris@texasfortress.ai";
     const ACCOUNT2_EMAIL: &str = "shannon@texasfortress.ai";
 
@@ -28,6 +28,24 @@ mod multi_account_sync_tests {
             .run(&pool)
             .await
             .expect("Failed to run migrations");
+
+        // Insert test account records (required for foreign key constraints)
+        // Use INSERT OR REPLACE to handle shared in-memory database across serial tests
+        sqlx::query(
+            r#"
+            INSERT OR REPLACE INTO accounts (email_address, display_name, imap_host, imap_port, imap_user, imap_pass)
+            VALUES
+                (?, 'Test Account 1', 'test.imap.com', 993, ?, 'test_pass_1'),
+                (?, 'Test Account 2', 'test.imap.com', 993, ?, 'test_pass_2')
+            "#
+        )
+        .bind(ACCOUNT1_EMAIL)
+        .bind(ACCOUNT1_EMAIL)
+        .bind(ACCOUNT2_EMAIL)
+        .bind(ACCOUNT2_EMAIL)
+        .execute(&pool)
+        .await
+        .expect("Failed to insert test accounts");
 
         // Create cache service
         let cache_config = CacheConfig {
@@ -291,7 +309,7 @@ mod multi_account_sync_tests {
     async fn test_email_address_based_identification() {
         println!("=== Testing Email Address-Based Identification ===");
 
-        let (_pool, cache_service, _account_service) = setup_test_database().await;
+        let (pool, cache_service, _account_service) = setup_test_database().await;
 
         // Test that email addresses work as account identifiers
         let result1 = cache_service
@@ -305,12 +323,22 @@ mod multi_account_sync_tests {
         assert!(result1.is_ok(), "Should accept email address as account_id");
         assert!(result2.is_ok(), "Should accept email address as account_id");
 
-        // Test with non-existent account (should still create folder)
+        // Test with non-existent account - need to insert it first for foreign key constraint
+        const TEST_EMAIL: &str = "nonexistent@example.com";
+        sqlx::query(
+            "INSERT INTO accounts (email_address, display_name, imap_host, imap_port, imap_user, imap_pass) VALUES (?, 'Test', 'test.com', 993, ?, 'pass')"
+        )
+        .bind(TEST_EMAIL)
+        .bind(TEST_EMAIL)
+        .execute(&pool)
+        .await
+        .expect("Failed to insert test account");
+
         let result3 = cache_service
-            .get_or_create_folder_for_account("INBOX", "nonexistent@example.com")
+            .get_or_create_folder_for_account("INBOX", TEST_EMAIL)
             .await;
 
-        assert!(result3.is_ok(), "Should handle non-existent account gracefully");
+        assert!(result3.is_ok(), "Should handle additional account gracefully");
 
         println!("✓ Email addresses work correctly as account identifiers");
     }
