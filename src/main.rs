@@ -205,15 +205,9 @@ async fn main() -> std::io::Result<()> {
     info!("Dashboard SSE Manager initialized.");
     // --- End Dashboard Setup ---
 
-    // --- Start HTTP Server --- 
-    let rest_config = settings.rest.as_ref().cloned().unwrap_or_else(|| {
-        warn!("No REST configuration found, using defaults");
-        rustymail::config::RestConfig {
-            enabled: true, 
-            host: "127.0.0.1".to_string(),
-            port: 3000, 
-        }
-    });
+    // --- Start HTTP Server ---
+    let rest_config = settings.rest.as_ref().cloned()
+        .expect("REST configuration is required - ensure REST_HOST and REST_PORT environment variables are set");
     let (host, port) = (rest_config.host.clone(), rest_config.port);
     let listen_addr = format!("{}:{}", host, port);
     info!("Starting HTTP server (REST & MCP SSE) on {}", listen_addr);

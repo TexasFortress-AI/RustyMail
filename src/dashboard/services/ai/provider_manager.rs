@@ -145,7 +145,7 @@ impl ProviderManager {
         }
 
         // Check for Ollama configuration
-        if let Ok(base_url) = std::env::var("OLLAMA_API_BASE") {
+        if let Ok(base_url) = std::env::var("OLLAMA_BASE_URL") {
             let config = ProviderConfig {
                 name: "ollama".to_string(),
                 provider_type: ProviderType::Ollama,
@@ -367,10 +367,11 @@ impl ProviderManager {
                     .with_model(config.model.clone()))
             },
             ProviderType::Ollama => {
-                // For Ollama, we need a base URL (which would be stored in the config name or a separate field)
-                // Since we don't have a base_url field in the config, we'll use the standard Ollama URL
-                let base_url = std::env::var("OLLAMA_API_BASE")
-                    .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                // For Ollama, we need a base URL from environment variable
+                let base_url = std::env::var("OLLAMA_BASE_URL")
+                    .map_err(|_| RestApiError::UnprocessableEntity {
+                        message: "Ollama provider requires OLLAMA_BASE_URL environment variable to be set".to_string()
+                    })?;
                 Arc::new(OllamaAdapter::new(base_url, self.http_client.clone())
                     .with_model(config.model.clone()))
             },
@@ -622,8 +623,10 @@ impl ProviderManager {
                     .with_model(config.model.clone()))
             },
             ProviderType::Ollama => {
-                let base_url = std::env::var("OLLAMA_API_BASE")
-                    .unwrap_or_else(|_| "http://127.0.0.1:11434".to_string());
+                let base_url = std::env::var("OLLAMA_BASE_URL")
+                    .map_err(|_| RestApiError::UnprocessableEntity {
+                        message: "Ollama provider requires OLLAMA_BASE_URL environment variable to be set".to_string()
+                    })?;
                 Arc::new(OllamaAdapter::new(base_url, self.http_client.clone())
                     .with_model(config.model.clone()))
             },

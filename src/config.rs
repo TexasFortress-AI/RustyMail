@@ -76,11 +76,9 @@ impl Settings {
             .set_default("imap_port", 993)?
             
             // REST defaults
-            .set_default("rest.host", "127.0.0.1")?
             .set_default("rest.enabled", true)?
 
             // SSE defaults
-            .set_default("sse.host", "127.0.0.1")?
             .set_default("sse.enabled", false)?
 
             // Dashboard defaults
@@ -155,9 +153,10 @@ impl Default for RestConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            host: "127.0.0.1".to_string(),
+            host: std::env::var("REST_HOST")
+                .expect("REST_HOST environment variable must be set"),
             port: std::env::var("REST_PORT")
-                .unwrap_or_else(|_| "9437".to_string())
+                .expect("REST_PORT environment variable must be set")
                 .parse()
                 .expect("REST_PORT must be a valid port number"),
         }
@@ -168,9 +167,10 @@ impl Default for SseConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            host: "127.0.0.1".to_string(),
+            host: std::env::var("SSE_HOST")
+                .expect("SSE_HOST environment variable must be set"),
             port: std::env::var("SSE_PORT")
-                .unwrap_or_else(|_| "9438".to_string())
+                .expect("SSE_PORT environment variable must be set")
                 .parse()
                 .expect("SSE_PORT must be a valid port number"),
         }
@@ -190,7 +190,7 @@ impl Default for DashboardConfig {
         Self {
             enabled: false,
             port: std::env::var("DASHBOARD_PORT")
-                .unwrap_or_else(|_| "9439".to_string())
+                .expect("DASHBOARD_PORT environment variable must be set")
                 .parse()
                 .expect("DASHBOARD_PORT must be a valid port number"),
             path: None,

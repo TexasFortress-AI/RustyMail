@@ -13,6 +13,7 @@ Steps:
    - Adding clear error messages when env vars are required but missing
 4. Report all fixes made with file path and line number
 5. Verify no hardcoded values remain after fixes
+6. Remember that variables used in the code must be defined in the .env.example file. For example, according to the .env file, it's "OLLAMA_BASE_URL", not "OLLAMA_API_BASE". Don't just make it up off the top of your head -- find the correct variable in .env.example and use that same variable name in the code so they always match.
 
 Environment values to check and fix:
 - Ports: 9437, 9438, 9439

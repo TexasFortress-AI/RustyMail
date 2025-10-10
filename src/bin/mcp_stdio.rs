@@ -7,7 +7,7 @@
 ///   rustymail-mcp-stdio [OPTIONS]
 ///
 /// Options:
-///   --backend-url <URL>  Backend MCP server URL (default: http://localhost:9437/mcp)
+///   --backend-url <URL>  Backend MCP server URL (from MCP_BACKEND_URL env var)
 ///   --timeout <SECONDS>  Request timeout in seconds (default: 30)
 ///   --help              Show this help message
 ///
@@ -23,11 +23,11 @@ async fn main() {
     // Parse command-line arguments
     let args: Vec<String> = std::env::args().collect();
     let mut backend_url = std::env::var("MCP_BACKEND_URL")
-        .unwrap_or_else(|_| "http://localhost:9437/mcp".to_string());
+        .expect("MCP_BACKEND_URL environment variable must be set (e.g., http://localhost:9437/mcp)");
     let mut timeout_secs = std::env::var("MCP_TIMEOUT")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(30);
+        .expect("MCP_TIMEOUT environment variable must be set (e.g., 30)");
 
     // Parse command-line arguments
     let mut i = 1;
@@ -202,8 +202,7 @@ fn print_help() {
     println!("  rustymail-mcp-stdio [OPTIONS]");
     println!();
     println!("Options:");
-    println!("  --backend-url <URL>  Backend MCP server URL");
-    println!("                       (default: http://localhost:9437/mcp)");
+    println!("  --backend-url <URL>  Backend MCP server URL (from MCP_BACKEND_URL env var)");
     println!("  --timeout <SECONDS>  Request timeout in seconds (default: 30)");
     println!("  --help              Show this help message");
     println!();
