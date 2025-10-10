@@ -19,7 +19,7 @@ const Dashboard: React.FC = () => {
   useSSEEvents();
 
   // Get account context
-  const { refreshAccounts, currentAccount } = useAccount();
+  const { refreshAccounts, currentAccount, loading: accountsLoading } = useAccount();
 
   // Active tab state
   const [activeTab, setActiveTab] = useState('email');
@@ -271,10 +271,16 @@ const Dashboard: React.FC = () => {
               className="overflow-hidden min-h-0"
               style={{ height: `${100 - emailTopHeight}%` }}
             >
-              <ChatbotPanel
-                currentFolder={currentFolder}
-                accountId={currentAccount?.id}
-              />
+              {accountsLoading || !currentAccount ? (
+                <div className="flex items-center justify-center h-full bg-card rounded-lg border">
+                  <p className="text-muted-foreground">Loading account...</p>
+                </div>
+              ) : (
+                <ChatbotPanel
+                  currentFolder={currentFolder}
+                  accountId={currentAccount.id}
+                />
+              )}
             </div>
           </TabsContent>
 
