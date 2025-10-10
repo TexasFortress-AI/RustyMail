@@ -51,22 +51,23 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     await loadAccounts();
   };
 
+  // Initial load of accounts
   useEffect(() => {
     loadAccounts();
-
-    // Restore last selected account from localStorage
-    const savedAccountId = localStorage.getItem('rustymail_current_account_id');
-    if (savedAccountId) {
-      // Will be applied after accounts are loaded
-      const timer = setTimeout(() => {
-        const account = accounts.find((a) => a.id === savedAccountId);
-        if (account && account.is_active) {
-          setCurrentAccount(account);
-        }
-      }, 100);
-      return () => clearTimeout(timer);
-    }
   }, []);
+
+  // Restore last selected account from localStorage after accounts are loaded
+  useEffect(() => {
+    if (accounts.length === 0) return;
+
+    const savedAccountId = localStorage.getItem('rustymail_current_account_id');
+    if (savedAccountId && !currentAccount) {
+      const account = accounts.find((a) => a.id === savedAccountId);
+      if (account && account.is_active) {
+        setCurrentAccount(account);
+      }
+    }
+  }, [accounts]);
 
   return (
     <AccountContext.Provider

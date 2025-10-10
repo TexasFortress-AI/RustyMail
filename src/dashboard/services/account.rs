@@ -26,9 +26,12 @@ pub enum AccountError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
-    // email_address is the primary identifier - id field removed
-    pub display_name: String,
+    // email_address is the primary identifier, serialized as both "id" and "email_address"
+    #[serde(rename = "id", alias = "email_address")]
     pub email_address: String,
+    // display_name is serialized as both "account_name" and "display_name"
+    #[serde(rename = "account_name", alias = "display_name")]
+    pub display_name: String,
     pub provider_type: Option<String>,
     pub imap_host: String,
     pub imap_port: i64,
