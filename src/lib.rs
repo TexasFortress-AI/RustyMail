@@ -67,7 +67,9 @@ pub mod prelude {
     pub use crate::session_manager::mock::MockSessionManagerTrait;
 }
 
-// Test modules
+// Test modules and helpers
+#[cfg(test)]
+pub mod test_helpers;
 #[cfg(test)]
 mod transport_test;
 #[cfg(test)]

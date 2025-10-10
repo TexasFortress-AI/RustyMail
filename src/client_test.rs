@@ -17,6 +17,9 @@ mod tests {
 
 #[tokio::test]
 async fn test_config_loading() {
+    // Use centralized test environment setup
+    crate::test_helpers::setup_test_env();
+
     // Test with default configuration
     let config = Settings::default();
     // Default config should have sensible defaults
@@ -30,6 +33,9 @@ async fn test_config_loading() {
 
 #[tokio::test]
 async fn test_imap_client_initialization() {
+    // Use centralized test environment setup
+    crate::test_helpers::setup_test_env();
+
     // Create a mock configuration
     let mut config = Settings::default();
     config.imap_host = "localhost".to_string();
@@ -52,6 +58,9 @@ async fn test_imap_client_initialization() {
 
 #[tokio::test]
 async fn test_rest_server_configuration() {
+    // Use centralized test environment setup
+    crate::test_helpers::setup_test_env();
+
     // Create a mock configuration
     let mut config = Settings::default();
     config.rest = Some(crate::config::RestConfig {

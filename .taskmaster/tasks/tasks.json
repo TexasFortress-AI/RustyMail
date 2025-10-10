@@ -2487,13 +2487,136 @@
             "parentId": "undefined"
           }
         ]
+      },
+      {
+        "id": "59",
+        "title": "Fix failing unit tests - environment variable configuration",
+        "description": "Fix 3 failing tests in client_test module that panic due to missing environment variables (REST_HOST, SSE_HOST, etc). Tests should either mock the environment or use test fixtures that don't require hardcoded values.",
+        "details": "",
+        "testStrategy": "",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-10-10T08:25:20.992Z"
+      },
+      {
+        "id": "60",
+        "title": "Fix failing autodiscovery test - Mozilla autoconfig parsing",
+        "description": "Fix the failing test_parse_mozilla_autoconfig test in dashboard::services::autodiscovery. Investigate why Mozilla autoconfig XML parsing is failing and fix the underlying functionality.",
+        "details": "",
+        "testStrategy": "",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2025-10-10T08:25:28.502Z"
+      },
+      {
+        "id": "61",
+        "title": "Add comprehensive test coverage for MCP HTTP endpoint",
+        "description": "Create integration tests for the MCP Streamable HTTP endpoint at /mcp. Test all JSON-RPC methods: initialize, tools/list, tools/call for all email tools (list_folders, search_emails, fetch_emails, etc.). Verify proper error handling and response format.",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "62",
+        "title": "Add test coverage for MCP stdio proxy (rustymail-mcp-stdio)",
+        "description": "Create integration tests for the stdio proxy binary. Test that it correctly relays JSON-RPC requests from stdin to the backend HTTP endpoint and returns responses to stdout. Test error handling for connection failures, timeouts, and malformed JSON.",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": "63",
+        "title": "Add test coverage for Dashboard API endpoints",
+        "description": "Create comprehensive integration tests for all Dashboard API endpoints: /api/dashboard/config, /api/dashboard/stats, /api/dashboard/accounts, /api/dashboard/emails, /api/dashboard/ai/providers, /api/dashboard/ai/models, /api/dashboard/mcp/tools. Test CRUD operations, error handling, authentication, and validation.",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "64",
+        "title": "Add test coverage for Connection Pool",
+        "description": "Create comprehensive tests for the IMAP connection pool: connection creation, reuse, health checks, idle timeout, max session duration, concurrent access, connection validation, and pool exhaustion scenarios. Verify connection pool maintains min/max connections properly.",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "65",
+        "title": "Add test coverage for AI Service and Provider Manager",
+        "description": "Create tests for AI service functionality: provider initialization, provider switching, model selection, chat completion requests, error handling for API failures, fallback behavior, conversation context management, and all supported providers (OpenAI, OpenRouter, Morpheus, Ollama, Anthropic, etc.).",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "66",
+        "title": "Add test coverage for Email Cache Service",
+        "description": "Create tests for cache service: database initialization, email caching, cache retrieval, cache invalidation, folder sync state, metadata storage, cache size limits, old email cleanup, and SQLite database migrations. Test both memory and disk cache layers.",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "67",
+        "title": "Add test coverage for Account Service and Account Store",
+        "description": "Create tests for account management: account creation, loading from JSON, database sync, account updates, account deletion, credential storage, provider templates, autodiscovery integration, and multi-account scenarios. Verify file-based and database-based storage consistency.",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": "68",
+        "title": "Add test coverage for Event Bus and SSE broadcasting",
+        "description": "Create tests for event system: event publication, subscription, event history, SSE client management, SSE reconnection, event replay, client registration/deregistration, and integration with dashboard services (metrics, health, sync events).",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "low",
+        "subtasks": []
+      },
+      {
+        "id": "69",
+        "title": "Add end-to-end tests for complete email workflows",
+        "description": "Create E2E tests for complete user workflows: 1) Claude Desktop connecting via stdio proxy to fetch emails, 2) Dashboard Email Assistant widget sending prompts and receiving responses, 3) Dashboard MCP Tools widget calling individual tools, 4) Multi-account email operations, 5) Search and move operations across folders.",
+        "details": "",
+        "testStrategy": "",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "low",
+        "subtasks": []
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-10-10T07:18:56.800Z",
-      "taskCount": 58,
-      "completedCount": 58,
+      "lastModified": "2025-10-10T08:25:28.503Z",
+      "taskCount": 69,
+      "completedCount": 60,
       "tags": [
         "master"
       ]

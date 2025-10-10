@@ -222,7 +222,7 @@ impl AutodiscoveryService {
 
         #[derive(Debug, Deserialize)]
         struct IncomingServer {
-            #[serde(rename = "type")]
+            #[serde(rename = "@type")]
             server_type: String,
             hostname: String,
             port: u16,
@@ -233,7 +233,7 @@ impl AutodiscoveryService {
 
         #[derive(Debug, Deserialize)]
         struct OutgoingServer {
-            #[serde(rename = "type")]
+            #[serde(rename = "@type")]
             server_type: String,
             hostname: String,
             port: u16,
