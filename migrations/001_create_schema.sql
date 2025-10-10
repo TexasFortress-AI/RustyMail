@@ -1,7 +1,6 @@
 -- RustyMail Database Schema
 -- Uses email_address as the primary key for accounts (KISS principle)
-
-BEGIN TRANSACTION;
+-- NOTE: sqlx automatically wraps migrations in transactions, so we don't need explicit BEGIN/COMMIT
 
 -- Accounts table - email_address is the primary key
 CREATE TABLE accounts (
@@ -119,5 +118,3 @@ CREATE TRIGGER update_emails_timestamp
     BEGIN
         UPDATE emails SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
     END;
-
-COMMIT;

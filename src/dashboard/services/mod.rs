@@ -128,6 +128,7 @@ pub async fn init(
             .unwrap_or(300),
     };
 
+    // Initialize Cache Service (this runs database migrations)
     let mut cache_service = CacheService::new(cache_config);
     if let Err(e) = cache_service.initialize().await {
         warn!("Failed to initialize cache service: {}. Running without cache.", e);
@@ -140,7 +141,9 @@ pub async fn init(
 
     let mut account_service_temp = AccountService::new(&accounts_config_path);
 
-    // Get database pool for provider templates (temporary - using cache database)
+    // Get database pool for provider templates (using same database as cache)
+    // IMPORTANT: This pool is created AFTER cache service initialization completes
+    // to avoid nested transaction issues during migration
     let cache_db_url = std::env::var("CACHE_DATABASE_URL")
         .unwrap_or_else(|_| "sqlite:data/email_cache.db".to_string());
 
