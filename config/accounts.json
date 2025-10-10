@@ -1,9 +1,8 @@
 {
   "version": "1.0",
-  "default_account_id": "252922d8-caf6-4b8a-ac08-c57223b18299",
+  "default_account_id": "chris@texasfortress.ai",
   "accounts": [
     {
-      "id": "252922d8-caf6-4b8a-ac08-c57223b18299",
       "display_name": "Default (chris@texasfortress.ai)",
       "email_address": "chris@texasfortress.ai",
       "provider_type": "custom",
@@ -20,7 +19,6 @@
       "updated_at": "2025-10-08T12:24:12.271211Z"
     },
     {
-      "id": "shannon@texasfortress.ai",
       "display_name": "Shannon (TexasFortress.ai)",
       "email_address": "shannon@texasfortress.ai",
       "provider_type": "Auto-discovered",
