@@ -46,7 +46,7 @@ pub struct SmtpConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredAccount {
-    pub id: String,
+    // email_address is the primary identifier - id field removed
     pub display_name: String,
     pub email_address: String,
     pub provider_type: Option<String>,
@@ -167,12 +167,7 @@ impl AccountStore {
     pub async fn add_account(&self, account: StoredAccount) -> Result<(), AccountStoreError> {
         let mut config = self.load_config().await?;
 
-        // Check for duplicate ID
-        if config.accounts.iter().any(|a| a.id == account.id) {
-            return Err(AccountStoreError::DuplicateAccount(account.id.clone()));
-        }
-
-        // Check for duplicate email
+        // Check for duplicate email (primary identifier)
         if config.accounts.iter().any(|a| a.email_address == account.email_address) {
             return Err(AccountStoreError::DuplicateAccount(account.email_address.clone()));
         }
@@ -183,14 +178,14 @@ impl AccountStore {
         Ok(())
     }
 
-    /// Get account by ID
-    pub async fn get_account(&self, account_id: &str) -> Result<StoredAccount, AccountStoreError> {
+    /// Get account by email address
+    pub async fn get_account(&self, email_address: &str) -> Result<StoredAccount, AccountStoreError> {
         let config = self.load_config().await?;
 
         config.accounts
             .into_iter()
-            .find(|a| a.id == account_id)
-            .ok_or_else(|| AccountStoreError::NotFound(account_id.to_string()))
+            .find(|a| a.email_address == email_address)
+            .ok_or_else(|| AccountStoreError::NotFound(email_address.to_string()))
     }
 
     /// List all accounts
@@ -199,14 +194,14 @@ impl AccountStore {
         Ok(config.accounts)
     }
 
-    /// Update an existing account
+    /// Update an existing account (matched by email_address)
     pub async fn update_account(&self, account: StoredAccount) -> Result<(), AccountStoreError> {
         let mut config = self.load_config().await?;
 
         let pos = config.accounts
             .iter()
-            .position(|a| a.id == account.id)
-            .ok_or_else(|| AccountStoreError::NotFound(account.id.clone()))?;
+            .position(|a| a.email_address == account.email_address)
+            .ok_or_else(|| AccountStoreError::NotFound(account.email_address.clone()))?;
 
         config.accounts[pos] = account;
         self.save_config(&config).await?;
@@ -214,19 +209,19 @@ impl AccountStore {
         Ok(())
     }
 
-    /// Delete an account
-    pub async fn delete_account(&self, account_id: &str) -> Result<(), AccountStoreError> {
+    /// Delete an account by email address
+    pub async fn delete_account(&self, email_address: &str) -> Result<(), AccountStoreError> {
         let mut config = self.load_config().await?;
 
         let initial_len = config.accounts.len();
-        config.accounts.retain(|a| a.id != account_id);
+        config.accounts.retain(|a| a.email_address != email_address);
 
         if config.accounts.len() == initial_len {
-            return Err(AccountStoreError::NotFound(account_id.to_string()));
+            return Err(AccountStoreError::NotFound(email_address.to_string()));
         }
 
         // If we deleted the default account, clear the default
-        if config.default_account_id.as_deref() == Some(account_id) {
+        if config.default_account_id.as_deref() == Some(email_address) {
             config.default_account_id = None;
         }
 
@@ -239,37 +234,28 @@ impl AccountStore {
     pub async fn get_default_account(&self) -> Result<Option<StoredAccount>, AccountStoreError> {
         let config = self.load_config().await?;
 
-        if let Some(default_id) = &config.default_account_id {
-            Ok(config.accounts.into_iter().find(|a| &a.id == default_id))
+        if let Some(default_email) = &config.default_account_id {
+            Ok(config.accounts.into_iter().find(|a| &a.email_address == default_email))
         } else {
             Ok(None)
         }
     }
 
-    /// Set the default account
-    pub async fn set_default_account(&self, account_id: &str) -> Result<(), AccountStoreError> {
+    /// Set the default account by email address
+    pub async fn set_default_account(&self, email_address: &str) -> Result<(), AccountStoreError> {
         let mut config = self.load_config().await?;
 
         // Verify account exists
-        if !config.accounts.iter().any(|a| a.id == account_id) {
-            return Err(AccountStoreError::NotFound(account_id.to_string()));
+        if !config.accounts.iter().any(|a| a.email_address == email_address) {
+            return Err(AccountStoreError::NotFound(email_address.to_string()));
         }
 
-        config.default_account_id = Some(account_id.to_string());
+        config.default_account_id = Some(email_address.to_string());
         self.save_config(&config).await?;
 
         Ok(())
     }
 
-    /// Generate a unique account ID
-    pub fn generate_account_id() -> String {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis();
-        format!("account_{}", timestamp)
-    }
 }
 
 #[cfg(test)]
@@ -289,7 +275,6 @@ mod tests {
 
         // Add account
         let account = StoredAccount {
-            id: "test_1".to_string(),
             display_name: "Test Account".to_string(),
             email_address: "test@example.com".to_string(),
             provider_type: Some("gmail".to_string()),
@@ -308,21 +293,21 @@ mod tests {
 
         store.add_account(account.clone()).await.unwrap();
 
-        // Get account
-        let retrieved = store.get_account("test_1").await.unwrap();
+        // Get account by email
+        let retrieved = store.get_account("test@example.com").await.unwrap();
         assert_eq!(retrieved.email_address, "test@example.com");
 
         // List accounts
         let accounts = store.list_accounts().await.unwrap();
         assert_eq!(accounts.len(), 1);
 
-        // Set default
-        store.set_default_account("test_1").await.unwrap();
+        // Set default using email address
+        store.set_default_account("test@example.com").await.unwrap();
         let default = store.get_default_account().await.unwrap();
         assert!(default.is_some());
 
-        // Delete account
-        store.delete_account("test_1").await.unwrap();
+        // Delete account by email
+        store.delete_account("test@example.com").await.unwrap();
         let accounts = store.list_accounts().await.unwrap();
         assert_eq!(accounts.len(), 0);
     }
