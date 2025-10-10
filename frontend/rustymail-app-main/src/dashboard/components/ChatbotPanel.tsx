@@ -112,6 +112,18 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
     inputRef.current?.focus();
   }, []);
 
+  // Clear conversation when account changes
+  const prevAccountIdRef = useRef<string | undefined>(accountId);
+  useEffect(() => {
+    // Only clear if account actually changed (not on initial mount)
+    if (prevAccountIdRef.current && prevAccountIdRef.current !== accountId && messages.length > 0) {
+      setMessages([]);
+      setConversationId(undefined);
+      localStorage.removeItem('chatConversation');
+    }
+    prevAccountIdRef.current = accountId;
+  }, [accountId, messages.length]); // React when accountId changes
+
   
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
