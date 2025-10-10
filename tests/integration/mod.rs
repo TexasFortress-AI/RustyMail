@@ -7,4 +7,5 @@ pub mod api_auth;
 pub mod api_validation;
 pub mod api_errors;
 pub mod multi_account_sync;
-// pub mod mcp; // TODO: Add MCP integration tests 
+pub mod mcp_http; // MCP HTTP endpoint integration tests
+// pub mod test_uid_search_fix; // TODO: Fix ImapSession import 
