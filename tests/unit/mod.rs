@@ -13,4 +13,5 @@ pub mod dashboard_config;
 // pub mod nlp_processor_tests; // Disabled
 // pub mod dashboard_api_handlers; // Disabled
 // pub mod dashboard_sse_streaming; // Disabled
-pub mod hardcoded_detection; 
+pub mod hardcoded_detection;
+pub mod ai_service_tests; 
