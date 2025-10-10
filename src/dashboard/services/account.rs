@@ -338,7 +338,7 @@ impl AccountService {
 
                 debug!("Updated account {} in database", account.email_address);
             } else {
-                // Insert new account (id will be auto-generated)
+                // Insert new account (email_address is the primary key)
                 sqlx::query(
                     r#"
                     INSERT INTO accounts (

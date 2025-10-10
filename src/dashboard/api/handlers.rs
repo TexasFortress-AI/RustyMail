@@ -645,9 +645,9 @@ async fn get_account_id_to_use(
     ))
 }
 
-/// Validate and return the account email address
-/// Since account_id is now the email address, this just validates it exists
-async fn account_uuid_to_email(
+/// Validate that an account exists by checking if it can be retrieved
+/// Returns the account_id (email address) if the account is found
+async fn validate_account_exists(
     account_id: &str,
     state: &DashboardState,
 ) -> Result<String, ApiError> {
@@ -657,7 +657,7 @@ async fn account_uuid_to_email(
         .map_err(|e| ApiError::NotFound(format!("Account not found: {}", e)))?;
     drop(account_service); // Release lock
 
-    // Return the email address (which is the account_id itself)
+    // Return the account_id
     Ok(account_id.to_string())
 }
 
@@ -844,7 +844,7 @@ pub async fn execute_mcp_tool(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state).await {
                 Ok(account_id) => {
-                    let account_email = match account_uuid_to_email(&account_id, &state).await {
+                    let account_email = match validate_account_exists(&account_id, &state).await {
                         Ok(id) => id,
                         Err(e) => {
                             return Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -892,7 +892,7 @@ pub async fn execute_mcp_tool(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state).await {
                 Ok(account_id) => {
-                    let account_email = match account_uuid_to_email(&account_id, &state).await {
+                    let account_email = match validate_account_exists(&account_id, &state).await {
                         Ok(id) => id,
                         Err(e) => {
                             return Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -953,7 +953,7 @@ pub async fn execute_mcp_tool(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state).await {
                 Ok(account_id) => {
-                    let account_email = match account_uuid_to_email(&account_id, &state).await {
+                    let account_email = match validate_account_exists(&account_id, &state).await {
                         Ok(id) => id,
                         Err(e) => {
                             return Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -1013,7 +1013,7 @@ pub async fn execute_mcp_tool(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state).await {
                 Ok(account_id) => {
-                    let account_email = match account_uuid_to_email(&account_id, &state).await {
+                    let account_email = match validate_account_exists(&account_id, &state).await {
                         Ok(id) => id,
                         Err(e) => {
                             return Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -1060,7 +1060,7 @@ pub async fn execute_mcp_tool(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state).await {
                 Ok(account_id) => {
-                    let account_email = match account_uuid_to_email(&account_id, &state).await {
+                    let account_email = match validate_account_exists(&account_id, &state).await {
                         Ok(id) => id,
                         Err(e) => {
                             return Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -1110,7 +1110,7 @@ pub async fn execute_mcp_tool(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state).await {
                 Ok(account_id) => {
-                    let account_email = match account_uuid_to_email(&account_id, &state).await {
+                    let account_email = match validate_account_exists(&account_id, &state).await {
                         Ok(id) => id,
                         Err(e) => {
                             return Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -1872,7 +1872,7 @@ pub async fn get_sync_status(
         }
     };
 
-    let account_email = match account_uuid_to_email(&account_id, &state).await {
+    let account_email = match validate_account_exists(&account_id, &state).await {
         Ok(id) => id,
         Err(e) => {
             error!("Failed to lookup database account ID: {}", e);
@@ -1942,7 +1942,7 @@ pub async fn get_cached_emails(
         }
     };
 
-    let account_email = match account_uuid_to_email(&account_id, &state).await {
+    let account_email = match validate_account_exists(&account_id, &state).await {
         Ok(id) => id,
         Err(e) => {
             error!("Failed to lookup database account ID: {}", e);
