@@ -2518,10 +2518,11 @@
         "description": "Create integration tests for the MCP Streamable HTTP endpoint at /mcp. Test all JSON-RPC methods: initialize, tools/list, tools/call for all email tools (list_folders, search_emails, fetch_emails, etc.). Verify proper error handling and response format.",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-10-10T08:34:48.738Z"
       },
       {
         "id": 62,
@@ -2529,7 +2530,7 @@
         "description": "Create integration tests for the stdio proxy binary. Test that it correctly relays JSON-RPC requests from stdin to the backend HTTP endpoint and returns responses to stdout. Test error handling for connection failures, timeouts, and malformed JSON.",
         "details": "",
         "testStrategy": "",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [],
         "priority": "high",
         "subtasks": []
@@ -2614,14 +2615,15 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-10-10T08:25:28.503Z",
+      "lastModified": "2025-10-10T08:34:48.740Z",
       "taskCount": 69,
-      "completedCount": 60,
+      "completedCount": 61,
       "tags": [
         "master"
       ],
-      "created": "2025-10-10T08:30:58.697Z",
-      "description": "Tasks for master context"
+      "created": "2025-10-10T08:43:54.013Z",
+      "description": "Tasks for master context",
+      "updated": "2025-10-10T08:43:54.015Z"
     }
   }
 }

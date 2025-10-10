@@ -23,7 +23,7 @@ IMPORTANT:
 
 WARNING: Don't use over-generalized searches in the code base, because the results are too large for the context window. Be specific and targeted.
 
-REMEMBER: The PURPOSE of your memory is to keep track of key insights, and decision points, so you can use them to make informed decisions. When you have to make a decision, you should first check for relevant memories. And once the decision is made, you should always remember WHY you made that decision, and WHAT the decision was, and how it relates to the overall goal, and the KEY INSIGHTS derived along the way.
+REMEMBER: The PURPOSE of your memory is to keep track of key insights, and decision points, so you can use them to make informed decisions. When you have to make a decision, you should first check for relevant memories. And once the decision is made, you should always remember WHY you made that decision, and WHAT the decision was, and how it relates to the overall goal, and the KEY INSIGHTS derived along the way. Don't store tasks in your memory, that's what the taskmaster is for.
 
 REMEMBER: When I ask you about something we've already discussed, you should check your memories, in addition to searching the code, to find the answer.
 
