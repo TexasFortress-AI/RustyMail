@@ -688,3 +688,111 @@ async fn test_mcp_jsonrpc_batch_requests() {
     println!("✓ Batch responses maintain request order");
     println!("✓ Each response has correct ID");
 }
+
+/// **CRITICAL TEST**: Verifies tools match between MCP interface and Dashboard API
+/// This ensures the same tools with same parameters are exposed everywhere as required
+#[tokio::test]
+#[serial]
+async fn test_mcp_dashboard_api_consistency() {
+    setup_test_env();
+    let test_name = "consistency";
+    println!("=== Testing MCP vs Dashboard API Tool Consistency ===");
+
+    // Create test dashboard state
+    let dashboard_state = create_test_dashboard_state(test_name).await;
+
+    // Get tools from MCP interface
+    let mcp_request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list",
+        "params": {}
+    });
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .configure(rustymail::api::mcp_http::configure_mcp_routes)
+            .service(rustymail::dashboard::api::routes::configure_routes())
+    ).await;
+
+    // Fetch MCP tools
+    let mcp_req = test::TestRequest::post()
+        .uri("/mcp")
+        .set_json(&mcp_request)
+        .to_request();
+
+    let mcp_resp = test::call_service(&app, mcp_req).await;
+    assert!(mcp_resp.status().is_success(), "MCP tools/list should succeed");
+    let mcp_body: serde_json::Value = test::read_body_json(mcp_resp).await;
+    let mcp_tools = mcp_body["result"]["tools"].as_array().unwrap();
+
+    // Fetch Dashboard API tools
+    let dashboard_req = test::TestRequest::get()
+        .uri("/api/dashboard/mcp/tools")
+        .insert_header(("X-API-Key", "test-rustymail-key-2024"))
+        .to_request();
+
+    let dashboard_resp = test::call_service(&app, dashboard_req).await;
+    let status = dashboard_resp.status();
+    println!("Dashboard response status: {:?}", status);
+    if !status.is_success() {
+        let error_body: String = test::read_body(dashboard_resp).await
+            .iter()
+            .map(|&b| b as char)
+            .collect();
+        panic!("Dashboard /mcp/tools failed with status {:?}: {}", status, error_body);
+    }
+    let dashboard_body: serde_json::Value = test::read_body_json(dashboard_resp).await;
+    let dashboard_tools = dashboard_body["tools"].as_array().unwrap();
+
+    // Verify same number of tools
+    assert_eq!(mcp_tools.len(), dashboard_tools.len(),
+               "MCP and Dashboard should expose same number of tools");
+    assert_eq!(mcp_tools.len(), 18, "Should have 18 tools in both interfaces");
+
+    // Verify all tool names match
+    let mut mcp_tool_names: Vec<String> = mcp_tools.iter()
+        .map(|t| t["name"].as_str().unwrap().to_string())
+        .collect();
+    mcp_tool_names.sort();
+
+    let mut dashboard_tool_names: Vec<String> = dashboard_tools.iter()
+        .map(|t| t["name"].as_str().unwrap().to_string())
+        .collect();
+    dashboard_tool_names.sort();
+
+    assert_eq!(mcp_tool_names, dashboard_tool_names,
+               "Tool names should match exactly between MCP and Dashboard API");
+
+    // Verify parameter consistency for each tool
+    for mcp_tool in mcp_tools {
+        let tool_name = mcp_tool["name"].as_str().unwrap();
+        let dashboard_tool = dashboard_tools.iter()
+            .find(|t| t["name"].as_str().unwrap() == tool_name)
+            .expect(&format!("Dashboard should have tool: {}", tool_name));
+
+        // MCP uses inputSchema.properties, Dashboard uses parameters
+        let mcp_params = mcp_tool["inputSchema"]["properties"].as_object().unwrap();
+        let dashboard_params = dashboard_tool["parameters"].as_object().unwrap();
+
+        assert_eq!(mcp_params.len(), dashboard_params.len(),
+                   "Tool '{}' should have same number of parameters", tool_name);
+
+        // Verify parameter names match
+        let mut mcp_param_names: Vec<&String> = mcp_params.keys().collect();
+        mcp_param_names.sort();
+        let mut dashboard_param_names: Vec<&String> = dashboard_params.keys().collect();
+        dashboard_param_names.sort();
+
+        assert_eq!(mcp_param_names, dashboard_param_names,
+                   "Tool '{}' parameters should match", tool_name);
+    }
+
+    println!("✓ MCP and Dashboard API expose same {} tools", mcp_tools.len());
+    println!("✓ All tool names match exactly between interfaces");
+    println!("✓ All parameter names match for each tool");
+    println!("✓ Architecture requirement satisfied: same tools, same parameters everywhere");
+
+    cleanup_test_db(test_name);
+}
