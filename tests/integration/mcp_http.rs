@@ -236,7 +236,11 @@ async fn test_mcp_initialize_handshake() {
 #[serial]
 async fn test_mcp_tools_list() {
     setup_test_env();
+    let test_name = "tools_list";
     println!("=== Testing MCP tools/list Endpoint ===");
+
+    // Create test dashboard state
+    let dashboard_state = create_test_dashboard_state(test_name).await;
 
     let request = json!({
         "jsonrpc": "2.0",
@@ -245,23 +249,63 @@ async fn test_mcp_tools_list() {
         "params": {}
     });
 
-    // TODO: Set up test app and send request
-    // Verify response includes all expected tools:
-    // - list_folders
-    // - fetch_emails
-    // - search_emails
-    // - get_email_details
-    // - update_email_flags
-    // - move_email
-    // - delete_email
-    // - create_folder
-    // - delete_folder
-    // - expunge_folder
+    // Set up test app
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .configure(rustymail::api::mcp_http::configure_mcp_routes)
+    ).await;
 
-    println!("✓ tools/list returns array of available tools");
+    // Send request
+    let req = test::TestRequest::post()
+        .uri("/mcp")
+        .set_json(&request)
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status().is_success(), "tools/list request should succeed");
+
+    // Verify response structure
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(body["jsonrpc"], "2.0", "Response should be JSON-RPC 2.0");
+    assert_eq!(body["id"], 2, "Response ID should match request ID");
+    assert!(body["result"]["tools"].is_array(), "Result should contain tools array");
+
+    let tools = body["result"]["tools"].as_array().unwrap();
+    assert_eq!(tools.len(), 18, "Should have exactly 18 tools");
+
+    // Verify each tool has required fields
+    let expected_tool_names = vec![
+        "list_folders", "list_folders_hierarchical",
+        "search_emails", "fetch_emails_with_mime",
+        "atomic_move_message", "atomic_batch_move",
+        "mark_as_deleted", "delete_messages", "undelete_messages", "expunge",
+        "list_cached_emails", "get_email_by_uid", "get_email_by_index",
+        "count_emails_in_folder", "get_folder_stats", "search_cached_emails",
+        "list_accounts", "set_current_account"
+    ];
+
+    for tool in tools {
+        assert!(tool["name"].is_string(), "Tool should have name");
+        assert!(tool["description"].is_string(), "Tool should have description");
+        assert!(tool["inputSchema"].is_object(), "Tool should have inputSchema");
+
+        let schema = &tool["inputSchema"];
+        assert_eq!(schema["type"], "object", "Schema type should be object");
+        assert!(schema["properties"].is_object(), "Schema should have properties");
+
+        // Verify tool name is in expected list
+        let tool_name = tool["name"].as_str().unwrap();
+        assert!(expected_tool_names.contains(&tool_name),
+                "Tool '{}' should be in expected list", tool_name);
+    }
+
+    println!("✓ tools/list returns array of {} available tools", tools.len());
     println!("✓ Each tool has name, description, and inputSchema");
-    println!("✓ All email operation tools are present");
-    println!("✓ Tool schemas are valid JSON Schema");
+    println!("✓ All expected email operation tools are present");
+    println!("✓ Tool schemas are valid JSON Schema format");
+
+    cleanup_test_db(test_name);
 }
 
 #[tokio::test]
@@ -351,7 +395,11 @@ async fn test_mcp_tools_call_search_emails() {
 #[serial]
 async fn test_mcp_error_handling_invalid_method() {
     setup_test_env();
+    let test_name = "invalid_method";
     println!("=== Testing MCP Error Handling - Invalid Method ===");
+
+    // Create test dashboard state
+    let dashboard_state = create_test_dashboard_state(test_name).await;
 
     let request = json!({
         "jsonrpc": "2.0",
@@ -360,22 +408,42 @@ async fn test_mcp_error_handling_invalid_method() {
         "params": {}
     });
 
-    // TODO: Set up test app and send request
-    // Verify error response
+    // Set up test app
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .configure(rustymail::api::mcp_http::configure_mcp_routes)
+    ).await;
 
-    // Expected response:
-    // {
-    //     "jsonrpc": "2.0",
-    //     "id": 6,
-    //     "error": {
-    //         "code": -32601,
-    //         "message": "Method not found: nonexistent/method"
-    //     }
-    // }
+    // Send request
+    let req = test::TestRequest::post()
+        .uri("/mcp")
+        .set_json(&request)
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status().is_success(), "Response should be 200 OK (errors in JSON-RPC body)");
+
+    // Verify error response structure
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(body["jsonrpc"], "2.0", "Response should be JSON-RPC 2.0");
+    assert_eq!(body["id"], 6, "Response ID should match request ID");
+    assert!(body["error"].is_object(), "Response should contain error object");
+    assert!(body["result"].is_null(), "Response should not have result field");
+
+    // Verify error details
+    let error = &body["error"];
+    assert_eq!(error["code"], -32601, "Error code should be -32601 (Method not found)");
+    assert!(error["message"].is_string(), "Error should have message");
+    let message = error["message"].as_str().unwrap();
+    assert!(message.contains("Method not found"), "Error message should mention 'Method not found'");
+    assert!(message.contains("nonexistent/method"), "Error message should include method name");
 
     println!("✓ Invalid method returns JSON-RPC error");
     println!("✓ Error code -32601 (Method not found)");
-    println!("✓ Error message includes method name");
+    println!("✓ Error message includes method name: {}", message);
+
+    cleanup_test_db(test_name);
 }
 
 #[tokio::test]
