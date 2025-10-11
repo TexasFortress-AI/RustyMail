@@ -212,11 +212,13 @@ fn test_stdio_proxy_malformed_json() {
         stdin.flush().expect("Failed to flush stdin");
     }
 
-    // Give it time to process and flush output
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    // Give it time to process and flush output (increased from 100ms to 500ms)
+    std::thread::sleep(std::time::Duration::from_millis(500));
 
-    // Terminate the child process
-    child.kill().expect("Failed to kill child process");
+    // Close stdin to signal end of input
+    drop(child.stdin.take());
+
+    // Wait for process to exit gracefully
     let output = child.wait_with_output().expect("Failed to wait for child");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -227,9 +229,9 @@ fn test_stdio_proxy_malformed_json() {
 
     // Should return JSON-RPC parse error
     assert!(stdout.contains("-32700") || stdout.contains("Parse error"),
-        "Should return JSON-RPC parse error (-32700)");
+        "Should return JSON-RPC parse error (-32700). Stdout: {}", stdout);
     assert!(stderr.contains("Error parsing JSON"),
-        "Should log parse error to stderr");
+        "Should log parse error to stderr. Stderr: {}", stderr);
 
     println!("✓ Malformed JSON handled correctly with error response");
 }
@@ -256,11 +258,13 @@ fn test_stdio_proxy_invalid_jsonrpc_structure() {
         stdin.flush().expect("Failed to flush stdin");
     }
 
-    // Give it time to process and flush output
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    // Give it time to process and flush output (increased from 100ms to 500ms)
+    std::thread::sleep(std::time::Duration::from_millis(500));
 
-    // Terminate the child process
-    child.kill().expect("Failed to kill child process");
+    // Close stdin to signal end of input
+    drop(child.stdin.take());
+
+    // Wait for process to exit gracefully
     let output = child.wait_with_output().expect("Failed to wait for child");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -269,7 +273,7 @@ fn test_stdio_proxy_invalid_jsonrpc_structure() {
 
     // Should return JSON-RPC invalid request error
     assert!(stdout.contains("-32600") || stdout.contains("Invalid Request"),
-        "Should return JSON-RPC invalid request error (-32600)");
+        "Should return JSON-RPC invalid request error (-32600). Stdout: {}", stdout);
 
     println!("✓ Invalid JSON-RPC structure handled correctly");
 }
