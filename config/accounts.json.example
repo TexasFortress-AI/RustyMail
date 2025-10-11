@@ -1,54 +1,45 @@
 {
   "version": "1.0",
-  "default_account_id": "account_1",
+  "default_account_id": "user@gmail.com",
   "accounts": [
     {
-      "id": "account_1",
-      "account_name": "Personal Gmail",
+      "display_name": "Default (user@gmail.com)",
       "email_address": "user@gmail.com",
-      "provider_type": "gmail",
+      "provider_type": "custom",
       "imap": {
-        "host": "imap.gmail.com",
+        "host": "your-host",
         "port": 993,
         "username": "user@gmail.com",
         "password": "your-app-password",
         "use_tls": true
       },
-      "smtp": {
-        "host": "smtp.gmail.com",
-        "port": 587,
-        "username": "user@gmail.com",
-        "password": "your-app-password",
-        "use_tls": true,
-        "use_starttls": true
-      },
+      "smtp": null,
       "is_active": true,
-      "created_at": "2025-10-02T16:00:00Z",
-      "updated_at": "2025-10-02T16:00:00Z"
+      "created_at": "2025-10-08T12:24:12.271211Z",
+      "updated_at": "2025-10-08T12:24:12.271211Z"
     },
     {
-      "id": "account_2",
-      "account_name": "Work Outlook",
+      "display_name": "User (user@company.com)",
       "email_address": "user@company.com",
-      "provider_type": "outlook",
+      "provider_type": "Auto-discovered",
       "imap": {
-        "host": "outlook.office365.com",
+        "host": "your-host",
         "port": 993,
         "username": "user@company.com",
         "password": "your-password",
         "use_tls": true
       },
       "smtp": {
-        "host": "smtp.office365.com",
-        "port": 587,
+        "host": "your-host",
+        "port": 465,
         "username": "user@company.com",
         "password": "your-password",
         "use_tls": true,
-        "use_starttls": true
+        "use_starttls": false
       },
       "is_active": true,
-      "created_at": "2025-10-02T16:00:00Z",
-      "updated_at": "2025-10-02T16:00:00Z"
+      "created_at": "2025-10-08T12:46:57.845681Z",
+      "updated_at": "2025-10-08T12:46:57.845682Z"
     }
   ]
 }
