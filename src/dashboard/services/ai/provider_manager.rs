@@ -75,7 +75,8 @@ impl ProviderManager {
                 name: "openai".to_string(),
                 provider_type: ProviderType::OpenAI,
                 api_key: Some(api_key.clone()),
-                model: std::env::var("OPENAI_MODEL").unwrap_or_else(|_| "gpt-4".to_string()),
+                model: std::env::var("OPENAI_MODEL")
+                    .expect("OPENAI_MODEL environment variable must be set when using OpenAI provider"),
                 max_tokens: std::env::var("OPENAI_MAX_TOKENS")
                     .ok()
                     .and_then(|v| v.parse().ok()),
@@ -100,7 +101,7 @@ impl ProviderManager {
                 provider_type: ProviderType::OpenRouter,
                 api_key: Some(api_key.clone()),
                 model: std::env::var("OPENROUTER_MODEL")
-                    .unwrap_or_else(|_| "meta-llama/llama-3.2-3b-instruct:free".to_string()),
+                    .expect("OPENROUTER_MODEL environment variable must be set when using OpenRouter provider"),
                 max_tokens: std::env::var("OPENROUTER_MAX_TOKENS")
                     .ok()
                     .and_then(|v| v.parse().ok()),
@@ -125,7 +126,7 @@ impl ProviderManager {
                 provider_type: ProviderType::Morpheus,
                 api_key: Some(api_key.clone()),
                 model: std::env::var("MORPHEUS_MODEL")
-                    .unwrap_or_else(|_| "LMR-Hermes-3-Llama-3.1-8B".to_string()),
+                    .expect("MORPHEUS_MODEL environment variable must be set when using Morpheus provider"),
                 max_tokens: std::env::var("MORPHEUS_MAX_TOKENS")
                     .ok()
                     .and_then(|v| v.parse().ok()),
@@ -151,7 +152,7 @@ impl ProviderManager {
                 provider_type: ProviderType::Ollama,
                 api_key: None, // Ollama doesn't require an API key for local instances
                 model: std::env::var("OLLAMA_MODEL")
-                    .unwrap_or_else(|_| "qwen2.5:3b".to_string()),
+                    .expect("OLLAMA_MODEL environment variable must be set when using Ollama provider"),
                 max_tokens: std::env::var("OLLAMA_MAX_TOKENS")
                     .ok()
                     .and_then(|v| v.parse().ok()),
@@ -176,7 +177,7 @@ impl ProviderManager {
                 provider_type: ProviderType::Anthropic,
                 api_key: Some(api_key.clone()),
                 model: std::env::var("ANTHROPIC_MODEL")
-                    .unwrap_or_else(|_| "claude-sonnet-4-5".to_string()),
+                    .expect("ANTHROPIC_MODEL environment variable must be set when using Anthropic provider"),
                 max_tokens: None,
                 temperature: None,
                 priority: 5,
@@ -195,7 +196,7 @@ impl ProviderManager {
                 provider_type: ProviderType::DeepSeek,
                 api_key: Some(api_key.clone()),
                 model: std::env::var("DEEPSEEK_MODEL")
-                    .unwrap_or_else(|_| "deepseek-chat".to_string()),
+                    .expect("DEEPSEEK_MODEL environment variable must be set when using DeepSeek provider"),
                 max_tokens: None,
                 temperature: None,
                 priority: 6,
@@ -214,7 +215,7 @@ impl ProviderManager {
                 provider_type: ProviderType::XAI,
                 api_key: Some(api_key.clone()),
                 model: std::env::var("XAI_MODEL")
-                    .unwrap_or_else(|_| "grok-beta".to_string()),
+                    .expect("XAI_MODEL environment variable must be set when using xAI provider"),
                 max_tokens: None,
                 temperature: None,
                 priority: 7,
@@ -233,7 +234,7 @@ impl ProviderManager {
                 provider_type: ProviderType::Gemini,
                 api_key: Some(api_key.clone()),
                 model: std::env::var("GEMINI_MODEL")
-                    .unwrap_or_else(|_| "gemini-2.5-flash".to_string()),
+                    .expect("GEMINI_MODEL environment variable must be set when using Gemini provider"),
                 max_tokens: None,
                 temperature: None,
                 priority: 8,
@@ -252,7 +253,7 @@ impl ProviderManager {
                 provider_type: ProviderType::Mistral,
                 api_key: Some(api_key.clone()),
                 model: std::env::var("MISTRAL_MODEL")
-                    .unwrap_or_else(|_| "mistral-large-latest".to_string()),
+                    .expect("MISTRAL_MODEL environment variable must be set when using Mistral provider"),
                 max_tokens: None,
                 temperature: None,
                 priority: 9,
@@ -271,7 +272,7 @@ impl ProviderManager {
                 provider_type: ProviderType::Together,
                 api_key: Some(api_key.clone()),
                 model: std::env::var("TOGETHER_MODEL")
-                    .unwrap_or_else(|_| "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo".to_string()),
+                    .expect("TOGETHER_MODEL environment variable must be set when using Together provider"),
                 max_tokens: None,
                 temperature: None,
                 priority: 10,
@@ -292,7 +293,7 @@ impl ProviderManager {
                     provider_type: ProviderType::Azure,
                     api_key: Some(api_key.clone()),
                     model: std::env::var("AZURE_OPENAI_DEPLOYMENT")
-                        .unwrap_or_else(|_| "gpt-4".to_string()),
+                        .expect("AZURE_OPENAI_DEPLOYMENT environment variable must be set when using Azure OpenAI provider"),
                     max_tokens: None,
                     temperature: None,
                     priority: 11,
