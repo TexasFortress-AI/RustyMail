@@ -4,6 +4,22 @@
 use actix_web::{test, web, App};
 use serde_json::json;
 use serial_test::serial;
+use std::sync::Arc;
+use std::fs;
+use tokio::sync::Mutex as TokioMutex;
+use sqlx::SqlitePool;
+use async_trait::async_trait;
+
+use rustymail::dashboard::services::{
+    DashboardState, ClientManager, MetricsService, CacheService, CacheConfig,
+    ConfigService, AiService, EmailService, SyncService, AccountService,
+    EventBus
+};
+use rustymail::dashboard::api::sse::SseManager;
+use rustymail::config::Settings;
+use rustymail::connection_pool::{ConnectionPool, ConnectionFactory, PoolConfig};
+use rustymail::prelude::CloneableImapSessionFactory;
+use rustymail::imap::{ImapClient, AsyncImapSessionWrapper, ImapError};
 
 /// Initialize test environment with required environment variables
 fn setup_test_env() {
@@ -14,16 +30,155 @@ fn setup_test_env() {
     std::env::set_var("SSE_PORT", "9438");
     std::env::set_var("DASHBOARD_PORT", "9439");
     std::env::set_var("RUSTYMAIL_API_KEY", "test-rustymail-key-2024");
-    std::env::set_var("CACHE_DATABASE_URL", "sqlite::memory:");
     std::env::set_var("MCP_BACKEND_URL", "http://localhost:9437/mcp");
     std::env::set_var("MCP_TIMEOUT", "30");
+}
+
+/// Helper function to create a test DashboardState with all required services
+async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardState> {
+    use std::time::Duration;
+
+    // Create unique test database path
+    let db_file_path = format!("test_data/mcp_{}_test.db", test_name);
+    let db_url = format!("sqlite:{}", db_file_path);
+
+    // Clean up old test files
+    let _ = fs::remove_file(&db_file_path);
+    let _ = fs::remove_file(format!("{}-shm", db_file_path));
+    let _ = fs::remove_file(format!("{}-wal", db_file_path));
+
+    // Create test data directory
+    fs::create_dir_all("test_data").unwrap();
+
+    // Create database file (required before SqlitePool::connect)
+    fs::File::create(&db_file_path).unwrap();
+
+    // Connect to database and run migrations
+    let pool = SqlitePool::connect(&db_url).await.unwrap();
+    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
+    // Create services
+    let metrics_interval_duration = Duration::from_secs(5);
+    let client_manager = Arc::new(ClientManager::new(metrics_interval_duration));
+    let metrics_service = Arc::new(MetricsService::new(metrics_interval_duration));
+    let config_service = Arc::new(ConfigService::new());
+
+    // Initialize Cache Service
+    let cache_config = CacheConfig {
+        database_url: db_url.clone(),
+        max_memory_items: 100,
+        max_cache_size_mb: 100,
+        max_email_age_days: 30,
+        sync_interval_seconds: 300,
+    };
+
+    let mut cache_service = CacheService::new(cache_config);
+    cache_service.initialize().await.unwrap();
+    let cache_service = Arc::new(cache_service);
+
+    // Initialize Account Service
+    let accounts_config_path = format!("test_data/mcp_{}_accounts.json", test_name);
+    let _ = fs::remove_file(&accounts_config_path); // Clean up old config
+
+    let mut account_service_temp = AccountService::new(&accounts_config_path);
+    let account_db_pool = SqlitePool::connect(&db_url).await.unwrap();
+    account_service_temp.initialize(account_db_pool).await.unwrap();
+    let account_service = Arc::new(TokioMutex::new(account_service_temp));
+
+    // Create mock IMAP session factory (returns a function that creates mock clients)
+    let mock_factory: rustymail::imap::session::ImapClientFactory = Box::new(|| {
+        Box::pin(async {
+            // Return error for mock - tests don't need real IMAP
+            Err(rustymail::imap::ImapError::Connection("Mock IMAP client".to_string()))
+        })
+    });
+    let imap_session_factory = CloneableImapSessionFactory::new(mock_factory);
+
+    // Create mock connection pool with mock factory
+    struct MockConnectionFactory;
+
+    #[async_trait]
+    impl ConnectionFactory for MockConnectionFactory {
+        async fn create(&self) -> Result<Arc<ImapClient<AsyncImapSessionWrapper>>, ImapError> {
+            Err(ImapError::Connection("Mock connection pool".to_string()))
+        }
+
+        async fn validate(&self, _client: &Arc<ImapClient<AsyncImapSessionWrapper>>) -> bool {
+            true
+        }
+    }
+
+    let connection_pool = ConnectionPool::new(
+        Arc::new(MockConnectionFactory),
+        PoolConfig::default()
+    );
+
+    // Initialize Email Service
+    let email_service = Arc::new(
+        EmailService::new(imap_session_factory.clone(), connection_pool.clone())
+            .with_cache(cache_service.clone())
+            .with_account_service(account_service.clone())
+    );
+
+    // Initialize Sync Service
+    let sync_service = Arc::new(SyncService::new(
+        imap_session_factory.clone(),
+        cache_service.clone(),
+        account_service.clone(),
+        300,
+    ));
+
+    // Initialize AI Service (mock)
+    let ai_service = Arc::new(AiService::new_mock());
+
+    // Create event bus
+    let event_bus = Arc::new(EventBus::new());
+
+    // Create SSE manager
+    let mut sse_manager = SseManager::new(metrics_service.clone(), client_manager.clone());
+    sse_manager.set_event_bus(Arc::clone(&event_bus));
+    let sse_manager = Arc::new(sse_manager);
+
+    // Create config
+    let config = web::Data::new(Settings::default());
+
+    web::Data::new(DashboardState {
+        client_manager,
+        metrics_service,
+        cache_service,
+        config_service,
+        ai_service,
+        email_service,
+        sync_service,
+        account_service,
+        sse_manager,
+        event_bus,
+        health_service: None,
+        config,
+        imap_session_factory,
+        connection_pool,
+    })
+}
+
+/// Helper function to clean up test database files
+fn cleanup_test_db(test_name: &str) {
+    let db_path = format!("test_data/mcp_{}_test.db", test_name);
+    let _ = fs::remove_file(&db_path);
+    let _ = fs::remove_file(format!("{}-shm", db_path));
+    let _ = fs::remove_file(format!("{}-wal", db_path));
+    let accounts_path = format!("test_data/mcp_{}_accounts.json", test_name);
+    let _ = fs::remove_file(&accounts_path);
 }
 
 #[tokio::test]
 #[serial]
 async fn test_mcp_initialize_handshake() {
     setup_test_env();
+    let test_name = "initialize";
     println!("=== Testing MCP Initialize Handshake ===");
+
+    // Create test dashboard state
+    let dashboard_state = create_test_dashboard_state(test_name).await;
 
     // Create a test request for initialize
     let request = json!({
@@ -40,35 +195,41 @@ async fn test_mcp_initialize_handshake() {
         }
     });
 
-    // TODO: Set up test app with DashboardState
-    // let app = test::init_service(
-    //     App::new()
-    //         .app_data(dashboard_state.clone())
-    //         .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    // ).await;
+    // Set up test app with Dashboard State and MCP routes
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .configure(rustymail::api::mcp_http::configure_mcp_routes)
+    ).await;
 
-    // TODO: Send request and verify response
-    // let req = test::TestRequest::post()
-    //     .uri("/mcp")
-    //     .set_json(&request)
-    //     .to_request();
+    // Send request and verify response
+    let req = test::TestRequest::post()
+        .uri("/mcp")
+        .set_json(&request)
+        .to_request();
 
-    // let resp = test::call_service(&app, req).await;
-    // assert!(resp.status().is_success());
+    let resp = test::call_service(&app, req).await;
+    assert!(resp.status().is_success(), "Initialize request should succeed");
 
-    // TODO: Verify response structure
-    // let body: serde_json::Value = test::read_body_json(resp).await;
-    // assert_eq!(body["jsonrpc"], "2.0");
-    // assert_eq!(body["id"], 1);
-    // assert!(body["result"]["protocolVersion"].is_string());
-    // assert!(body["result"]["serverInfo"]["name"].is_string());
-    // assert_eq!(body["result"]["serverInfo"]["name"], "rustymail-mcp");
+    // Verify response structure
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(body["jsonrpc"], "2.0", "Response should be JSON-RPC 2.0");
+    assert_eq!(body["id"], 1, "Response ID should match request ID");
+    assert!(body["result"]["protocolVersion"].is_string(), "Protocol version should be present");
+    assert_eq!(body["result"]["protocolVersion"], "2025-03-26", "Protocol version should match");
+    assert!(body["result"]["serverInfo"]["name"].is_string(), "Server name should be present");
+    assert_eq!(body["result"]["serverInfo"]["name"], "rustymail-mcp", "Server name should be rustymail-mcp");
+    assert!(body["result"]["serverInfo"]["version"].is_string(), "Server version should be present");
+    assert!(body["result"]["capabilities"].is_object(), "Capabilities should be present");
+    assert!(body["result"]["_meta"]["sessionId"].is_string(), "Session ID should be generated");
 
     println!("✓ Initialize handshake returns correct JSON-RPC response");
-    println!("✓ Response includes protocol version");
-    println!("✓ Response includes server info");
+    println!("✓ Response includes protocol version: {}", body["result"]["protocolVersion"]);
+    println!("✓ Response includes server info: {}", body["result"]["serverInfo"]["name"]);
     println!("✓ Response includes capabilities");
-    println!("✓ Session ID is generated and returned in _meta");
+    println!("✓ Session ID is generated and returned in _meta: {}", body["result"]["_meta"]["sessionId"]);
+
+    cleanup_test_db(test_name);
 }
 
 #[tokio::test]
