@@ -75,7 +75,7 @@ pub enum SyncStatus {
 }
 
 pub struct CacheService {
-    db_pool: Option<SqlitePool>,
+    pub db_pool: Option<SqlitePool>,
     memory_cache: Arc<RwLock<LruCache<String, CachedEmail>>>,
     folder_cache: Arc<RwLock<HashMap<String, CachedFolder>>>,
     config: CacheConfig,

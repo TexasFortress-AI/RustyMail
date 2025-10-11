@@ -14,4 +14,5 @@ pub mod dashboard_config;
 // pub mod dashboard_api_handlers; // Disabled
 // pub mod dashboard_sse_streaming; // Disabled
 pub mod hardcoded_detection;
-pub mod ai_service_tests; 
+pub mod ai_service_tests;
+pub mod cache_service_tests; 
