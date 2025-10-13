@@ -231,35 +231,43 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>) ->
             let tool_name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
             let tool_params = params.get("arguments").cloned().unwrap_or(json!({}));
 
-            // Call the actual MCP handler through the dashboard API
-            let mcp_request = json!({
-                "tool": tool_name,
-                "parameters": tool_params
-            });
+            // Call the tool execution logic directly to get the result
+            let result = crate::dashboard::api::handlers::execute_mcp_tool_inner(
+                state.get_ref(),
+                tool_name,
+                tool_params
+            ).await;
 
-            match crate::dashboard::api::handlers::execute_mcp_tool(
-                state.clone(),
-                web::Json(mcp_request)
-            ).await {
-                Ok(_resp) => {
+            // Format result for MCP protocol
+            match result.get("success").and_then(|v| v.as_bool()) {
+                Some(true) => {
+                    // Success - format data as MCP content
+                    let data = result.get("data").cloned().unwrap_or(json!(null));
+                    let data_str = serde_json::to_string_pretty(&data).unwrap_or_else(|_| "null".to_string());
+
                     json!({
                         "jsonrpc": "2.0",
                         "id": request_id,
                         "result": {
                             "content": [{
                                 "type": "text",
-                                "text": format!("Tool {} executed successfully", tool_name)
+                                "text": data_str
                             }]
                         }
                     })
                 },
-                Err(e) => {
+                Some(false) | None => {
+                    // Error - extract error message
+                    let error_msg = result.get("error")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("Tool execution failed");
+
                     json!({
                         "jsonrpc": "2.0",
                         "id": request_id,
                         "error": {
                             "code": -32603,
-                            "message": e.to_string()
+                            "message": error_msg.to_string()
                         }
                     })
                 }

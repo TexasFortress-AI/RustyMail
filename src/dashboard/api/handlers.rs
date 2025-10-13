@@ -668,35 +668,32 @@ async fn validate_account_exists(
     Ok(account_id.to_string())
 }
 
-// Handler for executing MCP tools
-pub async fn execute_mcp_tool(
-    state: web::Data<DashboardState>,
-    req: web::Json<serde_json::Value>,
-) -> Result<impl Responder, ApiError> {
-    let tool_name = req.get("tool")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| ApiError::BadRequest("Missing tool name".to_string()))?;
-
-    let params = req.get("parameters")
-        .cloned()
-        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
-
+/// Inner function that executes MCP tools and returns raw JSON result
+/// Can be called from both HTTP handler and MCP protocol handler
+pub async fn execute_mcp_tool_inner(
+    state: &DashboardState,
+    tool_name: &str,
+    params: serde_json::Value,
+) -> serde_json::Value {
     debug!("Executing MCP tool: {} with params: {:?}", tool_name, params);
 
     // Get the email service from the state
     let email_service = state.email_service.clone();
 
+    // Create a temporary web::Data wrapper for helper functions that need it
+    let state_data = web::Data::new(state.clone());
+
     // Execute the appropriate tool
     let result = match tool_name {
         "list_folders" => {
             // Get account ID from request or use default
-            let account_id = match get_account_id_to_use(&params, &state).await {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return Ok(HttpResponse::Ok().json(serde_json::json!({
+                Err(e) => return serde_json::json!({
                     "success": false,
                     "error": format!("Failed to determine account: {}", e),
                     "tool": tool_name
-                })))
+                })
             };
 
             match email_service.list_folders_for_account(&account_id).await {
@@ -718,13 +715,13 @@ pub async fn execute_mcp_tool(
         }
         "list_folders_hierarchical" => {
             // Get account ID from request or use default
-            let account_id = match get_account_id_to_use(&params, &state).await {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return Ok(HttpResponse::Ok().json(serde_json::json!({
+                Err(e) => return serde_json::json!({
                     "success": false,
                     "error": format!("Failed to determine account: {}", e),
                     "tool": tool_name
-                })))
+                })
             };
 
             // For now, just use regular list_folders since hierarchical is not implemented
@@ -755,13 +752,13 @@ pub async fn execute_mcp_tool(
                 .unwrap_or("ALL");
 
             // Get account ID from request or use default
-            let account_id = match get_account_id_to_use(&params, &state).await {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return Ok(HttpResponse::Ok().json(serde_json::json!({
+                Err(e) => return serde_json::json!({
                     "success": false,
                     "error": format!("Failed to determine account: {}", e),
                     "tool": tool_name
-                })))
+                })
             };
 
             // search_emails returns UIDs, not full emails
@@ -794,21 +791,31 @@ pub async fn execute_mcp_tool(
             }
         }
         "fetch_emails_with_mime" => {
-            let folder = params.get("folder")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'folder' parameter".to_string()))?;
-            let uid = params.get("uid")
-                .and_then(|v| v.as_u64())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'uid' parameter".to_string()))? as u32;
+            let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                Some(f) => f,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'folder' parameter",
+                    "tool": tool_name
+                })
+            };
+            let uid = match params.get("uid").and_then(|v| v.as_u64()) {
+                Some(u) => u as u32,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'uid' parameter",
+                    "tool": tool_name
+                })
+            };
 
             // Get account ID from request or use default
-            let account_id = match get_account_id_to_use(&params, &state).await {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return Ok(HttpResponse::Ok().json(serde_json::json!({
+                Err(e) => return serde_json::json!({
                     "success": false,
                     "error": format!("Failed to determine account: {}", e),
                     "tool": tool_name
-                })))
+                })
             };
 
             // fetch_emails expects an array of UIDs
@@ -849,15 +856,15 @@ pub async fn execute_mcp_tool(
                 .unwrap_or(true);  // Default to preview mode for token efficiency
 
             // Get account ID from request or use default
-            match get_account_id_to_use(&params, &state).await {
+            match get_account_id_to_use(&params, &state_data).await {
                 Ok(account_id) => {
                     let account_email = match validate_account_exists(&account_id, &state).await {
                         Ok(id) => id,
                         Err(e) => {
-                            return Ok(HttpResponse::Ok().json(serde_json::json!({
+                            return serde_json::json!({
                                 "success": false,
                                 "error": format!("Failed to lookup account: {}", e)
-                            })));
+                            });
                         }
                     };
                     match state.cache_service.get_cached_emails_for_account(folder, &account_email, limit, offset, preview_mode).await {
@@ -897,15 +904,15 @@ pub async fn execute_mcp_tool(
                 .map(|v| v as u32);
 
             // Get account ID from request or use default
-            match get_account_id_to_use(&params, &state).await {
+            match get_account_id_to_use(&params, &state_data).await {
                 Ok(account_id) => {
                     let account_email = match validate_account_exists(&account_id, &state).await {
                         Ok(id) => id,
                         Err(e) => {
-                            return Ok(HttpResponse::Ok().json(serde_json::json!({
+                            return serde_json::json!({
                                 "success": false,
                                 "error": format!("Failed to lookup account: {}", e)
-                            })));
+                            });
                         }
                     };
                     if let Some(uid) = uid {
@@ -958,15 +965,15 @@ pub async fn execute_mcp_tool(
                 .map(|v| v as usize);
 
             // Get account ID from request or use default
-            match get_account_id_to_use(&params, &state).await {
+            match get_account_id_to_use(&params, &state_data).await {
                 Ok(account_id) => {
                     let account_email = match validate_account_exists(&account_id, &state).await {
                         Ok(id) => id,
                         Err(e) => {
-                            return Ok(HttpResponse::Ok().json(serde_json::json!({
+                            return serde_json::json!({
                                 "success": false,
                                 "error": format!("Failed to lookup account: {}", e)
-                            })));
+                            });
                         }
                     };
                     if let Some(index) = index {
@@ -1018,15 +1025,15 @@ pub async fn execute_mcp_tool(
                 .unwrap_or("INBOX");
 
             // Get account ID from request or use default
-            match get_account_id_to_use(&params, &state).await {
+            match get_account_id_to_use(&params, &state_data).await {
                 Ok(account_id) => {
                     let account_email = match validate_account_exists(&account_id, &state).await {
                         Ok(id) => id,
                         Err(e) => {
-                            return Ok(HttpResponse::Ok().json(serde_json::json!({
+                            return serde_json::json!({
                                 "success": false,
                                 "error": format!("Failed to lookup account: {}", e)
-                            })));
+                            });
                         }
                     };
 
@@ -1065,15 +1072,15 @@ pub async fn execute_mcp_tool(
                 .unwrap_or("INBOX");
 
             // Get account ID from request or use default
-            match get_account_id_to_use(&params, &state).await {
+            match get_account_id_to_use(&params, &state_data).await {
                 Ok(account_id) => {
                     let account_email = match validate_account_exists(&account_id, &state).await {
                         Ok(id) => id,
                         Err(e) => {
-                            return Ok(HttpResponse::Ok().json(serde_json::json!({
+                            return serde_json::json!({
                                 "success": false,
                                 "error": format!("Failed to lookup account: {}", e)
-                            })));
+                            });
                         }
                     };
 
@@ -1115,15 +1122,15 @@ pub async fn execute_mcp_tool(
                 .unwrap_or(20);
 
             // Get account ID from request or use default
-            match get_account_id_to_use(&params, &state).await {
+            match get_account_id_to_use(&params, &state_data).await {
                 Ok(account_id) => {
                     let account_email = match validate_account_exists(&account_id, &state).await {
                         Ok(id) => id,
                         Err(e) => {
-                            return Ok(HttpResponse::Ok().json(serde_json::json!({
+                            return serde_json::json!({
                                 "success": false,
                                 "error": format!("Failed to lookup account: {}", e)
-                            })));
+                            });
                         }
                     };
 
@@ -1165,15 +1172,30 @@ pub async fn execute_mcp_tool(
             }
         }
         "atomic_move_message" => {
-            let uid = params.get("uid")
-                .and_then(|v| v.as_u64())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'uid' parameter".to_string()))? as u32;
-            let from_folder = params.get("from_folder")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'from_folder' parameter".to_string()))?;
-            let to_folder = params.get("to_folder")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'to_folder' parameter".to_string()))?;
+            let uid = match params.get("uid").and_then(|v| v.as_u64()) {
+                Some(u) => u as u32,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'uid' parameter",
+                    "tool": tool_name
+                })
+            };
+            let from_folder = match params.get("from_folder").and_then(|v| v.as_str()) {
+                Some(f) => f,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'from_folder' parameter",
+                    "tool": tool_name
+                })
+            };
+            let to_folder = match params.get("to_folder").and_then(|v| v.as_str()) {
+                Some(t) => t,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'to_folder' parameter",
+                    "tool": tool_name
+                })
+            };
 
             match email_service.atomic_move_message(uid, from_folder, to_folder).await {
                 Ok(_) => {
@@ -1197,22 +1219,37 @@ pub async fn execute_mcp_tool(
             }
         }
         "atomic_batch_move" => {
-            let uids = params.get("uids")
-                .and_then(|v| v.as_array())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'uids' parameter".to_string()))?
-                .iter()
-                .filter_map(|v| v.as_u64())
-                .map(|v| v as u32)
-                .collect::<Vec<u32>>();
-            let from_folder = params.get("from_folder")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'from_folder' parameter".to_string()))?;
-            let to_folder = params.get("to_folder")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'to_folder' parameter".to_string()))?;
+            let uids = match params.get("uids").and_then(|v| v.as_array()) {
+                Some(arr) => arr.iter().filter_map(|v| v.as_u64()).map(|v| v as u32).collect::<Vec<u32>>(),
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'uids' parameter",
+                    "tool": tool_name
+                })
+            };
+            let from_folder = match params.get("from_folder").and_then(|v| v.as_str()) {
+                Some(f) => f,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'from_folder' parameter",
+                    "tool": tool_name
+                })
+            };
+            let to_folder = match params.get("to_folder").and_then(|v| v.as_str()) {
+                Some(t) => t,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'to_folder' parameter",
+                    "tool": tool_name
+                })
+            };
 
             if uids.is_empty() {
-                return Err(ApiError::BadRequest("'uids' parameter cannot be empty".to_string()));
+                return serde_json::json!({
+                    "success": false,
+                    "error": "'uids' parameter cannot be empty",
+                    "tool": tool_name
+                });
             }
 
             match email_service.atomic_batch_move(&uids, from_folder, to_folder).await {
@@ -1238,19 +1275,29 @@ pub async fn execute_mcp_tool(
             }
         }
         "mark_as_deleted" => {
-            let uids = params.get("uids")
-                .and_then(|v| v.as_array())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'uids' parameter".to_string()))?
-                .iter()
-                .filter_map(|v| v.as_u64())
-                .map(|v| v as u32)
-                .collect::<Vec<u32>>();
-            let folder = params.get("folder")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'folder' parameter".to_string()))?;
+            let uids = match params.get("uids").and_then(|v| v.as_array()) {
+                Some(arr) => arr.iter().filter_map(|v| v.as_u64()).map(|v| v as u32).collect::<Vec<u32>>(),
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'uids' parameter",
+                    "tool": tool_name
+                })
+            };
+            let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                Some(f) => f,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'folder' parameter",
+                    "tool": tool_name
+                })
+            };
 
             if uids.is_empty() {
-                return Err(ApiError::BadRequest("'uids' parameter cannot be empty".to_string()));
+                return serde_json::json!({
+                    "success": false,
+                    "error": "'uids' parameter cannot be empty",
+                    "tool": tool_name
+                });
             }
 
             match email_service.mark_as_deleted(folder, &uids).await {
@@ -1275,19 +1322,29 @@ pub async fn execute_mcp_tool(
             }
         }
         "delete_messages" => {
-            let uids = params.get("uids")
-                .and_then(|v| v.as_array())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'uids' parameter".to_string()))?
-                .iter()
-                .filter_map(|v| v.as_u64())
-                .map(|v| v as u32)
-                .collect::<Vec<u32>>();
-            let folder = params.get("folder")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'folder' parameter".to_string()))?;
+            let uids = match params.get("uids").and_then(|v| v.as_array()) {
+                Some(arr) => arr.iter().filter_map(|v| v.as_u64()).map(|v| v as u32).collect::<Vec<u32>>(),
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'uids' parameter",
+                    "tool": tool_name
+                })
+            };
+            let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                Some(f) => f,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'folder' parameter",
+                    "tool": tool_name
+                })
+            };
 
             if uids.is_empty() {
-                return Err(ApiError::BadRequest("'uids' parameter cannot be empty".to_string()));
+                return serde_json::json!({
+                    "success": false,
+                    "error": "'uids' parameter cannot be empty",
+                    "tool": tool_name
+                });
             }
 
             match email_service.delete_messages(folder, &uids).await {
@@ -1312,19 +1369,29 @@ pub async fn execute_mcp_tool(
             }
         }
         "undelete_messages" => {
-            let uids = params.get("uids")
-                .and_then(|v| v.as_array())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'uids' parameter".to_string()))?
-                .iter()
-                .filter_map(|v| v.as_u64())
-                .map(|v| v as u32)
-                .collect::<Vec<u32>>();
-            let folder = params.get("folder")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'folder' parameter".to_string()))?;
+            let uids = match params.get("uids").and_then(|v| v.as_array()) {
+                Some(arr) => arr.iter().filter_map(|v| v.as_u64()).map(|v| v as u32).collect::<Vec<u32>>(),
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'uids' parameter",
+                    "tool": tool_name
+                })
+            };
+            let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                Some(f) => f,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'folder' parameter",
+                    "tool": tool_name
+                })
+            };
 
             if uids.is_empty() {
-                return Err(ApiError::BadRequest("'uids' parameter cannot be empty".to_string()));
+                return serde_json::json!({
+                    "success": false,
+                    "error": "'uids' parameter cannot be empty",
+                    "tool": tool_name
+                });
             }
 
             match email_service.undelete_messages(folder, &uids).await {
@@ -1349,9 +1416,14 @@ pub async fn execute_mcp_tool(
             }
         }
         "expunge" => {
-            let folder = params.get("folder")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'folder' parameter".to_string()))?;
+            let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                Some(f) => f,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'folder' parameter",
+                    "tool": tool_name
+                })
+            };
 
             match email_service.expunge(folder).await {
                 Ok(_) => {
@@ -1395,9 +1467,14 @@ pub async fn execute_mcp_tool(
         }
         "set_current_account" => {
             // Set the current account context
-            let account_id = params.get("account_id")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| ApiError::BadRequest("Missing 'account_id' parameter".to_string()))?;
+            let account_id = match params.get("account_id").and_then(|v| v.as_str()) {
+                Some(id) => id,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'account_id' parameter",
+                    "tool": tool_name
+                })
+            };
             
             // Validate that the account exists
             let account_service = state.account_service.lock().await;
@@ -1434,6 +1511,25 @@ pub async fn execute_mcp_tool(
             })
         }
     };
+
+    result
+}
+
+// HTTP Handler for executing MCP tools - wraps execute_mcp_tool_inner
+pub async fn execute_mcp_tool(
+    state: web::Data<DashboardState>,
+    req: web::Json<serde_json::Value>,
+) -> Result<impl Responder, ApiError> {
+    let tool_name = req.get("tool")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ApiError::BadRequest("Missing tool name".to_string()))?;
+
+    let params = req.get("parameters")
+        .cloned()
+        .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+
+    // Call the inner function to get the result
+    let result = execute_mcp_tool_inner(state.get_ref(), tool_name, params).await;
 
     Ok(HttpResponse::Ok().json(result))
 }
