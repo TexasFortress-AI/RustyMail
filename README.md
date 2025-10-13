@@ -7,7 +7,7 @@
 [![Crates.io](https://img.shields.io/crates/v/rustymail)](https://crates.io/crates/rustymail)
 [![Documentation](https://docs.rs/rustymail/badge.svg)](https://docs.rs/rustymail)
 
-A high-performance, type-safe IMAP API server written in Rust, supporting REST, MCP Stdio, and MCP SSE interfaces.
+A high-performance, type-safe IMAP email client and API server written in Rust, with integrated web dashboard and Model Context Protocol (MCP) support.
 
 ---
 
@@ -15,15 +15,18 @@ A high-performance, type-safe IMAP API server written in Rust, supporting REST, 
 
 - 🚀 **High Performance**: Built with Rust for speed and efficiency
 - 🔒 **Type Safety**: Leverages Rust's type system for reliability
-- 📧 **Full IMAP Support**: Access all folders and messages
-- 🔄 **Multiple Interfaces**: REST API, MCP stdio, MCP SSE
-- 👥 **Multi-Account Support**: Manage and switch between multiple email accounts
-- 🔐 **Secure**: TLS support and authentication
-- 📊 **Monitoring**: Metrics and logging
-- 🧪 **Comprehensive Testing**: Unit, integration, and performance tests
+- 📧 **Full IMAP Support**: Access all folders and messages with caching
+- 🔄 **Multiple Interfaces**: REST API, Web Dashboard, MCP Stdio, MCP HTTP
+- 👥 **Multi-Account Support**: Manage multiple email accounts with file-based configuration
+- 💾 **Smart Caching**: Two-tier cache (SQLite + in-memory LRU) for fast email access
+- 🎨 **Modern Web UI**: React-based dashboard with real-time updates
+- 🤖 **AI Integration**: Built-in chatbot with support for 10+ AI providers
+- 🔐 **Secure**: TLS support and API key authentication
+- 📊 **Monitoring**: Real-time metrics via SSE
+- 🧪 **Comprehensive Testing**: Unit, integration, and E2E tests
 - 🧩 **Extensible**: Easily add new MCP tools
-- ⚡ **Real-time Streaming**: Via SSE interface
-- 🛠️ **MCP Protocol**: Full JSON-RPC 2.0 support over multiple transports
+- 🛠️ **MCP Protocol**: Full JSON-RPC 2.0 support over stdio and HTTP transports
+- ⚡ **Process Management**: PM2 integration for reliable service management
 
 ---
 
@@ -31,34 +34,84 @@ A high-performance, type-safe IMAP API server written in Rust, supporting REST, 
 
 ### Prerequisites
 
-- Rust 1.70+
-- OpenSSL or compatible SSL library
-- An IMAP server account
+- **Rust 1.70+** - [Install from rust-lang.org](https://rust-lang.org)
+- **Node.js 18+** (for dashboard) - [Install from nodejs.org](https://nodejs.org)
+- **PM2** (optional, for process management) - `npm install -g pm2`
+- **OpenSSL** or compatible SSL library
+- An IMAP email account (Gmail, Outlook, etc.)
 
 ### Installation
 
 ```bash
 git clone https://github.com/rangersdo/rustymail.git
 cd rustymail
+
+# Copy and configure environment variables
 cp .env.example .env
-# Edit .env with your IMAP server details
-cargo build --release
+# Edit .env with your configuration (ports, API keys, etc.)
+
+# Build all components
+cargo build --release --bin rustymail-server
+cargo build --release --bin rustymail-mcp-stdio
+
+# Build frontend dashboard
+cd frontend/rustymail-app-main
+npm install
+npm run build
+cd ../..
 ```
 
-### Running
+### Running with PM2 (Recommended)
 
-- **REST API (default)** (port 9437):
+PM2 provides reliable process management with auto-restart on crashes:
+
+```bash
+# Start all services (backend + frontend)
+pm2 start ecosystem.config.js
+
+# Save process list (survives reboots)
+pm2 save
+
+# View status
+pm2 status
+
+# View logs
+pm2 logs
+
+# Restart services
+pm2 restart all
+
+# Stop services
+pm2 stop all
+```
+
+### Running Manually
+
+- **Backend Server** (REST API + MCP HTTP, port 9437):
   ```bash
-  cargo run --release
+  ./target/release/rustymail-server
   ```
-- **MCP Stdio**:
+
+- **Frontend Dashboard** (port 9439):
   ```bash
-  cargo run --release -- --mcp-stdio
+  cd frontend/rustymail-app-main
+  npm run dev
   ```
-- **MCP SSE**:
+
+- **MCP Stdio Adapter** (for Claude Desktop integration):
   ```bash
-  cargo run --release -- --mcp-sse
+  ./target/release/rustymail-mcp-stdio
   ```
+
+### Quick Rebuild Command
+
+Use the Claude Code slash command for complete rebuild:
+
+```bash
+/rebuild-all
+```
+
+This command stops services, rebuilds all components, and restarts with PM2.
 
 ---
 
@@ -176,22 +229,110 @@ RustyMail implements the Model Context Protocol (MCP) over stdio and Streamable 
 - `-32004` Email not found
 - `-32010` IMAP operation failed
 
-### Supported Methods
+### Supported MCP Tools
 
-#### Email Operations
-- `imap/listFolders` - List all email folders
-- `imap/createFolder` - Create a new folder
-- `imap/deleteFolder` - Delete a folder
-- `imap/renameFolder` - Rename a folder
-- `imap/searchEmails` - Search for emails
-- `imap/fetchEmails` - Fetch email content
-- `imap/moveEmail` - Move emails between folders
-
-#### Account Management (NEW)
+#### Account Management
 - `list_accounts` - List all configured email accounts
-- `set_current_account` - Set the current account for operations
+- `set_current_account` - Set the active account for operations
 
-See [Account Tools Quick Start](docs/ACCOUNT_TOOLS_QUICKSTART.md) for details.
+#### Folder Operations
+- `list_folders` - List all folders for current account
+- `list_folders_hierarchical` - Get folder tree structure
+
+#### Email Operations (IMAP)
+- `search_emails` - Search emails with IMAP queries
+- `fetch_emails_with_mime` - Fetch emails with full MIME content
+- `atomic_move_message` - Move single message atomically
+- `atomic_batch_move` - Batch move multiple messages
+- `mark_as_deleted` - Mark emails for deletion
+- `delete_messages` - Permanently delete messages
+- `undelete_messages` - Restore deleted messages
+- `expunge` - Permanently remove deleted messages
+
+#### Email Operations (Cache)
+- `list_cached_emails` - List emails from local cache (fast)
+- `get_email_by_uid` - Get specific email by UID
+- `get_email_by_index` - Get email by index in folder
+- `count_emails_in_folder` - Get email count for folder
+- `get_folder_stats` - Get folder statistics (total, unread, size)
+- `search_cached_emails` - Search cached emails (fast, local)
+
+**Note:** Cache operations are significantly faster as they query the local SQLite database instead of the remote IMAP server.
+
+---
+
+## Claude Desktop Integration
+
+RustyMail can be integrated with Claude Desktop as an MCP server, allowing Claude to access your emails directly.
+
+### Setup
+
+1. **Build the MCP stdio adapter** (if not already built):
+   ```bash
+   cargo build --release --bin rustymail-mcp-stdio
+   ```
+
+2. **Ensure backend server is running**:
+   ```bash
+   # Using PM2 (recommended)
+   pm2 start ecosystem.config.js
+
+   # Or manually
+   ./target/release/rustymail-server
+   ```
+
+3. **Configure Claude Desktop** by editing your config file:
+   - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+   - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+   - **Linux**: `~/.config/Claude/claude_desktop_config.json`
+
+4. **Add RustyMail MCP server** to the config:
+   ```json
+   {
+     "mcpServers": {
+       "rustymail": {
+         "command": "/absolute/path/to/RustyMail/target/release/rustymail-mcp-stdio",
+         "env": {
+           "MCP_BACKEND_URL": "http://localhost:9437/mcp",
+           "MCP_TIMEOUT": "30"
+         }
+       }
+     }
+   }
+   ```
+
+   **Important**: Replace `/absolute/path/to/RustyMail` with the actual full path to your RustyMail directory.
+
+5. **Restart Claude Desktop** to load the MCP server
+
+### Usage
+
+Once configured, you can ask Claude to interact with your emails:
+
+- "List my email folders"
+- "Show me unread emails in my inbox"
+- "Search for emails from john@example.com"
+- "What are the statistics for my INBOX folder?"
+
+Claude will use the MCP tools to access your email data through RustyMail.
+
+### Architecture
+
+```
+┌─────────────────┐     JSON-RPC      ┌──────────────────────┐
+│ Claude Desktop  │◄──── (stdio) ────►│  rustymail-mcp-stdio │
+└─────────────────┘                   └──────────────────────┘
+                                               │
+                                               │ HTTP
+                                               ▼
+                                      ┌──────────────────┐
+                                      │ Backend Server   │
+                                      │ /mcp endpoint    │
+                                      │ (Port 9437)      │
+                                      └──────────────────┘
+```
+
+The stdio adapter acts as a thin proxy, forwarding JSON-RPC requests from Claude Desktop to the backend server's HTTP `/mcp` endpoint.
 
 ### SSE Example (JavaScript)
 
@@ -210,26 +351,63 @@ fetch('http://localhost:9437/api/v1/sse/command', {
 
 ## Configuration
 
-Edit `.env` file:
+### Environment Variables
+
+Edit `.env` file (see `.env.example` for full options):
 
 ```env
-# IMAP
-IMAP_HOST=imap.example.com
-IMAP_PORT=993
-IMAP_USERNAME=your_username
-IMAP_PASSWORD=your_password
+# Server Ports (use uncommon ports to avoid conflicts)
+REST_PORT=9437         # Backend REST API
+SSE_PORT=9438          # Server-Sent Events
+DASHBOARD_PORT=9439    # Frontend dashboard
 
-# REST API
-REST_HOST=0.0.0.0
-REST_PORT=9437
+# Database
+CACHE_DATABASE_URL=sqlite:data/email_cache.db
 
-# SSE endpoints (shares same port as REST)
-# SSE is available at the same port as REST API
+# Authentication
+RUSTYMAIL_API_KEY=your-api-key-here
 
-# General
+# Logging
 LOG_LEVEL=info
-INTERFACE=rest  # rest, stdio, sse
+
+# AI Providers (optional, for chatbot)
+# OPENAI_API_KEY=sk-...
+# ANTHROPIC_API_KEY=sk-ant-...
+# OPENROUTER_API_KEY=sk-or-...
+# (See .env.example for all 10+ supported providers)
 ```
+
+### Account Configuration
+
+Accounts are stored in `config/accounts.json` (file-based, not in .env):
+
+```json
+{
+  "accounts": [
+    {
+      "id": "user@example.com",
+      "name": "Work Email",
+      "imap": {
+        "host": "imap.example.com",
+        "port": 993,
+        "username": "user@example.com",
+        "password": "your-password",
+        "use_tls": true
+      },
+      "smtp": {
+        "host": "smtp.example.com",
+        "port": 587,
+        "username": "user@example.com",
+        "password": "your-password",
+        "use_tls": true
+      },
+      "is_default": true
+    }
+  ]
+}
+```
+
+Create this file in `config/accounts.json` to manage multiple email accounts.
 
 ---
 
@@ -242,63 +420,121 @@ INTERFACE=rest  # rest, stdio, sse
 
 ---
 
-## Dashboard
+## Web Dashboard
 
-RustyMail includes a web-based dashboard for monitoring and interacting with the server. The dashboard provides:
+RustyMail includes a modern React-based dashboard for managing emails and monitoring the server.
 
-- Real-time statistics about connections and server performance
-- List of connected clients
-- AI chatbot interface for natural language interaction
-- Configuration information
+### Features
 
-### Dashboard Setup
+- 📧 **Email Management**: Browse, search, and manage emails across multiple accounts
+- 🤖 **AI Chatbot**: Natural language interface with 10+ AI provider support
+- 📊 **Real-time Monitoring**: Live server metrics via Server-Sent Events
+- 👥 **Multi-Account**: Switch between configured email accounts
+- 🎨 **Modern UI**: Built with React, TypeScript, and shadcn/ui components
+- 🔄 **Smart Caching**: Displays cached emails for instant loading
 
-To set up and build the dashboard:
+### Accessing the Dashboard
 
-1. Run the provided build script:
-   ```bash
-   ./scripts/build-dashboard.sh
+1. Ensure services are running (see "Running with PM2" above)
+
+2. Open your browser to:
+   ```
+   http://localhost:9439
    ```
 
-2. Ensure your `.env` file includes the dashboard configuration:
-   ```
-   DASHBOARD_ENABLED=true
-   DASHBOARD_PATH=./dashboard-static
-   ```
-
-3. Run the server with the REST/SSE interface enabled:
-   ```bash
-   cargo run --bin rustymail-server
-   ```
-
-4. Access the dashboard at:
-   ```
-   http://localhost:9439/dashboard
-   ```
+3. The dashboard will automatically connect to the backend at port 9437
 
 ### Dashboard Development
 
-For frontend developers, you can work on the dashboard UI separately:
+For frontend developers working on the UI:
 
-1. Navigate to the frontend directory:
-   ```bash
-   cd frontend/rustymail-app-main
-   ```
+```bash
+cd frontend/rustymail-app-main
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+# Install dependencies
+npm install
 
-3. Start the development server:
-   ```bash
-   npm run dev
-   ```
+# Start development server with hot-reload
+npm run dev
 
-4. Build for production:
-   ```bash
-   npm run build
-   ```
+# Build for production
+npm run build
+```
+
+**Environment Variables**: The frontend automatically loads environment variables from the project root `.env` file via `dotenv-cli`. No separate frontend `.env` file is needed.
+
+### Dashboard Architecture
+
+- **Frontend**: React + TypeScript + Vite (port 9439)
+- **Backend API**: Rust + Actix-web (port 9437)
+- **Real-time Updates**: Server-Sent Events (SSE, port 9438)
+- **State Management**: React Context API
+- **UI Components**: shadcn/ui + Tailwind CSS
+
+---
+
+## Architecture
+
+### System Overview
+
+```
+┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
+│  Web Dashboard  │◄────►│  Backend Server  │◄────►│  IMAP Servers   │
+│   (Port 9439)   │      │   (Port 9437)    │      │  (Gmail, etc.)  │
+└─────────────────┘      └──────────────────┘      └─────────────────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │  SQLite Cache   │
+                         │  + LRU Memory   │
+                         └─────────────────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │  Claude Desktop │
+                         │   (MCP Stdio)   │
+                         └─────────────────┘
+```
+
+### Two-Tier Caching System
+
+RustyMail implements a sophisticated caching layer for optimal performance:
+
+1. **SQLite Database** (`data/email_cache.db`)
+   - Primary cache storage for emails and folder metadata
+   - Persists across restarts
+   - Stores: emails, folders, sync state, account data
+   - Provides fast queries without hitting IMAP server
+
+2. **In-Memory LRU Cache**
+   - Performance optimization layer on top of SQLite
+   - Caches frequently accessed emails and folders in RAM
+   - Automatically populated from SQLite on cache misses
+   - Cleared on restart
+
+**Cache Flow**: Memory → SQLite → IMAP (fallback chain)
+
+When accessing emails:
+- First checks RAM cache (fastest)
+- Falls back to SQLite query if not in RAM
+- Only queries IMAP if not in cache at all
+- Automatically populates caches on successful retrieval
+
+This architecture ensures:
+- ⚡ Sub-millisecond access to cached emails
+- 💾 Minimal IMAP server load
+- 🔄 Automatic cache synchronization
+- 📊 Efficient handling of large mailboxes
+
+### Multi-Account Support
+
+Accounts are managed through `config/accounts.json`:
+- File-based configuration (not environment variables)
+- Support for multiple IMAP/SMTP accounts
+- Per-account caching and folder management
+- Account switching via MCP tools or REST API
+
+---
 
 ## Development
 
