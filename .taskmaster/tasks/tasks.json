@@ -2766,6 +2766,134 @@
         "dependencies": [],
         "priority": "high",
         "subtasks": []
+      },
+      {
+        "id": 71,
+        "title": "Fix Email Assistant chatbot to pass account_id parameter to MCP tool calls",
+        "description": "Update the Email Assistant chatbot's generate_mock_response method to properly propagate the account_id parameter from process_query to all MCP tool calls, ensuring accurate email counts and data retrieval for the correct account.",
+        "status": "done",
+        "dependencies": [
+          15,
+          23
+        ],
+        "priority": "medium",
+        "details": "SPECIFIC BUG IDENTIFIED: In src/dashboard/services/ai.rs:289, the process_query method calls generate_mock_response without passing the account_id parameter, despite having extracted it on line 215. This causes MCP tool calls to use default account data instead of the selected account.\n\nEXACT IMPLEMENTATION REQUIRED:\n\n1. **Update generate_mock_response method signature (line 335)**: Change from `fn generate_mock_response(&self, query: &str)` to `fn generate_mock_response(&self, query: &str, account_id: Option<&str>)`\n\n2. **Update generate_mock_response call (line 289)**: Change from `self.generate_mock_response(&query_text)` to `self.generate_mock_response(&query_text, account_id.as_deref())`\n\n3. **Fix MCP tool calls inside generate_mock_response to include account_id parameter**:\n   - Line 346: `count_emails_in_folder` call - change `json!({\"folder\": \"INBOX\"})` to `json!({\"folder\": \"INBOX\", \"account_id\": account_id.unwrap_or(\"default\")})`\n   - Line 362: `get_folder_stats` call - change `json!({\"folder\": \"INBOX\"})` to `json!({\"folder\": \"INBOX\", \"account_id\": account_id.unwrap_or(\"default\")})`\n   - Line 368: `list_cached_emails` call - add `\"account_id\": account_id.unwrap_or(\"default\")` to existing json params\n\nVERIFICATION TARGET: After fix, selecting 'chris@texasfortress.ai' and asking \"how many emails?\" should return 299 (matching MCP Email Tools widget), not 142 from wrong account.\n\nNOTE: The fetch_email_context_with_data method (line 221) already correctly receives and uses account_id - no changes needed there.",
+        "testStrategy": "1. Test with specific account selection in UI: Select account 'chris@texasfortress.ai' and ask 'how many emails do I have?' - verify the chatbot returns the same count (299) as the MCP Email Tools widget. 2. Test with different accounts to ensure account_id parameter is properly passed and different results are returned for different accounts. 3. Test other email-related queries ('show my folders', 'show recent emails') with account selection to verify all MCP tool calls use the correct account_id. 4. Test mock mode functionality to ensure it works both with and without account_id parameter. 5. Add logging to verify account_id is being passed correctly to MCP calls and compare responses with/without the fix. 6. Test that default account is used when account_id is None to ensure backward compatibility.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Update generate_mock_response method signature to accept account_id parameter",
+            "description": "Change the method signature on line 335 from fn generate_mock_response(&self, query: &str) to fn generate_mock_response(&self, query: &str, account_id: Option<&str>) to accept the account_id parameter needed for MCP tool calls.",
+            "dependencies": [],
+            "details": "Located in src/dashboard/services/ai.rs at line 335. This is a simple signature change that will allow the method to receive the account_id parameter that is already available in the process_query method but not being passed through.",
+            "status": "done",
+            "testStrategy": "Ensure the code compiles after signature change and that all callers are updated accordingly."
+          },
+          {
+            "id": 2,
+            "title": "Update generate_mock_response call in process_query to pass account_id",
+            "description": "Modify line 289 in process_query method to pass the account_id parameter when calling generate_mock_response, changing from self.generate_mock_response(&query_text) to self.generate_mock_response(&query_text, account_id.as_deref()).",
+            "dependencies": [
+              1
+            ],
+            "details": "The account_id is already extracted on line 215 and available in the process_query method scope, but it's not being passed to generate_mock_response. This change ensures the account_id flows through to the MCP tool calls.",
+            "status": "done",
+            "testStrategy": "Verify the account_id parameter is correctly passed and the mock mode responses reflect the correct account data."
+          },
+          {
+            "id": 3,
+            "title": "Fix count_emails_in_folder MCP call to include account_id parameter",
+            "description": "Update the count_emails_in_folder MCP tool call on line 346 to include the account_id parameter in the JSON params, changing from json!({\"folder\": \"INBOX\"}) to json!({\"folder\": \"INBOX\", \"account_id\": account_id.unwrap_or(\"default\")}).",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "This MCP call is used when users ask about email counts. Without the account_id parameter, it returns counts for the wrong account. The fix ensures it queries the correct account's email data.",
+            "status": "done",
+            "testStrategy": "Test with chris@texasfortress.ai selected - should return 299 emails instead of 142 from default account."
+          },
+          {
+            "id": 4,
+            "title": "Fix get_folder_stats MCP call to include account_id parameter",
+            "description": "Update the get_folder_stats MCP tool call on line 362 to include the account_id parameter in the JSON params, changing from json!({\"folder\": \"INBOX\"}) to json!({\"folder\": \"INBOX\", \"account_id\": account_id.unwrap_or(\"default\")}).",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "This call gets folder statistics including total and unread counts for inbox queries. Adding account_id ensures statistics are pulled from the correct account's data.",
+            "status": "done",
+            "testStrategy": "Verify folder statistics reflect the selected account's actual data, not default account data."
+          },
+          {
+            "id": 5,
+            "title": "Fix list_cached_emails MCP call to include account_id parameter",
+            "description": "Update the list_cached_emails MCP tool call on line 368-372 to include the account_id parameter in the existing JSON params by adding \"account_id\": account_id.unwrap_or(\"default\") to the json! macro call.",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "This call retrieves recent emails for display in chatbot responses. Without account_id, it shows emails from the wrong account. The fix ensures the correct account's emails are displayed.",
+            "status": "done",
+            "testStrategy": "Test email listing queries to ensure they show emails from the selected account, not the default account."
+          },
+          {
+            "id": 6,
+            "title": "Verify account_id propagation and test end-to-end functionality",
+            "description": "Test the complete fix by selecting different accounts in the UI and verifying that chatbot responses show data for the correct account, matching what the MCP Email Tools widget displays.",
+            "dependencies": [
+              3,
+              4,
+              5
+            ],
+            "details": "Comprehensive testing to ensure the account_id parameter flows correctly from frontend selection through the entire chain: Dashboard → ChatbotPanel → backend API → process_query → generate_mock_response → MCP tool calls. Verify both mock mode and real AI responses use the correct account data.",
+            "status": "done",
+            "testStrategy": "1. Select chris@texasfortress.ai, ask 'how many emails?' - expect 299 count. 2. Select different account, expect different count. 3. Test folder and email listing queries. 4. Verify MCP Email Tools widget and chatbot show same data for selected account."
+          }
+        ]
+      },
+      {
+        "id": 72,
+        "title": "Add comprehensive integration tests for Email Assistant chatbot to verify correct account_id and current_folder parameter passing",
+        "description": "Create integration test suite that verifies the Email Assistant chatbot correctly passes account_id and current_folder parameters to MCP tools in both mock and AI modes.",
+        "details": "Based on analysis of the codebase, the chatbot functionality is implemented in `src/dashboard/services/ai.rs` with the `AiService` struct handling queries through `process_query()` method. The implementation uses `ChatbotQuery` struct (models.rs:100-107) with account_id and current_folder parameters that should be passed to MCP tools.\n\n**Test Implementation Plan:**\n\n1. **Create test file**: `tests/integration/chatbot_integration.rs` following the pattern of existing integration tests like `multi_account_sync.rs`\n\n2. **Test Infrastructure Setup:**\n   - Use in-memory SQLite database with migrations\n   - Insert multiple test accounts (account1@test.com, account2@test.com)\n   - Create test folders and emails with different counts per account\n   - Set up AiService in both mock and AI modes\n\n3. **Core Test Cases:**\n   - `test_chatbot_account_isolation`: Verify queries with specific account_id return only that account's data\n   - `test_chatbot_different_accounts_different_data`: Confirm different accounts return different email counts\n   - `test_chatbot_current_folder_parameter`: Verify current_folder parameter affects which folder is queried\n   - `test_mock_mode_passes_account_id`: Test mock mode (`generate_mock_response`) passes account_id to MCP tools\n   - `test_ai_mode_passes_account_id`: Test AI mode (`fetch_email_context_with_data`) passes account_id correctly\n   - `test_mcp_tool_direct_vs_chatbot_consistency`: Compare direct MCP tool calls with chatbot responses for same parameters\n\n4. **Fixture Data Setup:**\n   - Account 1: 25 emails in INBOX, 10 in Sent\n   - Account 2: 15 emails in INBOX, 5 in Sent\n   - Both accounts have same folder structure but different email counts\n\n5. **Parameter Verification:**\n   - Mock responses should call `call_mcp_tool()` with account_id in JSON parameters\n   - AI mode should pass account_id to `fetch_email_context_with_data()`\n   - Both current_folder and account_id should be correctly propagated through the call chain\n\n6. **Test Assertions:**\n   - Email counts match expected values per account\n   - Folder queries respect current_folder parameter\n   - No data leakage between accounts\n   - ChatbotResponse.email_data contains correct account-specific data\n   - Direct MCP tool responses match chatbot responses for identical parameters\n\n**Key Integration Points:**\n- Uses existing CacheService and AccountService from multi-account infrastructure\n- Tests both `AiService::new_mock()` and full AI service initialization\n- Verifies the complete flow from ChatbotQuery through to MCP tool execution\n- Ensures regression protection for account parameter passing",
+        "testStrategy": "1. Run integration tests with `cargo test chatbot_integration -- --test-threads=1` to ensure proper test isolation. 2. Verify all 8 test functions pass, confirming account_id and current_folder parameters are correctly passed throughout the system. 3. Test should catch any regression where parameters are not passed to MCP tools by comparing expected vs actual email counts per account. 4. Validate direct MCP tool calls return identical results to chatbot queries with same parameters. 5. Ensure test coverage includes both mock mode (generate_mock_response) and AI mode (fetch_email_context_with_data) parameter passing paths. 6. Run tests multiple times to verify consistent behavior and no test data contamination between runs.",
+        "status": "pending",
+        "dependencies": [
+          23,
+          32,
+          37,
+          42
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 73,
+        "title": "Add comprehensive E2E tests for Email Assistant chatbot with Python MCP client",
+        "description": "Create comprehensive Python E2E test suite to verify Email Assistant chatbot works correctly through the complete stack (frontend → backend → MCP tools) with proper account isolation and data accuracy verification.",
+        "details": "Extend the existing `scripts/test_mcp_client.py` to include comprehensive Email Assistant chatbot testing:\n\n1. **New Test Class**: Add `EmailAssistantChatbotTester` class with methods:\n   - `test_chatbot_endpoint_basic()`: Test POST /api/dashboard/chatbot/query accepts requests\n   - `test_chatbot_with_account_id()`: Verify account_id parameter is properly handled\n   - `test_chatbot_email_count_accuracy()`: Compare chatbot response to direct MCP count_emails_in_folder calls\n   - `test_account_isolation()`: Test multiple accounts to ensure no data leakage\n   - `test_folder_parameter_handling()`: Test different folder parameters (INBOX, Sent, etc.)\n   - `test_chatbot_response_structure()`: Validate ChatbotResponse format matches models.rs:110-127\n\n2. **Test Implementation**:\n   - Send HTTP POST requests to localhost:9437/api/dashboard/chatbot/query\n   - Use ChatbotQuery structure: {query, account_id, current_folder}\n   - Parse ChatbotResponse and extract email count from text field\n   - Compare against direct MCP tool execution of count_emails_in_folder\n   - Test queries like: 'How many emails do I have in INBOX?', 'Count emails in Sent folder'\n\n3. **Account Isolation Testing**:\n   - Test with multiple account_ids (if available from list_accounts MCP tool)\n   - Verify account A's query doesn't return account B's data\n   - Assert chatbot responses contain different counts for different accounts\n\n4. **Data Accuracy Verification**:\n   - Execute MCP count_emails_in_folder directly with same parameters\n   - Parse chatbot response text for numeric count\n   - Add assertions: `assert chatbot_count == mcp_direct_count`\n   - Test with multiple folder types to ensure folder parameter works\n\n5. **Integration with CI/CD**:\n   - Add test execution to existing .github/workflows/e2e-tests.yml at line 141\n   - Add command: `python scripts/test_mcp_client.py --test-chatbot --url http://localhost:9437`\n   - Ensure test fails if chatbot returns incorrect email counts\n\n6. **Error Scenarios**:\n   - Test with invalid account_id values\n   - Test with non-existent folder names\n   - Verify appropriate error responses",
+        "testStrategy": "1. **Manual Verification**: Run extended test script locally against running backend server and verify all tests pass. 2. **Account Data Setup**: Use existing MCP tools to verify test accounts have different email counts in different folders. 3. **Accuracy Testing**: Execute direct MCP count_emails_in_folder calls and compare with chatbot responses - must match exactly. 4. **Isolation Testing**: Run chatbot queries with different account_ids and verify responses contain different data. 5. **CI/CD Integration**: Verify test runs successfully in GitHub Actions workflow and fails appropriately when chatbot returns incorrect data. 6. **Regression Prevention**: Ensure test catches the specific bug described in the user request (incorrect email counts due to missing account_id parameter).",
+        "status": "pending",
+        "dependencies": [
+          71,
+          32,
+          15
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 74,
+        "title": "Add debug information panel to Email Assistant chatbot UI",
+        "description": "Update ChatbotPanel.tsx to display debug information showing current account and folder context, with toggle for request/response JSON and visual status indicators for account validation.",
+        "details": "The task requires updating the ChatbotPanel component (located at src/dashboard/components/ChatbotPanel.tsx) to add comprehensive debugging capabilities:\n\n1. **Update ChatbotQuery interface in src/types/index.ts**: Add account_id and current_folder fields to the ChatbotQuery interface (currently only has query and conversation_id) to match what's being sent in the API call.\n\n2. **Add debug state management**: Create React state for debug mode toggle using useState hook, stored in localStorage for persistence across sessions.\n\n3. **Enhance panel header**: Add account/folder context display in the CardHeader section (lines 285-324), showing:\n   - Current account_id as a badge next to the 'Email Assistant' title\n   - Current folder name (if present) as a secondary badge\n   - Color-coded status indicators: green (account_id present), yellow (using default), red (missing/undefined)\n\n4. **Add debug toggle control**: Insert a debug toggle switch in the header dropdown menu (lines 296-322) alongside existing export options.\n\n5. **Implement request/response logging**: Modify the handleSubmit function (lines 129-204) to capture and store complete request/response JSON when debug mode is enabled.\n\n6. **Create debug panel component**: Add collapsible debug information panel below the messages area (around line 466) showing:\n   - Request payload JSON (prettified)\n   - Response JSON including provider/model information  \n   - Request/response timestamps\n   - Warning indicators for missing account context\n\n7. **Update API client types**: Ensure the ChatbotQuery type matches the actual payload being sent (account_id, current_folder, query, conversation_id).\n\n8. **Add visual indicators**: Use the Badge component with appropriate variant colors and icons from lucide-react (Alert, CheckCircle, XCircle) for status indication.",
+        "testStrategy": "1. **Visual Verification**: Test that debug panel displays correctly with account/folder information in header badges and shows proper color coding (green/yellow/red status). 2. **Debug Toggle Testing**: Verify debug toggle persists across browser refreshes and properly shows/hides debug information panel. 3. **Account Context Testing**: Test with different account selections to ensure account_id badge updates correctly and shows appropriate status colors. 4. **JSON Display Testing**: Enable debug mode and send test queries, verify full request/response JSON is captured and displayed in readable format. 5. **Provider Information**: Confirm chatbot response includes and displays provider/model information from backend. 6. **Error State Testing**: Test with undefined/null account_id to verify warning indicators appear correctly. 7. **Responsive Design**: Test debug panel layout on different screen sizes to ensure it doesn't break mobile responsiveness.",
+        "status": "pending",
+        "dependencies": [
+          71
+        ],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -2778,7 +2906,7 @@
       ],
       "created": "2025-10-13T03:58:25.433Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-13T04:29:32.806Z"
+      "updated": "2025-10-13T05:16:20.057Z"
     }
   }
 }

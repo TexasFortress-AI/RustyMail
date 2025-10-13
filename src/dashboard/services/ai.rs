@@ -286,7 +286,7 @@ impl AiService {
 
         let response_text = if self.mock_mode {
             warn!("AI Service is in mock mode. Using mock response.");
-            format!("[Mock Mode - Provider: mock, Model: mock]\n\n{}", self.generate_mock_response(&query_text))
+            format!("[Mock Mode - Provider: mock, Model: mock]\n\n{}", self.generate_mock_response(&query_text, account_id.as_deref()))
         } else {
             // Use the override method if overrides are provided
             let response_result = if provider_override.is_some() || model_override.is_some() {
@@ -332,7 +332,7 @@ impl AiService {
     }
 
     // Generate a mock response using MCP tools
-    fn generate_mock_response(&self, query: &str) -> String {
+    fn generate_mock_response(&self, query: &str, account_id: Option<&str>) -> String {
         let query_lower = query.to_lowercase();
 
         // Use async block to get real data via MCP
@@ -343,7 +343,11 @@ impl AiService {
         } else if query_lower.contains("unread") || query_lower.contains("total") || query_lower.contains("how many") {
             // Get real email count from cache via MCP
             match rt.block_on(async {
-                self.call_mcp_tool("count_emails_in_folder", json!({"folder": "INBOX"})).await
+                let mut params = json!({"folder": "INBOX"});
+                if let Some(acc_id) = account_id {
+                    params["account_id"] = json!(acc_id);
+                }
+                self.call_mcp_tool("count_emails_in_folder", params).await
             }) {
                 Ok(result) => {
                     if let Some(count) = result.get("data").and_then(|d| d.get("count")).and_then(|c| c.as_i64()) {
@@ -359,17 +363,25 @@ impl AiService {
         } else if query_lower.contains("inbox") || query_lower.contains("email") || query_lower.contains("message") {
             match rt.block_on(async {
                 // Get folder stats via MCP
-                let stats_result = self.call_mcp_tool("get_folder_stats", json!({"folder": "INBOX"})).await?;
+                let mut stats_params = json!({"folder": "INBOX"});
+                if let Some(acc_id) = account_id {
+                    stats_params["account_id"] = json!(acc_id);
+                }
+                let stats_result = self.call_mcp_tool("get_folder_stats", stats_params).await?;
                 let stats_data = stats_result.get("data").unwrap_or(&stats_result);
                 let total = stats_data.get("total_emails").and_then(|t| t.as_i64()).unwrap_or(0);
                 let unread = stats_data.get("unread_count").and_then(|u| u.as_i64()).unwrap_or(0);
 
                 // Get recent emails via MCP
-                let emails_result = self.call_mcp_tool("list_cached_emails", json!({
+                let mut list_params = json!({
                     "folder": "INBOX",
                     "limit": 8,
                     "offset": 0
-                })).await?;
+                });
+                if let Some(acc_id) = account_id {
+                    list_params["account_id"] = json!(acc_id);
+                }
+                let emails_result = self.call_mcp_tool("list_cached_emails", list_params).await?;
 
                 let shown = emails_result.get("data")
                     .and_then(|e| e.as_array())
