@@ -138,13 +138,17 @@ export const apiClient = {
       body: JSON.stringify({
         query: query.query,
         conversation_id: query.conversation_id,
-        context: query.context,
+        provider_override: query.provider_override,
+        model_override: query.model_override,
+        current_folder: query.current_folder,
+        account_id: query.account_id,
       }),
     });
 
     return {
       text: response.text,
       conversationId: response.conversation_id,
+      emailData: response.email_data,
       followupSuggestions: response.followup_suggestions || [],
     };
   },
