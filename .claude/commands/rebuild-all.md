@@ -31,7 +31,6 @@ Perform a complete rebuild and restart of the RustyMail backend, frontend, and M
    ```bash
    cargo test --workspace  # Note: Limit output with timeout and head
    ```
-   ⚠️ Unit tests currently have 65 compilation errors due to API changes. Tests need updating but don't affect runtime.
 
 4. **Start services** (in background):
    ```bash
@@ -76,4 +75,3 @@ Perform a complete rebuild and restart of the RustyMail backend, frontend, and M
 - **Frontend fails to start**: Ensure `dotenv-cli` is installed (`npm install --save-dev dotenv-cli`)
 - **"Environment variable required" errors**: Check `.env` file exists and has correct values
 - **Wrong ports**: Verify `.env` has `REST_PORT=9437`, `DASHBOARD_PORT=9439`, etc.
-- **Tests failing**: Known issue - 65 compilation errors need fixing separately
