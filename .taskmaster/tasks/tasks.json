@@ -2673,13 +2673,88 @@
       {
         "id": 69,
         "title": "Add end-to-end tests for complete email workflows",
-        "description": "DEFERRED: Browser automation infrastructure complexity exceeds current project priorities. Core email workflows comprehensively tested at component level through Tasks 68.1-68.3 MCP transport tests, existing integration tests for multi-account operations, and unit tests for search/move operations.",
-        "status": "deferred",
+        "description": "Implement comprehensive end-to-end tests using available MCP testing tools and browser automation infrastructure to validate complete email workflows from MCP client through HTTP backend to IMAP server.",
+        "status": "pending",
         "dependencies": [],
-        "priority": "low",
-        "details": "**DEFERRED STATUS** following established pattern from Task 68.5 - infrastructure complexity exceeds current project benefits.\n\n**DEFERRAL RATIONALE:**\n- Browser automation infrastructure required (Selenium/Playwright/Puppeteer)\n- Claude Desktop installation and configuration testing complexity\n- Multi-process coordination (server + frontend + Claude Desktop)\n- Core email workflows already comprehensively validated:\n  ✅ MCP tools tested (18 tools via Task 68.1 HTTP backend tests) \n  ✅ Stdio proxy JSON-RPC forwarding tested (Task 68.2)\n  ✅ Cross-interface consistency proven (Task 68.3)\n  ✅ Dashboard API endpoints functional\n  ✅ Multi-account support working in existing integration tests\n  ✅ Email operations (search, move, delete) covered in unit tests\n\n**PROVEN FUNCTIONALITY:**\n- All 18 MCP tools operational and tested: list_folders, list_folders_hierarchical, search_emails, fetch_emails_with_mime, atomic_move_message, atomic_batch_move, mark_as_deleted, delete_messages, undelete_messages, expunge, list_cached_emails, get_email_by_uid, get_email_by_index, count_emails_in_folder, get_folder_stats, search_cached_emails, list_accounts, set_current_account\n- Stdio proxy forwards JSON-RPC correctly with proper error handling\n- Cross-interface consistency validated between MCP (/mcp) and Dashboard API (/api/dashboard/mcp/tools)\n- Multi-account operations working in existing integration tests (tests/integration/multi_account_sync.rs)\n- Email search and folder operations covered in unit tests\n\n**IMPLEMENTATION TIMELINE:**\n- When browser testing infrastructure established for other features\n- When Claude Desktop integration becomes deployment-critical\n- When full end-to-end validation required for release certification\n- When manual testing workflows insufficient\n\n**ALTERNATIVE VALIDATION:**\n- Manual testing workflows remain viable for complete end-to-end validation\n- Integration tests provide comprehensive component-level coverage\n- MCP protocol compliance proven programmatically through existing test suite",
-        "testStrategy": "DEFERRED - Would require browser automation framework (Playwright/Puppeteer), Claude Desktop installation automation, multi-process test orchestration, and SSE stream validation. Current component-level testing provides sufficient coverage for core functionality validation.",
-        "subtasks": null
+        "priority": "medium",
+        "details": "**UPDATED IMPLEMENTATION PLAN WITH AVAILABLE TOOLS:**\n\n**Available Infrastructure:**\n✅ MCP Inspector (npx @modelcontextprotocol/inspector) - Official testing client from modelcontextprotocol\n✅ Puppeteer MCP Server (executeautomation/mcp-playwright) - Already present in mcp_servers/\n✅ Python MCP Client libraries available via pip\n✅ Existing E2E REST test infrastructure (tests/e2e/rest.rs)\n✅ Existing MCP HTTP integration tests (tests/integration/mcp_http.rs)\n\n**Phase 1: MCP Client Testing (Immediate Implementation)**\nLeverage existing testing infrastructure to validate MCP protocol compliance:\n- Use MCP Inspector web UI for interactive testing and validation\n- Create Python-based MCP test client using minimal implementation\n- Test JSON-RPC protocol compliance via stdio proxy → HTTP backend flow\n- Validate all 18 MCP tools programmatically:\n  * list_folders, list_folders_hierarchical, search_emails, fetch_emails_with_mime\n  * atomic_move_message, atomic_batch_move, mark_as_deleted, delete_messages\n  * undelete_messages, expunge, list_cached_emails, get_email_by_uid\n  * get_email_by_index, count_emails_in_folder, get_folder_stats\n  * search_cached_emails, list_accounts, set_current_account\n- Test multi-account email operations via MCP interface\n- Test search and move operations with proper error handling\n- Validate cross-interface consistency between /mcp and /api/dashboard/mcp/tools endpoints\n\n**Phase 2: Dashboard UI Testing (Browser Automation)**\nUse existing Puppeteer MCP server for browser automation:\n- Test Email Assistant chatbot widget sending prompts and receiving responses\n- Test MCP Tools widget calling individual tools and displaying results\n- Verify real-time updates via SSE streaming from backend\n- Test dashboard metrics display and client connection tracking\n- Validate multi-account switching functionality in UI\n\n**Implementation Files:**\n- `tests/e2e/mcp_client.rs` - MCP client protocol tests\n- `tests/e2e/dashboard_ui.rs` - Browser automation tests using Puppeteer\n- `scripts/test_mcp_inspector.py` - Python MCP client for automated testing\n- `scripts/test_e2e_complete.sh` - Orchestration script for full workflow\n\n**Complexity Reduction:**\n- Phase 1 requires only npx and Python (already available)\n- Phase 2 leverages existing Puppeteer MCP server configuration\n- Much simpler than originally assessed - no custom infrastructure needed\n- Builds on proven testing patterns from tests/e2e/rest.rs\n- Can reuse existing TestServer management for process orchestration",
+        "testStrategy": "Create comprehensive test suite covering MCP protocol compliance, tool functionality validation, and dashboard UI interactions. Use MCP Inspector for interactive validation, Python client for automated testing, and Puppeteer for browser automation. Test both happy path and error scenarios. Validate real-time updates via SSE. Ensure proper cleanup and test isolation.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Set up MCP Inspector testing environment",
+            "description": "Configure MCP Inspector for interactive testing of stdio proxy and HTTP backend MCP endpoints.",
+            "dependencies": [],
+            "details": "Install and configure MCP Inspector using npx @modelcontextprotocol/inspector. Set up configuration to connect to RustyMail's stdio proxy and HTTP MCP endpoints. Create test configuration files for both transport methods. Validate basic connectivity and tool listing functionality.",
+            "status": "pending",
+            "testStrategy": "Manual verification of MCP Inspector UI functionality and automated connection tests"
+          },
+          {
+            "id": 2,
+            "title": "Create Python MCP client for automated testing",
+            "description": "Implement minimal Python MCP client for scripted testing of all 18 MCP tools.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create Python script using MCP SDK or minimal JSON-RPC implementation to programmatically test all MCP tools. Implement test cases for each of the 18 tools with proper error handling and validation. Include multi-account testing scenarios and edge cases. Support both stdio and HTTP transport methods.",
+            "status": "pending",
+            "testStrategy": "Automated test suite with assertions for each MCP tool response format and functionality"
+          },
+          {
+            "id": 3,
+            "title": "Implement MCP protocol compliance tests",
+            "description": "Create Rust integration tests validating JSON-RPC 2.0 protocol compliance across MCP interfaces.",
+            "dependencies": [
+              2
+            ],
+            "details": "Extend tests/integration/mcp_http.rs to include comprehensive protocol compliance testing. Validate JSON-RPC 2.0 request/response format, error handling, and method resolution. Test both /mcp HTTP endpoint and cross-interface consistency with /api/dashboard/mcp/tools. Include timeout handling and concurrent request testing.",
+            "status": "pending",
+            "testStrategy": "Integration tests with JSON-RPC protocol validation and error scenario testing"
+          },
+          {
+            "id": 4,
+            "title": "Configure Puppeteer MCP server for UI testing",
+            "description": "Set up and configure the existing Puppeteer MCP server for dashboard UI automation testing.",
+            "dependencies": [],
+            "details": "Configure the executeautomation/mcp-playwright server in mcp_servers/ directory. Create test configuration for connecting to local RustyMail dashboard. Set up browser automation scripts for testing Email Assistant widget and MCP Tools widget interactions. Configure headless mode for CI/CD compatibility.",
+            "status": "pending",
+            "testStrategy": "Browser automation setup with screenshot comparison and element interaction validation"
+          },
+          {
+            "id": 5,
+            "title": "Create dashboard UI end-to-end tests",
+            "description": "Implement browser automation tests for Email Assistant and MCP Tools widgets using Puppeteer.",
+            "dependencies": [
+              4
+            ],
+            "details": "Create comprehensive UI tests covering Email Assistant chatbot interactions, MCP Tools widget functionality, real-time SSE updates, and dashboard metrics display. Test multi-account switching, error handling in UI, and responsive design. Include visual regression testing where appropriate.",
+            "status": "pending",
+            "testStrategy": "Browser automation tests with DOM element validation and user interaction simulation"
+          },
+          {
+            "id": 6,
+            "title": "Implement complete workflow integration tests",
+            "description": "Create comprehensive tests validating complete email workflows from MCP client through dashboard to IMAP server.",
+            "dependencies": [
+              3,
+              5
+            ],
+            "details": "Implement end-to-end workflow tests combining MCP client operations with dashboard UI validation. Test scenarios: email search via MCP → UI display, folder operations via Tools widget → backend updates, multi-account operations across interfaces. Include performance testing and concurrent operation validation.",
+            "status": "pending",
+            "testStrategy": "Full workflow validation with timing assertions and cross-interface consistency verification"
+          },
+          {
+            "id": 7,
+            "title": "Create test orchestration and CI/CD integration",
+            "description": "Develop scripts and configuration for running complete E2E test suite in CI/CD environments.",
+            "dependencies": [
+              6
+            ],
+            "details": "Create test orchestration scripts combining all test phases. Configure CI/CD pipeline integration with proper service management (starting RustyMail server, managing test databases). Include test reporting, artifact collection, and failure analysis. Ensure proper cleanup and test isolation.",
+            "status": "pending",
+            "testStrategy": "CI/CD pipeline validation with automated test execution and comprehensive reporting"
+          }
+        ]
       },
       {
         "id": 70,
@@ -2703,7 +2778,7 @@
       ],
       "created": "2025-10-13T03:58:25.433Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-13T04:02:34.840Z"
+      "updated": "2025-10-13T04:06:41.980Z"
     }
   }
 }
