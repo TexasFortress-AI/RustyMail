@@ -120,6 +120,15 @@ async fn main() {
                         // Forward request to backend
                         match client.post(&backend_url).json(&request).send().await {
                             Ok(response) => {
+                                let status = response.status();
+
+                                // Handle 204 No Content - don't write anything to stdout
+                                // (Notifications per JSON-RPC 2.0 spec should not receive responses)
+                                if status.as_u16() == 204 {
+                                    eprintln!("Received 204 No Content - notification acknowledged, no response");
+                                    continue;
+                                }
+
                                 match response.text().await {
                                     Ok(text) => {
                                         // Write backend response directly to stdout
