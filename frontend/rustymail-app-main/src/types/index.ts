@@ -58,6 +58,8 @@ export interface ImapAdapter {
 export interface ChatbotQuery {
   query: string;
   conversation_id?: string;
+  current_folder?: string;
+  account_id?: string;
 }
 
 export interface ChatbotResponse {

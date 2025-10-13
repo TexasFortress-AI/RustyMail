@@ -7,8 +7,8 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useChatbotMutation } from '@/dashboard/api/hooks';
 import { useSSEChatbot } from '@/dashboard/api/useSSEChatbot';
-import { ChatMessage } from '@/types';
-import { Send, Bot, User, Loader2, Mail, Folder, Download, Copy, Trash2 } from 'lucide-react';
+import { ChatMessage, ChatbotQuery, ChatbotResponse } from '@/types';
+import { Send, Bot, User, Loader2, Mail, Folder, Download, Copy, Trash2, Bug, CheckCircle, AlertCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { toast } from '@/hooks/use-toast';
 import {
@@ -16,8 +16,11 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuCheckboxItem,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 
 // Load conversation from localStorage
 const loadConversation = (): ChatMessage[] => {
@@ -39,6 +42,13 @@ const saveConversation = (messages: ChatMessage[]): void => {
   }
 };
 
+interface DebugInfo {
+  request: ChatbotQuery;
+  response: ChatbotResponse | null;
+  timestamp: string;
+  error?: string;
+}
+
 interface ChatbotPanelProps {
   currentFolder?: string;
   accountId?: string;
@@ -52,6 +62,13 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
   const [streamingMessage, setStreamingMessage] = useState<ChatMessage | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Debug mode state
+  const [debugMode, setDebugMode] = useState(() => {
+    return localStorage.getItem('chatbot-debug-mode') === 'true';
+  });
+  const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
+  const [debugPanelOpen, setDebugPanelOpen] = useState(false);
 
   const chatbotMutation = useChatbotMutation();
 
@@ -112,6 +129,11 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
     inputRef.current?.focus();
   }, []);
 
+  // Persist debug mode to localStorage
+  useEffect(() => {
+    localStorage.setItem('chatbot-debug-mode', String(debugMode));
+  }, [debugMode]);
+
   // Clear conversation when account changes
   const prevAccountIdRef = useRef<string | undefined>(accountId);
   useEffect(() => {
@@ -158,15 +180,31 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
       await streamQuery(queryText, conversationId);
     } else {
       // Use traditional HTTP POST
+      const request: ChatbotQuery = {
+        query: queryText,
+        conversation_id: conversationId,
+        current_folder: currentFolder,
+        account_id: accountId
+      };
+
+      // Capture debug info if debug mode is enabled
+      if (debugMode) {
+        setDebugInfo({
+          request,
+          response: null,
+          timestamp: new Date().toISOString()
+        });
+      }
+
       chatbotMutation.mutate(
-        {
-          query: queryText,
-          conversation_id: conversationId,
-          current_folder: currentFolder,
-          account_id: accountId
-        },
+        request,
         {
           onSuccess: (response) => {
+            // Update debug info with response
+            if (debugMode) {
+              setDebugInfo(prev => prev ? { ...prev, response } : null);
+            }
+
             // Add AI response to the conversation
             const aiMessage: ChatMessage = {
               id: uuidv4(),
@@ -181,6 +219,14 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
             setConversationId(response.conversation_id);
           },
           onError: (error) => {
+            // Update debug info with error
+            if (debugMode) {
+              setDebugInfo(prev => prev ? {
+                ...prev,
+                error: error instanceof Error ? error.message : "Failed to get response"
+              } : null);
+            }
+
             // Show error toast
             toast({
               title: "Chatbot Error",
@@ -284,15 +330,44 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
     <Card className="shadow-sm transition-all duration-200 animate-fade-in glass-panel h-full flex flex-col" data-testid="chatbot-panel">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-lg font-medium flex items-center">
+          <CardTitle className="text-lg font-medium flex items-center gap-2 flex-wrap">
             <span className="flex items-center">
               <Bot className="h-5 w-5 mr-2 text-primary" />
               Email Assistant
             </span>
+            {/* Account context badge */}
+            {accountId ? (
+              <Badge variant="default" className="text-xs font-normal flex items-center gap-1">
+                <CheckCircle className="h-3 w-3" />
+                {accountId}
+              </Badge>
+            ) : (
+              <Badge variant="secondary" className="text-xs font-normal flex items-center gap-1">
+                <AlertCircle className="h-3 w-3" />
+                No Account
+              </Badge>
+            )}
+            {/* Folder context badge */}
+            {currentFolder && (
+              <Badge variant="outline" className="text-xs font-normal flex items-center gap-1">
+                <Folder className="h-3 w-3" />
+                {currentFolder}
+              </Badge>
+            )}
           </CardTitle>
 
-          {messages.length > 0 && (
-            <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2">
+            {/* Debug toggle */}
+            <Button
+              variant={debugMode ? "default" : "ghost"}
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => setDebugMode(!debugMode)}
+            >
+              <Bug className="h-4 w-4" />
+            </Button>
+
+            {messages.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="sm" className="h-7 w-7 p-0">
@@ -318,8 +393,8 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </CardHeader>
       
@@ -464,6 +539,105 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
             </>
           )}
         </div>
+
+        {/* Debug Panel */}
+        {debugMode && debugInfo && (
+          <Collapsible open={debugPanelOpen} onOpenChange={setDebugPanelOpen} className="border-t">
+            <CollapsibleTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="w-full h-8 flex items-center justify-between px-4 hover:bg-accent/50"
+              >
+                <div className="flex items-center gap-2 text-xs">
+                  <Bug className="h-3.5 w-3.5" />
+                  <span className="font-medium">Debug Information</span>
+                  {debugInfo.error && (
+                    <XCircle className="h-3.5 w-3.5 text-destructive" />
+                  )}
+                  {!debugInfo.error && debugInfo.response && (
+                    <CheckCircle className="h-3.5 w-3.5 text-green-500" />
+                  )}
+                  {!debugInfo.error && !debugInfo.response && (
+                    <AlertCircle className="h-3.5 w-3.5 text-yellow-500" />
+                  )}
+                </div>
+                {debugPanelOpen ? (
+                  <ChevronUp className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="px-4 pb-3 max-h-60 overflow-y-auto bg-muted/30">
+              <div className="space-y-3 text-xs">
+                {/* Timestamp */}
+                <div className="flex items-center gap-2 pt-2 pb-1 border-b">
+                  <span className="font-medium text-muted-foreground">Timestamp:</span>
+                  <span className="font-mono">{new Date(debugInfo.timestamp).toLocaleString()}</span>
+                </div>
+
+                {/* Request */}
+                <div>
+                  <div className="font-medium mb-1 flex items-center gap-2">
+                    <span>Request:</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-5 px-1"
+                      onClick={() => {
+                        navigator.clipboard.writeText(JSON.stringify(debugInfo.request, null, 2));
+                        toast({ description: "Request copied to clipboard" });
+                      }}
+                    >
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+                  <pre className="bg-card border rounded p-2 overflow-x-auto text-[10px] font-mono">
+                    {JSON.stringify(debugInfo.request, null, 2)}
+                  </pre>
+                </div>
+
+                {/* Response */}
+                {debugInfo.response && (
+                  <div>
+                    <div className="font-medium mb-1 flex items-center gap-2">
+                      <CheckCircle className="h-3 w-3 text-green-500" />
+                      <span>Response:</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 px-1"
+                        onClick={() => {
+                          navigator.clipboard.writeText(JSON.stringify(debugInfo.response, null, 2));
+                          toast({ description: "Response copied to clipboard" });
+                        }}
+                      >
+                        <Copy className="h-3 w-3" />
+                      </Button>
+                    </div>
+                    <pre className="bg-card border rounded p-2 overflow-x-auto text-[10px] font-mono">
+                      {JSON.stringify(debugInfo.response, null, 2)}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Error */}
+                {debugInfo.error && (
+                  <div>
+                    <div className="font-medium mb-1 flex items-center gap-2 text-destructive">
+                      <XCircle className="h-3 w-3" />
+                      <span>Error:</span>
+                    </div>
+                    <div className="bg-destructive/10 border border-destructive/30 rounded p-2 text-destructive">
+                      {debugInfo.error}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CollapsibleContent>
+          </Collapsible>
+        )}
 
         <Separator />
 
