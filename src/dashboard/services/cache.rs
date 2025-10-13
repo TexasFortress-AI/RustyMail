@@ -543,10 +543,53 @@ impl CacheService {
     }
 
     /// Get folder from cache for a specific account
+    /// First checks in-memory cache, then falls back to database lookup
     async fn get_folder_from_cache_for_account(&self, name: &str, account_id: &str) -> Option<CachedFolder> {
         let cache_key = format!("{}:{}", account_id, name);
-        let folder_cache = self.folder_cache.read().await;
-        folder_cache.get(&cache_key).cloned()
+
+        // Check in-memory cache first
+        {
+            let folder_cache = self.folder_cache.read().await;
+            if let Some(folder) = folder_cache.get(&cache_key) {
+                return Some(folder.clone());
+            }
+        }
+
+        // Not in memory cache, check database
+        let pool = self.db_pool.as_ref()?;
+
+        let folder = sqlx::query_as::<_, (i64, String, Option<String>, Option<String>, Option<i64>, Option<i64>, i32, i32, Option<DateTime<Utc>>)>(
+            "SELECT id, name, delimiter, attributes, uidvalidity, uidnext, total_messages, unseen_messages, last_sync FROM folders WHERE name = ? AND account_id = ?"
+        )
+        .bind(name)
+        .bind(account_id)
+        .fetch_optional(pool)
+        .await
+        .ok()??;
+
+        let (id, name_str, delimiter, attributes_json, uidvalidity, uidnext, total_messages, unseen_messages, last_sync) = folder;
+
+        let attributes: Vec<String> = attributes_json
+            .and_then(|json| serde_json::from_str(&json).ok())
+            .unwrap_or_default();
+
+        let cached_folder = CachedFolder {
+            id,
+            name: name_str.clone(),
+            delimiter,
+            attributes,
+            uidvalidity,
+            uidnext,
+            total_messages,
+            unseen_messages,
+            last_sync,
+        };
+
+        // Add to memory cache for future access
+        let mut folder_cache = self.folder_cache.write().await;
+        folder_cache.insert(cache_key, cached_folder.clone());
+
+        Some(cached_folder)
     }
 
 
