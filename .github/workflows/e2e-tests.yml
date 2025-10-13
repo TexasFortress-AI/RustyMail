@@ -1,0 +1,195 @@
+# End-to-End Test Workflow for RustyMail
+# Runs comprehensive E2E tests including MCP protocol, dashboard UI, and complete workflows
+
+name: End-to-End Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual triggering
+
+env:
+  RUST_BACKTRACE: 1
+  CARGO_TERM_COLOR: always
+  # Test environment configuration
+  MCP_BACKEND_URL: http://localhost:9437/mcp
+  MCP_TIMEOUT: 30
+
+jobs:
+  e2e-tests:
+    name: Complete E2E Test Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: scripts/requirements.txt
+
+      - name: Install Python dependencies
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install -r scripts/requirements.txt
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Build Rust binaries
+        run: |
+          cargo build --release --bin rustymail-server
+          cargo build --release --bin rustymail-mcp-stdio
+
+      - name: Run unit tests
+        run: cargo test --lib --bins
+
+      - name: Run integration tests
+        run: cargo test --test '*' -- --test-threads=1
+
+      - name: Start backend server
+        run: |
+          # Create test database directory
+          mkdir -p .rustymail
+
+          # Start server in background
+          ./target/release/rustymail-server > backend.log 2>&1 &
+          echo $! > backend.pid
+
+          # Wait for server to be ready
+          for i in {1..30}; do
+            if curl -s http://localhost:9437/api/dashboard/status > /dev/null; then
+              echo "Backend server ready"
+              break
+            fi
+            echo "Waiting for backend... ($i/30)"
+            sleep 1
+          done
+
+          # Verify server is running
+          if ! curl -s http://localhost:9437/api/dashboard/status > /dev/null; then
+            echo "Backend server failed to start"
+            cat backend.log
+            exit 1
+          fi
+
+      - name: Start frontend server
+        run: |
+          cd frontend
+          npm run dev > ../frontend.log 2>&1 &
+          echo $! > ../frontend.pid
+          cd ..
+
+          # Wait for frontend to be ready
+          for i in {1..30}; do
+            if curl -s http://localhost:5173 > /dev/null; then
+              echo "Frontend server ready"
+              break
+            fi
+            echo "Waiting for frontend... ($i/30)"
+            sleep 1
+          done
+
+          # Verify frontend is running
+          if ! curl -s http://localhost:5173 > /dev/null; then
+            echo "Frontend server failed to start"
+            cat frontend.log
+            exit 1
+          fi
+
+      - name: Run MCP client tests
+        run: |
+          source .venv/bin/activate
+          python scripts/test_mcp_client.py --transport stdio --url http://localhost:9437/mcp
+
+      - name: Run E2E workflow tests
+        run: |
+          source .venv/bin/activate
+          # Note: UI tests would require headless browser setup
+          # For now, run what's available
+          if [ -f "scripts/test_ui_workflows.py" ]; then
+            python scripts/test_ui_workflows.py --url http://localhost:5173
+          else
+            echo "UI workflow tests not yet implemented (skipping)"
+          fi
+
+      - name: Collect test artifacts
+        if: always()
+        run: |
+          mkdir -p test-artifacts
+          cp backend.log test-artifacts/ || true
+          cp frontend.log test-artifacts/ || true
+          cp -r test-results test-artifacts/ || true
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: e2e-test-artifacts
+          path: test-artifacts/
+          retention-days: 7
+
+      - name: Stop servers
+        if: always()
+        run: |
+          # Stop backend
+          if [ -f backend.pid ]; then
+            kill $(cat backend.pid) || true
+          fi
+
+          # Stop frontend
+          if [ -f frontend.pid ]; then
+            kill $(cat frontend.pid) || true
+          fi
+
+          # Cleanup
+          sleep 2
+
+      - name: Generate test report
+        if: always()
+        run: |
+          echo "## E2E Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Backend Status: $(curl -s http://localhost:9437/api/dashboard/status > /dev/null && echo '✅ Online' || echo '❌ Offline')" >> $GITHUB_STEP_SUMMARY
+          echo "- Frontend Status: $(curl -s http://localhost:5173 > /dev/null && echo '✅ Online' || echo '❌ Offline')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -f test-results/workflow-report.json ]; then
+            echo "### Workflow Test Results" >> $GITHUB_STEP_SUMMARY
+            cat test-results/workflow-report.json >> $GITHUB_STEP_SUMMARY
+          fi
