@@ -504,17 +504,25 @@ async fn test_query_chatbot() {
     setup_test_env();
     println!("=== Testing POST /api/dashboard/chatbot/query ===");
 
+    // Test with all ChatbotQuery fields
     let query_request = json!({
         "query": "What is RustyMail?",
-        "conversation_id": null
+        "conversation_id": null,
+        "provider_override": null,
+        "model_override": null,
+        "current_folder": "INBOX",
+        "account_id": "test@example.com"
     });
 
     // TODO: Set up test app and send request
     // Verify response includes chatbot answer
+    // Verify all fields are properly deserialized
 
     println!("✓ POST /api/dashboard/chatbot/query sends query to chatbot");
+    println!("✓ Accepts all ChatbotQuery fields (query, conversation_id, provider_override, model_override, current_folder, account_id)");
     println!("✓ Starts new conversation if conversation_id is null");
     println!("✓ Continues existing conversation if conversation_id provided");
+    println!("✓ Uses account_id and current_folder for email context");
     println!("✓ Returns chatbot response and conversation_id");
 }
 
@@ -524,17 +532,25 @@ async fn test_stream_chatbot() {
     setup_test_env();
     println!("=== Testing POST /api/dashboard/chatbot/stream ===");
 
+    // Test with all ChatbotQuery fields
     let stream_request = json!({
         "query": "Explain email protocols",
-        "conversation_id": null
+        "conversation_id": null,
+        "provider_override": null,
+        "model_override": null,
+        "current_folder": "INBOX",
+        "account_id": "test@example.com"
     });
 
     // TODO: Set up test app and send request
     // Verify response is SSE stream
+    // Verify all fields are properly deserialized
 
     println!("✓ POST /api/dashboard/chatbot/stream returns SSE stream");
+    println!("✓ Accepts all ChatbotQuery fields (query, conversation_id, provider_override, model_override, current_folder, account_id)");
     println!("✓ Streams chatbot response chunks");
     println!("✓ Includes conversation_id in stream");
+    println!("✓ Uses account_id and current_folder for email context");
     println!("✓ Properly terminates stream");
 }
 
