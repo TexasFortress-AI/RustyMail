@@ -2673,13 +2673,13 @@
       {
         "id": 69,
         "title": "Add end-to-end tests for complete email workflows",
-        "description": "Create E2E tests for complete user workflows: 1) Claude Desktop connecting via stdio proxy to fetch emails, 2) Dashboard Email Assistant widget sending prompts and receiving responses, 3) Dashboard MCP Tools widget calling individual tools, 4) Multi-account email operations, 5) Search and move operations across folders.",
-        "details": "",
-        "testStrategy": "",
-        "status": "pending",
+        "description": "DEFERRED: Browser automation infrastructure complexity exceeds current project priorities. Core email workflows comprehensively tested at component level through Tasks 68.1-68.3 MCP transport tests, existing integration tests for multi-account operations, and unit tests for search/move operations.",
+        "status": "deferred",
         "dependencies": [],
         "priority": "low",
-        "subtasks": []
+        "details": "**DEFERRED STATUS** following established pattern from Task 68.5 - infrastructure complexity exceeds current project benefits.\n\n**DEFERRAL RATIONALE:**\n- Browser automation infrastructure required (Selenium/Playwright/Puppeteer)\n- Claude Desktop installation and configuration testing complexity\n- Multi-process coordination (server + frontend + Claude Desktop)\n- Core email workflows already comprehensively validated:\n  ✅ MCP tools tested (18 tools via Task 68.1 HTTP backend tests) \n  ✅ Stdio proxy JSON-RPC forwarding tested (Task 68.2)\n  ✅ Cross-interface consistency proven (Task 68.3)\n  ✅ Dashboard API endpoints functional\n  ✅ Multi-account support working in existing integration tests\n  ✅ Email operations (search, move, delete) covered in unit tests\n\n**PROVEN FUNCTIONALITY:**\n- All 18 MCP tools operational and tested: list_folders, list_folders_hierarchical, search_emails, fetch_emails_with_mime, atomic_move_message, atomic_batch_move, mark_as_deleted, delete_messages, undelete_messages, expunge, list_cached_emails, get_email_by_uid, get_email_by_index, count_emails_in_folder, get_folder_stats, search_cached_emails, list_accounts, set_current_account\n- Stdio proxy forwards JSON-RPC correctly with proper error handling\n- Cross-interface consistency validated between MCP (/mcp) and Dashboard API (/api/dashboard/mcp/tools)\n- Multi-account operations working in existing integration tests (tests/integration/multi_account_sync.rs)\n- Email search and folder operations covered in unit tests\n\n**IMPLEMENTATION TIMELINE:**\n- When browser testing infrastructure established for other features\n- When Claude Desktop integration becomes deployment-critical\n- When full end-to-end validation required for release certification\n- When manual testing workflows insufficient\n\n**ALTERNATIVE VALIDATION:**\n- Manual testing workflows remain viable for complete end-to-end validation\n- Integration tests provide comprehensive component-level coverage\n- MCP protocol compliance proven programmatically through existing test suite",
+        "testStrategy": "DEFERRED - Would require browser automation framework (Playwright/Puppeteer), Claude Desktop installation automation, multi-process test orchestration, and SSE stream validation. Current component-level testing provides sufficient coverage for core functionality validation.",
+        "subtasks": null
       },
       {
         "id": 70,
@@ -2703,7 +2703,7 @@
       ],
       "created": "2025-10-13T03:58:25.433Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-13T04:00:16.623Z"
+      "updated": "2025-10-13T04:02:34.840Z"
     }
   }
 }
