@@ -214,7 +214,7 @@ impl AiService {
         let current_folder = query.current_folder.clone();
         let account_id = query.account_id.clone();
 
-        debug!("Processing chatbot query for conversation {}: {} (folder: {:?}, account: {:?})",
+        info!("Processing chatbot query for conversation {}: {} (folder: {:?}, account_id: {:?})",
                conversation_id, query_text, current_folder, account_id);
 
         // Always use MCP tools to fetch email context with structured data
@@ -574,7 +574,7 @@ impl AiService {
 
     /// Fetch email context with structured data for the chatbot
     async fn fetch_email_context_with_data(&self, query: &str, account_id: Option<&str>) -> Option<EmailContextData> {
-        info!("fetch_email_context_with_data called with query: '{}'", query);
+        info!("fetch_email_context_with_data called with query: '{}', account_id: {:?}", query, account_id);
         let query_lower = query.to_lowercase();
         let mut email_messages: Vec<EmailMessage> = Vec::new();
         let mut email_folders: Vec<EmailFolder> = Vec::new();
