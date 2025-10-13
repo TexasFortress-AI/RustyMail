@@ -48,8 +48,15 @@ pub struct Account {
     pub smtp_pass: Option<String>,
     pub smtp_use_tls: Option<bool>,
     pub smtp_use_starttls: Option<bool>,
+    #[serde(default = "default_is_active")]
     pub is_active: bool,
+    #[serde(default)]
     pub is_default: bool,
+}
+
+// Default value function for is_active (defaults to true for new accounts)
+fn default_is_active() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

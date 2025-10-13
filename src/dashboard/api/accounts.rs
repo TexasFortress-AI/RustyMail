@@ -25,6 +25,7 @@ pub struct CreateAccountRequest {
     pub smtp_pass: Option<String>,
     pub smtp_use_tls: Option<bool>,
     pub smtp_use_starttls: Option<bool>,
+    #[serde(default)]
     pub is_default: bool,
     pub validate_connection: Option<bool>,
 }
