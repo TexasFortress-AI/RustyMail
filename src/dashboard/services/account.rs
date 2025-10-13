@@ -27,8 +27,10 @@ pub enum AccountError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Account {
     // email_address is the primary identifier, serialized as both "id" and "email_address"
-    #[serde(rename = "id", alias = "email_address")]
     pub email_address: String,
+    // Alias for email_address, serialized as "id" for frontend compatibility
+    #[serde(skip_deserializing, rename = "id")]
+    pub id: String,
     // display_name is serialized as both "account_name" and "display_name"
     #[serde(rename = "account_name", alias = "display_name")]
     pub display_name: String,
@@ -166,6 +168,13 @@ impl AccountService {
                     warn!("Failed to set default account: {}", e);
                 }
                 info!("Successfully created default account from environment: {}", account.email_address);
+
+                // Sync to database cache so the account is immediately available for email operations
+                if let Err(e) = self.sync_accounts_to_db().await {
+                    warn!("Failed to sync new account to database cache: {}", e);
+                    // Don't fail the account creation, but warn about it
+                }
+
                 Ok(())
             }
             Err(e) => {
@@ -389,8 +398,9 @@ impl AccountService {
     /// Convert StoredAccount to Account (for API responses)
     fn stored_to_account(stored: StoredAccount) -> Account {
         Account {
+            email_address: stored.email_address.clone(),
+            id: stored.email_address, // Set id to match email_address for frontend
             display_name: stored.display_name,
-            email_address: stored.email_address,
             provider_type: stored.provider_type,
             imap_host: stored.imap.host,
             imap_port: stored.imap.port as i64,

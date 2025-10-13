@@ -136,8 +136,9 @@ pub async fn create_account(
 
     // Build Account struct from request
     let new_account = Account {
-        display_name: req.display_name.clone(),
         email_address: req.email_address.clone(),
+        id: req.email_address.clone(), // Set id to match email_address
+        display_name: req.display_name.clone(),
         provider_type: req.provider_type.clone(),
         imap_host: req.imap_host.clone(),
         imap_port: req.imap_port,

@@ -75,7 +75,14 @@ pub async fn query_chatbot(
     state: web::Data<DashboardState>,
     req: web::Json<ChatbotQuery>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling POST /api/dashboard/chatbot/query with body: {:?}", req);
+    info!("Handling POST /api/dashboard/chatbot/query with body: {:?}", req);
+    info!("Chatbot query field breakdown:");
+    info!("  - query: {}", req.query);
+    info!("  - conversation_id: {:?}", req.conversation_id);
+    info!("  - provider_override: {:?}", req.provider_override);
+    info!("  - model_override: {:?}", req.model_override);
+    info!("  - current_folder: {:?}", req.current_folder);
+    info!("  - account_id: {:?}", req.account_id);
 
     let response = state.ai_service.process_query(req.0)
         .await
