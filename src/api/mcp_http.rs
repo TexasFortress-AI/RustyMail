@@ -163,7 +163,8 @@ fn validate_origin(req: &HttpRequest) -> bool {
 }
 
 /// Handle MCP request and generate JSON-RPC response
-async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>) -> Value {
+/// Returns None for notifications (requests without id), Some(Value) for requests
+async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>) -> Option<Value> {
     let method = request.get("method")
         .and_then(|m| m.as_str())
         .unwrap_or("");
@@ -171,7 +172,26 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>) ->
     let params = request.get("params").cloned().unwrap_or(json!({}));
     let request_id = request.get("id").cloned();
 
-    match method {
+    // Check if this is a notification (no id field)
+    // Notifications should not receive responses per JSON-RPC 2.0 spec
+    let is_notification = request_id.is_none();
+
+    // Handle notifications - return None (no response) per JSON-RPC 2.0 spec
+    if is_notification {
+        match method {
+            "notifications/initialized" => {
+                debug!("Received notifications/initialized - no response per spec");
+                return None;
+            },
+            _ => {
+                debug!("Received unknown notification: {} - no response per spec", method);
+                return None;
+            }
+        }
+    }
+
+    // Handle requests - return Some(response)
+    let response = match method {
         "initialize" => {
             // Generate session ID for this client
             let session_id = Uuid::new_v4().to_string();
@@ -255,7 +275,9 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>) ->
                 }
             })
         }
-    }
+    };
+
+    Some(response)
 }
 
 /// POST handler for MCP endpoint
@@ -302,7 +324,16 @@ pub async fn mcp_post_handler(
 
     // Process the JSON-RPC request
     let request = body.into_inner();
-    let response = handle_mcp_request(request.clone(), state).await;
+    let response_opt = handle_mcp_request(request.clone(), state).await;
+
+    // If this is a notification, don't send a response
+    let response = match response_opt {
+        Some(r) => r,
+        None => {
+            // Notification - return 204 No Content
+            return Ok(HttpResponse::NoContent().finish());
+        }
+    };
 
     // Check if this is an initialize response with session ID
     let mut response_builder = HttpResponse::Ok();
