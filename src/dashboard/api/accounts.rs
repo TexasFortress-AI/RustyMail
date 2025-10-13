@@ -11,6 +11,7 @@ pub struct AutoConfigRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateAccountRequest {
+    #[serde(alias = "account_name")]
     pub display_name: String,
     pub email_address: String,
     pub provider_type: Option<String>,
