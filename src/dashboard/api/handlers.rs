@@ -125,6 +125,64 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
             }
         }),
         serde_json::json!({
+            "name": "create_folder",
+            "description": "Create a new email folder in the account",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder_name": {
+                        "type": "string",
+                        "description": "Name of the folder to create (e.g., INBOX.Archive)"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["folder_name", "account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "delete_folder",
+            "description": "Delete an email folder from the account",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder_name": {
+                        "type": "string",
+                        "description": "Name of the folder to delete (e.g., INBOX.OldEmails)"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["folder_name", "account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "rename_folder",
+            "description": "Rename an email folder in the account",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "old_name": {
+                        "type": "string",
+                        "description": "Current name of the folder (e.g., INBOX.Temp)"
+                    },
+                    "new_name": {
+                        "type": "string",
+                        "description": "New name for the folder (e.g., INBOX.Projects)"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["old_name", "new_name", "account_id"]
+            }
+        }),
+        serde_json::json!({
             "name": "search_emails",
             "description": "Search for emails matching criteria",
             "inputSchema": {
@@ -486,6 +544,31 @@ pub async fn list_mcp_tools(
             }
         }),
         serde_json::json!({
+            "name": "create_folder",
+            "description": "Create a new email folder in the account",
+            "parameters": {
+                "folder_name": "Name of the folder to create (e.g., INBOX.Archive)",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+            }
+        }),
+        serde_json::json!({
+            "name": "delete_folder",
+            "description": "Delete an email folder from the account",
+            "parameters": {
+                "folder_name": "Name of the folder to delete (e.g., INBOX.OldEmails)",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+            }
+        }),
+        serde_json::json!({
+            "name": "rename_folder",
+            "description": "Rename an email folder in the account",
+            "parameters": {
+                "old_name": "Current name of the folder (e.g., INBOX.Temp)",
+                "new_name": "New name for the folder (e.g., INBOX.Projects)",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+            }
+        }),
+        serde_json::json!({
             "name": "search_emails",
             "description": "Search for emails matching criteria",
             "parameters": {
@@ -738,6 +821,135 @@ pub async fn execute_mcp_tool_inner(
                     serde_json::json!({
                         "success": false,
                         "error": format!("Failed to list folders: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "create_folder" => {
+            let folder_name = match params.get("folder_name").and_then(|v| v.as_str()) {
+                Some(f) => f,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'folder_name' parameter",
+                    "tool": tool_name
+                })
+            };
+
+            // Get account ID from request or use default
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            match email_service.create_folder_for_account(folder_name, &account_id).await {
+                Ok(_) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": {
+                            "folder_name": folder_name,
+                            "account_id": account_id
+                        },
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to create folder: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "delete_folder" => {
+            let folder_name = match params.get("folder_name").and_then(|v| v.as_str()) {
+                Some(f) => f,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'folder_name' parameter",
+                    "tool": tool_name
+                })
+            };
+
+            // Get account ID from request or use default
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            match email_service.delete_folder_for_account(folder_name, &account_id).await {
+                Ok(_) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": {
+                            "folder_name": folder_name,
+                            "account_id": account_id
+                        },
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to delete folder: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "rename_folder" => {
+            let old_name = match params.get("old_name").and_then(|v| v.as_str()) {
+                Some(f) => f,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'old_name' parameter",
+                    "tool": tool_name
+                })
+            };
+            let new_name = match params.get("new_name").and_then(|v| v.as_str()) {
+                Some(f) => f,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'new_name' parameter",
+                    "tool": tool_name
+                })
+            };
+
+            // Get account ID from request or use default
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            match email_service.rename_folder_for_account(old_name, new_name, &account_id).await {
+                Ok(_) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": {
+                            "old_name": old_name,
+                            "new_name": new_name,
+                            "account_id": account_id
+                        },
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to rename folder: {}", e),
                         "tool": tool_name
                     })
                 }

@@ -426,4 +426,58 @@ impl EmailService {
         info!("Successfully expunged messages from {}", folder);
         Ok(())
     }
+
+    /// Create a new folder for a specific account
+    pub async fn create_folder_for_account(&self, name: &str, account_id: &str) -> Result<(), EmailServiceError> {
+        debug!("Creating folder '{}' for account {}", name, account_id);
+
+        // Get account credentials
+        let account = self.get_account(account_id).await?;
+
+        // Create session with account-specific credentials
+        let session = self.imap_factory.create_session_for_account(&account).await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session for account {}: {}", account_id, e)))?;
+
+        // Create the folder
+        session.create_folder(name).await?;
+
+        info!("Successfully created folder '{}' for account {}", name, account_id);
+        Ok(())
+    }
+
+    /// Delete a folder for a specific account
+    pub async fn delete_folder_for_account(&self, name: &str, account_id: &str) -> Result<(), EmailServiceError> {
+        debug!("Deleting folder '{}' for account {}", name, account_id);
+
+        // Get account credentials
+        let account = self.get_account(account_id).await?;
+
+        // Create session with account-specific credentials
+        let session = self.imap_factory.create_session_for_account(&account).await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session for account {}: {}", account_id, e)))?;
+
+        // Delete the folder
+        session.delete_folder(name).await?;
+
+        info!("Successfully deleted folder '{}' for account {}", name, account_id);
+        Ok(())
+    }
+
+    /// Rename a folder for a specific account
+    pub async fn rename_folder_for_account(&self, old_name: &str, new_name: &str, account_id: &str) -> Result<(), EmailServiceError> {
+        debug!("Renaming folder '{}' to '{}' for account {}", old_name, new_name, account_id);
+
+        // Get account credentials
+        let account = self.get_account(account_id).await?;
+
+        // Create session with account-specific credentials
+        let session = self.imap_factory.create_session_for_account(&account).await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session for account {}: {}", account_id, e)))?;
+
+        // Rename the folder
+        session.rename_folder(old_name, new_name).await?;
+
+        info!("Successfully renamed folder '{}' to '{}' for account {}", old_name, new_name, account_id);
+        Ok(())
+    }
 }

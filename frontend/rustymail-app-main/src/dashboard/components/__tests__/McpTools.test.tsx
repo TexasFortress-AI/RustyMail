@@ -33,6 +33,28 @@ vi.mock('../../api/hooks', () => ({
           uid: 'string',
         },
       },
+      {
+        name: 'create_folder',
+        description: 'Create a new email folder in the account',
+        parameters: {
+          folder_name: 'string',
+        },
+      },
+      {
+        name: 'delete_folder',
+        description: 'Delete an email folder from the account',
+        parameters: {
+          folder_name: 'string',
+        },
+      },
+      {
+        name: 'rename_folder',
+        description: 'Rename an email folder in the account',
+        parameters: {
+          old_name: 'string',
+          new_name: 'string',
+        },
+      },
     ],
     isLoading: false,
     error: null,
@@ -318,5 +340,156 @@ describe('McpTools Component', () => {
     expect(screen.getByText(/Sent/i)).toBeInTheDocument();
     expect(screen.getByText(/Drafts/i)).toBeInTheDocument();
     expect(screen.getByText(/4/i)).toBeInTheDocument();
+  });
+
+  // Tests for new folder management tools
+  describe('Folder Management Tools', () => {
+    it('displays create_folder tool', () => {
+      render(<McpTools />, { wrapper: createWrapper() });
+
+      expect(screen.getByText('create_folder')).toBeInTheDocument();
+      expect(screen.getByText('Create a new email folder in the account')).toBeInTheDocument();
+    });
+
+    it('displays delete_folder tool', () => {
+      render(<McpTools />, { wrapper: createWrapper() });
+
+      expect(screen.getByText('delete_folder')).toBeInTheDocument();
+      expect(screen.getByText('Delete an email folder from the account')).toBeInTheDocument();
+    });
+
+    it('displays rename_folder tool', () => {
+      render(<McpTools />, { wrapper: createWrapper() });
+
+      expect(screen.getByText('rename_folder')).toBeInTheDocument();
+      expect(screen.getByText('Rename an email folder in the account')).toBeInTheDocument();
+    });
+
+    it('executes create_folder with folder_name parameter', async () => {
+      const { useExecuteMcpTool } = require('../../api/hooks');
+      const mockMutate = vi.fn();
+      useExecuteMcpTool.mockReturnValue({
+        mutate: mockMutate,
+        isLoading: false,
+        error: null,
+        data: null,
+      });
+
+      const user = userEvent.setup();
+      render(<McpTools />, { wrapper: createWrapper() });
+
+      // Select create_folder tool
+      await user.click(screen.getByText('create_folder'));
+
+      // Fill in folder_name parameter
+      await user.type(screen.getByLabelText('folder_name'), 'INBOX.Projects');
+
+      // Execute
+      await user.click(screen.getByText('Execute'));
+
+      expect(mockMutate).toHaveBeenCalledWith({
+        tool: 'create_folder',
+        parameters: {
+          folder_name: 'INBOX.Projects',
+        },
+      });
+    });
+
+    it('executes delete_folder with folder_name parameter', async () => {
+      const { useExecuteMcpTool } = require('../../api/hooks');
+      const mockMutate = vi.fn();
+      useExecuteMcpTool.mockReturnValue({
+        mutate: mockMutate,
+        isLoading: false,
+        error: null,
+        data: null,
+      });
+
+      const user = userEvent.setup();
+      render(<McpTools />, { wrapper: createWrapper() });
+
+      // Select delete_folder tool
+      await user.click(screen.getByText('delete_folder'));
+
+      // Fill in folder_name parameter
+      await user.type(screen.getByLabelText('folder_name'), 'INBOX.OldFolder');
+
+      // Execute
+      await user.click(screen.getByText('Execute'));
+
+      expect(mockMutate).toHaveBeenCalledWith({
+        tool: 'delete_folder',
+        parameters: {
+          folder_name: 'INBOX.OldFolder',
+        },
+      });
+    });
+
+    it('executes rename_folder with old_name and new_name parameters', async () => {
+      const { useExecuteMcpTool } = require('../../api/hooks');
+      const mockMutate = vi.fn();
+      useExecuteMcpTool.mockReturnValue({
+        mutate: mockMutate,
+        isLoading: false,
+        error: null,
+        data: null,
+      });
+
+      const user = userEvent.setup();
+      render(<McpTools />, { wrapper: createWrapper() });
+
+      // Select rename_folder tool
+      await user.click(screen.getByText('rename_folder'));
+
+      // Fill in parameters
+      await user.type(screen.getByLabelText('old_name'), 'INBOX.Temp');
+      await user.type(screen.getByLabelText('new_name'), 'INBOX.Archive');
+
+      // Execute
+      await user.click(screen.getByText('Execute'));
+
+      expect(mockMutate).toHaveBeenCalledWith({
+        tool: 'rename_folder',
+        parameters: {
+          old_name: 'INBOX.Temp',
+          new_name: 'INBOX.Archive',
+        },
+      });
+    });
+
+    it('shows success result for create_folder', () => {
+      const { useExecuteMcpTool } = require('../../api/hooks');
+      useExecuteMcpTool.mockReturnValue({
+        mutate: vi.fn(),
+        isLoading: false,
+        error: null,
+        data: {
+          success: true,
+          data: {
+            folder_name: 'INBOX.Projects',
+            account_id: 'user@example.com',
+          },
+        },
+      });
+
+      render(<McpTools />, { wrapper: createWrapper() });
+
+      expect(screen.getByText(/Result:/i)).toBeInTheDocument();
+      expect(screen.getByText(/INBOX.Projects/i)).toBeInTheDocument();
+    });
+
+    it('handles folder management errors gracefully', () => {
+      const { useExecuteMcpTool } = require('../../api/hooks');
+      useExecuteMcpTool.mockReturnValue({
+        mutate: vi.fn(),
+        isLoading: false,
+        error: new Error('Failed to create folder: Folder already exists'),
+        data: null,
+      });
+
+      render(<McpTools />, { wrapper: createWrapper() });
+
+      expect(screen.getByText(/Folder already exists/i)).toBeInTheDocument();
+    });
   });
 });
