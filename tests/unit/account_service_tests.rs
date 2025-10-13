@@ -47,6 +47,7 @@ fn cleanup_test_db(test_name: &str) {
 fn create_test_account(email: &str, display_name: &str) -> Account {
     Account {
         email_address: email.to_string(),
+        id: email.to_string(), // id mirrors email_address
         display_name: display_name.to_string(),
         provider_type: Some("gmail".to_string()),
         imap_host: "imap.gmail.com".to_string(),
