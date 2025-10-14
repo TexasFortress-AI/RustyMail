@@ -7,7 +7,7 @@ import StatsPanel from './StatsPanel';
 import ClientListPanel from './ClientListPanel';
 import ChatbotPanel from './ChatbotPanel';
 import McpTools from './McpTools';
-import EmailList from './EmailList';
+import EmailList, { EmailContext } from './EmailList';
 import { AccountListPanel } from './AccountListPanel';
 import { AccountFormDialog } from './AccountFormDialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -27,8 +27,8 @@ const Dashboard: React.FC = () => {
   // Current folder state (shared between EmailList and ChatbotPanel)
   const [currentFolder, setCurrentFolder] = useState('INBOX');
 
-  // Selected email UID (for MCP tools context)
-  const [selectedEmailUid, setSelectedEmailUid] = useState<number | undefined>(undefined);
+  // Selected email context (for MCP tools)
+  const [selectedEmailContext, setSelectedEmailContext] = useState<EmailContext | undefined>(undefined);
 
   // Account management state
   const [accountFormOpen, setAccountFormOpen] = useState(false);
@@ -231,7 +231,7 @@ const Dashboard: React.FC = () => {
                 <EmailList
                   currentFolder={currentFolder}
                   setCurrentFolder={setCurrentFolder}
-                  onEmailSelect={setSelectedEmailUid}
+                  onEmailSelect={setSelectedEmailContext}
                 />
               </div>
 
@@ -255,7 +255,7 @@ const Dashboard: React.FC = () => {
               >
                 <McpTools
                   currentFolder={currentFolder}
-                  selectedEmailUid={selectedEmailUid}
+                  selectedEmailContext={selectedEmailContext}
                 />
               </div>
             </div>

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, Play, Terminal, Code, X } from 'lucide-react';
 import config from '../config';
 import { useAccount } from '../../contexts/AccountContext';
+import type { EmailContext } from './EmailList';
 
 interface McpTool {
   name: string;
@@ -11,10 +12,10 @@ interface McpTool {
 
 interface McpToolsProps {
   currentFolder?: string;
-  selectedEmailUid?: number;
+  selectedEmailContext?: EmailContext;
 }
 
-const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailUid }) => {
+const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext }) => {
   const { currentAccount } = useAccount();
   const [tools, setTools] = useState<McpTool[]>([]);
   const [expandedTool, setExpandedTool] = useState<string | null>(null);
@@ -38,8 +39,18 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailUid }) 
     }
 
     // UID
-    if (lowerParam === 'uid' && selectedEmailUid !== undefined) {
-      return selectedEmailUid.toString();
+    if (lowerParam === 'uid' && selectedEmailContext?.uid !== undefined) {
+      return selectedEmailContext.uid.toString();
+    }
+
+    // Message ID
+    if (lowerParam === 'message_id' && selectedEmailContext?.message_id) {
+      return selectedEmailContext.message_id;
+    }
+
+    // Index
+    if (lowerParam === 'index' && selectedEmailContext?.index !== undefined) {
+      return selectedEmailContext.index.toString();
     }
 
     return '';
@@ -74,7 +85,7 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailUid }) 
         }
       }
     }
-  }, [currentFolder, selectedEmailUid, currentAccount, expandedTool, tools]);
+  }, [currentFolder, selectedEmailContext, currentAccount, expandedTool, tools]);
 
   const fetchTools = async () => {
     try {

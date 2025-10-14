@@ -21,6 +21,7 @@ import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
 interface Email {
   id: number;
   uid: number;
+  message_id: string | null;
   subject: string | null;
   from_address: string | null;
   from_name: string | null;
@@ -37,10 +38,16 @@ interface EmailListResponse {
   count: number;
 }
 
+export interface EmailContext {
+  uid: number;
+  message_id: string | null;
+  index: number;
+}
+
 interface EmailListProps {
   currentFolder: string;
   setCurrentFolder: (folder: string) => void;
-  onEmailSelect?: (uid: number | undefined) => void;
+  onEmailSelect?: (context: EmailContext | undefined) => void;
 }
 
 const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, onEmailSelect }) => {
@@ -336,14 +343,17 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
           <>
             <div className="flex-1 overflow-y-auto min-h-0">
               <div className="space-y-2">
-                {data?.emails.map((email) => (
+                {data?.emails.map((email, arrayIndex) => {
+                  const offset = (currentPage - 1) * pageSize;
+                  const emailIndex = offset + arrayIndex;
+                  return (
                   <div
                     key={email.id}
                     className="border rounded-lg p-3 hover:bg-gray-50 cursor-pointer transition-colors"
-                    onMouseEnter={() => onEmailSelect?.(email.uid)}
+                    onMouseEnter={() => onEmailSelect?.({ uid: email.uid, message_id: email.message_id, index: emailIndex })}
                     onClick={() => {
                       setSelectedEmail(email);
-                      onEmailSelect?.(email.uid);
+                      onEmailSelect?.({ uid: email.uid, message_id: email.message_id, index: emailIndex });
                     }}
                   >
                     <div className="flex justify-between items-start mb-1">
@@ -370,7 +380,8 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
                       </div>
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
