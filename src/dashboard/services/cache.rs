@@ -55,6 +55,7 @@ pub struct CachedEmail {
     pub body_text: Option<String>,
     pub body_html: Option<String>,
     pub cached_at: DateTime<Utc>,
+    pub has_attachments: bool,
 }
 
 #[derive(Debug, Clone)]
