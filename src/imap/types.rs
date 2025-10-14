@@ -13,9 +13,10 @@ use async_imap::types::{
     Mailbox as AsyncImapMailbox,
 };
 use chrono::{DateTime, Utc};
-// imap_types removed - NString was unused 
+// imap_types removed - NString was unused
 use serde::{Deserialize, Serialize};
 // use thiserror::Error; // Unused
+use log::debug;
 
 use crate::imap::error::ImapError;
 use crate::imap::session::DEFAULT_MAILBOX_DELIMITER;
@@ -731,14 +732,32 @@ impl Email {
         text_body = message.body_text(0).map(|s| s.to_string());
         html_body = message.body_html(0).map(|s| s.to_string());
 
-        // Process attachments
-        for i in 0..message.attachment_count() {
-            if let Some(attachment) = message.attachment(i) {
-                let mime_part = Self::create_attachment_mime_part(attachment);
+        // DEBUG: Log part count and attachment count
+        debug!("Email MIME parsing: {} total parts, {} attachments",
+               message.parts.len(), message.attachment_count());
+
+        // Process ALL parts, not just attachments
+        for (i, part) in message.parts.iter().enumerate() {
+            use mail_parser::MimeHeaders;
+
+            debug!("  Part {}: content_type={:?}, attachment_name={:?}",
+                   i,
+                   part.content_type().map(|ct| format!("{}/{}", ct.c_type, ct.c_subtype.as_ref().unwrap_or(&"unknown".into()))),
+                   part.attachment_name());
+
+            // Check if this part should be treated as an attachment
+            // Parts with filenames are attachments
+            let is_attachment = part.attachment_name().is_some();
+
+            if is_attachment && i > 0 {  // Skip part 0 which is usually the message itself
+                debug!("    -> Treating as attachment");
+                let mime_part = Self::create_attachment_mime_part(part);
                 attachments.push(mime_part.clone());
                 mime_parts.push(mime_part);
             }
         }
+
+        debug!("Parsed {} attachments from email", attachments.len());
 
         Ok((mime_parts, text_body, html_body, attachments))
     }

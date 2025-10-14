@@ -79,13 +79,42 @@ pub async fn list_attachments(
     };
 
     // Get attachments metadata
-    let attachments = attachment_storage::get_attachments_metadata(
+    let mut attachments = attachment_storage::get_attachments_metadata(
         db_pool,
         &query.account_id,
         &message_id,
     )
     .await
     .map_err(|e| ApiError::InternalError(format!("Failed to get attachments: {}", e)))?;
+
+    // If no attachments found in database and we have folder+uid, fetch from IMAP
+    if attachments.is_empty() && query.folder.is_some() && query.uid.is_some() {
+        let folder = query.folder.as_ref().unwrap();
+        let uid = query.uid.unwrap();
+
+        debug!("No attachments in database for message_id {}. Fetching from IMAP...", message_id);
+
+        // Fetch email with attachments from IMAP (this will save them to DB)
+        match state.email_service.fetch_email_with_attachments(folder, uid, &query.account_id).await {
+            Ok((_, attachment_infos)) => {
+                // Attachments now saved to database
+                debug!("Successfully fetched and saved {} attachments from IMAP", attachment_infos.len());
+
+                // Re-query database to get the saved attachments
+                attachments = attachment_storage::get_attachments_metadata(
+                    db_pool,
+                    &query.account_id,
+                    &message_id,
+                )
+                .await
+                .map_err(|e| ApiError::InternalError(format!("Failed to get attachments after IMAP fetch: {}", e)))?;
+            }
+            Err(e) => {
+                error!("Failed to fetch attachments from IMAP: {}", e);
+                // Continue with empty attachments list rather than failing the request
+            }
+        }
+    }
 
     info!("Listed {} attachments for message_id: {}", attachments.len(), message_id);
 
