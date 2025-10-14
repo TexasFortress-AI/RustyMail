@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Play, Terminal, Code, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Play, Terminal, Code, X, Copy, Check } from 'lucide-react';
 import config from '../config';
 import { useAccount } from '../../contexts/AccountContext';
 import type { EmailContext } from './EmailList';
@@ -23,6 +23,7 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
   const [results, setResults] = useState<{ [key: string]: any }>({});
   const [parameters, setParameters] = useState<{ [key: string]: { [key: string]: string } }>({});
   const [error, setError] = useState<string | null>(null);
+  const [copiedTool, setCopiedTool] = useState<string | null>(null);
 
   // Get context-based default values for parameters
   const getContextDefaults = (paramName: string): string => {
@@ -200,6 +201,17 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
     }));
   };
 
+  const copyResult = async (toolName: string) => {
+    try {
+      const resultText = JSON.stringify(results[toolName], null, 2);
+      await navigator.clipboard.writeText(resultText);
+      setCopiedTool(toolName);
+      setTimeout(() => setCopiedTool(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
   return (
     <div className="bg-card border rounded-lg p-4 h-full flex flex-col">
       <div className="flex items-center gap-2 mb-4 flex-shrink-0">
@@ -292,7 +304,26 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
                 {/* Results */}
                 {results[tool.name] && (
                   <div className="mt-4 p-3 bg-muted rounded border">
-                    <h4 className="text-xs font-semibold text-muted-foreground mb-2">RESULT</h4>
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-xs font-semibold text-muted-foreground">RESULT</h4>
+                      <button
+                        onClick={() => copyResult(tool.name)}
+                        className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-background rounded transition-colors"
+                        title="Copy result to clipboard"
+                      >
+                        {copiedTool === tool.name ? (
+                          <>
+                            <Check className="w-3 h-3" />
+                            Copied!
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-3 h-3" />
+                            Copy
+                          </>
+                        )}
+                      </button>
+                    </div>
                     <pre className="text-xs overflow-x-auto">
                       {JSON.stringify(results[tool.name], null, 2)}
                     </pre>

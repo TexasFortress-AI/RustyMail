@@ -1937,7 +1937,7 @@ pub async fn execute_mcp_tool_inner(
             };
 
             // Check if attachments exist in database, fetch from IMAP if not
-            let attachments = match attachment_storage::get_attachments_metadata(db_pool, &account_id, &message_id).await {
+            let mut attachments = match attachment_storage::get_attachments_metadata(db_pool, &account_id, &message_id).await {
                 Ok(atts) => atts,
                 Err(e) => {
                     return serde_json::json!({
@@ -1957,9 +1957,21 @@ pub async fn execute_mcp_tool_inner(
 
                 // Fetch email with attachments from IMAP (this will save them to DB)
                 match email_service.fetch_email_with_attachments(folder, uid, &account_id).await {
-                    Ok(_) => {
-                        // Attachments now saved to database, continue with download
-                        debug!("Successfully fetched and saved {} attachments from IMAP", attachments.len());
+                    Ok((_, attachment_infos)) => {
+                        // Attachments now saved to database
+                        debug!("Successfully fetched and saved {} attachments from IMAP", attachment_infos.len());
+
+                        // Re-query database to get the saved attachments
+                        attachments = match attachment_storage::get_attachments_metadata(db_pool, &account_id, &message_id).await {
+                            Ok(atts) => atts,
+                            Err(e) => {
+                                return serde_json::json!({
+                                    "success": false,
+                                    "error": format!("Failed to get attachments after IMAP fetch: {}", e),
+                                    "tool": tool_name
+                                })
+                            }
+                        };
                     }
                     Err(e) => {
                         return serde_json::json!({

@@ -4,7 +4,7 @@ import { config } from '../config';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { useAccount } from '../../contexts/AccountContext';
-import { RefreshCw, Mail, Paperclip, Download } from 'lucide-react';
+import { RefreshCw, Mail, Paperclip, Download, Archive } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '../../hooks/use-toast';
 import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
@@ -136,6 +136,27 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
     }
   };
 
+  const downloadAllAttachments = async () => {
+    if (!currentAccount || !currentMessageId || attachments.length === 0) return;
+
+    try {
+      const url = `${API_BASE_URL}/dashboard/attachments/${encodeURIComponent(currentMessageId)}/zip?account_id=${currentAccount.id}`;
+      window.open(url, '_blank');
+
+      toast({
+        title: "Download Started",
+        description: `Downloading ${attachments.length} attachment(s) as ZIP`,
+      });
+    } catch (error) {
+      console.error('Error downloading all attachments:', error);
+      toast({
+        title: "Download Failed",
+        description: "Failed to download attachments",
+        variant: "destructive",
+      });
+    }
+  };
+
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -254,10 +275,20 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
           </div>
         ) : attachments.length > 0 ? (
           <div className="mb-4 border-t pt-4">
-            <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
-              <Paperclip className="h-4 w-4" />
-              Attachments ({attachments.length})
-            </h4>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-semibold flex items-center gap-2">
+                <Paperclip className="h-4 w-4" />
+                Attachments ({attachments.length})
+              </h4>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={downloadAllAttachments}
+              >
+                <Archive className="h-4 w-4 mr-2" />
+                Download All as ZIP
+              </Button>
+            </div>
             <div className="space-y-2">
               {attachments.map((attachment, index) => (
                 <div
