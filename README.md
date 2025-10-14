@@ -576,6 +576,11 @@ MIT License. See `LICENSE`.
 - [Become a sponsor for Chris](https://github.com/sponsors/fellowtraveler)
 - [![Tip Chris in Crypto](https://tip.md/badge.svg)](https://tip.md/FellowTraveler)
 
+## TexasFortress.AI
+
+- [Our website: TexasFortress.AI](https://texasfortress.ai/)
+- Contact us: [info@texasfortress.ai](mailto:info@texasfortress.ai)
+
 ## See our AGI Articles:
 
 ### [Pondering AGI](https://christopherdavidodom.substack.com/p/pondering-agi)
