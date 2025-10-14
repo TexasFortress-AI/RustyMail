@@ -27,6 +27,9 @@ const Dashboard: React.FC = () => {
   // Current folder state (shared between EmailList and ChatbotPanel)
   const [currentFolder, setCurrentFolder] = useState('INBOX');
 
+  // Selected email UID (for MCP tools context)
+  const [selectedEmailUid, setSelectedEmailUid] = useState<number | undefined>(undefined);
+
   // Account management state
   const [accountFormOpen, setAccountFormOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
@@ -228,6 +231,7 @@ const Dashboard: React.FC = () => {
                 <EmailList
                   currentFolder={currentFolder}
                   setCurrentFolder={setCurrentFolder}
+                  onEmailSelect={setSelectedEmailUid}
                 />
               </div>
 
@@ -249,7 +253,10 @@ const Dashboard: React.FC = () => {
                 className="overflow-hidden min-h-0"
                 style={{ width: `${100 - emailListWidth}%` }}
               >
-                <McpTools />
+                <McpTools
+                  currentFolder={currentFolder}
+                  selectedEmailUid={selectedEmailUid}
+                />
               </div>
             </div>
 

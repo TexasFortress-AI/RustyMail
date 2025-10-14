@@ -40,9 +40,10 @@ interface EmailListResponse {
 interface EmailListProps {
   currentFolder: string;
   setCurrentFolder: (folder: string) => void;
+  onEmailSelect?: (uid: number | undefined) => void;
 }
 
-const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }) => {
+const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, onEmailSelect }) => {
   const { currentAccount } = useAccount();
   const { toast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
@@ -57,7 +58,8 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }
   useEffect(() => {
     setCurrentPage(1);
     setSelectedEmail(null);
-  }, [currentFolder, currentAccount?.id]);
+    onEmailSelect?.(undefined);
+  }, [currentFolder, currentAccount?.id, onEmailSelect]);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery<EmailListResponse>({
     queryKey: ['emails', currentAccount?.id, currentFolder, currentPage],
@@ -245,6 +247,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }
     const handleEsc = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         setSelectedEmail(null);
+        onEmailSelect?.(undefined);
       }
     };
 
@@ -336,7 +339,10 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }
                   <div
                     key={email.id}
                     className="border rounded-lg p-3 hover:bg-gray-50 cursor-pointer transition-colors"
-                    onClick={() => setSelectedEmail(email)}
+                    onClick={() => {
+                      setSelectedEmail(email);
+                      onEmailSelect?.(email.uid);
+                    }}
                   >
                     <div className="flex justify-between items-start mb-1">
                       <div className="flex-1">
@@ -421,7 +427,10 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }
             <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto relative">
               {/* Close button in top-right corner */}
               <button
-                onClick={() => setSelectedEmail(null)}
+                onClick={() => {
+                  setSelectedEmail(null);
+                  onEmailSelect?.(undefined);
+                }}
                 className="absolute top-4 right-4 p-1 hover:bg-gray-100 rounded-full transition-colors"
                 aria-label="Close"
               >
@@ -484,7 +493,10 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }
                 </div>
               ) : null}
 
-              <Button onClick={() => setSelectedEmail(null)}>Close</Button>
+              <Button onClick={() => {
+                setSelectedEmail(null);
+                onEmailSelect?.(undefined);
+              }}>Close</Button>
             </div>
           </div>
         )}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Play, Terminal, Code } from 'lucide-react';
+import { ChevronDown, ChevronRight, Play, Terminal, Code, X } from 'lucide-react';
 import config from '../config';
 import { useAccount } from '../../contexts/AccountContext';
 
@@ -9,7 +9,12 @@ interface McpTool {
   parameters: { [key: string]: string };
 }
 
-const McpTools: React.FC = () => {
+interface McpToolsProps {
+  currentFolder?: string;
+  selectedEmailUid?: number;
+}
+
+const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailUid }) => {
   const { currentAccount } = useAccount();
   const [tools, setTools] = useState<McpTool[]>([]);
   const [expandedTool, setExpandedTool] = useState<string | null>(null);
@@ -87,8 +92,54 @@ const McpTools: React.FC = () => {
     }
   };
 
+  // Get context-based default values for parameters
+  const getContextDefaults = (paramName: string): string => {
+    const lowerParam = paramName.toLowerCase();
+
+    // Account ID
+    if (lowerParam === 'account_id' && currentAccount) {
+      return currentAccount.email_address || currentAccount.id;
+    }
+
+    // Folder
+    if (lowerParam === 'folder' && currentFolder) {
+      return currentFolder;
+    }
+
+    // UID
+    if (lowerParam === 'uid' && selectedEmailUid !== undefined) {
+      return selectedEmailUid.toString();
+    }
+
+    return '';
+  };
+
   const toggleTool = (toolName: string) => {
-    setExpandedTool(expandedTool === toolName ? null : toolName);
+    const isExpanding = expandedTool !== toolName;
+    setExpandedTool(isExpanding ? toolName : null);
+
+    // Auto-fill parameters when expanding
+    if (isExpanding) {
+      const tool = tools.find(t => t.name === toolName);
+      if (tool) {
+        const autoFilledParams: { [key: string]: string } = {};
+        Object.keys(tool.parameters).forEach(paramName => {
+          const defaultValue = getContextDefaults(paramName);
+          if (defaultValue) {
+            autoFilledParams[paramName] = defaultValue;
+          }
+        });
+
+        // Merge auto-filled with existing parameters
+        setParameters(prev => ({
+          ...prev,
+          [toolName]: {
+            ...prev[toolName],
+            ...autoFilledParams
+          }
+        }));
+      }
+    }
   };
 
   const updateParameter = (toolName: string, paramName: string, value: string) => {
@@ -97,6 +148,16 @@ const McpTools: React.FC = () => {
       [toolName]: {
         ...prev[toolName],
         [paramName]: value
+      }
+    }));
+  };
+
+  const clearParameter = (toolName: string, paramName: string) => {
+    setParameters(prev => ({
+      ...prev,
+      [toolName]: {
+        ...prev[toolName],
+        [paramName]: ''
       }
     }));
   };
@@ -147,13 +208,24 @@ const McpTools: React.FC = () => {
                           <label className="block text-xs text-muted-foreground mb-1">
                             {paramName}: <span className="text-muted-foreground/70">{paramDesc}</span>
                           </label>
-                          <input
-                            type="text"
-                            value={parameters[tool.name]?.[paramName] || ''}
-                            onChange={(e) => updateParameter(tool.name, paramName, e.target.value)}
-                            className="w-full px-2 py-1 bg-background border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                            placeholder={`Enter ${paramName}`}
-                          />
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={parameters[tool.name]?.[paramName] || ''}
+                              onChange={(e) => updateParameter(tool.name, paramName, e.target.value)}
+                              className="w-full px-2 py-1 pr-8 bg-background border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                              placeholder={`Enter ${paramName}`}
+                            />
+                            {parameters[tool.name]?.[paramName] && (
+                              <button
+                                onClick={() => clearParameter(tool.name, paramName)}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-muted rounded"
+                                title="Clear field"
+                              >
+                                <X className="w-3 h-3 text-muted-foreground hover:text-foreground" />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       ))}
                     </div>
