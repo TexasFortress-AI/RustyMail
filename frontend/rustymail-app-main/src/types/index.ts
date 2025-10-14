@@ -100,6 +100,23 @@ export interface EmailFolder {
   unreadCount: number;
 }
 
+// Attachment Types
+export interface AttachmentInfo {
+  filename: string;
+  size_bytes: number;
+  content_type?: string;
+  downloaded_at: string; // ISO timestamp
+  storage_path: string;
+}
+
+export interface ListAttachmentsResponse {
+  success: boolean;
+  message_id: string;
+  account_id: string;
+  attachments: AttachmentInfo[];
+  count: number;
+}
+
 // SSE Event Types
 export interface SSEEvent {
   type: 'stats_updated' | 'client_connected' | 'client_disconnected' | 'system_alert';

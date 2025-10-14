@@ -4,6 +4,7 @@ use super::accounts;
 use super::sse;
 use super::config;
 use super::health;
+use super::attachments;
 use log::info;
 
 pub fn configure_routes() -> Scope {
@@ -48,6 +49,10 @@ pub fn configure_routes() -> Scope {
         .route("/clients/{client_id}/subscriptions", web::put().to(handlers::update_client_subscriptions))
         .route("/clients/{client_id}/subscribe", web::post().to(handlers::subscribe_to_event))
         .route("/clients/{client_id}/unsubscribe", web::post().to(handlers::unsubscribe_from_event))
+        // Attachment management endpoints
+        .route("/attachments/list", web::get().to(attachments::list_attachments))
+        .route("/attachments/{message_id}/zip", web::get().to(attachments::download_attachments_zip))
+        .route("/attachments/{message_id}/{filename}", web::get().to(attachments::download_attachment))
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {

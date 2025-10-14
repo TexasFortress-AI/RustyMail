@@ -13,9 +13,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { RefreshCw, Mail, ChevronLeft, ChevronRight, X, ChevronsLeft, ChevronsRight } from 'lucide-react';
+import { RefreshCw, Mail, ChevronLeft, ChevronRight, X, ChevronsLeft, ChevronsRight, Paperclip, Download } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '../../hooks/use-toast';
+import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
 
 interface Email {
   id: number;
@@ -47,6 +48,9 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const [hasAutoSynced, setHasAutoSynced] = useState<Set<string>>(new Set());
+  const [attachments, setAttachments] = useState<AttachmentInfo[]>([]);
+  const [currentMessageId, setCurrentMessageId] = useState<string>('');
+  const [loadingAttachments, setLoadingAttachments] = useState(false);
   const pageSize = 20;
 
   // Reset to page 1 when folder or account changes
@@ -126,6 +130,72 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }
       });
     }
   };
+
+  const fetchAttachments = async (email: Email) => {
+    if (!currentAccount) return;
+
+    setLoadingAttachments(true);
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/dashboard/attachments/list?account_id=${currentAccount.id}&folder=${encodeURIComponent(currentFolder)}&uid=${email.uid}`,
+        {
+          headers: {
+            'X-API-Key': config.api.apiKey
+          }
+        }
+      );
+
+      if (response.ok) {
+        const data: ListAttachmentsResponse = await response.json();
+        setAttachments(data.attachments);
+        setCurrentMessageId(data.message_id);
+      } else {
+        console.error('Failed to fetch attachments');
+        setAttachments([]);
+        setCurrentMessageId('');
+      }
+    } catch (error) {
+      console.error('Error fetching attachments:', error);
+      setAttachments([]);
+    } finally {
+      setLoadingAttachments(false);
+    }
+  };
+
+  const downloadAttachment = async (messageId: string, filename: string) => {
+    if (!currentAccount) return;
+
+    try {
+      const url = `${API_BASE_URL}/dashboard/attachments/${encodeURIComponent(messageId)}/${encodeURIComponent(filename)}?account_id=${currentAccount.id}`;
+      window.open(url, '_blank');
+    } catch (error) {
+      console.error('Error downloading attachment:', error);
+      toast({
+        title: "Download Failed",
+        description: "Failed to download attachment",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${Math.round((bytes / Math.pow(k, i)) * 100) / 100} ${sizes[i]}`;
+  };
+
+  // Fetch attachments when email is selected
+  useEffect(() => {
+    if (selectedEmail) {
+      fetchAttachments(selectedEmail);
+    } else {
+      setAttachments([]);
+      setCurrentMessageId('');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedEmail]);
 
   // Auto-sync when cache is empty for the current account/folder combination
   useEffect(() => {
@@ -370,6 +440,50 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder }
               <div className="mb-4 whitespace-pre-wrap">
                 {selectedEmail.body_text || 'No content'}
               </div>
+
+              {/* Attachments Section */}
+              {loadingAttachments ? (
+                <div className="mb-4 flex items-center gap-2 text-sm text-gray-600">
+                  <RefreshCw className="h-4 w-4 animate-spin" />
+                  Loading attachments...
+                </div>
+              ) : attachments.length > 0 ? (
+                <div className="mb-4">
+                  <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                    <Paperclip className="h-4 w-4" />
+                    Attachments ({attachments.length})
+                  </h4>
+                  <div className="space-y-2">
+                    {attachments.map((attachment, index) => (
+                      <div
+                        key={index}
+                        className="flex items-center justify-between p-2 bg-gray-50 rounded border"
+                      >
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                          <Paperclip className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">
+                              {attachment.filename}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              {formatFileSize(attachment.size_bytes)}
+                              {attachment.content_type && ` • ${attachment.content_type}`}
+                            </div>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => downloadAttachment(currentMessageId, attachment.filename)}
+                        >
+                          <Download className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <Button onClick={() => setSelectedEmail(null)}>Close</Button>
             </div>
           </div>
