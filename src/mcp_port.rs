@@ -16,6 +16,9 @@ use crate::mcp_cache_tools::{
     list_cached_emails_tool, get_email_by_uid_tool, get_email_by_index_tool,
     count_emails_in_folder_tool, get_folder_stats_tool, search_cached_emails_tool
 };
+use crate::mcp_attachment_tools::{
+    list_email_attachments_tool, download_email_attachments_tool, cleanup_attachments_tool
+};
 use crate::dashboard::services::Account;
 
 // Define the signature for an MCP tool function
@@ -673,6 +676,11 @@ pub fn create_mcp_tool_registry() -> McpToolRegistry {
     // Account management tools
     registry.register("list_accounts", DefaultMcpTool::new("list_accounts", list_accounts_tool));
     registry.register("set_current_account", DefaultMcpTool::new("set_current_account", set_current_account_tool));
+
+    // Attachment tools
+    registry.register("list_email_attachments", DefaultMcpTool::new("list_email_attachments", list_email_attachments_tool));
+    registry.register("download_email_attachments", DefaultMcpTool::new("download_email_attachments", download_email_attachments_tool));
+    registry.register("cleanup_attachments", DefaultMcpTool::new("cleanup_attachments", cleanup_attachments_tool));
 
     registry
 }

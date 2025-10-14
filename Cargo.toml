@@ -98,6 +98,9 @@ lru = "0.12" # For in-memory LRU cache
 # ZIP archive support for attachments
 zip = { version = "0.6", features = ["deflate"], default-features = false }
 
+# Directory utilities for attachment downloads
+dirs = "5.0"
+
 # Dashboard dependencies
 sysinfo = "0.30" # For system metrics
 
