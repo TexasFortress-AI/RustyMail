@@ -103,7 +103,7 @@ const TopBar: React.FC = () => {
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
         <div className="flex items-center">
           <div className="font-semibold text-xl text-foreground">
-            RustyMail SSE Dashboard
+            RustyMail Dashboard
           </div>
         </div>
         
