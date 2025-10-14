@@ -59,7 +59,8 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     setCurrentPage(1);
     setSelectedEmail(null);
     onEmailSelect?.(undefined);
-  }, [currentFolder, currentAccount?.id, onEmailSelect]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentFolder, currentAccount?.id]);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery<EmailListResponse>({
     queryKey: ['emails', currentAccount?.id, currentFolder, currentPage],
@@ -339,6 +340,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
                   <div
                     key={email.id}
                     className="border rounded-lg p-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                    onMouseEnter={() => onEmailSelect?.(email.uid)}
                     onClick={() => {
                       setSelectedEmail(email);
                       onEmailSelect?.(email.uid);

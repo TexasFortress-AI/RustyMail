@@ -23,9 +23,58 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailUid }) 
   const [parameters, setParameters] = useState<{ [key: string]: { [key: string]: string } }>({});
   const [error, setError] = useState<string | null>(null);
 
+  // Get context-based default values for parameters
+  const getContextDefaults = (paramName: string): string => {
+    const lowerParam = paramName.toLowerCase();
+
+    // Account ID
+    if (lowerParam === 'account_id' && currentAccount) {
+      return currentAccount.email_address || currentAccount.id;
+    }
+
+    // Folder
+    if (lowerParam === 'folder' && currentFolder) {
+      return currentFolder;
+    }
+
+    // UID
+    if (lowerParam === 'uid' && selectedEmailUid !== undefined) {
+      return selectedEmailUid.toString();
+    }
+
+    return '';
+  };
+
   useEffect(() => {
     fetchTools();
   }, []);
+
+  // Update parameters when context changes (for expanded tool)
+  useEffect(() => {
+    if (expandedTool && tools.length > 0) {
+      const tool = tools.find(t => t.name === expandedTool);
+      if (tool) {
+        const updatedParams: { [key: string]: string } = {};
+        Object.keys(tool.parameters).forEach(paramName => {
+          const defaultValue = getContextDefaults(paramName);
+          if (defaultValue) {
+            updatedParams[paramName] = defaultValue;
+          }
+        });
+
+        // Only update if we have values to set
+        if (Object.keys(updatedParams).length > 0) {
+          setParameters(prev => ({
+            ...prev,
+            [expandedTool]: {
+              ...prev[expandedTool],
+              ...updatedParams
+            }
+          }));
+        }
+      }
+    }
+  }, [currentFolder, selectedEmailUid, currentAccount, expandedTool, tools]);
 
   const fetchTools = async () => {
     try {
@@ -90,28 +139,6 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailUid }) 
     } finally {
       setExecuting(null);
     }
-  };
-
-  // Get context-based default values for parameters
-  const getContextDefaults = (paramName: string): string => {
-    const lowerParam = paramName.toLowerCase();
-
-    // Account ID
-    if (lowerParam === 'account_id' && currentAccount) {
-      return currentAccount.email_address || currentAccount.id;
-    }
-
-    // Folder
-    if (lowerParam === 'folder' && currentFolder) {
-      return currentFolder;
-    }
-
-    // UID
-    if (lowerParam === 'uid' && selectedEmailUid !== undefined) {
-      return selectedEmailUid.toString();
-    }
-
-    return '';
   };
 
   const toggleTool = (toolName: string) => {
