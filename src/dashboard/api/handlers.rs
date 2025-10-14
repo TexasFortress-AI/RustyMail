@@ -709,6 +709,37 @@ pub async fn list_mcp_tools(
             "parameters": {
                 "account_id": "Account ID to set as current"
             }
+        }),
+        // Attachment management tools
+        serde_json::json!({
+            "name": "list_email_attachments",
+            "description": "List all attachments for a specific email",
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
+                "folder": "Folder containing the email (when using uid)",
+                "uid": "Email UID (alternative to message_id)",
+                "message_id": "Message ID (alternative to folder+uid)"
+            }
+        }),
+        serde_json::json!({
+            "name": "download_email_attachments",
+            "description": "Download attachments from an email to local directory",
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
+                "folder": "Folder containing the email (when using uid)",
+                "uid": "Email UID (alternative to message_id)",
+                "message_id": "Message ID (alternative to folder+uid)",
+                "destination": "Destination directory path (optional)",
+                "create_zip": "Create ZIP archive instead of individual files (optional, boolean)"
+            }
+        }),
+        serde_json::json!({
+            "name": "cleanup_attachments",
+            "description": "Delete downloaded attachments for a specific email",
+            "parameters": {
+                "message_id": "REQUIRED. The message ID of the email",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+            }
         })
     ];
 
