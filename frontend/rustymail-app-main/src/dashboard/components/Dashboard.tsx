@@ -7,6 +7,7 @@ import StatsPanel from './StatsPanel';
 import ClientListPanel from './ClientListPanel';
 import ChatbotPanel from './ChatbotPanel';
 import McpTools from './McpTools';
+import EmailBody from './EmailBody';
 import EmailList, { EmailContext } from './EmailList';
 import { AccountListPanel } from './AccountListPanel';
 import { AccountFormDialog } from './AccountFormDialog';
@@ -48,6 +49,11 @@ const Dashboard: React.FC = () => {
   const [systemLeftWidth, setSystemLeftWidth] = useState(50); // percentage for left panel
   const [isResizingSystem, setIsResizingSystem] = useState(false);
   const systemResizeStartRef = useRef({ clientX: 0, startLeftWidth: 0, containerWidth: 0 });
+
+  // Splitter state for Email bottom section (horizontal - Chatbot/McpTools)
+  const [emailBottomChatbotWidth, setEmailBottomChatbotWidth] = useState(50); // percentage for Chatbot
+  const [isResizingEmailBottom, setIsResizingEmailBottom] = useState(false);
+  const emailBottomResizeStartRef = useRef({ clientX: 0, startLeftWidth: 0, containerWidth: 0 });
 
   // Handle Email tab vertical splitter resize
   const handleEmailResizeStart = (e: React.MouseEvent) => {
@@ -198,6 +204,53 @@ const Dashboard: React.FC = () => {
     };
   }, [isResizingSystem, systemLeftWidth]);
 
+  // Handle Email bottom section horizontal splitter resize
+  const handleEmailBottomResizeStart = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const container = e.currentTarget.parentElement as HTMLElement;
+    if (!container) return;
+
+    const containerRect = container.getBoundingClientRect();
+    setIsResizingEmailBottom(true);
+    emailBottomResizeStartRef.current = {
+      clientX: e.clientX,
+      startLeftWidth: emailBottomChatbotWidth,
+      containerWidth: containerRect.width
+    };
+  };
+
+  useEffect(() => {
+    const handleEmailBottomMouseMove = (e: MouseEvent) => {
+      if (!isResizingEmailBottom) return;
+
+      const deltaX = e.clientX - emailBottomResizeStartRef.current.clientX;
+      const deltaPercentage = (deltaX / emailBottomResizeStartRef.current.containerWidth) * 100;
+      const newLeftWidth = Math.max(30, Math.min(70, emailBottomResizeStartRef.current.startLeftWidth + deltaPercentage));
+      setEmailBottomChatbotWidth(newLeftWidth);
+    };
+
+    const handleEmailBottomMouseUp = () => {
+      setIsResizingEmailBottom(false);
+    };
+
+    if (isResizingEmailBottom) {
+      document.addEventListener('mousemove', handleEmailBottomMouseMove);
+      document.addEventListener('mouseup', handleEmailBottomMouseUp);
+      document.body.style.cursor = 'ew-resize';
+      document.body.style.userSelect = 'none';
+    } else {
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    }
+
+    return () => {
+      document.removeEventListener('mousemove', handleEmailBottomMouseMove);
+      document.removeEventListener('mouseup', handleEmailBottomMouseUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [isResizingEmailBottom]);
+
   return (
     <div
       className="h-screen bg-gradient-to-br from-background to-secondary/30 flex flex-col"
@@ -218,7 +271,7 @@ const Dashboard: React.FC = () => {
 
           {/* Email Tab */}
           <TabsContent value="email" className="flex-1 flex flex-col min-h-0 mt-0 data-[state=inactive]:hidden" data-testid="email-tab-container">
-            {/* Top section - EmailList and McpTools */}
+            {/* Top section - EmailList and EmailBody */}
             <div
               className="flex gap-6 overflow-hidden min-h-0"
               style={{ height: `${emailTopHeight}%` }}
@@ -235,7 +288,7 @@ const Dashboard: React.FC = () => {
                 />
               </div>
 
-              {/* Horizontal Splitter between EmailList and McpTools */}
+              {/* Horizontal Splitter between EmailList and EmailBody */}
               <div
                 className={`
                   relative w-4 px-1 bg-muted/30 cursor-ew-resize flex items-center justify-center
@@ -248,19 +301,19 @@ const Dashboard: React.FC = () => {
                 <div className="h-full w-px bg-muted-foreground/20" />
               </div>
 
-              {/* McpTools */}
+              {/* EmailBody */}
               <div
                 className="overflow-hidden min-h-0"
                 style={{ width: `${100 - emailListWidth}%` }}
               >
-                <McpTools
+                <EmailBody
                   currentFolder={currentFolder}
                   selectedEmailContext={selectedEmailContext}
                 />
               </div>
             </div>
 
-            {/* Vertical Splitter between top and bottom */}
+            {/* Horizontal Splitter between top and bottom */}
             <div
               className={`
                 relative h-4 py-1 bg-muted/30 cursor-ns-resize flex items-center justify-center
@@ -273,21 +326,51 @@ const Dashboard: React.FC = () => {
               <GripHorizontal className="h-3 w-3 text-muted-foreground pointer-events-none" />
             </div>
 
-            {/* Bottom section - Chatbot */}
+            {/* Bottom section - Chatbot and McpTools */}
             <div
-              className="overflow-hidden min-h-0"
+              className="flex gap-6 overflow-hidden min-h-0"
               style={{ height: `${100 - emailTopHeight}%` }}
             >
-              {accountsLoading || !currentAccount ? (
-                <div className="flex items-center justify-center h-full bg-card rounded-lg border">
-                  <p className="text-muted-foreground">Loading account...</p>
-                </div>
-              ) : (
-                <ChatbotPanel
+              {/* Chatbot */}
+              <div
+                className="overflow-hidden min-h-0"
+                style={{ width: `${emailBottomChatbotWidth}%` }}
+              >
+                {accountsLoading || !currentAccount ? (
+                  <div className="flex items-center justify-center h-full bg-card rounded-lg border">
+                    <p className="text-muted-foreground">Loading account...</p>
+                  </div>
+                ) : (
+                  <ChatbotPanel
+                    currentFolder={currentFolder}
+                    accountId={currentAccount.id}
+                  />
+                )}
+              </div>
+
+              {/* Vertical Splitter between Chatbot and McpTools */}
+              <div
+                className={`
+                  relative w-4 px-1 bg-muted/30 cursor-ew-resize flex items-center justify-center
+                  hover:bg-muted/50 transition-colors duration-150 select-none flex-shrink-0
+                  ${isResizingEmailBottom ? 'bg-primary/20' : ''}
+                `}
+                onMouseDown={handleEmailBottomResizeStart}
+                title="Drag to resize panels"
+              >
+                <div className="h-full w-px bg-muted-foreground/20" />
+              </div>
+
+              {/* McpTools */}
+              <div
+                className="overflow-hidden min-h-0"
+                style={{ width: `${100 - emailBottomChatbotWidth}%` }}
+              >
+                <McpTools
                   currentFolder={currentFolder}
-                  accountId={currentAccount.id}
+                  selectedEmailContext={selectedEmailContext}
                 />
-              )}
+              </div>
             </div>
           </TabsContent>
 
