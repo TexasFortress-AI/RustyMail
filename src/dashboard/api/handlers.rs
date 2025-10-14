@@ -1769,8 +1769,10 @@ pub async fn execute_mcp_tool_inner(
             };
 
             // Determine message_id - either directly provided or resolve from folder+uid
-            let message_id = if let Some(msg_id) = params.get("message_id").and_then(|v| v.as_str()) {
-                msg_id.to_string()
+            // Also track folder and uid for potential IMAP fetch
+            let (message_id, folder_opt, uid_opt) = if let Some(msg_id) = params.get("message_id").and_then(|v| v.as_str()) {
+                // message_id provided directly - no folder/uid available
+                (msg_id.to_string(), None, None)
             } else {
                 // Resolve from folder + uid
                 let folder = match params.get("folder").and_then(|v| v.as_str()) {
@@ -1792,7 +1794,7 @@ pub async fn execute_mcp_tool_inner(
                 };
 
                 // Fetch email to get message_id
-                match email_service.fetch_emails_for_account(folder, &[uid], &account_id).await {
+                let msg_id = match email_service.fetch_emails_for_account(folder, &[uid], &account_id).await {
                     Ok(mut emails) if !emails.is_empty() => {
                         let email = emails.remove(0);
                         attachment_storage::ensure_message_id(&email, &account_id)
@@ -1807,28 +1809,62 @@ pub async fn execute_mcp_tool_inner(
                         "error": format!("Failed to fetch email: {}", e),
                         "tool": tool_name
                     })
-                }
+                };
+
+                (msg_id, Some(folder.to_string()), Some(uid))
             };
 
-            // Get attachments metadata
-            match attachment_storage::get_attachments_metadata(db_pool, &account_id, &message_id).await {
-                Ok(attachments) => {
-                    serde_json::json!({
-                        "success": true,
-                        "message_id": message_id,
-                        "account_id": account_id,
-                        "attachments": attachments,
-                        "count": attachments.len(),
-                        "tool": tool_name
-                    })
-                }
+            // Get attachments metadata from database
+            let attachments = match attachment_storage::get_attachments_metadata(db_pool, &account_id, &message_id).await {
+                Ok(atts) => atts,
                 Err(e) => {
-                    serde_json::json!({
+                    return serde_json::json!({
                         "success": false,
                         "error": format!("Failed to get attachments: {}", e),
                         "tool": tool_name
                     })
                 }
+            };
+
+            // If no attachments found in database and we have folder+uid, fetch from IMAP
+            if attachments.is_empty() && folder_opt.is_some() && uid_opt.is_some() {
+                let folder = folder_opt.unwrap();
+                let uid = uid_opt.unwrap();
+
+                debug!("No attachments in database for message_id {}. Fetching from IMAP...", message_id);
+
+                // Fetch email with attachments from IMAP (this will save them to DB)
+                match email_service.fetch_email_with_attachments(&folder, uid, &account_id).await {
+                    Ok((_, attachment_infos)) => {
+                        // Return the newly fetched attachments
+                        serde_json::json!({
+                            "success": true,
+                            "message_id": message_id,
+                            "account_id": account_id,
+                            "attachments": attachment_infos,
+                            "count": attachment_infos.len(),
+                            "fetched_from_imap": true,
+                            "tool": tool_name
+                        })
+                    }
+                    Err(e) => {
+                        serde_json::json!({
+                            "success": false,
+                            "error": format!("Failed to fetch attachments from IMAP: {}", e),
+                            "tool": tool_name
+                        })
+                    }
+                }
+            } else {
+                // Return attachments from database cache
+                serde_json::json!({
+                    "success": true,
+                    "message_id": message_id,
+                    "account_id": account_id,
+                    "attachments": attachments,
+                    "count": attachments.len(),
+                    "tool": tool_name
+                })
             }
         }
         "download_email_attachments" => {
@@ -1855,8 +1891,10 @@ pub async fn execute_mcp_tool_inner(
             };
 
             // Determine message_id - either directly provided or resolve from folder+uid
-            let message_id = if let Some(msg_id) = params.get("message_id").and_then(|v| v.as_str()) {
-                msg_id.to_string()
+            // Also track folder and uid for potential IMAP fetch
+            let (message_id, folder_opt, uid_opt) = if let Some(msg_id) = params.get("message_id").and_then(|v| v.as_str()) {
+                // message_id provided directly - no folder/uid available
+                (msg_id.to_string(), None, None)
             } else {
                 // Resolve from folder + uid
                 let folder = match params.get("folder").and_then(|v| v.as_str()) {
@@ -1878,7 +1916,7 @@ pub async fn execute_mcp_tool_inner(
                 };
 
                 // Fetch email to get message_id
-                match email_service.fetch_emails_for_account(folder, &[uid], &account_id).await {
+                let msg_id = match email_service.fetch_emails_for_account(folder, &[uid], &account_id).await {
                     Ok(mut emails) if !emails.is_empty() => {
                         let email = emails.remove(0);
                         attachment_storage::ensure_message_id(&email, &account_id)
@@ -1893,8 +1931,45 @@ pub async fn execute_mcp_tool_inner(
                         "error": format!("Failed to fetch email: {}", e),
                         "tool": tool_name
                     })
+                };
+
+                (msg_id, Some(folder.to_string()), Some(uid))
+            };
+
+            // Check if attachments exist in database, fetch from IMAP if not
+            let attachments = match attachment_storage::get_attachments_metadata(db_pool, &account_id, &message_id).await {
+                Ok(atts) => atts,
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to get attachments: {}", e),
+                        "tool": tool_name
+                    })
                 }
             };
+
+            // If no attachments found in database and we have folder+uid, fetch from IMAP
+            if attachments.is_empty() && folder_opt.is_some() && uid_opt.is_some() {
+                let folder = folder_opt.as_ref().unwrap();
+                let uid = uid_opt.unwrap();
+
+                debug!("No attachments in database for message_id {}. Fetching from IMAP...", message_id);
+
+                // Fetch email with attachments from IMAP (this will save them to DB)
+                match email_service.fetch_email_with_attachments(folder, uid, &account_id).await {
+                    Ok(_) => {
+                        // Attachments now saved to database, continue with download
+                        debug!("Successfully fetched and saved {} attachments from IMAP", attachments.len());
+                    }
+                    Err(e) => {
+                        return serde_json::json!({
+                            "success": false,
+                            "error": format!("Failed to fetch attachments from IMAP: {}", e),
+                            "tool": tool_name
+                        })
+                    }
+                }
+            }
 
             // Check if user wants ZIP archive
             let create_zip = params.get("create_zip")
