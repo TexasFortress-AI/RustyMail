@@ -102,7 +102,7 @@ zip = { version = "0.6", features = ["deflate"], default-features = false }
 dirs = "5.0"
 
 # Dashboard dependencies
-sysinfo = "0.30" # For system metrics
+sysinfo = "0.37" # For system metrics
 
 # Email autodiscovery
 hickory-resolver = "0.26.0-alpha.1" # DNS SRV record lookups
