@@ -445,6 +445,64 @@ impl EmailService {
         Ok(())
     }
 
+    /// Permanently delete messages for a specific account with attachment cleanup
+    /// This method ensures that when emails are deleted, their attachments are also removed
+    pub async fn delete_messages_for_account(
+        &self,
+        folder: &str,
+        uids: &[u32],
+        account_id: &str,
+    ) -> Result<(), EmailServiceError> {
+        debug!("Deleting {} messages in {} for account {} with attachment cleanup",
+               uids.len(), folder, account_id);
+
+        if uids.is_empty() {
+            return Ok(());
+        }
+
+        // Get account
+        let account = self.get_account(account_id).await?;
+        let account_email = &account.email_address;
+
+        // Get database pool for attachment cleanup
+        let db_pool = self.cache_service.as_ref()
+            .and_then(|cache| cache.db_pool.as_ref());
+
+        // If we have database access, clean up attachments
+        if let Some(db_pool) = db_pool {
+            // Fetch emails to get their message_ids
+            let emails = self.fetch_emails_for_account(folder, uids, account_id).await?;
+
+            // Delete attachments for each email
+            for email in &emails {
+                let message_id = attachment_storage::ensure_message_id(email, account_email);
+
+                match attachment_storage::delete_attachments_for_email(db_pool, &message_id, account_email).await {
+                    Ok(_) => {
+                        debug!("Deleted attachments for email UID {} (message_id: {})", email.uid, message_id);
+                    }
+                    Err(e) => {
+                        // Log warning but continue - attachment deletion shouldn't prevent email deletion
+                        warn!("Failed to delete attachments for email UID {}: {}", email.uid, e);
+                    }
+                }
+            }
+        } else {
+            warn!("Database not available for attachment cleanup");
+        }
+
+        // Delete emails from IMAP
+        let client = self.imap_factory.create_session_for_account(&account).await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session for account {}: {}", account_id, e)))?;
+
+        client.select_folder(folder).await?;
+        client.mark_as_deleted(uids).await?;
+        client.expunge().await?;
+
+        info!("Successfully deleted {} messages with attachments for account {}", uids.len(), account_id);
+        Ok(())
+    }
+
     /// Remove \Deleted flag from messages
     pub async fn undelete_messages(&self, folder: &str, uids: &[u32]) -> Result<(), EmailServiceError> {
         debug!("Undeleting {} messages in {}", uids.len(), folder);
