@@ -20,6 +20,7 @@ use sqlx::SqlitePool;
 pub mod account;
 pub mod account_store;
 pub mod ai;
+pub mod attachment_storage;
 pub mod autodiscovery;
 pub mod cache;
 pub mod clients;
@@ -45,6 +46,7 @@ pub mod sync;
 // Re-export main service types for convenience
 pub use account::{AccountService, Account, ProviderTemplate, AutoConfigResult};
 pub use account_store::{AccountStore, StoredAccount, ImapConfig as StoredImapConfig, SmtpConfig as StoredSmtpConfig};
+pub use attachment_storage::{AttachmentInfo, AttachmentError};
 pub use metrics::{MetricsService};
 pub use cache::{CacheService, CacheConfig};
 pub use clients::{ClientManager};

@@ -6,6 +6,7 @@ use crate::prelude::CloneableImapSessionFactory;
 use crate::connection_pool::ConnectionPool;
 use crate::dashboard::services::cache::{CacheService, CachedEmail};
 use crate::dashboard::services::account::{AccountService, Account, AccountError};
+use crate::dashboard::services::attachment_storage::{self, AttachmentInfo, AttachmentError};
 use tokio::sync::Mutex as TokioMutex;
 use thiserror::Error;
 
@@ -21,6 +22,10 @@ pub enum EmailServiceError {
     AccountError(#[from] AccountError),
     #[error("Account not found: {0}")]
     AccountNotFound(String),
+    #[error("Attachment error: {0}")]
+    AttachmentError(#[from] AttachmentError),
+    #[error("Cache service not available")]
+    CacheServiceNotAvailable,
 }
 
 pub struct EmailService {
@@ -520,5 +525,63 @@ impl EmailService {
 
         info!("Successfully renamed folder '{}' to '{}' for account {}", old_name, new_name, account_id);
         Ok(())
+    }
+
+    /// Fetch a single email with full body and save its attachments
+    /// This is called when the user views an email (lazy loading)
+    pub async fn fetch_email_with_attachments(
+        &self,
+        folder: &str,
+        uid: u32,
+        account_id: &str,
+    ) -> Result<(Email, Vec<AttachmentInfo>), EmailServiceError> {
+        debug!("Fetching email {} from folder '{}' with attachments for account {}", uid, folder, account_id);
+
+        // Get account
+        let account = self.get_account(account_id).await?;
+        let account_email = &account.email_address;
+
+        // Get database pool from cache service
+        let db_pool = self.cache_service.as_ref()
+            .and_then(|cache| cache.db_pool.as_ref())
+            .ok_or(EmailServiceError::CacheServiceNotAvailable)?;
+
+        // Fetch the email with full body
+        let emails = self.fetch_emails_for_account(folder, &[uid], account_id).await?;
+        let mut email = emails.into_iter().next()
+            .ok_or_else(|| EmailServiceError::ConnectionError(format!("Email {} not found", uid)))?;
+
+        // Ensure the email has a message_id (or generate one)
+        let message_id = attachment_storage::ensure_message_id(&email, account_email);
+
+        // Save attachments to filesystem and database
+        let mut attachment_infos = Vec::new();
+        for attachment in &email.attachments {
+            match attachment_storage::save_attachment(
+                db_pool,
+                account_email,
+                &message_id,
+                attachment,
+            ).await {
+                Ok(info) => {
+                    debug!("Saved attachment: {}", info.filename);
+                    attachment_infos.push(info);
+                }
+                Err(e) => {
+                    warn!("Failed to save attachment: {}", e);
+                    // Continue processing other attachments even if one fails
+                }
+            }
+        }
+
+        // Update the email's envelope to ensure message_id is set
+        if let Some(ref mut envelope) = email.envelope {
+            if envelope.message_id.is_none() {
+                envelope.message_id = Some(message_id.clone());
+            }
+        }
+
+        info!("Fetched email {} with {} attachments for account {}", uid, attachment_infos.len(), account_id);
+        Ok((email, attachment_infos))
     }
 }

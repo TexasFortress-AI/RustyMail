@@ -1,0 +1,5 @@
+# Ignore all attachment files
+*
+
+# But keep this .gitignore file
+!.gitignore
