@@ -4,6 +4,8 @@ use thiserror::Error;
 use serde::{Serialize, Deserialize};
 use std::time::Duration;
 use super::account_store::{AccountStore, StoredAccount, AccountStoreError};
+use super::connection_status_store::{ConnectionStatusStore, ConnectionStatusStoreError};
+use super::connection_status::AccountConnectionStatus;
 use chrono::Utc;
 
 #[derive(Error, Debug)]
@@ -14,6 +16,8 @@ pub enum AccountError {
     SerializationError(#[from] serde_json::Error),
     #[error("Account store error: {0}")]
     AccountStoreError(#[from] AccountStoreError),
+    #[error("Connection status store error: {0}")]
+    ConnectionStatusStoreError(#[from] ConnectionStatusStoreError),
     #[error("Account not found: {0}")]
     NotFound(String),
     #[error("Provider not supported: {0}")]
@@ -52,6 +56,9 @@ pub struct Account {
     pub is_active: bool,
     #[serde(default)]
     pub is_default: bool,
+    // Connection status for IMAP and SMTP (optional, populated from separate store)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection_status: Option<super::connection_status::AccountConnectionStatus>,
 }
 
 // Default value function for is_active (defaults to true for new accounts)
@@ -94,13 +101,22 @@ pub struct AutoConfigResult {
 pub struct AccountService {
     db_pool: Option<SqlitePool>,
     account_store: AccountStore,
+    connection_status_store: ConnectionStatusStore,
 }
 
 impl AccountService {
     pub fn new(config_path: &str) -> Self {
+        // Derive connection status path from accounts config path
+        let connection_status_path = if config_path.ends_with(".json") {
+            config_path.replace(".json", "_connection_status.json")
+        } else {
+            format!("{}_connection_status.json", config_path)
+        };
+
         Self {
             db_pool: None,
             account_store: AccountStore::new(config_path),
+            connection_status_store: ConnectionStatusStore::new(&connection_status_path),
         }
     }
 
@@ -108,6 +124,7 @@ impl AccountService {
     pub async fn initialize(&mut self, db_pool: SqlitePool) -> Result<(), AccountError> {
         self.db_pool = Some(db_pool);
         self.account_store.initialize().await?;
+        self.connection_status_store.initialize().await?;
 
         // Attempt to migrate accounts from database to file storage
         if let Err(e) = self.migrate_accounts_from_db().await {
@@ -241,7 +258,7 @@ impl AccountService {
         let mut default_account_id: Option<String> = None;
 
         for row in rows {
-            let id: i64 = row.get("id");
+            let _id: i64 = row.get("id");
             let display_name: String = row.get("display_name");
             let email_address: String = row.get("email_address");
             let provider_type: Option<String> = row.get("provider_type");
@@ -422,6 +439,7 @@ impl AccountService {
             smtp_use_starttls: stored.smtp.as_ref().map(|s| s.use_starttls),
             is_active: stored.is_active,
             is_default: false, // Will be set based on config default_account_id
+            connection_status: None, // Will be populated from ConnectionStatusStore
         }
     }
 
@@ -589,6 +607,14 @@ impl AccountService {
 
         let mut account = Self::stored_to_account(stored);
         account.is_default = is_default;
+
+        // Populate connection status
+        account.connection_status = Some(
+            self.connection_status_store
+                .get_status_or_default(account_id)
+                .await
+        );
+
         Ok(account)
     }
 
@@ -597,15 +623,21 @@ impl AccountService {
         let stored_accounts = self.account_store.list_accounts().await?;
         let config = self.account_store.load_config().await?;
 
-        let accounts = stored_accounts
-            .into_iter()
-            .map(|stored| {
-                let is_default = config.default_account_id.as_deref() == Some(&stored.email_address);
-                let mut account = Self::stored_to_account(stored);
-                account.is_default = is_default;
-                account
-            })
-            .collect();
+        let mut accounts = Vec::new();
+        for stored in stored_accounts {
+            let is_default = config.default_account_id.as_deref() == Some(&stored.email_address);
+            let mut account = Self::stored_to_account(stored.clone());
+            account.is_default = is_default;
+
+            // Populate connection status
+            account.connection_status = Some(
+                self.connection_status_store
+                    .get_status_or_default(&stored.email_address)
+                    .await
+            );
+
+            accounts.push(account);
+        }
 
         Ok(accounts)
     }
@@ -672,7 +704,7 @@ impl AccountService {
         Ok(())
     }
 
-    /// Validate account credentials by attempting to connect
+    /// Validate account credentials by attempting to connect and record status
     pub async fn validate_connection(&self, account: &Account) -> Result<(), AccountError> {
         debug!("Validating connection for account: {}", account.display_name);
 
@@ -686,19 +718,83 @@ impl AccountService {
             timeout,
         ).await;
 
+        // Record connection status
+        let mut status = self.connection_status_store
+            .get_status_or_default(&account.email_address)
+            .await;
+
         match connect_result {
             Ok(client) => {
                 // Successfully connected, logout gracefully
                 if let Err(e) = client.logout().await {
                     debug!("Logout error during validation (non-critical): {}", e);
                 }
+
+                // Record success
+                status.set_imap_success(format!("Connected to {} successfully", account.imap_host));
+                if let Err(e) = self.connection_status_store.update_status(status).await {
+                    warn!("Failed to record connection status: {}", e);
+                }
+
                 info!("Connection validation successful for: {}", account.display_name);
                 Ok(())
             }
             Err(e) => {
+                // Record failure
+                status.set_imap_failed(&e);
+                if let Err(err) = self.connection_status_store.update_status(status).await {
+                    warn!("Failed to record connection status: {}", err);
+                }
+
                 error!("Connection validation failed for {}: {}", account.display_name, e);
                 Err(AccountError::OperationFailed(format!("Connection failed: {}", e)))
             }
         }
+    }
+
+    /// Get connection status for an account
+    pub async fn get_connection_status(
+        &self,
+        account_id: &str,
+    ) -> Result<AccountConnectionStatus, AccountError> {
+        Ok(self.connection_status_store.get_status_or_default(account_id).await)
+    }
+
+    /// Update IMAP connection status for an account
+    pub async fn update_imap_status(
+        &self,
+        account_id: &str,
+        success: bool,
+        message: impl Into<String>,
+    ) -> Result<(), AccountError> {
+        let mut status = self.connection_status_store.get_status_or_default(account_id).await;
+
+        if success {
+            status.set_imap_success(message);
+        } else {
+            status.set_imap_failed(message.into());
+        }
+
+        self.connection_status_store.update_status(status).await?;
+        Ok(())
+    }
+
+    /// Update SMTP connection status for an account
+    pub async fn update_smtp_status(
+        &self,
+        account_id: &str,
+        success: bool,
+        message: impl Into<String>,
+    ) -> Result<(), AccountError> {
+        let mut status = self.connection_status_store.get_status_or_default(account_id).await;
+
+        if success {
+            status.set_smtp_success(message);
+        } else {
+            status.set_smtp_failed(message.into());
+        }
+
+        self.connection_status_store.update_status(status).await?;
+        Ok(())
     }
 }
