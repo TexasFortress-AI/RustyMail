@@ -30,6 +30,7 @@ interface Email {
   internal_date: string | null;
   flags: string[];
   body_text: string | null;
+  has_attachments: boolean;
 }
 
 interface EmailListResponse {
@@ -370,8 +371,11 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
                             <Badge variant="default" className="text-xs">Unread</Badge>
                           )}
                         </div>
-                        <div className="text-sm font-semibold mt-1">
-                          {email.subject || '(No subject)'}
+                        <div className="text-sm font-semibold mt-1 flex items-center gap-1">
+                          {email.has_attachments && (
+                            <Paperclip className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                          )}
+                          <span>{email.subject || '(No subject)'}</span>
                         </div>
                         {email.body_text && (
                           <div className="text-xs text-gray-600 mt-1">

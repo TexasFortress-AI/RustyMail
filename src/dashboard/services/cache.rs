@@ -378,6 +378,7 @@ impl CacheService {
             body_text: email.text_body.clone(),
             body_html: email.html_body.clone(),
             cached_at: Utc::now(),
+            has_attachments: false, // Will be set when attachments are saved
         };
 
         // Add to memory cache with account_id to prevent cross-account data leakage
@@ -451,6 +452,7 @@ impl CacheService {
                 body_text,
                 body_html,
                 cached_at,
+                has_attachments: false, // Not checking attachments in single email fetch
             };
 
             // Add to memory cache for future access
@@ -520,6 +522,19 @@ impl CacheService {
             let cc_addrs: Vec<String> = serde_json::from_str(&cc_addresses).unwrap_or_default();
             let flag_list: Vec<String> = serde_json::from_str(&flags).unwrap_or_default();
 
+            // Check if this email has attachments
+            let has_attachments = if let Some(ref msg_id) = message_id {
+                sqlx::query_scalar::<_, i64>(
+                    "SELECT COUNT(*) FROM attachment_metadata WHERE message_id = ?"
+                )
+                .bind(msg_id)
+                .fetch_one(pool)
+                .await
+                .unwrap_or(0) > 0
+            } else {
+                false
+            };
+
             cached_emails.push(CachedEmail {
                 id,
                 folder_id,
@@ -537,6 +552,7 @@ impl CacheService {
                 body_text,
                 body_html,
                 cached_at,
+                has_attachments,
             });
         }
 
@@ -779,6 +795,7 @@ impl CacheService {
                 body_text,
                 body_html,
                 cached_at,
+                has_attachments: false, // Not checking attachments in single email fetch
             }))
         } else {
             Ok(None)
@@ -921,6 +938,7 @@ impl CacheService {
                 body_text,
                 body_html,
                 cached_at,
+                has_attachments: false, // Not checking attachments in search
             });
         }
 
