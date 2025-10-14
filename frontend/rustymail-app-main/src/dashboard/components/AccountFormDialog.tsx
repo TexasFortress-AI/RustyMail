@@ -398,14 +398,19 @@ export function AccountFormDialog({
               </div>
 
               {account?.connection_status && (
+                account.connection_status.imap.message !== 'Never tested' ||
+                (account.smtp_host && account.connection_status.smtp.message !== 'Never tested')
+              ) && (
                 <div className="space-y-2">
                   <Label>Connection Status</Label>
                   <div className="flex gap-2">
-                    <ConnectionStatusIndicator
-                      label="IMAP"
-                      attempt={account.connection_status.imap}
-                    />
-                    {account.smtp_host && (
+                    {account.connection_status.imap.message !== 'Never tested' && (
+                      <ConnectionStatusIndicator
+                        label="IMAP"
+                        attempt={account.connection_status.imap}
+                      />
+                    )}
+                    {account.smtp_host && account.connection_status.smtp.message !== 'Never tested' && (
                       <ConnectionStatusIndicator
                         label="SMTP"
                         attempt={account.connection_status.smtp}

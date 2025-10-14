@@ -196,12 +196,14 @@ export function AccountListPanel({
                       </p>
                       {account.connection_status && (
                         <div className="flex items-center gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
-                          <ConnectionStatusIndicator
-                            label="IMAP"
-                            attempt={account.connection_status.imap}
-                            compact
-                          />
-                          {account.smtp_host && (
+                          {account.connection_status.imap.message !== 'Never tested' && (
+                            <ConnectionStatusIndicator
+                              label="IMAP"
+                              attempt={account.connection_status.imap}
+                              compact
+                            />
+                          )}
+                          {account.smtp_host && account.connection_status.smtp.message !== 'Never tested' && (
                             <ConnectionStatusIndicator
                               label="SMTP"
                               attempt={account.connection_status.smtp}
