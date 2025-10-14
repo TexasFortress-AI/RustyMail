@@ -55,7 +55,7 @@ clap = { version = "4", features = ["derive", "env"] }
 futures-util = { version = "0.3", features = ["compat", "sink", "io"] } 
 
 # Error Handling
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Chrono for date/time
 chrono = { version = "0.4", features = ["serde"] }
