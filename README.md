@@ -568,14 +568,25 @@ MIT License. See `LICENSE`.
 
 - Steve Olson - [GitHub](https://github.com/rangersdo)
 - Contact: [steve@texasfortress.ai](mailto:steve@texasfortress.ai)
+- [Become a sponsor for Steve](https://github.com/sponsors/rangersdo)
+
 
 - Chris Odom - [GitHub](https://github.com/fellowtraveler)
 - Contact: [chris@texasfortress.ai](mailto:chris@texasfortress.ai)
-[![Tip in Crypto](https://tip.md/badge.svg)](https://tip.md/FellowTraveler)
+- [Become a sponsor for Chris](https://github.com/sponsors/fellowtraveler)
+- [![Tip Chris in Crypto](https://tip.md/badge.svg)](https://tip.md/FellowTraveler)
+
+## See our AGI Articles:
+
+### [Pondering AGI](https://christopherdavidodom.substack.com/p/pondering-agi)
+[![Pondering AGI](https://substackcdn.com/image/fetch/w_600,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2Fed39229d-fefd-4030-8b62-52f8cb2b0f05_1024x768.jpeg)](https://christopherdavidodom.substack.com/p/pondering-agi)
+
+### [Pondering AGI Part 2](https://christopherdavidodom.substack.com/p/pondering-agi-part-2)
+[![Pondering AGI Part 2](https://substackcdn.com/image/fetch/w_600,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F6815d224-5ae0-4e71-bd50-f14c3525cce9_725x522.png)](https://christopherdavidodom.substack.com/p/pondering-agi-part-2)
+
+*Part 3 coming soon!*
 
 ## Sponsors
 
 Sponsored by Texas Fortress AI.
 
-[Become a sponsor](https://github.com/sponsors/rangersdo)
-[Become a sponsor](https://github.com/sponsors/fellowtraveler)

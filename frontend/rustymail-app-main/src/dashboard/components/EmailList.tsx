@@ -360,7 +360,11 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-sm">
-                            {email.from_name || email.from_address || 'Unknown sender'}
+                            {currentFolder === 'INBOX.Sent'
+                              ? (email.to_addresses && email.to_addresses.length > 0
+                                  ? email.to_addresses.join(', ')
+                                  : 'No recipients')
+                              : (email.from_name || email.from_address || 'Unknown sender')}
                           </span>
                           {email.flags.includes('\\Seen') ? null : (
                             <Badge variant="default" className="text-xs">Unread</Badge>

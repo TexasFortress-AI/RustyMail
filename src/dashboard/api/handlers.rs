@@ -1718,7 +1718,7 @@ pub async fn execute_mcp_tool_inner(
                     "tool": tool_name
                 })
             };
-            
+
             // Validate that the account exists
             let account_service = state.account_service.lock().await;
             match account_service.get_account(account_id).await {
@@ -1740,6 +1740,267 @@ pub async fn execute_mcp_tool_inner(
                     serde_json::json!({
                         "success": false,
                         "error": format!("Account not found: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "list_email_attachments" => {
+            use crate::dashboard::services::attachment_storage;
+
+            // Get account ID
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            // Get database pool
+            let db_pool = match state.cache_service.db_pool.as_ref() {
+                Some(pool) => pool,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Database not available",
+                    "tool": tool_name
+                })
+            };
+
+            // Determine message_id - either directly provided or resolve from folder+uid
+            let message_id = if let Some(msg_id) = params.get("message_id").and_then(|v| v.as_str()) {
+                msg_id.to_string()
+            } else {
+                // Resolve from folder + uid
+                let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                    Some(f) => f,
+                    None => return serde_json::json!({
+                        "success": false,
+                        "error": "folder parameter required when message_id not provided",
+                        "tool": tool_name
+                    })
+                };
+
+                let uid = match params.get("uid").and_then(|v| v.as_u64()) {
+                    Some(u) => u as u32,
+                    None => return serde_json::json!({
+                        "success": false,
+                        "error": "uid parameter required when message_id not provided",
+                        "tool": tool_name
+                    })
+                };
+
+                // Fetch email to get message_id
+                match email_service.fetch_emails_for_account(folder, &[uid], &account_id).await {
+                    Ok(mut emails) if !emails.is_empty() => {
+                        let email = emails.remove(0);
+                        attachment_storage::ensure_message_id(&email, &account_id)
+                    }
+                    Ok(_) => return serde_json::json!({
+                        "success": false,
+                        "error": format!("Email with UID {} not found", uid),
+                        "tool": tool_name
+                    }),
+                    Err(e) => return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to fetch email: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            };
+
+            // Get attachments metadata
+            match attachment_storage::get_attachments_metadata(db_pool, &account_id, &message_id).await {
+                Ok(attachments) => {
+                    serde_json::json!({
+                        "success": true,
+                        "message_id": message_id,
+                        "account_id": account_id,
+                        "attachments": attachments,
+                        "count": attachments.len(),
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to get attachments: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "download_email_attachments" => {
+            use crate::dashboard::services::attachment_storage;
+
+            // Get account ID
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            // Get database pool
+            let db_pool = match state.cache_service.db_pool.as_ref() {
+                Some(pool) => pool,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Database not available",
+                    "tool": tool_name
+                })
+            };
+
+            // Determine message_id - either directly provided or resolve from folder+uid
+            let message_id = if let Some(msg_id) = params.get("message_id").and_then(|v| v.as_str()) {
+                msg_id.to_string()
+            } else {
+                // Resolve from folder + uid
+                let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                    Some(f) => f,
+                    None => return serde_json::json!({
+                        "success": false,
+                        "error": "folder parameter required when message_id not provided",
+                        "tool": tool_name
+                    })
+                };
+
+                let uid = match params.get("uid").and_then(|v| v.as_u64()) {
+                    Some(u) => u as u32,
+                    None => return serde_json::json!({
+                        "success": false,
+                        "error": "uid parameter required when message_id not provided",
+                        "tool": tool_name
+                    })
+                };
+
+                // Fetch email to get message_id
+                match email_service.fetch_emails_for_account(folder, &[uid], &account_id).await {
+                    Ok(mut emails) if !emails.is_empty() => {
+                        let email = emails.remove(0);
+                        attachment_storage::ensure_message_id(&email, &account_id)
+                    }
+                    Ok(_) => return serde_json::json!({
+                        "success": false,
+                        "error": format!("Email with UID {} not found", uid),
+                        "tool": tool_name
+                    }),
+                    Err(e) => return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to fetch email: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            };
+
+            // Check if user wants ZIP archive
+            let create_zip = params.get("create_zip")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true); // Default to ZIP for convenience
+
+            if create_zip {
+                // Create ZIP archive
+                let temp_dir = std::env::temp_dir();
+                let sanitized_id = attachment_storage::sanitize_message_id(&message_id);
+                let zip_path = temp_dir.join(format!("rustymail_attachments_{}.zip", sanitized_id));
+
+                match attachment_storage::create_zip_archive(db_pool, &account_id, &message_id, &zip_path).await {
+                    Ok(result_path) => {
+                        serde_json::json!({
+                            "success": true,
+                            "message": "ZIP archive created",
+                            "zip_path": result_path.to_string_lossy(),
+                            "message_id": message_id,
+                            "account_id": account_id,
+                            "tool": tool_name
+                        })
+                    }
+                    Err(e) => {
+                        serde_json::json!({
+                            "success": false,
+                            "error": format!("Failed to create ZIP: {}", e),
+                            "tool": tool_name
+                        })
+                    }
+                }
+            } else {
+                // Just list attachment paths without creating ZIP
+                match attachment_storage::get_attachments_metadata(db_pool, &account_id, &message_id).await {
+                    Ok(attachments) => {
+                        let paths: Vec<String> = attachments.iter()
+                            .map(|a| a.storage_path.clone())
+                            .collect();
+
+                        serde_json::json!({
+                            "success": true,
+                            "message": "Attachment paths retrieved",
+                            "paths": paths,
+                            "attachments": attachments,
+                            "message_id": message_id,
+                            "account_id": account_id,
+                            "tool": tool_name
+                        })
+                    }
+                    Err(e) => {
+                        serde_json::json!({
+                            "success": false,
+                            "error": format!("Failed to get attachments: {}", e),
+                            "tool": tool_name
+                        })
+                    }
+                }
+            }
+        }
+        "cleanup_attachments" => {
+            use crate::dashboard::services::attachment_storage;
+
+            // Get required parameters
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            let message_id = match params.get("message_id").and_then(|v| v.as_str()) {
+                Some(id) => id,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "message_id parameter is required",
+                    "tool": tool_name
+                })
+            };
+
+            // Get database pool
+            let db_pool = match state.cache_service.db_pool.as_ref() {
+                Some(pool) => pool,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Database not available",
+                    "tool": tool_name
+                })
+            };
+
+            // Delete attachments
+            match attachment_storage::delete_attachments_for_email(db_pool, message_id, &account_id).await {
+                Ok(_) => {
+                    serde_json::json!({
+                        "success": true,
+                        "message": format!("Attachments deleted for message {}", message_id),
+                        "message_id": message_id,
+                        "account_id": account_id,
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to delete attachments: {}", e),
                         "tool": tool_name
                     })
                 }
