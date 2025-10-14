@@ -86,8 +86,27 @@ impl SyncService {
             .map_err(|e| SyncError::AccountError(format!("Failed to get account: {}", e)))?;
         drop(account_service); // Release lock before creating session
 
-        let session = self.imap_factory.create_session_for_account(&account).await
-            .map_err(|e| SyncError::ImapError(e))?;
+        // Try to create session and record connection status
+        let session = match self.imap_factory.create_session_for_account(&account).await {
+            Ok(s) => {
+                // Record successful IMAP connection
+                let account_service = self.account_service.lock().await;
+                if let Err(e) = account_service.update_imap_status(account_id, true, format!("Successfully connected to {}", account.imap_host)).await {
+                    warn!("Failed to update IMAP connection status: {}", e);
+                }
+                drop(account_service);
+                s
+            }
+            Err(e) => {
+                // Record failed IMAP connection
+                let account_service = self.account_service.lock().await;
+                if let Err(status_err) = account_service.update_imap_status(account_id, false, e.to_string()).await {
+                    warn!("Failed to update IMAP connection status: {}", status_err);
+                }
+                drop(account_service);
+                return Err(SyncError::ImapError(e));
+            }
+        };
 
         let folders = session.list_folders().await?;
 
@@ -125,8 +144,27 @@ impl SyncService {
             warn!("Failed to update sync state: {}", e);
         }
 
-        let session = self.imap_factory.create_session_for_account(&account).await
-            .map_err(|e| SyncError::ImapError(e))?;
+        // Try to create session and record connection status
+        let session = match self.imap_factory.create_session_for_account(&account).await {
+            Ok(s) => {
+                // Record successful IMAP connection
+                let account_service = self.account_service.lock().await;
+                if let Err(e) = account_service.update_imap_status(account_id, true, format!("Successfully connected to {} for sync", account.imap_host)).await {
+                    warn!("Failed to update IMAP connection status: {}", e);
+                }
+                drop(account_service);
+                s
+            }
+            Err(e) => {
+                // Record failed IMAP connection
+                let account_service = self.account_service.lock().await;
+                if let Err(status_err) = account_service.update_imap_status(account_id, false, e.to_string()).await {
+                    warn!("Failed to update IMAP connection status: {}", status_err);
+                }
+                drop(account_service);
+                return Err(SyncError::ImapError(e));
+            }
+        };
 
         // Select the folder
         session.select_folder(folder_name).await?;
@@ -262,8 +300,27 @@ impl SyncService {
             .map_err(|e| SyncError::AccountError(format!("Failed to get account: {}", e)))?;
         drop(account_service); // Release lock before creating session
 
-        let session = self.imap_factory.create_session_for_account(&account).await
-            .map_err(|e| SyncError::ImapError(e))?;
+        // Try to create session and record connection status
+        let session = match self.imap_factory.create_session_for_account(&account).await {
+            Ok(s) => {
+                // Record successful IMAP connection
+                let account_service = self.account_service.lock().await;
+                if let Err(e) = account_service.update_imap_status(account_id, true, format!("Successfully connected to {} for IDLE", account.imap_host)).await {
+                    warn!("Failed to update IMAP connection status: {}", e);
+                }
+                drop(account_service);
+                s
+            }
+            Err(e) => {
+                // Record failed IMAP connection
+                let account_service = self.account_service.lock().await;
+                if let Err(status_err) = account_service.update_imap_status(account_id, false, e.to_string()).await {
+                    warn!("Failed to update IMAP connection status: {}", status_err);
+                }
+                drop(account_service);
+                return Err(SyncError::ImapError(e));
+            }
+        };
 
         // Select the folder
         session.select_folder(folder_name).await?;

@@ -107,6 +107,21 @@ export interface SSEEvent {
   data: any;
 }
 
+// Connection Status Types
+export type ConnectionStatus = 'success' | 'failed' | 'unknown';
+
+export interface ConnectionAttempt {
+  timestamp: string; // ISO timestamp
+  status: ConnectionStatus;
+  message: string;
+}
+
+export interface AccountConnectionStatus {
+  email_address: string;
+  imap: ConnectionAttempt;
+  smtp: ConnectionAttempt;
+}
+
 // Account Types
 export interface Account {
   id: string;
@@ -124,6 +139,7 @@ export interface Account {
   smtp_use_starttls?: boolean;
   is_active: boolean;
   is_default: boolean;
+  connection_status?: AccountConnectionStatus;
 }
 
 export interface AutoConfigResult {

@@ -155,6 +155,7 @@ pub async fn create_account(
         smtp_use_starttls: req.smtp_use_starttls,
         is_active: true,
         is_default: req.is_default,
+        connection_status: None, // Will be populated after validation
     };
 
     // Validate connection if requested
@@ -412,6 +413,33 @@ pub async fn get_default_account(
         "success": false,
         "error": "AccountService not yet integrated into DashboardState"
     }))
+}
+
+/// Get connection status for an account
+pub async fn get_connection_status(
+    state: web::Data<DashboardState>,
+    path: web::Path<String>,
+) -> HttpResponse {
+    let account_id = path.into_inner();
+    info!("Getting connection status for account ID: {}", account_id);
+
+    let account_service = state.account_service.lock().await;
+
+    match account_service.get_connection_status(&account_id).await {
+        Ok(status) => {
+            HttpResponse::Ok().json(serde_json::json!({
+                "success": true,
+                "status": status
+            }))
+        },
+        Err(e) => {
+            error!("Failed to get connection status for account {}: {}", account_id, e);
+            HttpResponse::InternalServerError().json(serde_json::json!({
+                "success": false,
+                "error": format!("Failed to get connection status: {}", e)
+            }))
+        }
+    }
 }
 
 /// Validate account connection

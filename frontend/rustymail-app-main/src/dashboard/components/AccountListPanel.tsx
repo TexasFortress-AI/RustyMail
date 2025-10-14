@@ -6,6 +6,7 @@ import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Skeleton } from '../../components/ui/skeleton';
 import { useToast } from '../../components/ui/use-toast';
+import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
 import {
   Mail,
   Plus,
@@ -193,6 +194,22 @@ export function AccountListPanel({
                       <p className="text-sm text-muted-foreground">
                         {account.email_address}
                       </p>
+                      {account.connection_status && (
+                        <div className="flex items-center gap-2 mt-2" onClick={(e) => e.stopPropagation()}>
+                          <ConnectionStatusIndicator
+                            label="IMAP"
+                            attempt={account.connection_status.imap}
+                            compact
+                          />
+                          {account.smtp_host && (
+                            <ConnectionStatusIndicator
+                              label="SMTP"
+                              attempt={account.connection_status.smtp}
+                              compact
+                            />
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
 

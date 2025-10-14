@@ -67,9 +67,29 @@ impl EmailService {
         // Get account credentials
         let account = self.get_account(account_id).await?;
 
-        // Create session with account-specific credentials
-        let session = self.imap_factory.create_session_for_account(&account).await
-            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session for account {}: {}", account_id, e)))?;
+        // Create session with account-specific credentials and record connection status
+        let session = match self.imap_factory.create_session_for_account(&account).await {
+            Ok(s) => {
+                // Record successful IMAP connection
+                if let Some(account_service) = &self.account_service {
+                    let account_service = account_service.lock().await;
+                    if let Err(e) = account_service.update_imap_status(account_id, true, format!("Successfully connected to {}", account.imap_host)).await {
+                        warn!("Failed to update IMAP connection status: {}", e);
+                    }
+                }
+                s
+            }
+            Err(e) => {
+                // Record failed IMAP connection
+                if let Some(account_service) = &self.account_service {
+                    let account_service = account_service.lock().await;
+                    if let Err(status_err) = account_service.update_imap_status(account_id, false, e.to_string()).await {
+                        warn!("Failed to update IMAP connection status: {}", status_err);
+                    }
+                }
+                return Err(EmailServiceError::ConnectionError(format!("Failed to create session for account {}: {}", account_id, e)));
+            }
+        };
 
         // List folders
         let folders = session.list_folders().await?;
@@ -172,8 +192,29 @@ impl EmailService {
 
         // Fetch emails from IMAP
         if !uids_to_fetch.is_empty() {
-            let session = self.imap_factory.create_session_for_account(&account).await
-                .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session for account {}: {}", account_id, e)))?;
+            // Create session with connection status recording
+            let session = match self.imap_factory.create_session_for_account(&account).await {
+                Ok(s) => {
+                    // Record successful IMAP connection
+                    if let Some(account_service) = &self.account_service {
+                        let account_service = account_service.lock().await;
+                        if let Err(e) = account_service.update_imap_status(account_id, true, format!("Successfully connected to {} for fetch", account.imap_host)).await {
+                            warn!("Failed to update IMAP connection status: {}", e);
+                        }
+                    }
+                    s
+                }
+                Err(e) => {
+                    // Record failed IMAP connection
+                    if let Some(account_service) = &self.account_service {
+                        let account_service = account_service.lock().await;
+                        if let Err(status_err) = account_service.update_imap_status(account_id, false, e.to_string()).await {
+                            warn!("Failed to update IMAP connection status: {}", status_err);
+                        }
+                    }
+                    return Err(EmailServiceError::ConnectionError(format!("Failed to create session for account {}: {}", account_id, e)));
+                }
+            };
 
             // Select the folder first
             session.select_folder(folder).await?;

@@ -17,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/ta
 import { useToast } from '../../components/ui/use-toast';
 import { Loader2, Wand2, CheckCircle2, XCircle } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
+import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
 
 interface AccountFormDialogProps {
   open: boolean;
@@ -395,6 +396,24 @@ export function AccountFormDialog({
                 />
                 <Label htmlFor="is_default">Set as default account</Label>
               </div>
+
+              {account?.connection_status && (
+                <div className="space-y-2">
+                  <Label>Connection Status</Label>
+                  <div className="flex gap-2">
+                    <ConnectionStatusIndicator
+                      label="IMAP"
+                      attempt={account.connection_status.imap}
+                    />
+                    {account.smtp_host && (
+                      <ConnectionStatusIndicator
+                        label="SMTP"
+                        attempt={account.connection_status.smtp}
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
 
               {account && (
                 <div className="space-y-2">

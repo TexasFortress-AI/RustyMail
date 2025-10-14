@@ -40,6 +40,7 @@ pub fn configure_routes() -> Scope {
         .route("/accounts/{id}", web::put().to(accounts::update_account))
         .route("/accounts/{id}", web::delete().to(accounts::delete_account))
         .route("/accounts/{id}/default", web::post().to(accounts::set_default_account))
+        .route("/accounts/{id}/connection-status", web::get().to(accounts::get_connection_status))
         .route("/accounts/{id}/validate", web::post().to(accounts::validate_connection))
         // Subscription management endpoints
         .route("/events/types", web::get().to(handlers::get_available_event_types))
