@@ -27,9 +27,10 @@ interface Email {
 interface EmailBodyProps {
   currentFolder: string;
   selectedEmailContext: EmailContext | undefined;
+  onAttachmentsLoaded?: () => void;
 }
 
-const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailContext }) => {
+const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailContext, onAttachmentsLoaded }) => {
   const { currentAccount } = useAccount();
   const { toast } = useToast();
   const [email, setEmail] = useState<Email | null>(null);
@@ -104,6 +105,11 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
           const data: ListAttachmentsResponse = await response.json();
           setAttachments(data.attachments);
           setCurrentMessageId(data.message_id);
+
+          // Notify parent that attachments were loaded so email list can update
+          if (data.attachments.length > 0 && onAttachmentsLoaded) {
+            onAttachmentsLoaded();
+          }
         } else {
           console.error('Failed to fetch attachments');
           setAttachments([]);

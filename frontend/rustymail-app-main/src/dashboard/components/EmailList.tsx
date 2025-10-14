@@ -49,9 +49,10 @@ interface EmailListProps {
   currentFolder: string;
   setCurrentFolder: (folder: string) => void;
   onEmailSelect?: (context: EmailContext | undefined) => void;
+  onRefetchReady?: (refetch: () => void) => void;
 }
 
-const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, onEmailSelect }) => {
+const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, onEmailSelect, onRefetchReady }) => {
   const { currentAccount } = useAccount();
   const { toast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
@@ -93,6 +94,13 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     enabled: !!currentAccount,
     refetchInterval: 30000, // Refetch every 30 seconds
   });
+
+  // Expose refetch function to parent
+  useEffect(() => {
+    if (onRefetchReady) {
+      onRefetchReady(() => refetch());
+    }
+  }, [refetch, onRefetchReady]);
 
   const handleSync = async () => {
     if (!currentAccount) {

@@ -604,8 +604,50 @@ impl EmailService {
             .and_then(|cache| cache.db_pool.as_ref())
             .ok_or(EmailServiceError::CacheServiceNotAvailable)?;
 
-        // Fetch the email with full body
-        let emails = self.fetch_emails_for_account(folder, &[uid], account_id).await?;
+        // First, try to get the email from cache to get its message_id
+        let cached_email = if let Some(cache) = &self.cache_service {
+            cache.get_cached_email(folder, uid, account_email).await.ok().flatten()
+        } else {
+            None
+        };
+
+        // Get message_id from cached email if available
+        let message_id = if let Some(ref cached) = cached_email {
+            cached.message_id.clone()
+        } else {
+            None
+        };
+
+        // Check if attachments already exist in database
+        if let Some(ref msg_id) = message_id {
+            let existing_attachments = attachment_storage::get_attachments_metadata(
+                db_pool,
+                account_email,
+                msg_id,
+            ).await?;
+
+            if !existing_attachments.is_empty() {
+                debug!("Attachments already cached for email {}, returning {} attachments", uid, existing_attachments.len());
+                // Return the cached email (reconstruct it)
+                let email = if let Some(cached) = cached_email {
+                    self.cached_email_to_email(cached)
+                } else {
+                    // Shouldn't happen, but fetch if needed
+                    let emails = self.fetch_emails_for_account(folder, &[uid], account_id).await?;
+                    emails.into_iter().next()
+                        .ok_or_else(|| EmailServiceError::ConnectionError(format!("Email {} not found", uid)))?
+                };
+                return Ok((email, existing_attachments));
+            }
+        }
+
+        // Attachments not in database, fetch full email from IMAP
+        debug!("Attachments not cached, fetching full email from IMAP for uid {}", uid);
+        let session = self.imap_factory.create_session_for_account(&account).await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session for account {}: {}", account_id, e)))?;
+
+        session.select_folder(folder).await?;
+        let emails = session.fetch_emails(&[uid]).await?;
         let mut email = emails.into_iter().next()
             .ok_or_else(|| EmailServiceError::ConnectionError(format!("Email {} not found", uid)))?;
 

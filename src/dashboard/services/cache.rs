@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::collections::HashMap;
 use tokio::sync::RwLock;
-use sqlx::{SqlitePool, sqlite::SqlitePoolOptions};
+use sqlx::{SqlitePool, sqlite::SqlitePoolOptions, Row};
 use chrono::{DateTime, Utc};
 use lru::LruCache;
 use std::num::NonZeroUsize;
@@ -316,14 +316,17 @@ impl CacheService {
         let flags = serde_json::to_string(&email.flags).unwrap_or_else(|_| "[]".to_string());
         let headers = "{}".to_string(); // Headers not directly available
 
+        // Determine if email has attachments from MIME structure
+        let has_attachments = !email.attachments.is_empty();
+
         // Insert or update email in database
         let email_id = sqlx::query_scalar::<_, i64>(
             r#"
             INSERT INTO emails (
                 folder_id, uid, message_id, subject, from_address, from_name,
                 to_addresses, cc_addresses, date, internal_date, size, flags,
-                headers, body_text, body_html
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                headers, body_text, body_html, has_attachments
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(folder_id, uid) DO UPDATE SET
                 message_id = excluded.message_id,
                 subject = excluded.subject,
@@ -338,6 +341,7 @@ impl CacheService {
                 headers = excluded.headers,
                 body_text = excluded.body_text,
                 body_html = excluded.body_html,
+                has_attachments = excluded.has_attachments,
                 updated_at = CURRENT_TIMESTAMP
             RETURNING id
             "#
@@ -357,6 +361,7 @@ impl CacheService {
         .bind(headers)
         .bind(&email.text_body)
         .bind(&email.html_body)
+        .bind(has_attachments)
         .fetch_one(pool)
         .await?;
 
@@ -378,7 +383,7 @@ impl CacheService {
             body_text: email.text_body.clone(),
             body_html: email.html_body.clone(),
             cached_at: Utc::now(),
-            has_attachments: false, // Will be set when attachments are saved
+            has_attachments: !email.attachments.is_empty(),
         };
 
         // Add to memory cache with account_id to prevent cross-account data leakage
@@ -484,7 +489,7 @@ impl CacheService {
                    flags,
                    CASE WHEN body_text IS NOT NULL THEN SUBSTR(body_text, 1, 200) || '...' ELSE NULL END as body_text,
                    CASE WHEN body_html IS NOT NULL THEN SUBSTR(body_html, 1, 200) || '...' ELSE NULL END as body_html,
-                   cached_at
+                   cached_at, has_attachments
             FROM emails
             WHERE folder_id = ?
             ORDER BY COALESCE(date, internal_date) DESC
@@ -494,7 +499,7 @@ impl CacheService {
             r#"
             SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
                    to_addresses, cc_addresses, date, internal_date, size,
-                   flags, body_text, body_html, cached_at
+                   flags, body_text, body_html, cached_at, has_attachments
             FROM emails
             WHERE folder_id = ?
             ORDER BY COALESCE(date, internal_date) DESC
@@ -502,38 +507,36 @@ impl CacheService {
             "#
         };
 
-        let emails = sqlx::query_as::<_, (
-            i64, i64, i64, Option<String>, Option<String>, Option<String>, Option<String>,
-            String, String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>,
-            String, Option<String>, Option<String>, DateTime<Utc>
-        )>(query)
-        .bind(folder.id)
-        .bind(limit as i64)
-        .bind(offset as i64)
-        .fetch_all(pool)
-        .await?;
+        let rows = sqlx::query(query)
+            .bind(folder.id)
+            .bind(limit as i64)
+            .bind(offset as i64)
+            .fetch_all(pool)
+            .await?;
 
         let mut cached_emails = Vec::new();
-        for (id, folder_id, uid, message_id, subject, from_address, from_name,
-             to_addresses, cc_addresses, date, internal_date, size,
-             flags, body_text, body_html, cached_at) in emails {
+        for row in rows {
+            let id: i64 = row.get("id");
+            let folder_id: i64 = row.get("folder_id");
+            let uid: i64 = row.get("uid");
+            let message_id: Option<String> = row.get("message_id");
+            let subject: Option<String> = row.get("subject");
+            let from_address: Option<String> = row.get("from_address");
+            let from_name: Option<String> = row.get("from_name");
+            let to_addresses: String = row.get("to_addresses");
+            let cc_addresses: String = row.get("cc_addresses");
+            let date: Option<DateTime<Utc>> = row.get("date");
+            let internal_date: Option<DateTime<Utc>> = row.get("internal_date");
+            let size: Option<i64> = row.get("size");
+            let flags: String = row.get("flags");
+            let body_text: Option<String> = row.get("body_text");
+            let body_html: Option<String> = row.get("body_html");
+            let cached_at: DateTime<Utc> = row.get("cached_at");
+            let has_attachments_i32: i32 = row.get("has_attachments");
 
             let to_addrs: Vec<String> = serde_json::from_str(&to_addresses).unwrap_or_default();
             let cc_addrs: Vec<String> = serde_json::from_str(&cc_addresses).unwrap_or_default();
             let flag_list: Vec<String> = serde_json::from_str(&flags).unwrap_or_default();
-
-            // Check if this email has attachments
-            let has_attachments = if let Some(ref msg_id) = message_id {
-                sqlx::query_scalar::<_, i64>(
-                    "SELECT COUNT(*) FROM attachment_metadata WHERE message_id = ?"
-                )
-                .bind(msg_id)
-                .fetch_one(pool)
-                .await
-                .unwrap_or(0) > 0
-            } else {
-                false
-            };
 
             cached_emails.push(CachedEmail {
                 id,
@@ -552,7 +555,7 @@ impl CacheService {
                 body_text,
                 body_html,
                 cached_at,
-                has_attachments,
+                has_attachments: has_attachments_i32 != 0,
             });
         }
 
