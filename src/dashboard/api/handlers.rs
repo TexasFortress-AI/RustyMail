@@ -1762,14 +1762,104 @@ pub async fn execute_mcp_tool_inner(
         "send_email" => {
             use crate::dashboard::services::{SendEmailRequest};
 
-            // Parse the send email request from params
-            let send_request: SendEmailRequest = match serde_json::from_value(params.clone()) {
-                Ok(req) => req,
+            // Helper function to parse email addresses (handles string or array)
+            let parse_emails = |key: &str, required: bool| -> Result<Vec<String>, String> {
+                match params.get(key) {
+                    Some(val) => {
+                        if val.is_string() {
+                            let s = val.as_str().unwrap_or("");
+                            if s.is_empty() {
+                                if required {
+                                    return Err(format!("{} cannot be empty", key));
+                                }
+                                Ok(vec![])
+                            } else {
+                                Ok(vec![s.to_string()])
+                            }
+                        } else if val.is_array() {
+                            let emails = val.as_array().unwrap()
+                                .iter()
+                                .filter_map(|v| v.as_str().map(String::from))
+                                .filter(|s| !s.is_empty())
+                                .collect::<Vec<String>>();
+                            if required && emails.is_empty() {
+                                return Err(format!("{} cannot be empty", key));
+                            }
+                            Ok(emails)
+                        } else {
+                            Err(format!("{} must be a string or array", key))
+                        }
+                    }
+                    None => {
+                        if required {
+                            Err(format!("{} is required", key))
+                        } else {
+                            Ok(vec![])
+                        }
+                    }
+                }
+            };
+
+            // Parse required fields
+            let to = match parse_emails("to", true) {
+                Ok(emails) => emails,
                 Err(e) => return serde_json::json!({
                     "success": false,
-                    "error": format!("Invalid send email parameters: {}", e),
+                    "error": e,
                     "tool": tool_name
                 })
+            };
+
+            let subject = params.get("subject")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .ok_or("subject is required")
+                .map(String::from);
+
+            let subject = match subject {
+                Ok(s) => s,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": e,
+                    "tool": tool_name
+                })
+            };
+
+            let body = params.get("body")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .ok_or("body is required")
+                .map(String::from);
+
+            let body = match body {
+                Ok(b) => b,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": e,
+                    "tool": tool_name
+                })
+            };
+
+            // Parse optional fields
+            let cc = parse_emails("cc", false).ok()
+                .filter(|v| !v.is_empty());
+
+            let bcc = parse_emails("bcc", false).ok()
+                .filter(|v| !v.is_empty());
+
+            let body_html = params.get("body_html")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty())
+                .map(String::from);
+
+            // Build the send request
+            let send_request = SendEmailRequest {
+                to,
+                cc,
+                bcc,
+                subject,
+                body,
+                body_html,
             };
 
             // Get account email - use account_id from params or default
