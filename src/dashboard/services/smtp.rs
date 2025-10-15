@@ -184,37 +184,76 @@ impl SmtpService {
                 .build()
         };
 
-        // Send the email
-        mailer.send(email.clone()).await?;
+        // Convert email to RFC822 format for IMAP operations
+        let email_bytes = email.formatted();
 
-        // Save sent email to Sent folder via IMAP with timeout
-        // Note: We do this as a best-effort - if it fails, we still return success
-        // since the email was successfully sent via SMTP
-        let append_timeout = Duration::from_secs(10); // 10 second timeout for IMAP append
-        match timeout(append_timeout, self.append_to_sent_folder(&account.email_address, &email)).await {
+        // Step 1: Save to Outbox first (proper Outbox pattern)
+        log::info!("Saving email to Outbox before sending");
+        let outbox_timeout = Duration::from_secs(10);
+        match timeout(outbox_timeout, self.append_to_outbox(&account.email_address, &email_bytes)).await {
             Ok(Ok(_)) => {
-                log::info!("Successfully saved sent email to Sent folder");
+                log::info!("Successfully saved email to Outbox");
             }
             Ok(Err(e)) => {
-                log::warn!("Failed to save sent email to Sent folder: {}", e);
+                log::warn!("Failed to save to Outbox: {}. Proceeding with send anyway.", e);
             }
             Err(_) => {
-                log::warn!("Timeout saving sent email to Sent folder (exceeded {} seconds)", append_timeout.as_secs());
+                log::warn!("Timeout saving to Outbox (exceeded {} seconds). Proceeding with send anyway.", outbox_timeout.as_secs());
             }
         }
 
-        Ok(SendEmailResponse {
-            success: true,
-            message_id,
-            message: "Email sent successfully".to_string(),
-        })
+        // Step 2: Send via SMTP
+        log::info!("Sending email via SMTP");
+        match mailer.send(email.clone()).await {
+            Ok(_) => {
+                log::info!("Email sent successfully via SMTP");
+
+                // Step 3: Move to Sent folder after successful send
+                let sent_timeout = Duration::from_secs(10);
+                match timeout(sent_timeout, self.append_to_sent_folder(&account.email_address, &email_bytes)).await {
+                    Ok(Ok(_)) => {
+                        log::info!("Successfully saved sent email to Sent folder");
+                    }
+                    Ok(Err(e)) => {
+                        log::warn!("Failed to save sent email to Sent folder: {}", e);
+                    }
+                    Err(_) => {
+                        log::warn!("Timeout saving sent email to Sent folder (exceeded {} seconds)", sent_timeout.as_secs());
+                    }
+                }
+
+                // Step 4: Clean up Outbox after successful send
+                let cleanup_timeout = Duration::from_secs(10);
+                match timeout(cleanup_timeout, self.delete_from_outbox(&account.email_address, &message_id)).await {
+                    Ok(Ok(_)) => {
+                        log::info!("Successfully removed email from Outbox");
+                    }
+                    Ok(Err(e)) => {
+                        log::warn!("Failed to remove email from Outbox: {}", e);
+                    }
+                    Err(_) => {
+                        log::warn!("Timeout removing email from Outbox (exceeded {} seconds)", cleanup_timeout.as_secs());
+                    }
+                }
+
+                Ok(SendEmailResponse {
+                    success: true,
+                    message_id,
+                    message: "Email sent successfully".to_string(),
+                })
+            }
+            Err(e) => {
+                log::error!("SMTP send failed: {}. Email remains in Outbox for retry.", e);
+                Err(SmtpError::SendError(e))
+            }
+        }
     }
 
-    /// Append a sent message to the IMAP Sent folder
-    async fn append_to_sent_folder(
+    /// Append an email to the IMAP Outbox folder before sending
+    async fn append_to_outbox(
         &self,
         account_email: &str,
-        email: &Message,
+        email_bytes: &[u8],
     ) -> Result<(), SmtpError> {
         // Get account to create IMAP session
         let account_service = self.account_service.lock().await;
@@ -230,8 +269,144 @@ impl SmtpService {
             .await
             .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
 
-        // Convert the email to RFC822 format (raw bytes)
-        let email_bytes = email.formatted();
+        // Common Outbox folder names to try
+        let outbox_folders = vec!["INBOX.Outbox", "Outbox", "Drafts", "INBOX.Drafts"];
+
+        let mut last_error = None;
+
+        // Try each possible Outbox folder name
+        for folder in &outbox_folders {
+            // No flags for outbox messages (not read, not flagged)
+            let flags: Vec<String> = vec![];
+            match session.append(folder, email_bytes, &flags).await {
+                Ok(_) => {
+                    log::info!("Successfully saved email to Outbox folder: {}", folder);
+                    return Ok(());
+                }
+                Err(e) => {
+                    log::debug!("Failed to append to Outbox folder '{}': {}", folder, e);
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        // If all folders failed, return the last error
+        if let Some(err) = last_error {
+            Err(SmtpError::ConfigError(format!(
+                "Could not save to Outbox folder. Tried: {}. Last error: {}",
+                outbox_folders.join(", "),
+                err
+            )))
+        } else {
+            Err(SmtpError::ConfigError("No Outbox folders to try".to_string()))
+        }
+    }
+
+    /// Delete an email from the IMAP Outbox folder after successful send
+    async fn delete_from_outbox(
+        &self,
+        account_email: &str,
+        message_id: &Option<String>,
+    ) -> Result<(), SmtpError> {
+        // If there's no message ID, we can't search for the message
+        let msg_id = match message_id {
+            Some(id) => id,
+            None => {
+                log::warn!("No Message-ID available to delete from Outbox");
+                return Ok(()); // Not an error - just skip cleanup
+            }
+        };
+
+        // Get account to create IMAP session
+        let account_service = self.account_service.lock().await;
+        let account = account_service
+            .get_account(account_email)
+            .await
+            .map_err(|_| SmtpError::AccountNotFound(account_email.to_string()))?;
+        drop(account_service);
+
+        // Create IMAP session for this account
+        let session = self.imap_session_factory
+            .create_session_for_account(&account)
+            .await
+            .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
+
+        // Common Outbox folder names to try
+        let outbox_folders = vec!["INBOX.Outbox", "Outbox", "Drafts", "INBOX.Drafts"];
+
+        let mut last_error = None;
+
+        // Try to find and delete from each possible Outbox folder
+        for folder in &outbox_folders {
+            // Select the folder
+            match session.select_folder(folder).await {
+                Ok(_) => {
+                    // Search for the message by Message-ID
+                    let search_criteria = format!("HEADER Message-ID {}", msg_id);
+                    match session.search_emails(&search_criteria).await {
+                        Ok(uids) => {
+                            if !uids.is_empty() {
+                                // Delete all matching messages (should be only one)
+                                match session.delete_messages(&uids).await {
+                                    Ok(_) => {
+                                        log::info!("Successfully deleted {} message(s) from Outbox folder: {}", uids.len(), folder);
+                                        return Ok(());
+                                    }
+                                    Err(e) => {
+                                        log::warn!("Failed to delete message from Outbox folder '{}': {}", folder, e);
+                                        last_error = Some(e);
+                                    }
+                                }
+                            } else {
+                                log::debug!("No messages found in Outbox folder '{}' with Message-ID: {}", folder, msg_id);
+                            }
+                        }
+                        Err(e) => {
+                            log::debug!("Failed to search Outbox folder '{}': {}", folder, e);
+                            last_error = Some(e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::debug!("Failed to select Outbox folder '{}': {}", folder, e);
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        // If we couldn't delete from any folder, log warning but don't fail
+        // (The message might have already been cleaned up or the folder might not exist)
+        if let Some(err) = last_error {
+            log::warn!(
+                "Could not delete from Outbox. Tried: {}. Last error: {}",
+                outbox_folders.join(", "),
+                err
+            );
+        }
+
+        // Don't return error - cleanup is best-effort
+        Ok(())
+    }
+
+    /// Append a sent message to the IMAP Sent folder
+    async fn append_to_sent_folder(
+        &self,
+        account_email: &str,
+        email_bytes: &[u8],
+    ) -> Result<(), SmtpError> {
+        // Get account to create IMAP session
+        let account_service = self.account_service.lock().await;
+        let account = account_service
+            .get_account(account_email)
+            .await
+            .map_err(|_| SmtpError::AccountNotFound(account_email.to_string()))?;
+        drop(account_service);
+
+        // Create IMAP session for this account
+        let session = self.imap_session_factory
+            .create_session_for_account(&account)
+            .await
+            .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
 
         // Common Sent folder names to try
         let sent_folders = vec!["INBOX.Sent", "Sent", "Sent Items", "[Gmail]/Sent Mail"];

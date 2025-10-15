@@ -128,6 +128,10 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         self.session.mark_as_deleted(uids).await
     }
 
+    pub async fn delete_messages(&self, uids: &[u32]) -> Result<(), ImapError> {
+        self.session.delete_messages(uids).await
+    }
+
     pub async fn undelete_messages(&self, uids: &[u32]) -> Result<(), ImapError> {
         self.session.undelete_messages(uids).await
     }
