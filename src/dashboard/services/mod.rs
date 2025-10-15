@@ -181,7 +181,10 @@ pub async fn init(
     );
 
     // Initialize SMTP Service
-    let smtp_service = Arc::new(SmtpService::new(account_service.clone()));
+    let smtp_service = Arc::new(SmtpService::new(
+        account_service.clone(),
+        imap_session_factory.clone(),
+    ));
 
     // Initialize Sync Service
     let sync_interval = std::env::var("SYNC_INTERVAL_SECONDS")

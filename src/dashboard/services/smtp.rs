@@ -10,6 +10,7 @@ use thiserror::Error;
 use tokio::sync::Mutex as TokioMutex;
 
 use super::account::{AccountService};
+use crate::prelude::CloneableImapSessionFactory;
 
 #[derive(Error, Debug)]
 pub enum SmtpError {
@@ -48,11 +49,18 @@ pub struct SendEmailResponse {
 
 pub struct SmtpService {
     account_service: Arc<TokioMutex<AccountService>>,
+    imap_session_factory: CloneableImapSessionFactory,
 }
 
 impl SmtpService {
-    pub fn new(account_service: Arc<TokioMutex<AccountService>>) -> Self {
-        Self { account_service }
+    pub fn new(
+        account_service: Arc<TokioMutex<AccountService>>,
+        imap_session_factory: CloneableImapSessionFactory,
+    ) -> Self {
+        Self {
+            account_service,
+            imap_session_factory,
+        }
     }
 
     pub async fn send_email(
@@ -175,13 +183,77 @@ impl SmtpService {
         };
 
         // Send the email
-        mailer.send(email).await?;
+        mailer.send(email.clone()).await?;
+
+        // Save sent email to Sent folder via IMAP
+        // Note: We do this as a best-effort - if it fails, we still return success
+        // since the email was successfully sent via SMTP
+        let sent_folder_result = self.append_to_sent_folder(&account.email_address, &email).await;
+        if let Err(e) = &sent_folder_result {
+            log::warn!("Failed to save sent email to Sent folder: {}", e);
+        }
 
         Ok(SendEmailResponse {
             success: true,
             message_id,
             message: "Email sent successfully".to_string(),
         })
+    }
+
+    /// Append a sent message to the IMAP Sent folder
+    async fn append_to_sent_folder(
+        &self,
+        account_email: &str,
+        email: &Message,
+    ) -> Result<(), SmtpError> {
+        // Get account to create IMAP session
+        let account_service = self.account_service.lock().await;
+        let account = account_service
+            .get_account(account_email)
+            .await
+            .map_err(|_| SmtpError::AccountNotFound(account_email.to_string()))?;
+        drop(account_service);
+
+        // Create IMAP session for this account
+        let session = self.imap_session_factory
+            .create_session_for_account(&account)
+            .await
+            .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
+
+        // Convert the email to RFC822 format (raw bytes)
+        let email_bytes = email.formatted();
+
+        // Common Sent folder names to try
+        let sent_folders = vec!["INBOX.Sent", "Sent", "Sent Items", "[Gmail]/Sent Mail"];
+
+        let mut last_error = None;
+
+        // Try each possible Sent folder name
+        for folder in &sent_folders {
+            // No flags for sent messages
+            let flags: Vec<String> = vec![];
+            match session.append(folder, &email_bytes, &flags).await {
+                Ok(_) => {
+                    log::info!("Successfully saved sent email to folder: {}", folder);
+                    return Ok(());
+                }
+                Err(e) => {
+                    log::debug!("Failed to append to folder '{}': {}", folder, e);
+                    last_error = Some(e);
+                }
+            }
+        }
+
+        // If all folders failed, return the last error
+        if let Some(err) = last_error {
+            Err(SmtpError::ConfigError(format!(
+                "Could not save to Sent folder. Tried: {}. Last error: {}",
+                sent_folders.join(", "),
+                err
+            )))
+        } else {
+            Err(SmtpError::ConfigError("No Sent folders to try".to_string()))
+        }
     }
 
     pub async fn test_smtp_connection(&self, account_email: &str) -> Result<(), SmtpError> {
