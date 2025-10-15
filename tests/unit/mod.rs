@@ -16,4 +16,6 @@ pub mod dashboard_config;
 pub mod hardcoded_detection;
 pub mod ai_service_tests;
 pub mod cache_service_tests;
-pub mod account_service_tests; 
+pub mod account_service_tests;
+pub mod smtp_service_tests;
+pub mod attachment_tests; 

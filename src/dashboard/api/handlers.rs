@@ -367,6 +367,50 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
             }
         }),
         serde_json::json!({
+            "name": "mark_as_read",
+            "description": "Mark messages as read",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder containing messages"
+                    },
+                    "uids": {
+                        "type": "string",
+                        "description": "Comma-separated list of UIDs"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["folder", "uids", "account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "mark_as_unread",
+            "description": "Mark messages as unread",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder containing messages"
+                    },
+                    "uids": {
+                        "type": "string",
+                        "description": "Comma-separated list of UIDs"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["folder", "uids", "account_id"]
+            }
+        }),
+        serde_json::json!({
             "name": "list_cached_emails",
             "description": "List cached emails from database",
             "inputSchema": {
@@ -519,6 +563,131 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
                     }
                 },
                 "required": ["account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "send_email",
+            "description": "Send an email via SMTP",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "to": {
+                        "type": "array",
+                        "description": "REQUIRED. Array of recipient email addresses",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "subject": {
+                        "type": "string",
+                        "description": "REQUIRED. Email subject line"
+                    },
+                    "body": {
+                        "type": "string",
+                        "description": "REQUIRED. Plain text email body"
+                    },
+                    "cc": {
+                        "type": "array",
+                        "description": "Optional. Array of CC recipient email addresses",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "bcc": {
+                        "type": "array",
+                        "description": "Optional. Array of BCC recipient email addresses",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "body_html": {
+                        "type": "string",
+                        "description": "Optional. HTML email body (multipart with plain text fallback)"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "Optional. Email address of the sending account (uses default if not specified)"
+                    }
+                },
+                "required": ["to", "subject", "body"]
+            }
+        }),
+        serde_json::json!({
+            "name": "list_email_attachments",
+            "description": "List all attachments for a specific email",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder containing the email (when using uid)"
+                    },
+                    "uid": {
+                        "type": "integer",
+                        "description": "Email UID (alternative to message_id)"
+                    },
+                    "message_id": {
+                        "type": "string",
+                        "description": "Message ID (alternative to folder+uid)"
+                    }
+                },
+                "required": ["account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "download_email_attachments",
+            "description": "Download attachments from an email to local directory",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder containing the email (when using uid)"
+                    },
+                    "uid": {
+                        "type": "integer",
+                        "description": "Email UID (alternative to message_id)"
+                    },
+                    "message_id": {
+                        "type": "string",
+                        "description": "Message ID (alternative to folder+uid)"
+                    },
+                    "destination": {
+                        "type": "string",
+                        "description": "Destination directory path (optional)"
+                    },
+                    "create_zip": {
+                        "type": "boolean",
+                        "description": "Create ZIP archive instead of individual files (optional, boolean)"
+                    }
+                },
+                "required": ["account_id"]
+            }
+        }),
+        serde_json::json!({
+            "name": "cleanup_attachments",
+            "description": "Delete downloaded attachments for a specific email",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "message_id": {
+                        "type": "string",
+                        "description": "REQUIRED. The message ID of the email"
+                    },
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    }
+                },
+                "required": ["message_id", "account_id"]
             }
         })
     ]

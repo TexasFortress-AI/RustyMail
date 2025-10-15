@@ -63,6 +63,7 @@ fn create_test_account(email: &str, display_name: &str) -> Account {
         smtp_use_starttls: Some(true),
         is_active: true,
         is_default: false,
+        connection_status: None,
     }
 }
 
