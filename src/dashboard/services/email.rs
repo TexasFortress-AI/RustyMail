@@ -416,6 +416,40 @@ impl EmailService {
         Ok(())
     }
 
+    /// Mark email(s) as read (adds \Seen flag)
+    pub async fn mark_as_read(&self, folder: &str, uids: &[u32]) -> Result<(), EmailServiceError> {
+        debug!("Marking {} emails as read in {}", uids.len(), folder);
+
+        let client = self.imap_factory.create_session().await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+
+        client.select_folder(folder).await?;
+
+        use crate::imap::types::FlagOperation;
+        client.store_flags(uids, FlagOperation::Add, &vec!["\\Seen".to_string()]).await?;
+
+        // Note: Cache will be invalidated naturally on next access
+        info!("Successfully marked {} emails as read", uids.len());
+        Ok(())
+    }
+
+    /// Mark email(s) as unread (removes \Seen flag)
+    pub async fn mark_as_unread(&self, folder: &str, uids: &[u32]) -> Result<(), EmailServiceError> {
+        debug!("Marking {} emails as unread in {}", uids.len(), folder);
+
+        let client = self.imap_factory.create_session().await
+            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+
+        client.select_folder(folder).await?;
+
+        use crate::imap::types::FlagOperation;
+        client.store_flags(uids, FlagOperation::Remove, &vec!["\\Seen".to_string()]).await?;
+
+        // Note: Cache will be invalidated naturally on next access
+        info!("Successfully marked {} emails as unread", uids.len());
+        Ok(())
+    }
+
     /// Mark email(s) as deleted (sets \Deleted flag)
     pub async fn mark_as_deleted(&self, folder: &str, uids: &[u32]) -> Result<(), EmailServiceError> {
         debug!("Marking {} emails as deleted in {}", uids.len(), folder);

@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use rustymail::dashboard::services::{
     DashboardState, ClientManager, MetricsService, CacheService, CacheConfig,
     ConfigService, AiService, EmailService, SyncService, AccountService,
-    EventBus
+    EventBus, SmtpService
 };
 use rustymail::dashboard::api::sse::SseManager;
 use rustymail::config::Settings;
@@ -131,6 +131,9 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
     // Initialize AI Service (mock)
     let ai_service = Arc::new(AiService::new_mock());
 
+    // Initialize SMTP Service
+    let smtp_service = Arc::new(SmtpService::new(account_service.clone(), imap_session_factory.clone()));
+
     // Create event bus
     let event_bus = Arc::new(EventBus::new());
 
@@ -151,6 +154,7 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
         email_service,
         sync_service,
         account_service,
+        smtp_service,
         sse_manager,
         event_bus,
         health_service: None,

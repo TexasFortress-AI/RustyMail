@@ -11,21 +11,25 @@ use tempfile::TempDir;
 
 // Helper function to create test database pool
 async fn create_test_db_pool(test_name: &str) -> SqlitePool {
-    let db_file_path = format!("test_data/attachment_{}_test.db", test_name);
+    // Get the project root directory (where Cargo.toml is located)
+    let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let test_data_dir = project_root.join("test_data");
+
+    // Create test_data directory if it doesn't exist
+    fs::create_dir_all(&test_data_dir).unwrap();
+
+    let db_file_path = test_data_dir.join(format!("attachment_{}_test.db", test_name));
 
     // Remove existing database files
     let _ = fs::remove_file(&db_file_path);
-    let _ = fs::remove_file(format!("{}-shm", db_file_path));
-    let _ = fs::remove_file(format!("{}-wal", db_file_path));
-
-    // Create test_data directory if it doesn't exist
-    fs::create_dir_all("test_data").unwrap();
+    let _ = fs::remove_file(db_file_path.with_extension("db-shm"));
+    let _ = fs::remove_file(db_file_path.with_extension("db-wal"));
 
     // Create the database file
     fs::File::create(&db_file_path).unwrap();
 
     // Connect to database
-    let db_url = format!("sqlite:{}", db_file_path);
+    let db_url = format!("sqlite:{}", db_file_path.display());
     let pool = SqlitePool::connect(&db_url).await.unwrap();
 
     // Run migrations
@@ -34,15 +38,34 @@ async fn create_test_db_pool(test_name: &str) -> SqlitePool {
         .await
         .unwrap();
 
+    // Insert test account to satisfy foreign key constraints
+    sqlx::query(
+        r#"
+        INSERT INTO accounts (
+            email_address, display_name, imap_host, imap_port, imap_user, imap_pass,
+            imap_use_tls, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_use_tls
+        ) VALUES (
+            'test@example.com', 'Test Account', 'imap.example.com', 993, 'test@example.com', 'password',
+            1, 'smtp.example.com', 587, 'test@example.com', 'password', 1
+        )
+        "#
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
     pool
 }
 
 // Helper function to cleanup test database
 fn cleanup_test_db(test_name: &str) {
-    let db_file_path = format!("test_data/attachment_{}_test.db", test_name);
+    let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let test_data_dir = project_root.join("test_data");
+    let db_file_path = test_data_dir.join(format!("attachment_{}_test.db", test_name));
+
     let _ = fs::remove_file(&db_file_path);
-    let _ = fs::remove_file(format!("{}-shm", db_file_path));
-    let _ = fs::remove_file(format!("{}-wal", db_file_path));
+    let _ = fs::remove_file(db_file_path.with_extension("db-shm"));
+    let _ = fs::remove_file(db_file_path.with_extension("db-wal"));
 }
 
 // Helper to parse content type from string (e.g., "application/pdf")

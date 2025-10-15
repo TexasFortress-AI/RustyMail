@@ -923,6 +923,24 @@ pub async fn list_mcp_tools(
                 "message_id": "REQUIRED. The message ID of the email",
                 "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
+        }),
+        serde_json::json!({
+            "name": "mark_as_read",
+            "description": "Mark messages as read (adds \\Seen flag)",
+            "parameters": {
+                "folder": "REQUIRED. Folder containing messages",
+                "uids": "REQUIRED. Array of message UIDs to mark as read",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+            }
+        }),
+        serde_json::json!({
+            "name": "mark_as_unread",
+            "description": "Mark messages as unread (removes \\Seen flag)",
+            "parameters": {
+                "folder": "REQUIRED. Folder containing messages",
+                "uids": "REQUIRED. Array of message UIDs to mark as unread",
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+            }
         })
     ];
 
@@ -1695,6 +1713,100 @@ pub async fn execute_mcp_tool_inner(
                     serde_json::json!({
                         "success": false,
                         "error": format!("Failed to batch move messages: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "mark_as_read" => {
+            let uids = match params.get("uids").and_then(|v| v.as_array()) {
+                Some(arr) => arr.iter().filter_map(|v| v.as_u64()).map(|v| v as u32).collect::<Vec<u32>>(),
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'uids' parameter",
+                    "tool": tool_name
+                })
+            };
+            let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                Some(f) => f,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'folder' parameter",
+                    "tool": tool_name
+                })
+            };
+
+            if uids.is_empty() {
+                return serde_json::json!({
+                    "success": false,
+                    "error": "'uids' parameter cannot be empty",
+                    "tool": tool_name
+                });
+            }
+
+            match email_service.mark_as_read(folder, &uids).await {
+                Ok(_) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": {
+                            "uids": uids,
+                            "folder": folder,
+                            "count": uids.len()
+                        },
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to mark messages as read: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "mark_as_unread" => {
+            let uids = match params.get("uids").and_then(|v| v.as_array()) {
+                Some(arr) => arr.iter().filter_map(|v| v.as_u64()).map(|v| v as u32).collect::<Vec<u32>>(),
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'uids' parameter",
+                    "tool": tool_name
+                })
+            };
+            let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                Some(f) => f,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing 'folder' parameter",
+                    "tool": tool_name
+                })
+            };
+
+            if uids.is_empty() {
+                return serde_json::json!({
+                    "success": false,
+                    "error": "'uids' parameter cannot be empty",
+                    "tool": tool_name
+                });
+            }
+
+            match email_service.mark_as_unread(folder, &uids).await {
+                Ok(_) => {
+                    serde_json::json!({
+                        "success": true,
+                        "data": {
+                            "uids": uids,
+                            "folder": folder,
+                            "count": uids.len()
+                        },
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to mark messages as unread: {}", e),
                         "tool": tool_name
                     })
                 }
