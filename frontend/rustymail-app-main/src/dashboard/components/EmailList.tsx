@@ -13,10 +13,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { RefreshCw, Mail, ChevronLeft, ChevronRight, X, ChevronsLeft, ChevronsRight, Paperclip, Download } from 'lucide-react';
+import { RefreshCw, Mail, ChevronLeft, ChevronRight, X, ChevronsLeft, ChevronsRight, Paperclip, Download, PenSquare } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '../../hooks/use-toast';
 import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
+import { SendMailDialog } from './SendMailDialog';
 
 interface Email {
   id: number;
@@ -61,6 +62,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
   const [attachments, setAttachments] = useState<AttachmentInfo[]>([]);
   const [currentMessageId, setCurrentMessageId] = useState<string>('');
   const [loadingAttachments, setLoadingAttachments] = useState(false);
+  const [composeDialogOpen, setComposeDialogOpen] = useState(false);
   const pageSize = 20;
 
   // Reset to page 1 when folder or account changes
@@ -333,6 +335,14 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
         </CardTitle>
         <div className="flex gap-2">
           <Button
+            onClick={() => setComposeDialogOpen(true)}
+            size="sm"
+            variant="default"
+          >
+            <PenSquare className="mr-2 h-4 w-4" />
+            Compose
+          </Button>
+          <Button
             onClick={handleSync}
             disabled={isFetching}
             size="sm"
@@ -530,6 +540,13 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
           </div>
         )}
       </CardContent>
+
+      {/* Send Mail Dialog */}
+      <SendMailDialog
+        open={composeDialogOpen}
+        onOpenChange={setComposeDialogOpen}
+        accountEmail={currentAccount?.id}
+      />
     </Card>
   );
 };

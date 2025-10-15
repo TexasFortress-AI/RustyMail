@@ -91,6 +91,9 @@ utoipa-swagger-ui = { version = "8", features = ["actix-web"] }
 # MIME parsing
 mail-parser = "0.8"
 
+# SMTP sending
+lettre = { version = "0.11", default-features = false, features = ["tokio1", "tokio1-rustls-tls", "builder", "hostname", "smtp-transport"] }
+
 # Database and caching dependencies
 sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono", "uuid", "migrate"] }
 lru = "0.12" # For in-memory LRU cache

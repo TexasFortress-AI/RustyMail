@@ -32,6 +32,7 @@ pub mod events;
 pub mod event_integration;
 pub mod health;
 pub mod metrics;
+pub mod smtp;
 pub mod sync;
 
 // Define or import error types if they exist
@@ -56,6 +57,7 @@ pub use ai::{AiService};
 pub use email::{EmailService};
 pub use events::{EventBus, DashboardEvent};
 pub use health::{HealthService, HealthReport, HealthStatus};
+pub use smtp::{SmtpService, SendEmailRequest, SendEmailResponse, SmtpError};
 pub use sync::{SyncService};
 
 // Import the types that were causing privacy issues directly from their source
@@ -85,6 +87,7 @@ pub struct DashboardState {
     pub config_service: Arc<ConfigService>,
     pub ai_service: Arc<AiService>,
     pub email_service: Arc<EmailService>,
+    pub smtp_service: Arc<SmtpService>,
     pub sync_service: Arc<SyncService>,
     pub account_service: Arc<TokioMutex<AccountService>>,
     pub sse_manager: Arc<SseManager>,
@@ -177,6 +180,9 @@ pub async fn init(
         .with_account_service(account_service.clone())
     );
 
+    // Initialize SMTP Service
+    let smtp_service = Arc::new(SmtpService::new(account_service.clone()));
+
     // Initialize Sync Service
     let sync_interval = std::env::var("SYNC_INTERVAL_SECONDS")
         .ok()
@@ -236,6 +242,7 @@ pub async fn init(
         config_service,
         ai_service,
         email_service,
+        smtp_service,
         sync_service,
         account_service,
         sse_manager,

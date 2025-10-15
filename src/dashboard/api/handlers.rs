@@ -2662,3 +2662,43 @@ pub async fn get_cached_emails(
         }
     }
 }
+
+/// Send an email via SMTP
+#[derive(serde::Deserialize)]
+pub struct SendEmailQueryParams {
+    account_email: Option<String>,
+}
+
+pub async fn send_email(
+    state: Data<DashboardState>,
+    query: web::Query<SendEmailQueryParams>,
+    body: web::Json<crate::dashboard::services::SendEmailRequest>,
+) -> Result<impl Responder, ApiError> {
+    // Get account email from query parameters or use default
+    let account_email = match query.account_email.as_ref() {
+        Some(email) => email.clone(),
+        None => {
+            // Get default account if no account_email provided
+            let account_service = state.account_service.lock().await;
+            match account_service.get_default_account().await {
+                Ok(Some(account)) => account.email_address,
+                Ok(None) => return Err(ApiError::NotFound("No default account configured".to_string())),
+                Err(e) => return Err(ApiError::InternalError(format!("Failed to get default account: {}", e))),
+            }
+        }
+    };
+
+    info!("Sending email from account: {}", account_email);
+
+    // Send the email using SMTP service
+    match state.smtp_service.send_email(&account_email, body.into_inner()).await {
+        Ok(response) => {
+            info!("Email sent successfully: {:?}", response);
+            Ok(HttpResponse::Ok().json(response))
+        }
+        Err(e) => {
+            error!("Failed to send email: {}", e);
+            Err(ApiError::InternalError(format!("Failed to send email: {}", e)))
+        }
+    }
+}

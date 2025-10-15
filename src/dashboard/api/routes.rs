@@ -31,6 +31,8 @@ pub fn configure_routes() -> Scope {
         .route("/sync/status", web::get().to(handlers::get_sync_status))
         // Email cache endpoints
         .route("/emails", web::get().to(handlers::get_cached_emails))
+        // SMTP email sending endpoint
+        .route("/emails/send", web::post().to(handlers::send_email))
         .route("/events", web::get().to(sse::sse_handler))
         // Account management endpoints
         .route("/accounts/auto-config", web::post().to(accounts::auto_configure))
