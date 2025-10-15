@@ -2,6 +2,7 @@
 // This module organizes all integration tests
 
 pub mod dashboard; // Dashboard API endpoints integration tests
+pub mod dashboard_smtp_attachments; // Dashboard SMTP and attachment endpoints integration tests
 pub mod api_rest;
 pub mod api_auth;
 pub mod api_validation;
