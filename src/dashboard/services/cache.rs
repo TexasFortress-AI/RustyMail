@@ -564,6 +564,7 @@ impl CacheService {
 
     /// Get folder from cache for a specific account
     /// First checks in-memory cache, then falls back to database lookup
+    /// Automatically tries "INBOX." prefix if exact match fails (for GoDaddy/hierarchical folder names)
     async fn get_folder_from_cache_for_account(&self, name: &str, account_id: &str) -> Option<CachedFolder> {
         let cache_key = format!("{}:{}", account_id, name);
 
@@ -578,16 +579,33 @@ impl CacheService {
         // Not in memory cache, check database
         let pool = self.db_pool.as_ref()?;
 
-        let folder = sqlx::query_as::<_, (i64, String, Option<String>, Option<String>, Option<i64>, Option<i64>, i32, i32, Option<DateTime<Utc>>)>(
+        // Try exact match first
+        let mut folder = sqlx::query_as::<_, (i64, String, Option<String>, Option<String>, Option<i64>, Option<i64>, i32, i32, Option<DateTime<Utc>>)>(
             "SELECT id, name, delimiter, attributes, uidvalidity, uidnext, total_messages, unseen_messages, last_sync FROM folders WHERE name = ? AND account_id = ?"
         )
         .bind(name)
         .bind(account_id)
         .fetch_optional(pool)
         .await
-        .ok()??;
+        .ok()?;
 
-        let (id, name_str, delimiter, attributes_json, uidvalidity, uidnext, total_messages, unseen_messages, last_sync) = folder;
+        // If not found and doesn't start with "INBOX.", try with "INBOX." prefix
+        // This handles cases where user asks for "Sent" but folder is "INBOX.Sent"
+        if folder.is_none() && !name.starts_with("INBOX.") {
+            let prefixed_name = format!("INBOX.{}", name);
+            debug!("Folder '{}' not found, trying with prefix: '{}'", name, prefixed_name);
+
+            folder = sqlx::query_as::<_, (i64, String, Option<String>, Option<String>, Option<i64>, Option<i64>, i32, i32, Option<DateTime<Utc>>)>(
+                "SELECT id, name, delimiter, attributes, uidvalidity, uidnext, total_messages, unseen_messages, last_sync FROM folders WHERE name = ? AND account_id = ?"
+            )
+            .bind(&prefixed_name)
+            .bind(account_id)
+            .fetch_optional(pool)
+            .await
+            .ok()?;
+        }
+
+        let (id, name_str, delimiter, attributes_json, uidvalidity, uidnext, total_messages, unseen_messages, last_sync) = folder?;
 
         let attributes: Vec<String> = attributes_json
             .and_then(|json| serde_json::from_str(&json).ok())
