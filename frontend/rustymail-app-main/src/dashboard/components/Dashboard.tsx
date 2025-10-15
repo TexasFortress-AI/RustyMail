@@ -26,7 +26,16 @@ const Dashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('email');
 
   // Current folder state (shared between EmailList and ChatbotPanel)
-  const [currentFolder, setCurrentFolder] = useState('INBOX');
+  // Initialize from localStorage or default to 'INBOX'
+  const [currentFolder, setCurrentFolder] = useState(() => {
+    const saved = localStorage.getItem('rustymail_current_folder');
+    return saved || 'INBOX';
+  });
+
+  // Save current folder to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('rustymail_current_folder', currentFolder);
+  }, [currentFolder]);
 
   // Selected email context (for MCP tools)
   const [selectedEmailContext, setSelectedEmailContext] = useState<EmailContext | undefined>(undefined);
