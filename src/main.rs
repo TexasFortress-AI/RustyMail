@@ -115,10 +115,18 @@ async fn main() -> std::io::Result<()> {
         }
 
         async fn validate(&self, client: &Arc<ImapClient<AsyncImapSessionWrapper>>) -> bool {
-            // Simple health check - try to perform a lightweight operation
-            // For now, assume healthy if connection exists
-            // In production, could do a NOOP command or check connection state
-            true
+            // Send NOOP command to verify connection is alive
+            // This serves as both a health check and keepalive
+            match client.noop().await {
+                Ok(_) => {
+                    log::debug!("Connection validated successfully via NOOP");
+                    true
+                }
+                Err(e) => {
+                    log::warn!("Connection validation failed via NOOP: {}", e);
+                    false
+                }
+            }
         }
     }
 

@@ -136,6 +136,10 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         self.session.undelete_messages(uids).await
     }
 
+    pub async fn noop(&self) -> Result<(), ImapError> {
+        self.session.noop().await
+    }
+
     pub async fn logout(&self) -> Result<(), ImapError> {
         self.session.logout().await
     }

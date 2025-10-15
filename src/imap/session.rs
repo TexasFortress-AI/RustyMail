@@ -119,6 +119,9 @@ pub trait AsyncImapOps: Send + Sync + Debug {
 
     /// Undelete messages (removes \Deleted flag)
     async fn undelete_messages(&self, uids: &[u32]) -> Result<(), ImapError>;
+
+    /// Send NOOP command (keeps connection alive and checks for updates)
+    async fn noop(&self) -> Result<(), ImapError>;
 }
 
 // Wrapper definition using Arc<Mutex<...>>
@@ -590,6 +593,18 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
         self.store_flags(uids, FlagOperation::Remove, &[String::from("\\Deleted")]).await?;
 
         info!("Successfully undeleted {} messages", uids.len());
+        Ok(())
+    }
+
+    async fn noop(&self) -> Result<(), ImapError> {
+        let mut session_guard = self.session.lock().await;
+
+        // Send NOOP command to keep connection alive and check for updates
+        session_guard.noop()
+            .await
+            .map_err(ImapError::from)?;
+
+        debug!("Successfully sent NOOP keepalive command");
         Ok(())
     }
 }
