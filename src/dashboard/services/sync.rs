@@ -52,24 +52,30 @@ impl SyncService {
             loop {
                 interval.tick().await;
 
-                // Get default account for background sync
+                // Get all accounts for background sync
                 let account_service = self.account_service.lock().await;
-                match account_service.get_default_account().await {
-                    Ok(Some(account)) => {
-                        let account_id = account.email_address.clone();
+                match account_service.list_accounts().await {
+                    Ok(accounts) => {
+                        let account_emails: Vec<String> = accounts.iter()
+                            .map(|a| a.email_address.clone())
+                            .collect();
                         drop(account_service); // Release lock before sync
 
-                        if let Err(e) = self.sync_all_folders(&account_id).await {
-                            error!("Background sync failed for account {}: {}", account_id, e);
+                        if account_emails.is_empty() {
+                            debug!("No accounts configured, skipping background sync");
+                            continue;
                         }
-                    }
-                    Ok(None) => {
-                        drop(account_service);
-                        debug!("No default account configured, skipping background sync");
+
+                        // Sync all accounts
+                        for account_email in account_emails {
+                            if let Err(e) = self.sync_all_folders(&account_email).await {
+                                error!("Background sync failed for account {}: {}", account_email, e);
+                            }
+                        }
                     }
                     Err(e) => {
                         drop(account_service);
-                        error!("Failed to get default account for background sync: {}", e);
+                        error!("Failed to list accounts for background sync: {}", e);
                     }
                 }
             }
