@@ -2528,16 +2528,11 @@ pub async fn trigger_email_sync(
 
     // Spawn the sync task in the background
     tokio::spawn(async move {
-        let folders = vec!["INBOX", "INBOX.Sent", "INBOX.Drafts", "INBOX.Trash", "INBOX.spam"];
-        for folder in folders {
-            info!("Starting incremental sync of {} for account {}", folder, account_id_for_task);
-            // Use incremental sync (None = no limit) instead of full_sync which clears cache
-            match sync_service.sync_folder_with_limit(&account_id_for_task, folder, None).await {
-                Ok(()) => info!("{} sync completed successfully for account {}", folder, account_id_for_task),
-                Err(e) => error!("{} sync failed for account {}: {}", folder, account_id_for_task, e),
-            }
+        // Use sync_all_folders which dynamically fetches folder list from IMAP
+        match sync_service.sync_all_folders(&account_id_for_task).await {
+            Ok(()) => info!("All folder syncs completed successfully for account {}", account_id_for_task),
+            Err(e) => error!("Sync failed for account {}: {}", account_id_for_task, e),
         }
-        info!("All folder syncs completed for account {}", account_id_for_task);
     });
 
     Ok(HttpResponse::Ok().json(serde_json::json!({

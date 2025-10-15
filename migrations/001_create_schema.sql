@@ -101,6 +101,7 @@ CREATE TABLE emails (
     body_text TEXT,
     body_html TEXT,
     raw_message BLOB,
+    has_attachments BOOLEAN NOT NULL DEFAULT FALSE,
     cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE,
@@ -112,6 +113,7 @@ CREATE INDEX idx_emails_message_id ON emails(message_id);
 CREATE INDEX idx_emails_date ON emails(date DESC);
 CREATE INDEX idx_emails_from ON emails(from_address);
 CREATE INDEX idx_emails_subject ON emails(subject);
+CREATE INDEX idx_emails_has_attachments ON emails(has_attachments);
 
 CREATE TRIGGER update_emails_timestamp
     AFTER UPDATE ON emails
@@ -139,3 +141,22 @@ CREATE TRIGGER update_sync_state_timestamp
     BEGIN
         UPDATE sync_state SET updated_at = CURRENT_TIMESTAMP WHERE folder_id = NEW.folder_id;
     END;
+
+-- Attachment metadata table
+-- Attachments are stored on filesystem, metadata tracked in database
+CREATE TABLE attachment_metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id TEXT NOT NULL,
+    account_email TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    content_type TEXT,
+    downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    storage_path TEXT NOT NULL,
+    FOREIGN KEY (account_email) REFERENCES accounts(email_address) ON DELETE CASCADE,
+    UNIQUE(message_id, account_email, filename)
+);
+
+CREATE INDEX idx_attachment_lookup ON attachment_metadata(message_id, account_email);
+CREATE INDEX idx_attachment_account ON attachment_metadata(account_email);
+CREATE INDEX idx_attachment_downloaded ON attachment_metadata(downloaded_at);
