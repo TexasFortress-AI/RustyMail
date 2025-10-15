@@ -6,8 +6,10 @@ use lettre::{
 use lettre::message::header;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::Mutex as TokioMutex;
+use tokio::time::timeout;
 
 use super::account::{AccountService};
 use crate::prelude::CloneableImapSessionFactory;
@@ -185,12 +187,20 @@ impl SmtpService {
         // Send the email
         mailer.send(email.clone()).await?;
 
-        // Save sent email to Sent folder via IMAP
+        // Save sent email to Sent folder via IMAP with timeout
         // Note: We do this as a best-effort - if it fails, we still return success
         // since the email was successfully sent via SMTP
-        let sent_folder_result = self.append_to_sent_folder(&account.email_address, &email).await;
-        if let Err(e) = &sent_folder_result {
-            log::warn!("Failed to save sent email to Sent folder: {}", e);
+        let append_timeout = Duration::from_secs(10); // 10 second timeout for IMAP append
+        match timeout(append_timeout, self.append_to_sent_folder(&account.email_address, &email)).await {
+            Ok(Ok(_)) => {
+                log::info!("Successfully saved sent email to Sent folder");
+            }
+            Ok(Err(e)) => {
+                log::warn!("Failed to save sent email to Sent folder: {}", e);
+            }
+            Err(_) => {
+                log::warn!("Timeout saving sent email to Sent folder (exceeded {} seconds)", append_timeout.as_secs());
+            }
         }
 
         Ok(SendEmailResponse {
