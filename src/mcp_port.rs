@@ -628,22 +628,89 @@ pub async fn set_current_account_tool(
     params: Option<Value>,
 ) -> Result<Value, JsonRpcError> {
     let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
-    
+
     // Extract account_id from params
     let account_id = params.get("account_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| JsonRpcError::invalid_params("account_id parameter is required as string"))?;
-    
+
     // Set the current account ID in the state
     let mut state_guard = state.lock().await;
     state_guard.current_account_id = Some(account_id.to_string());
-    
+
     info!("MCP session: Current account set to {}", account_id);
-    
+
     Ok(json!({
         "success": true,
         "message": format!("Current account set to: {}", account_id),
         "account_id": account_id
+    }))
+}
+
+/// Tool for sending email via SMTP
+/// Note: This tool requires SMTP service access which is available via dashboard integration.
+/// When called through the dashboard API, this will use the SmtpService to send emails.
+pub async fn send_email_tool(
+    _session: Arc<dyn AsyncImapOps>,
+    state: Arc<TokioMutex<McpPortState>>,
+    params: Option<Value>,
+) -> Result<Value, JsonRpcError> {
+    let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
+
+    // Extract and validate parameters
+    let to = params.get("to")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| JsonRpcError::invalid_params("to parameter is required as array of strings"))?
+        .iter()
+        .filter_map(|v| v.as_str().map(String::from))
+        .collect::<Vec<String>>();
+
+    if to.is_empty() {
+        return Err(JsonRpcError::invalid_params("At least one recipient in 'to' field is required"));
+    }
+
+    let subject = params.get("subject")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| JsonRpcError::invalid_params("subject parameter is required as string"))?;
+
+    let body = params.get("body")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| JsonRpcError::invalid_params("body parameter is required as string"))?;
+
+    // Optional parameters
+    let cc = params.get("cc")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<String>>());
+
+    let bcc = params.get("bcc")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<String>>());
+
+    let body_html = params.get("body_html")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    let account_id = params.get("account_id")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    // This tool is a placeholder - actual SMTP sending is handled by the dashboard handler
+    // which has access to SmtpService. See execute_mcp_tool_inner in dashboard/api/handlers.rs
+    let state_guard = state.lock().await;
+    Ok(json!({
+        "success": false,
+        "message": "SMTP sending requires dashboard integration",
+        "current_account_id": state_guard.current_account_id,
+        "note": "This tool should be called through the dashboard API /api/dashboard/mcp/execute",
+        "params": {
+            "to": to,
+            "cc": cc,
+            "bcc": bcc,
+            "subject": subject,
+            "body": body,
+            "body_html": body_html,
+            "account_id": account_id
+        }
     }))
 }
 
@@ -676,6 +743,9 @@ pub fn create_mcp_tool_registry() -> McpToolRegistry {
     // Account management tools
     registry.register("list_accounts", DefaultMcpTool::new("list_accounts", list_accounts_tool));
     registry.register("set_current_account", DefaultMcpTool::new("set_current_account", set_current_account_tool));
+
+    // SMTP email sending
+    registry.register("send_email", DefaultMcpTool::new("send_email", send_email_tool));
 
     // Attachment tools
     registry.register("list_email_attachments", DefaultMcpTool::new("list_email_attachments", list_email_attachments_tool));

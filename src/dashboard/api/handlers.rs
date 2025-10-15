@@ -710,6 +710,20 @@ pub async fn list_mcp_tools(
                 "account_id": "Account ID to set as current"
             }
         }),
+        // SMTP email sending
+        serde_json::json!({
+            "name": "send_email",
+            "description": "Send an email via SMTP",
+            "parameters": {
+                "to": "REQUIRED. Array of recipient email addresses",
+                "subject": "REQUIRED. Email subject line",
+                "body": "REQUIRED. Plain text email body",
+                "cc": "Optional. Array of CC recipient email addresses",
+                "bcc": "Optional. Array of BCC recipient email addresses",
+                "body_html": "Optional. HTML email body (multipart with plain text fallback)",
+                "account_id": "Optional. Email address of the sending account (uses default if not specified)"
+            }
+        }),
         // Attachment management tools
         serde_json::json!({
             "name": "list_email_attachments",
@@ -1740,6 +1754,77 @@ pub async fn execute_mcp_tool_inner(
                     serde_json::json!({
                         "success": false,
                         "error": format!("Account not found: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            }
+        }
+        "send_email" => {
+            use crate::dashboard::services::{SendEmailRequest};
+
+            // Parse the send email request from params
+            let send_request: SendEmailRequest = match serde_json::from_value(params.clone()) {
+                Ok(req) => req,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Invalid send email parameters: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            // Get account email - use account_id from params or default
+            let account_email = if let Some(account_id_val) = params.get("account_id") {
+                if let Some(account_id_str) = account_id_val.as_str() {
+                    account_id_str.to_string()
+                } else {
+                    // Get default account if account_id is not a string
+                    let account_service = state.account_service.lock().await;
+                    match account_service.get_default_account().await {
+                        Ok(Some(account)) => account.email_address,
+                        Ok(None) => return serde_json::json!({
+                            "success": false,
+                            "error": "No default account configured",
+                            "tool": tool_name
+                        }),
+                        Err(e) => return serde_json::json!({
+                            "success": false,
+                            "error": format!("Failed to get default account: {}", e),
+                            "tool": tool_name
+                        })
+                    }
+                }
+            } else {
+                // No account_id provided - use default
+                let account_service = state.account_service.lock().await;
+                match account_service.get_default_account().await {
+                    Ok(Some(account)) => account.email_address,
+                    Ok(None) => return serde_json::json!({
+                        "success": false,
+                        "error": "No default account configured",
+                        "tool": tool_name
+                    }),
+                    Err(e) => return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to get default account: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            };
+
+            // Send the email using SMTP service
+            match state.smtp_service.send_email(&account_email, send_request).await {
+                Ok(response) => {
+                    serde_json::json!({
+                        "success": response.success,
+                        "message": response.message,
+                        "message_id": response.message_id,
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => {
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to send email: {}", e),
                         "tool": tool_name
                     })
                 }
