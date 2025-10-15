@@ -22,10 +22,10 @@ A high-performance, type-safe IMAP email client and API server written in Rust, 
 - 🎨 **Modern Web UI**: React-based dashboard with real-time updates
 - 🤖 **AI Integration**: Built-in chatbot with support for 10+ AI providers
 - 🔐 **Secure**: TLS support and API key authentication
-- 📊 **Monitoring**: Real-time metrics via SSE
+- 📊 **Monitoring**: Real-time metrics and health monitoring
 - 🧪 **Comprehensive Testing**: Unit, integration, and E2E tests
 - 🧩 **Extensible**: Easily add new MCP tools
-- 🛠️ **MCP Protocol**: Full JSON-RPC 2.0 support over stdio and HTTP transports
+- 🛠️ **MCP Protocol**: Full JSON-RPC 2.0 support over stdio and Streamable HTTP transports
 - ⚡ **Process Management**: PM2 integration for reliable service management
 
 ---
@@ -129,7 +129,28 @@ curl -X GET http://localhost:9437/folders -H "Authorization: Basic $(echo -n 'us
 
 # List emails in INBOX
 curl -X GET http://localhost:9437/emails/INBOX -H "Authorization: Basic $(echo -n 'user:pass' | base64)"
+
+# Send email via SMTP
+curl -X POST http://localhost:9437/api/dashboard/emails/send \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": ["recipient@example.com"],
+    "cc": ["cc@example.com"],
+    "bcc": ["bcc@example.com"],
+    "subject": "Test Email",
+    "body": "Plain text body",
+    "body_html": "<p>HTML body (optional)</p>"
+  }'
 ```
+
+**SMTP Send Email Parameters:**
+- `to` (required): Array of recipient email addresses
+- `cc` (optional): Array of CC recipients
+- `bcc` (optional): Array of BCC recipients
+- `subject` (required): Email subject line
+- `body` (required): Plain text email body
+- `body_html` (optional): HTML version of the email body
+- `account_email` (query param, optional): Specify which account to send from (defaults to primary account)
 
 ### MCP Stdio
 
@@ -143,37 +164,41 @@ Send JSON-RPC requests via stdin:
 {"jsonrpc":"2.0","id":1,"method":"imap/listFolders","params":{}}
 ```
 
-### MCP SSE
+### MCP Streamable HTTP
 
-Start server:
+The Streamable HTTP transport is available on the same port as REST (9437).
 
-```bash
-cargo run --release -- --mcp-sse
-```
+**Endpoint:** `http://localhost:9437/mcp`
 
-Note: MCP Streamable HTTP transport is available on the same port as REST (9437)
-
-**Main Endpoint:** `http://localhost:9437/mcp`
-**Versioned Endpoint:** `http://localhost:9437/mcp/v1`
-
-Connect via SSE (GET):
-
-```bash
-curl -N -H "Accept: text/event-stream" http://localhost:9437/mcp
-```
-
-Send JSON-RPC Requests (POST):
+Send JSON-RPC requests via HTTP POST:
 
 ```bash
 curl -X POST http://localhost:9437/mcp \
   -H "Content-Type: application/json" \
-  -H "Accept: application/json" \
   -d '{
     "jsonrpc": "2.0",
     "id": 1,
     "method": "tools/list",
     "params": {}
   }'
+```
+
+Example response:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "tools": [
+      {
+        "name": "list_accounts",
+        "description": "List all configured email accounts",
+        "inputSchema": {}
+      }
+    ]
+  }
+}
 ```
 
 ---
@@ -244,6 +269,8 @@ RustyMail implements the Model Context Protocol (MCP) over stdio and Streamable 
 - `fetch_emails_with_mime` - Fetch emails with full MIME content
 - `atomic_move_message` - Move single message atomically
 - `atomic_batch_move` - Batch move multiple messages
+- `mark_as_read` - Mark messages as read (add \Seen flag)
+- `mark_as_unread` - Mark messages as unread (remove \Seen flag)
 - `mark_as_deleted` - Mark emails for deletion
 - `delete_messages` - Permanently delete messages
 - `undelete_messages` - Restore deleted messages
@@ -258,6 +285,14 @@ RustyMail implements the Model Context Protocol (MCP) over stdio and Streamable 
 - `search_cached_emails` - Search cached emails (fast, local)
 
 **Note:** Cache operations are significantly faster as they query the local SQLite database instead of the remote IMAP server.
+
+#### Email Sending (SMTP)
+- `send_email` - Send email via SMTP with to/cc/bcc/subject/body parameters
+
+#### Attachment Operations
+- `list_email_attachments` - List all attachments in an email
+- `download_email_attachments` - Download email attachments to local storage
+- `cleanup_attachments` - Clean up downloaded attachment files
 
 ---
 
@@ -334,17 +369,27 @@ Claude will use the MCP tools to access your email data through RustyMail.
 
 The stdio adapter acts as a thin proxy, forwarding JSON-RPC requests from Claude Desktop to the backend server's HTTP `/mcp` endpoint.
 
-### SSE Example (JavaScript)
+### Streamable HTTP Example (JavaScript)
 
 ```js
-const es = new EventSource('http://localhost:9437/api/v1/sse/connect');
-es.onmessage = e => console.log('Received:', JSON.parse(e.data));
+// Send JSON-RPC request to MCP endpoint
+async function callMcpTool(method, params = {}) {
+  const response = await fetch('http://localhost:9437/mcp', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: Date.now(),
+      method: method,
+      params: params
+    })
+  });
+  return await response.json();
+}
 
-fetch('http://localhost:9437/api/v1/sse/command', {
-  method: 'POST',
-  headers: {'Content-Type': 'application/json'},
-  body: JSON.stringify({ command: 'imap/listFolders', params: {} })
-});
+// Example: List all folders
+const result = await callMcpTool('list_folders');
+console.log('Folders:', result.result.folders);
 ```
 
 ---
@@ -357,8 +402,7 @@ Edit `.env` file (see `.env.example` for full options):
 
 ```env
 # Server Ports (use uncommon ports to avoid conflicts)
-REST_PORT=9437         # Backend REST API
-SSE_PORT=9438          # Server-Sent Events
+REST_PORT=9437         # Backend REST API + MCP Streamable HTTP
 DASHBOARD_PORT=9439    # Frontend dashboard
 
 # Database
@@ -467,7 +511,7 @@ npm run build
 
 - **Frontend**: React + TypeScript + Vite (port 9439)
 - **Backend API**: Rust + Actix-web (port 9437)
-- **Real-time Updates**: Server-Sent Events (SSE, port 9438)
+- **Real-time Updates**: Streamable HTTP + WebSocket connections
 - **State Management**: React Context API
 - **UI Components**: shadcn/ui + Tailwind CSS
 
