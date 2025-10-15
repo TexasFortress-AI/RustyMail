@@ -3021,7 +3021,7 @@
         "description": "Remove hardcoded query parsing logic and make Email Assistant use MCP tools via AI-driven tool calling",
         "details": "The Email Assistant currently has hardcoded query parsing logic (fetch_email_context_with_data) that decides which MCP tools to call. This is wrong - it should be a proper MCP client that:\n\n1. Fetches available tools from /api/dashboard/mcp/tools at startup\n2. Includes tool definitions in the system prompt (provider-agnostic)\n3. Lets the AI decide which tools to call based on user query\n4. Parses AI response to detect tool calls\n5. Executes tools via /api/dashboard/mcp/execute\n6. Feeds results back to AI for final response\n\nThis makes it work like Claude Desktop - the AI calls MCP tools directly, no hardcoded logic.\n\nFiles to modify:\n- src/dashboard/services/ai.rs (remove fetch_email_context_with_data, add MCP client loop)\n\nImplementation approach:\n- Add fetch_mcp_tools() to get tool list from /api/dashboard/mcp/tools\n- Add tool definitions to system prompt in provider-agnostic format\n- Add parse_tool_calls() to detect tool calls in AI response\n- Add agentic loop: query → AI → detect tools → execute → feed back → final response\n- Remove all hardcoded query parsing (fetch_email_context_with_data, extract_folder_from_query)",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
         "subtasks": []
@@ -3037,7 +3037,7 @@
       ],
       "created": "2025-10-13T03:58:25.433Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-15T06:45:25.906Z"
+      "updated": "2025-10-15T07:04:17.979Z"
     }
   }
 }
