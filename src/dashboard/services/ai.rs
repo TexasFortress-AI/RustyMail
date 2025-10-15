@@ -46,6 +46,7 @@ pub struct AiService {
     http_client: Client,
     mcp_base_url: String,
     api_key: String,
+    mcp_tools: RwLock<Vec<Value>>, // Cached MCP tools from API
 }
 
 impl std::fmt::Debug for AiService {
@@ -87,6 +88,7 @@ impl AiService {
                 .unwrap_or_else(|_| String::new()),
             api_key: std::env::var("RUSTYMAIL_API_KEY")
                 .unwrap_or_else(|_| String::new()),
+            mcp_tools: RwLock::new(Vec::new()),
         }
     }
 
@@ -203,6 +205,7 @@ impl AiService {
                 std::env::var("RUSTYMAIL_API_KEY")
                     .expect("RUSTYMAIL_API_KEY environment variable must be set")
             ),
+            mcp_tools: RwLock::new(Vec::new()),
         })
     }
 
@@ -217,11 +220,38 @@ impl AiService {
         info!("Processing chatbot query for conversation {}: {} (folder: {:?}, account_id: {:?})",
                conversation_id, query_text, current_folder, account_id);
 
-        // Always use MCP tools to fetch email context with structured data
-        let email_context_data = self.fetch_email_context_with_data(&query_text, account_id.as_deref()).await;
+        // Fetch MCP tools and add them to system prompt
+        let tools = match self.fetch_mcp_tools().await {
+            Ok(t) => t,
+            Err(e) => {
+                warn!("Failed to fetch MCP tools: {}", e);
+                vec![]
+            }
+        };
 
-        // DISABLED NLP processor - it's injecting system messages that cause refusals
-        // Go directly to the AI provider without NLP interference
+        // Fetch folder list to include in system prompt (so AI doesn't have to query it)
+        let folder_context = if let Some(ref acc_id) = account_id {
+            let mut params = json!({"account_id": acc_id});
+            match self.call_mcp_tool("list_folders", params).await {
+                Ok(result) => {
+                    if let Some(folders) = result.get("data").and_then(|d| d.as_array()) {
+                        let folder_names: Vec<String> = folders.iter()
+                            .filter_map(|f| f.as_str())
+                            .map(|s| s.to_string())
+                            .collect();
+                        Some(format!("Available folders: {}", folder_names.join(", ")))
+                    } else {
+                        None
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to fetch folders for system prompt: {}", e);
+                    None
+                }
+            }
+        } else {
+            None
+        };
 
         let mut conversations = self.conversations.write().await;
         let conversation = conversations
@@ -240,24 +270,27 @@ impl AiService {
             .map(|entry| entry.message.clone())
             .collect();
 
-        // Add a system message that clarifies this is an email assistant
+        // Add system prompt with MCP tools
         if messages_history.is_empty() || !messages_history.iter().any(|m| m.role == "system") {
-            let mut system_content = "You are RustyMail Assistant, an email management AI. You have full access to the user's email account through the RustyMail system. You can list folders, read emails, search messages, and perform all email operations. Respond naturally to email-related queries.".to_string();
+            let mut system_content = "You are RustyMail Assistant, an email management AI acting as an MCP client. You can call tools to access email data.".to_string();
 
-            // Add current folder context if available
+            // Add current context
             if let Some(ref folder) = current_folder {
-                system_content.push_str(&format!("\n\nThe user is currently viewing the '{}' folder in their email account.", folder));
+                system_content.push_str(&format!("\n\nUser's current folder: {}", folder));
             }
-
-            // Add account context if available
             if let Some(ref acc_id) = account_id {
-                system_content.push_str(&format!("\n\nThe user is using account ID: {}", acc_id));
+                system_content.push_str(&format!("\nUser's account: {}", acc_id));
+                system_content.push_str(&format!("\n\nIMPORTANT: When calling tools that require an account_id parameter, always use: \"account_id\": \"{}\"", acc_id));
             }
 
-            // Add email context if available
-            if let Some(ref context_data) = email_context_data {
-                system_content.push_str("\n\nCurrent email data from the user's account:\n");
-                system_content.push_str(&context_data.context_string);
+            // Add folder list to system prompt
+            if let Some(ref folders_info) = folder_context {
+                system_content.push_str(&format!("\n{}", folders_info));
+            }
+
+            // Add MCP tools to system prompt
+            if !tools.is_empty() {
+                system_content.push_str(&Self::format_tools_for_prompt(&tools));
             }
 
             messages_history.insert(0, AiChatMessage {
@@ -269,7 +302,7 @@ impl AiService {
         let user_message = AiChatMessage { role: "user".to_string(), content: query_text.clone() };
         messages_history.push(user_message.clone());
 
-        // Get provider and model info (use overrides if provided)
+        // Get provider and model info
         let provider_name = if let Some(ref override_name) = provider_override {
             override_name.clone()
         } else {
@@ -284,28 +317,72 @@ impl AiService {
                 .unwrap_or_else(|| "none".to_string())
         };
 
-        let response_text = if self.mock_mode {
-            warn!("AI Service is in mock mode. Using mock response.");
-            format!("[Mock Mode - Provider: mock, Model: mock]\n\n{}", self.generate_mock_response(&query_text, account_id.as_deref()))
-        } else {
-            // Use the override method if overrides are provided
+        // Agentic loop: AI → tool calls → execute → feed back → repeat
+        let max_iterations = 3;
+        let mut final_response = String::new();
+
+        for iteration in 0..max_iterations {
+            info!("Agentic loop iteration {}/{}", iteration + 1, max_iterations);
+
+            // Get AI response
             let response_result = if provider_override.is_some() || model_override.is_some() {
-                self.provider_manager.generate_response_with_override(&messages_history, provider_override, model_override).await
+                self.provider_manager.generate_response_with_override(&messages_history, provider_override.clone(), model_override.clone()).await
             } else {
                 self.provider_manager.generate_response(&messages_history).await
             };
 
-            match response_result {
-                Ok(text) => {
-                    // Prepend provider/model info to response for visibility
-                    format!("[Provider: {}, Model: {}]\n\n{}", provider_name, model_name, text)
-                },
+            let ai_response = match response_result {
+                Ok(text) => text,
                 Err(e) => {
                     error!("AI Service failed: {}", e);
-                    format!("[Error - Provider: {} failed]\n\n{}", provider_name, e.to_string())
+                    final_response = format!("[Error - Provider: {} failed]\n\n{}", provider_name, e.to_string());
+                    break;
+                }
+            };
+
+            // Parse for tool calls
+            let tool_calls = Self::parse_tool_calls(&ai_response);
+
+            if tool_calls.is_empty() {
+                // No tool calls - we're done
+                info!("No tool calls found. Final response ready.");
+                final_response = ai_response;
+                break;
+            }
+
+            info!("Found {} tool call(s)", tool_calls.len());
+
+            // Execute tool calls and collect results
+            let mut tool_results = Vec::new();
+            for (tool_name, params) in tool_calls {
+                info!("Executing tool: {} with params: {}", tool_name, params);
+
+                match self.call_mcp_tool(&tool_name, params).await {
+                    Ok(result) => {
+                        tool_results.push(format!("TOOL_RESULT {}: {}", tool_name, serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string())));
+                    }
+                    Err(e) => {
+                        tool_results.push(format!("TOOL_ERROR {}: {}", tool_name, e));
+                    }
                 }
             }
-        };
+
+            // Add AI response and tool results to history
+            messages_history.push(AiChatMessage {
+                role: "assistant".to_string(),
+                content: ai_response,
+            });
+
+            messages_history.push(AiChatMessage {
+                role: "user".to_string(),
+                content: tool_results.join("\n"),
+            });
+
+            // Continue loop for next iteration
+        }
+
+        // Format final response with provider/model info
+        let response_text = format!("[Provider: {}, Model: {}]\n\n{}", provider_name, model_name, final_response);
 
         let assistant_message = AiChatMessage { role: "assistant".to_string(), content: response_text.clone() };
         conversation.entries.push(ConversationEntry {
@@ -326,7 +403,7 @@ impl AiService {
         Ok(ChatbotResponse {
             text: response_text,
             conversation_id,
-            email_data: email_context_data.map(|data| data.email_data),
+            email_data: None, // No longer using hardcoded email context
             followup_suggestions: Some(suggestions),
         })
     }
@@ -467,6 +544,106 @@ impl AiService {
             }
             Err(e) => Err(format!("Failed to call MCP tool: {}", e))
         }
+    }
+
+    /// Fetch available MCP tools from the API and cache them
+    async fn fetch_mcp_tools(&self) -> Result<Vec<Value>, String> {
+        // Check if tools are already cached
+        {
+            let tools = self.mcp_tools.read().await;
+            if !tools.is_empty() {
+                return Ok(tools.clone());
+            }
+        }
+
+        // Fetch tools from API
+        let url = format!("{}/dashboard/mcp/tools", self.mcp_base_url);
+
+        match self.http_client
+            .get(&url)
+            .header("X-API-Key", &self.api_key)
+            .send()
+            .await
+        {
+            Ok(response) => {
+                if response.status().is_success() {
+                    let result: Value = response.json().await
+                        .map_err(|e| format!("Failed to parse MCP tools response: {}", e))?;
+
+                    if let Some(tools_array) = result.get("tools").and_then(|t| t.as_array()) {
+                        let tools: Vec<Value> = tools_array.clone();
+
+                        // Cache the tools
+                        let mut cached_tools = self.mcp_tools.write().await;
+                        *cached_tools = tools.clone();
+
+                        info!("Fetched and cached {} MCP tools", tools.len());
+                        Ok(tools)
+                    } else {
+                        Err("MCP tools response missing 'tools' array".to_string())
+                    }
+                } else {
+                    Err(format!("Failed to fetch MCP tools: {}", response.status()))
+                }
+            }
+            Err(e) => Err(format!("Failed to call MCP tools endpoint: {}", e))
+        }
+    }
+
+    /// Format MCP tools for inclusion in system prompt (provider-agnostic)
+    fn format_tools_for_prompt(tools: &[Value]) -> String {
+        let mut prompt = String::from("\n\nAVAILABLE TOOLS:\n");
+        prompt.push_str("You have access to the following tools. To use a tool, respond with:\n");
+        prompt.push_str("TOOL_CALL: tool_name {\"param1\": \"value1\", \"param2\": \"value2\"}\n\n");
+
+        for tool in tools {
+            let name = tool.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
+            let description = tool.get("description").and_then(|d| d.as_str()).unwrap_or("No description");
+
+            prompt.push_str(&format!("- {}: {}\n", name, description));
+
+            if let Some(params) = tool.get("parameters").and_then(|p| p.as_object()) {
+                prompt.push_str("  Parameters:\n");
+                for (param_name, param_desc) in params {
+                    let desc_str = param_desc.as_str().unwrap_or("No description");
+                    prompt.push_str(&format!("    - {}: {}\n", param_name, desc_str));
+                }
+            }
+            prompt.push('\n');
+        }
+
+        prompt
+    }
+
+    /// Parse AI response for tool calls
+    fn parse_tool_calls(response: &str) -> Vec<(String, Value)> {
+        let mut tool_calls = Vec::new();
+
+        for line in response.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("TOOL_CALL:") {
+                // Extract tool name and parameters
+                let rest = trimmed.strip_prefix("TOOL_CALL:").unwrap().trim();
+
+                // Find the tool name (everything before the first {)
+                if let Some(brace_pos) = rest.find('{') {
+                    let tool_name = rest[..brace_pos].trim().to_string();
+                    let json_str = &rest[brace_pos..];
+
+                    // Parse the JSON parameters
+                    if let Ok(params) = serde_json::from_str::<Value>(json_str) {
+                        tool_calls.push((tool_name, params));
+                    } else {
+                        warn!("Failed to parse tool call parameters: {}", json_str);
+                    }
+                } else {
+                    // No parameters, just tool name
+                    tool_calls.push((rest.to_string(), json!({})));
+                }
+            }
+        }
+
+        tool_calls
     }
 
     /// Fetch email context using MCP tools
