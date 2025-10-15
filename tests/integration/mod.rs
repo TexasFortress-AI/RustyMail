@@ -11,4 +11,5 @@ pub mod multi_account_sync;
 pub mod mcp_http; // MCP HTTP endpoint integration tests
 pub mod mcp_stdio; // MCP stdio proxy integration tests
 pub mod connection_pool; // Connection pool integration tests
+pub mod chatbot_integration; // Email Assistant chatbot MCP client integration tests
 // pub mod test_uid_search_fix; // TODO: Fix ImapSession import 
