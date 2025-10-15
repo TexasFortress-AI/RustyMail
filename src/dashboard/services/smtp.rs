@@ -84,10 +84,23 @@ impl SmtpService {
         let smtp_port = account.smtp_port.unwrap_or(587) as u16;
         let use_starttls = account.smtp_use_starttls.unwrap_or(true);
 
-        // Build from address
-        let from_mailbox: Mailbox = format!("{} <{}>", account.display_name, account.email_address)
-            .parse()
-            .map_err(|e| SmtpError::ConfigError(format!("Invalid from address: {}", e)))?;
+        // Build from address with properly quoted display name
+        let from_mailbox: Mailbox = if account.display_name.is_empty() {
+            // Just use the email address if no display name
+            account.email_address
+                .parse()
+                .map_err(|e| SmtpError::ConfigError(format!("Invalid from address: {}", e)))?
+        } else {
+            // Quote the display name if it contains special characters
+            let quoted_name = if account.display_name.contains(|c: char| "()<>[]:;@\\,\"".contains(c)) {
+                format!("\"{}\"", account.display_name.replace('\"', "\\\""))
+            } else {
+                account.display_name.clone()
+            };
+            format!("{} <{}>", quoted_name, account.email_address)
+                .parse()
+                .map_err(|e| SmtpError::ConfigError(format!("Invalid from address: {}", e)))?
+        };
 
         // Build email message
         let mut email_builder = Message::builder()
