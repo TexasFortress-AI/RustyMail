@@ -1,27 +1,27 @@
 {
   "statuses": {
-    "shannon@texasfortress.ai": {
-      "email_address": "shannon@texasfortress.ai",
-      "imap": {
-        "timestamp": "2025-10-15T06:00:40.597305Z",
-        "status": "success",
-        "message": "Successfully connected to p3plzcpnl505455.prod.phx3.secureserver.net for sync"
-      },
-      "smtp": {
-        "timestamp": "2025-10-15T01:22:50.341503Z",
-        "status": "unknown",
-        "message": "Never tested"
-      }
-    },
     "chris@texasfortress.ai": {
       "email_address": "chris@texasfortress.ai",
       "imap": {
-        "timestamp": "2025-10-15T06:00:23.635316Z",
+        "timestamp": "2025-10-15T06:51:22.795518Z",
         "status": "success",
         "message": "Successfully connected to p3plzcpnl505455.prod.phx3.secureserver.net for sync"
       },
       "smtp": {
         "timestamp": "2025-10-14T08:23:13.223335Z",
+        "status": "unknown",
+        "message": "Never tested"
+      }
+    },
+    "shannon@texasfortress.ai": {
+      "email_address": "shannon@texasfortress.ai",
+      "imap": {
+        "timestamp": "2025-10-15T06:51:46.344806Z",
+        "status": "success",
+        "message": "Successfully connected to p3plzcpnl505455.prod.phx3.secureserver.net for sync"
+      },
+      "smtp": {
+        "timestamp": "2025-10-15T01:22:50.341503Z",
         "status": "unknown",
         "message": "Never tested"
       }
