@@ -183,6 +183,10 @@ async fn main() -> std::io::Result<()> {
     // Start background metrics collection task (needs DashboardState)
     dashboard_state.metrics_service.start_background_collection(dashboard_state.clone());
 
+    // Start background email sync task
+    Arc::clone(&dashboard_state.sync_service).start_background_sync();
+    info!("Background email sync task started");
+
     // Start health monitoring service
     if let Some(ref health_service) = dashboard_state.health_service {
         Arc::clone(health_service).start_monitoring().await;
