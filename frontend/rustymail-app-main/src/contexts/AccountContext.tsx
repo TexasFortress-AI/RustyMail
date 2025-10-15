@@ -24,11 +24,24 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       const accountsList = await accountsApi.listAccounts();
       setAccounts(accountsList);
 
-      // If no current account, set to default or first active account
+      // If no current account, try localStorage first, then fall back to default
       if (!currentAccount && accountsList.length > 0) {
-        const defaultAccount = accountsList.find((a) => a.is_default && a.is_active);
-        const firstActive = accountsList.find((a) => a.is_active);
-        setCurrentAccount(defaultAccount || firstActive || accountsList[0]);
+        const savedAccountId = localStorage.getItem('rustymail_current_account_id');
+        let accountToSet: Account | null = null;
+
+        // Try to restore from localStorage
+        if (savedAccountId) {
+          accountToSet = accountsList.find((a) => a.id === savedAccountId && a.is_active) || null;
+        }
+
+        // Fall back to default or first active account
+        if (!accountToSet) {
+          const defaultAccount = accountsList.find((a) => a.is_default && a.is_active);
+          const firstActive = accountsList.find((a) => a.is_active);
+          accountToSet = defaultAccount || firstActive || accountsList[0];
+        }
+
+        setCurrentAccount(accountToSet);
       }
     } catch (error) {
       console.error('Failed to load accounts:', error);
@@ -51,23 +64,10 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     await loadAccounts();
   };
 
-  // Initial load of accounts
+  // Initial load of accounts (localStorage restoration handled in loadAccounts)
   useEffect(() => {
     loadAccounts();
   }, []);
-
-  // Restore last selected account from localStorage after accounts are loaded
-  useEffect(() => {
-    if (accounts.length === 0) return;
-
-    const savedAccountId = localStorage.getItem('rustymail_current_account_id');
-    if (savedAccountId && !currentAccount) {
-      const account = accounts.find((a) => a.id === savedAccountId);
-      if (account && account.is_active) {
-        setCurrentAccount(account);
-      }
-    }
-  }, [accounts]);
 
   return (
     <AccountContext.Provider
