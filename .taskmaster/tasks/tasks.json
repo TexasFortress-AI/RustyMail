@@ -2977,7 +2977,7 @@
         "description": "Add comprehensive test coverage for all attachment-related functionality including MCP tools and storage service",
         "details": "Test file: tests/unit/attachment_tests.rs\n\nTests needed:\n1. test_list_email_attachments - Verify attachment listing from emails\n2. test_download_attachment_to_storage - Test attachment download and storage\n3. test_download_multiple_attachments - Test batch download\n4. test_cleanup_attachments - Verify cleanup functionality\n5. test_attachment_storage_path_generation - Test unique path generation\n6. test_attachment_mime_type_detection - Verify MIME type handling\n7. test_attachment_with_special_characters - Test filename sanitization\n8. test_attachment_size_limits - Verify size limit handling\n9. test_attachment_not_found_error - Test missing attachment errors\n10. test_storage_permission_errors - Test file system error handling\n\nReference implementations:\n- src/mcp_attachment_tools.rs\n- src/dashboard/services/attachment_storage.rs\n- src/dashboard/api/attachments.rs",
         "testStrategy": "Unit tests with mock file system and IMAP client, verify all attachment operations work correctly",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
         "subtasks": []
@@ -2999,7 +2999,7 @@
         "description": "Add end-to-end integration tests for newly added MCP tools: mark_as_read, mark_as_unread, send_email, and all attachment tools",
         "details": "Test file: tests/integration/mcp_new_tools.rs\n\nTests needed:\n1. test_mcp_mark_as_read - Test mark_as_read tool via MCP\n2. test_mcp_mark_as_unread - Test mark_as_unread tool via MCP\n3. test_mcp_send_email - Test send_email tool via MCP HTTP\n4. test_mcp_list_email_attachments - Test list_email_attachments tool\n5. test_mcp_download_email_attachments - Test download_email_attachments tool\n6. test_mcp_cleanup_attachments - Test cleanup_attachments tool\n7. test_mcp_send_email_with_cc_bcc - Test SMTP with CC/BCC via MCP\n8. test_mcp_attachment_workflow - Test full attachment workflow (list→download→cleanup)\n9. test_mcp_tool_error_handling - Verify proper error responses\n10. test_mcp_tool_parameter_validation - Test invalid parameter handling\n\nReference implementations:\n- src/mcp_port.rs (tool registry lines 722-753)\n- tests/integration/mcp_http.rs (existing MCP integration test patterns)\n- tests/integration/mcp_stdio.rs (stdio transport patterns)",
         "testStrategy": "Integration tests using actual MCP HTTP/stdio transports, verify tools work end-to-end",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
         "subtasks": []
@@ -3026,7 +3026,7 @@
       ],
       "created": "2025-10-13T03:58:25.433Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-15T05:20:19.304Z"
+      "updated": "2025-10-15T05:58:28.073Z"
     }
   }
 }
