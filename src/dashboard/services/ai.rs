@@ -572,6 +572,34 @@ impl AiService {
         }
     }
 
+    /// Extract folder name from query and map to IMAP folder name
+    fn extract_folder_from_query(query: &str) -> String {
+        let query_lower = query.to_lowercase();
+
+        // Common folder name mappings
+        let folder_mappings = [
+            ("sent", "INBOX.Sent"),
+            ("draft", "INBOX.Drafts"),
+            ("drafts", "INBOX.Drafts"),
+            ("trash", "INBOX.Trash"),
+            ("deleted", "INBOX.Trash"),
+            ("junk", "INBOX.Junk"),
+            ("spam", "INBOX.spam"),
+            ("archive", "INBOX.Archive"),
+            ("accounting", "INBOX.Accounting"),
+        ];
+
+        // Check for folder mentions in the query
+        for (name, imap_name) in folder_mappings.iter() {
+            if query_lower.contains(name) {
+                return imap_name.to_string();
+            }
+        }
+
+        // Default to INBOX if no folder mentioned
+        "INBOX".to_string()
+    }
+
     /// Fetch email context with structured data for the chatbot
     async fn fetch_email_context_with_data(&self, query: &str, account_id: Option<&str>) -> Option<EmailContextData> {
         info!("fetch_email_context_with_data called with query: '{}', account_id: {:?}", query, account_id);
@@ -639,8 +667,12 @@ impl AiService {
            query_lower.contains("how many") || query_lower.contains("unread") || query_lower.contains("count") {
             info!("Taking email query path");
 
+            // Extract folder from query (defaults to INBOX if not specified)
+            let folder = Self::extract_folder_from_query(query);
+            info!("Extracted folder from query: {}", folder);
+
             // Get total email count
-            let mut count_params = json!({"folder": "INBOX"});
+            let mut count_params = json!({"folder": folder});
             if let Some(acc_id) = account_id {
                 count_params["account_id"] = json!(acc_id);
             }
@@ -654,10 +686,10 @@ impl AiService {
                     return None;
                 }
             };
-    
+
             // Get recent emails
             let mut list_params = json!({
-                "folder": "INBOX",
+                "folder": folder,
                 "limit": 10,
                 "offset": 0
             });
