@@ -135,6 +135,7 @@ export function SendMailDialog({
       });
     } finally {
       setSending(false);
+      setSendingPhase('idle');
     }
   };
 
@@ -144,7 +145,13 @@ export function SendMailDialog({
         <DialogHeader>
           <DialogTitle>Compose Email</DialogTitle>
           <DialogDescription>
-            Send a new email message
+            {accountEmail ? (
+              <>
+                From: <span className="font-semibold">{accountEmail}</span>
+              </>
+            ) : (
+              'Send a new email message'
+            )}
           </DialogDescription>
         </DialogHeader>
 

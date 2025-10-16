@@ -604,6 +604,10 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
         open={composeDialogOpen}
         onOpenChange={setComposeDialogOpen}
         accountEmail={currentAccount?.email_address}
+        onSuccess={() => {
+          // Refetch emails to show the sent email in the current folder
+          refetch();
+        }}
       />
     </Card>
   );
