@@ -3105,6 +3105,72 @@
         "dependencies": [],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": 87,
+        "title": "Fix Outbox folder not visible in folders dropdown",
+        "description": "Users cannot see the Outbox folder in the folders dropdown because the folder is never being created. The IMAP APPEND operation that creates the Outbox folder is timing out after 40 seconds with GoDaddy's slow IMAP server, preventing the folder from existing and thus not appearing in the folder list.",
+        "status": "in-progress",
+        "dependencies": [],
+        "priority": "high",
+        "details": "ROOT CAUSE IDENTIFIED: The Outbox folder visibility issue is caused by IMAP timeout during folder creation, not a frontend display problem.\n\n**Backend Issue**: SmtpService attempts to save emails to \"INBOX.Outbox\" via IMAP APPEND, but this operation times out after 40 seconds due to GoDaddy's slow IMAP server performance. When the APPEND fails, the Outbox folder is never created, so it cannot appear in the folder list.\n\n**Error Flow**:\n1. User sends email via SmtpService\n2. Backend attempts IMAP APPEND to \"INBOX.Outbox\" with 40s timeout\n3. GoDaddy IMAP server is too slow, operation times out\n4. Email send is aborted with \"CRITICAL: Failed to save email to INBOX.Outbox\"\n5. Outbox folder never gets created\n6. fetch_folders endpoint cannot return non-existent folder\n\n**Related Issues**: This is the same GoDaddy IMAP timeout issue from Task #85, affecting Outbox folder creation during email send operations.\n\n**Implementation Options**:\n1. **Pre-create Outbox folder** during account setup/validation (simplest fix)\n2. **Increase IMAP timeout** beyond 40 seconds for slow servers\n3. **Non-blocking Outbox save** - send email first, queue Outbox save for background processing\n4. **Full background queue** implementation (Task #83) for asynchronous operations\n\n**Files to modify**:\n- src/dashboard/services/smtp.rs - IMAP APPEND timeout handling\n- src/dashboard/services/email.rs - Account setup to pre-create Outbox\n- Backend IMAP configuration for timeout values",
+        "testStrategy": "1. **Timeout Reproduction**: Attempt to send email and verify IMAP APPEND timeout occurs with GoDaddy accounts.\n\n2. **Folder Pre-creation**: Test that Outbox folder appears in dropdown after implementing pre-creation during account setup.\n\n3. **Backend Logging**: Verify backend logs show successful Outbox folder creation instead of timeout errors.\n\n4. **Cross-account Testing**: Test with both chris@ and shannon@ GoDaddy accounts to verify fix works for all accounts.\n\n5. **Folder List API**: Call /api/dashboard/emails/folders endpoint to verify Outbox is included after pre-creation.\n\n6. **Send Flow Testing**: Verify email send completes successfully after Outbox folder exists, without APPEND timeout errors.\n\n7. **Fresh Account Testing**: Test account setup creates Outbox folder automatically for new accounts.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Analyze current IMAP timeout configuration and GoDaddy performance",
+            "description": "Examine the current 40-second timeout setting and measure actual GoDaddy IMAP APPEND performance to understand the scope of the timeout issue.",
+            "dependencies": [],
+            "details": "Review smtp.rs IMAP APPEND implementation to understand current timeout configuration. Test IMAP APPEND operations against GoDaddy servers to measure actual response times. Document whether 40 seconds is insufficient or if there are other performance factors. Check if timeout can be safely increased without affecting other operations.",
+            "status": "pending",
+            "testStrategy": "Use IMAP client tools to measure APPEND operation times. Test with different email sizes and GoDaddy account configurations."
+          },
+          {
+            "id": 2,
+            "title": "Implement Outbox folder pre-creation during account setup",
+            "description": "Modify account validation/setup process to automatically create the INBOX.Outbox folder when an account is first configured, ensuring it exists before any send operations.",
+            "dependencies": [
+              1
+            ],
+            "details": "Add IMAP CREATE command for INBOX.Outbox folder during account setup in email.rs. Implement error handling for cases where folder already exists (ALREADYEXISTS error). Ensure folder creation happens during account validation so users see Outbox in dropdown immediately. Add logging to track successful folder creation.\n<info added on 2025-10-16T21:50:21.079Z>\nI'll analyze the codebase to better understand the implementation context before generating the update.IMPLEMENTATION COMPLETE AND VERIFIED ✅\n\nSuccessfully implemented account.rs:707 validate_connection() method integration with ensure_essential_folders_exist() at line 762. The implementation creates INBOX.Outbox, INBOX.Sent, and INBOX.Drafts folders during account validation using concrete ImapClient<AsyncImapSessionWrapper> type.\n\nVERIFICATION RESULTS:\n- Backend rebuild: Successful (25.86s compile time)\n- Backend restart: Complete via PM2 \n- API validation test: POST /api/dashboard/accounts/shannon@texasfortress.ai/validate returns {\"success\": true, \"message\": \"Connection validated successfully\"}\n- Backend logs confirm: \"Created essential folder: INBOX.Outbox\" message appears as expected\n- Folders endpoint verification shows Outbox now exists in folder hierarchy\n\nIMPLEMENTATION APPROACH:\n- Modified validate_connection() at line 729-734 to call ensure_essential_folders_exist() after successful IMAP connection\n- Added ensure_essential_folders_exist() method at lines 763-791 with proper error handling for \"already exists\" scenarios\n- Used graceful degradation: logs warnings for folder creation failures but doesn't fail overall validation\n- Strategic placement during validation ensures folders exist when users need them, avoiding timeout issues during send operations\n\nNEXT PHASE READY:\nAccount validation now ensures Outbox folder exists before users attempt email send operations, preventing the root cause timeout scenario. Ready to test actual email sending to verify complete resolution of IMAP timeout issues.\n</info added on 2025-10-16T21:50:21.079Z>",
+            "status": "in-progress",
+            "testStrategy": "Test with fresh accounts to verify Outbox appears in folder dropdown immediately after setup. Verify existing accounts are not affected negatively."
+          },
+          {
+            "id": 3,
+            "title": "Update SMTP service to handle pre-existing Outbox folder",
+            "description": "Modify smtp.rs send_email function to expect Outbox folder to already exist and handle APPEND operations more gracefully with better error recovery.",
+            "dependencies": [
+              2
+            ],
+            "details": "Remove or modify Outbox folder creation logic in smtp.rs since folder will be pre-created. Update error handling to distinguish between folder not existing vs. APPEND timeout. Consider implementing retry logic for failed APPEND operations. Ensure email send can proceed even if Outbox save fails (with appropriate logging).",
+            "status": "pending",
+            "testStrategy": "Test email send with pre-existing Outbox folder. Verify APPEND operations complete successfully. Test error scenarios when APPEND still fails."
+          },
+          {
+            "id": 4,
+            "title": "Add folder refresh mechanism after account operations",
+            "description": "Implement automatic folder list refresh in frontend after account setup or configuration changes to ensure new folders appear immediately.",
+            "dependencies": [
+              2
+            ],
+            "details": "Update frontend account setup flow to trigger folder list refresh after successful account validation. Ensure EmailList component refetches folders when account configuration changes. Add mechanism to detect when new folders should be available and trigger appropriate UI updates.",
+            "status": "pending",
+            "testStrategy": "Test that Outbox appears in dropdown immediately after account setup without requiring page refresh. Verify folder list updates correctly across all account operations."
+          },
+          {
+            "id": 5,
+            "title": "Test and verify complete fix across all account types",
+            "description": "Comprehensive testing to ensure Outbox folder visibility works correctly for all account configurations and scenarios.",
+            "dependencies": [
+              3,
+              4
+            ],
+            "details": "Test with fresh GoDaddy accounts (chris@, shannon@) to verify Outbox creation during setup. Verify existing accounts get Outbox folder added. Test email send operations complete successfully with visible Outbox folder. Confirm folder dropdown shows Outbox consistently across all account types and configurations.",
+            "status": "pending",
+            "testStrategy": "Manual testing with multiple account types. Automated tests for folder creation and visibility. Performance testing to ensure changes don't negatively impact other operations."
+          }
+        ]
       }
     ],
     "metadata": {
@@ -3117,7 +3183,7 @@
       ],
       "created": "2025-10-13T03:58:25.433Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-16T20:26:20.062Z"
+      "updated": "2025-10-16T21:43:29.790Z"
     }
   }
 }

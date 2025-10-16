@@ -706,6 +706,7 @@ impl AccountService {
 
     /// Validate account credentials by attempting to connect and record status
     pub async fn validate_connection(&self, account: &Account) -> Result<(), AccountError> {
+        use std::time::Duration;
         debug!("Validating connection for account: {}", account.display_name);
 
         // Attempt to connect using the provided credentials with 10 second timeout
@@ -725,6 +726,13 @@ impl AccountService {
 
         match connect_result {
             Ok(client) => {
+                // Pre-create essential folders (Outbox, Sent, Drafts)
+                // This ensures folders exist before first use, avoiding timeout issues during email send
+                if let Err(e) = self.ensure_essential_folders_exist(&client).await {
+                    warn!("Failed to create essential folders during validation: {}", e);
+                    // Don't fail validation if folder creation fails - just log warning
+                }
+
                 // Successfully connected, logout gracefully
                 if let Err(e) = client.logout().await {
                     debug!("Logout error during validation (non-critical): {}", e);
@@ -750,6 +758,36 @@ impl AccountService {
                 Err(AccountError::OperationFailed(format!("Connection failed: {}", e)))
             }
         }
+    }
+
+    /// Ensure essential IMAP folders exist (Outbox, Sent, Drafts)
+    /// This prevents timeout issues during first email send operations
+    async fn ensure_essential_folders_exist(
+        &self,
+        client: &crate::imap::client::ImapClient<crate::imap::session::AsyncImapSessionWrapper>,
+    ) -> Result<(), AccountError> {
+        // List of essential folders to pre-create
+        let essential_folders = vec!["INBOX.Outbox", "INBOX.Sent", "INBOX.Drafts"];
+
+        for folder_name in essential_folders {
+            match client.create_folder(folder_name).await {
+                Ok(_) => {
+                    info!("Created essential folder: {}", folder_name);
+                }
+                Err(e) => {
+                    // Check if error is "folder already exists" - this is not an error
+                    let error_str = e.to_string().to_lowercase();
+                    if error_str.contains("already exists") || error_str.contains("alreadyexists") {
+                        debug!("Folder {} already exists (expected)", folder_name);
+                    } else {
+                        warn!("Failed to create folder {}: {}", folder_name, e);
+                        // Continue trying to create other folders even if one fails
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Get connection status for an account
