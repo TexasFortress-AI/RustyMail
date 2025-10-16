@@ -1,6 +1,9 @@
 // Email API client for SMTP operations
 
-const API_BASE = '/api/dashboard';
+import { config } from '../config';
+
+const API_BASE = `${config.api.baseUrl}/dashboard`;
+const API_KEY = config.api.apiKey;
 
 export interface SendEmailRequest {
   to: string[];
@@ -38,6 +41,7 @@ export const emailsApi = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-API-Key': API_KEY,
         },
         body: JSON.stringify(request),
         signal: controller.signal,
