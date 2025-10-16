@@ -603,7 +603,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
       <SendMailDialog
         open={composeDialogOpen}
         onOpenChange={setComposeDialogOpen}
-        accountEmail={currentAccount?.id}
+        accountEmail={currentAccount?.email_address}
       />
     </Card>
   );
