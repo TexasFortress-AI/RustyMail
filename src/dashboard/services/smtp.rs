@@ -250,56 +250,86 @@ impl SmtpService {
         email_bytes: &[u8],
         folder_name: &str,
     ) -> Result<(), SmtpError> {
-        // Get account to create IMAP session
-        let account_service = self.account_service.lock().await;
-        let account = account_service
-            .get_account(account_email)
-            .await
-            .map_err(|_| SmtpError::AccountNotFound(account_email.to_string()))?;
-        drop(account_service);
+        // Hard timeout for the entire operation (session creation + append)
+        // This prevents indefinite hangs with slow IMAP servers
+        let operation_timeout = Duration::from_secs(40); // 5 seconds more than IMAP APPEND timeout
 
-        // Create IMAP session for this account
-        let session = self.imap_session_factory
-            .create_session_for_account(&account)
-            .await
-            .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
+        log::info!("Starting IMAP APPEND operation with {}s timeout", operation_timeout.as_secs());
 
-        // Try to append to the folder
-        let flags: Vec<String> = vec![];
-        match session.append(folder_name, email_bytes, &flags).await {
-            Ok(_) => {
-                log::info!("Successfully saved email to folder: {}", folder_name);
-                return Ok(());
-            }
-            Err(e) => {
-                log::warn!("Failed to append to folder '{}': {}. Attempting to create folder...", folder_name, e);
+        // Wrap the entire operation in a timeout
+        let result = timeout(operation_timeout, async {
+            // Get account to create IMAP session
+            let account_service = self.account_service.lock().await;
+            let account = account_service
+                .get_account(account_email)
+                .await
+                .map_err(|_| SmtpError::AccountNotFound(account_email.to_string()))?;
+            drop(account_service);
 
-                // Try to create the folder
-                match session.create_folder(folder_name).await {
-                    Ok(_) => {
-                        log::info!("Successfully created folder: {}", folder_name);
+            // Create IMAP session for this account
+            log::info!("Creating IMAP session for APPEND operation...");
+            let session = self.imap_session_factory
+                .create_session_for_account(&account)
+                .await
+                .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
 
-                        // Now try to append again
-                        match session.append(folder_name, email_bytes, &flags).await {
-                            Ok(_) => {
-                                log::info!("Successfully saved email to newly created folder: {}", folder_name);
-                                return Ok(());
-                            }
-                            Err(e) => {
-                                return Err(SmtpError::ConfigError(format!(
-                                    "Failed to append to folder '{}' even after creating it: {}",
-                                    folder_name, e
-                                )));
+            // Try to append to the folder
+            log::info!("Attempting IMAP APPEND to folder '{}'", folder_name);
+            let flags: Vec<String> = vec![];
+            match session.append(folder_name, email_bytes, &flags).await {
+                Ok(_) => {
+                    log::info!("Successfully saved email to folder: {}", folder_name);
+                    Ok(())
+                }
+                Err(e) => {
+                    log::warn!("Failed to append to folder '{}': {}. Attempting to create folder...", folder_name, e);
+
+                    // Try to create the folder
+                    match session.create_folder(folder_name).await {
+                        Ok(_) => {
+                            log::info!("Successfully created folder: {}", folder_name);
+
+                            // Now try to append again
+                            match session.append(folder_name, email_bytes, &flags).await {
+                                Ok(_) => {
+                                    log::info!("Successfully saved email to newly created folder: {}", folder_name);
+                                    Ok(())
+                                }
+                                Err(e) => {
+                                    Err(SmtpError::ConfigError(format!(
+                                        "Failed to append to folder '{}' even after creating it: {}",
+                                        folder_name, e
+                                    )))
+                                }
                             }
                         }
-                    }
-                    Err(create_err) => {
-                        return Err(SmtpError::ConfigError(format!(
-                            "Failed to append to folder '{}' and failed to create it: {}",
-                            folder_name, create_err
-                        )));
+                        Err(create_err) => {
+                            Err(SmtpError::ConfigError(format!(
+                                "Failed to append to folder '{}' and failed to create it: {}",
+                                folder_name, create_err
+                            )))
+                        }
                     }
                 }
+            }
+        }).await;
+
+        // Handle timeout result
+        match result {
+            Ok(Ok(())) => {
+                log::info!("IMAP APPEND operation completed successfully");
+                Ok(())
+            }
+            Ok(Err(e)) => {
+                log::error!("IMAP APPEND operation failed: {}", e);
+                Err(e)
+            }
+            Err(_elapsed) => {
+                log::error!("IMAP APPEND operation timed out after {}s. Abandoning session to prevent indefinite hang.", operation_timeout.as_secs());
+                Err(SmtpError::ConfigError(format!(
+                    "IMAP APPEND operation timed out after {}s. This may be due to slow server processing (e.g., email scanning). The operation has been cancelled.",
+                    operation_timeout.as_secs()
+                )))
             }
         }
     }

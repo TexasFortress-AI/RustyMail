@@ -169,6 +169,23 @@ impl AsyncImapSessionWrapper {
             .await
             .map_err(|e| ImapError::Connection(e.to_string()))?;
 
+        // Set socket-level timeouts to ensure blocking I/O operations timeout
+        // This is CRITICAL for IMAP APPEND operations which may block indefinitely
+        info!("Setting socket timeouts: read={:?}, write={:?}", append_timeout, append_timeout);
+
+        // Convert to std::net::TcpStream to set SO_RCVTIMEO and SO_SNDTIMEO
+        let std_stream = tcp_stream.into_std()
+            .map_err(|e| ImapError::Connection(format!("Failed to convert to std stream: {}", e)))?;
+
+        std_stream.set_read_timeout(Some(append_timeout))
+            .map_err(|e| ImapError::Connection(format!("Failed to set read timeout: {}", e)))?;
+        std_stream.set_write_timeout(Some(append_timeout))
+            .map_err(|e| ImapError::Connection(format!("Failed to set write timeout: {}", e)))?;
+
+        // Convert back to tokio::net::TcpStream
+        let tcp_stream = TokioTcpStream::from_std(std_stream)
+            .map_err(|e| ImapError::Connection(format!("Failed to convert back to tokio stream: {}", e)))?;
+
         // Perform TLS handshake
         let tls_stream = tls_connector
             .connect(server, tcp_stream)
@@ -449,7 +466,6 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
     }
 
     async fn append(&self, folder: &str, content: &[u8], flags: &[String]) -> Result<(), ImapError> {
-        let mut session_guard = self.session.lock().await;
         // Convert String flags to async_imap Flag types
         let imap_flags: Vec<Flag> = flags
             .iter()
@@ -465,27 +481,45 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
             })
             .collect();
 
-        // Wrap the append operation with a timeout to prevent indefinite hangs
-        // This is critical for slow IMAP servers with security scanning (e.g., GoDaddy)
+        // Clone the session Arc for move into spawn_blocking
+        let session_arc = self.session.clone();
+        let folder_str = folder.to_string();
+        let folder_for_error = folder_str.clone(); // Clone for error messages
+        let content = content.to_vec();
         let append_timeout = self.append_timeout;
-        let append_result = tokio::time::timeout(
-            append_timeout,
-            session_guard.append(folder, content)
-        ).await;
 
-        match append_result {
-            Ok(Ok(())) => {
-                debug!("APPEND to folder '{}' completed successfully", folder);
+        info!("Starting IMAP APPEND to folder '{}' with spawn_blocking (timeout: {:?})", folder_str, append_timeout);
+
+        // Use spawn_blocking to run the IMAP APPEND in a dedicated blocking thread
+        // This allows us to timeout even when the underlying I/O is blocking
+        let blocking_task = tokio::task::spawn_blocking(move || {
+            // Block on getting the mutex lock - this will happen in the blocking thread pool
+            let runtime_handle = tokio::runtime::Handle::current();
+            let mut session_guard = runtime_handle.block_on(session_arc.lock());
+
+            // Perform the blocking IMAP APPEND operation
+            debug!("Executing IMAP APPEND in blocking thread for folder '{}'", folder_str);
+            runtime_handle.block_on(session_guard.append(&folder_str, &content))
+        });
+
+        // Apply timeout to the entire spawn_blocking task
+        match tokio::time::timeout(append_timeout, blocking_task).await {
+            Ok(Ok(Ok(()))) => {
+                info!("APPEND to folder '{}' completed successfully", folder_for_error);
                 Ok(())
             }
-            Ok(Err(e)) => {
-                error!("APPEND to folder '{}' failed: {}", folder, e);
+            Ok(Ok(Err(e))) => {
+                error!("APPEND to folder '{}' failed: {}", folder_for_error, e);
                 Err(ImapError::from(e))
             }
-            Err(_) => {
-                error!("APPEND to folder '{}' timed out after {:?}", folder, append_timeout);
+            Ok(Err(join_err)) => {
+                error!("APPEND spawn_blocking task panicked: {}", join_err);
+                Err(ImapError::Other(format!("APPEND task panicked: {}", join_err)))
+            }
+            Err(_elapsed) => {
+                error!("APPEND to folder '{}' timed out after {:?}", folder_for_error, append_timeout);
                 Err(ImapError::Timeout(format!(
-                    "APPEND operation timed out after {:?}. Server may be slow due to security scanning.",
+                    "APPEND operation timed out after {:?}. The blocking thread was terminated. Server may be slow due to security scanning.",
                     append_timeout
                 )))
             }

@@ -170,16 +170,41 @@ pub async fn connect(
     timeout: Duration,
 ) -> Result<ImapClient<AsyncImapSessionWrapper>, ImapError> {
     let addr = (server, port)
-        .to_socket_addrs()? 
+        .to_socket_addrs()?
         .next()
         .ok_or_else(|| ImapError::Connection("Invalid server address".to_string()))?;
 
-    info!("Connecting to IMAP server: {}", addr);
+    // Read append timeout from environment or use default - needed early for socket timeouts
+    let append_timeout_seconds = std::env::var("IMAP_APPEND_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(35);
+    let append_timeout = Duration::from_secs(append_timeout_seconds);
+
+    info!("Connecting to IMAP server: {} with socket timeout: {:?}", addr, append_timeout);
 
     // Establish Tokio TCP connection
     let tcp_stream = tokio::time::timeout(timeout, TokioTcpStream::connect(addr))
         .await
-        .map_err(|_| ImapError::Timeout("Connection timed out".to_string()))??; 
+        .map_err(|_| ImapError::Timeout("Connection timed out".to_string()))??;
+
+    // Set socket-level timeouts to ensure blocking I/O operations timeout
+    // This is critical for IMAP APPEND operations which may block indefinitely
+    tcp_stream.set_nodelay(true)
+        .map_err(|e| ImapError::Connection(format!("Failed to set TCP_NODELAY: {}", e)))?;
+
+    // Convert to std::net::TcpStream to set SO_RCVTIMEO and SO_SNDTIMEO
+    let std_stream = tcp_stream.into_std()
+        .map_err(|e| ImapError::Connection(format!("Failed to convert to std stream: {}", e)))?;
+
+    std_stream.set_read_timeout(Some(append_timeout))
+        .map_err(|e| ImapError::Connection(format!("Failed to set read timeout: {}", e)))?;
+    std_stream.set_write_timeout(Some(append_timeout))
+        .map_err(|e| ImapError::Connection(format!("Failed to set write timeout: {}", e)))?;
+
+    // Convert back to tokio::net::TcpStream
+    let tcp_stream = TokioTcpStream::from_std(std_stream)
+        .map_err(|e| ImapError::Connection(format!("Failed to convert back to tokio stream: {}", e)))?; 
 
     // Setup TLS connector
     let tls_builder = TlsConnector::builder();
@@ -208,13 +233,6 @@ pub async fn connect(
         .map_err(|(err, _client)| ImapError::from(err))?;
 
     info!("IMAP login successful for user: {}", username);
-
-    // Read append timeout from environment or use default
-    let append_timeout_seconds = std::env::var("IMAP_APPEND_TIMEOUT_SECONDS")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(35);
-    let append_timeout = Duration::from_secs(append_timeout_seconds);
 
     // Wrap the authenticated session in our mutex wrapper with append timeout
     let wrapped_session = AsyncImapSessionWrapper::with_append_timeout(authenticated_session, append_timeout);
