@@ -58,10 +58,26 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
     }
 
     /// Establishes a new IMAP connection with the given server, port, and credentials
+    /// Uses default append timeout of 35 seconds
     pub async fn connect(server: &str, port: u16, username: &str, password: &str) -> Result<ImapClient<AsyncImapSessionWrapper>, ImapError> {
-        let session = AsyncImapSessionWrapper::connect(server, port, 
-            Arc::new(username.to_string()), 
-            Arc::new(password.to_string())).await?;
+        Self::connect_with_append_timeout(server, port, username, password, Duration::from_secs(35)).await
+    }
+
+    /// Establishes a new IMAP connection with the given server, port, credentials, and append timeout
+    pub async fn connect_with_append_timeout(
+        server: &str,
+        port: u16,
+        username: &str,
+        password: &str,
+        append_timeout: Duration
+    ) -> Result<ImapClient<AsyncImapSessionWrapper>, ImapError> {
+        let session = AsyncImapSessionWrapper::connect(
+            server,
+            port,
+            Arc::new(username.to_string()),
+            Arc::new(password.to_string()),
+            append_timeout
+        ).await?;
         Ok(ImapClient::new(session))
     }
 
@@ -193,8 +209,15 @@ pub async fn connect(
 
     info!("IMAP login successful for user: {}", username);
 
-    // Wrap the authenticated session in our mutex wrapper
-    let wrapped_session = AsyncImapSessionWrapper::new(authenticated_session);
+    // Read append timeout from environment or use default
+    let append_timeout_seconds = std::env::var("IMAP_APPEND_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(35);
+    let append_timeout = Duration::from_secs(append_timeout_seconds);
+
+    // Wrap the authenticated session in our mutex wrapper with append timeout
+    let wrapped_session = AsyncImapSessionWrapper::with_append_timeout(authenticated_session, append_timeout);
 
     // Create our client using the wrapped session
     Ok(ImapClient::new(wrapped_session))

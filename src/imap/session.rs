@@ -131,14 +131,21 @@ pub struct AsyncImapSessionWrapper {
     session: Arc<TokioMutex<TlsImapSession>>,
     // Track currently selected folder for atomic operations
     current_folder: Arc<TokioMutex<Option<String>>>,
+    // Timeout for APPEND operations (configurable to handle slow servers)
+    append_timeout: Duration,
 }
 
 impl AsyncImapSessionWrapper {
     pub fn new(session: TlsImapSession) -> Self {
+        Self::with_append_timeout(session, Duration::from_secs(35))
+    }
+
+    pub fn with_append_timeout(session: TlsImapSession, append_timeout: Duration) -> Self {
         Self {
             // Create the Arc<Mutex<>> here
             session: Arc::new(TokioMutex::new(session)),
             current_folder: Arc::new(TokioMutex::new(None)),
+            append_timeout,
         }
     }
 
@@ -146,7 +153,8 @@ impl AsyncImapSessionWrapper {
         server: &str,
         port: u16,
         username: Arc<String>,
-        password: Arc<String>
+        password: Arc<String>,
+        append_timeout: Duration,
     ) -> Result<Self, ImapError> {
         // Create TLS connector
         let tls_builder = native_tls::TlsConnector::builder();
@@ -185,7 +193,7 @@ impl AsyncImapSessionWrapper {
                 }
             })?;
 
-        Ok(Self::new(session))
+        Ok(Self::with_append_timeout(session, append_timeout))
     }
 
     /// Get the currently selected folder
@@ -457,11 +465,31 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
             })
             .collect();
 
-        // The append method takes the mailbox name and content
-        session_guard.append(folder, content)
-            .await
-            .map_err(ImapError::from)?;
-        Ok(())
+        // Wrap the append operation with a timeout to prevent indefinite hangs
+        // This is critical for slow IMAP servers with security scanning (e.g., GoDaddy)
+        let append_timeout = self.append_timeout;
+        let append_result = tokio::time::timeout(
+            append_timeout,
+            session_guard.append(folder, content)
+        ).await;
+
+        match append_result {
+            Ok(Ok(())) => {
+                debug!("APPEND to folder '{}' completed successfully", folder);
+                Ok(())
+            }
+            Ok(Err(e)) => {
+                error!("APPEND to folder '{}' failed: {}", folder, e);
+                Err(ImapError::from(e))
+            }
+            Err(_) => {
+                error!("APPEND to folder '{}' timed out after {:?}", folder, append_timeout);
+                Err(ImapError::Timeout(format!(
+                    "APPEND operation timed out after {:?}. Server may be slow due to security scanning.",
+                    append_timeout
+                )))
+            }
+        }
     }
 
     async fn fetch_raw_message(&self, uid: u32) -> Result<Vec<u8>, ImapError> {

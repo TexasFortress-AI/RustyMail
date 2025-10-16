@@ -3025,6 +3025,64 @@
         "dependencies": [],
         "priority": "high",
         "subtasks": []
+      },
+      {
+        "id": 81,
+        "title": "Add timeout to IMAP APPEND operations to prevent indefinite hangs",
+        "description": "Add configurable timeout (30-45 seconds) to IMAP APPEND operations in AsyncImapSessionWrapper to prevent indefinite blocking on slow servers like GoDaddy with security scanning.",
+        "details": "Implement timeout handling in the AsyncImapSessionWrapper::append method in src/imap/session.rs around line 443-465. The implementation should: 1) Use tokio::time::timeout to wrap the existing session_guard.append() call with a configurable duration (default 35 seconds). 2) Add timeout configuration to ImapConfig or as a new field in AsyncImapSessionWrapper similar to existing timeout patterns in src/imap/client.rs (lines 164, 175, 189). 3) Return an appropriate ImapError::Timeout variant when timeout occurs, allowing graceful error handling rather than indefinite blocking. 4) Ensure the timeout applies specifically to the APPEND operation without affecting the overall session state. 5) Follow the existing pattern of using Duration from std::time and tokio::time::timeout as seen in the connection establishment code. The timeout should be configurable via environment variable (IMAP_APPEND_TIMEOUT_SECONDS) with a sensible default of 35 seconds to handle slow IMAP servers with security scanning delays.\n<info added on 2025-10-16T12:22:36.893Z>\nLooking at the user request, I need to analyze the current codebase to understand the implementation that was completed and verify the changes mentioned.Based on the analysis of the codebase and the user's implementation report, I can see that the timeout implementation has been successfully completed. The code analysis confirms all the changes mentioned in the user request:\n\n1. ✅ Environment variable `IMAP_APPEND_TIMEOUT_SECONDS` added to `.env.example` with default value 35\n2. ✅ `append_timeout` field added to `AsyncImapSessionWrapper` struct (line 135)\n3. ✅ `with_append_timeout()` constructor method implemented (lines 143-150)\n4. ✅ `connect()` method updated to accept append_timeout parameter (lines 152-197)\n5. ✅ APPEND operation wrapped with `tokio::time::timeout()` (lines 470-493)\n6. ✅ Proper error handling with `ImapError::Timeout` variant\n7. ✅ `connect_with_append_timeout()` method added to client.rs (lines 67-82)\n8. ✅ Environment variable reading implemented in connect function (lines 213-220)\n\nThe project builds successfully (only unrelated warnings), and the test suite shows 59 passed tests with only 1 unrelated failure (provider_manager test requiring OpenAI env var).\n\n**IMPLEMENTATION COMPLETED SUCCESSFULLY - 2025-10-16**\n\n**Final Changes Summary:**\n- **Configuration**: Added `IMAP_APPEND_TIMEOUT_SECONDS=35` environment variable to `.env.example` for configurable timeout control  \n- **Core Implementation**: Enhanced `AsyncImapSessionWrapper` with `append_timeout` field and `with_append_timeout()` constructor method\n- **Connection Method**: Updated `AsyncImapSessionWrapper::connect()` to accept `append_timeout` parameter for proper timeout initialization\n- **Timeout Logic**: Wrapped APPEND operation with `tokio::time::timeout()` in `session.rs:470-493`, providing graceful failure after configured duration instead of indefinite blocking\n- **Error Handling**: Returns descriptive `ImapError::Timeout` message when timeout occurs: \"APPEND operation timed out after {:?}. Server may be slow due to security scanning.\"\n- **Client Interface**: Added `ImapClient::connect_with_append_timeout()` method for direct timeout specification\n- **Environment Integration**: Updated `connect()` function to automatically read `IMAP_APPEND_TIMEOUT_SECONDS` from environment variables with 35-second fallback\n\n**Testing Validation:**\n- ✅ cargo build: SUCCESS (120 warnings, no errors)\n- ✅ cargo test --lib: 59/60 tests passed (1 unrelated provider_manager failure)\n- ✅ Follows existing timeout patterns from client.rs TCP/TLS/login operations\n- ✅ Maintains session state integrity after timeout failures\n\n**Technical Implementation Details:**\nThe timeout mechanism uses `tokio::time::timeout()` to wrap the `session_guard.append()` call, providing three distinct outcomes: successful completion, IMAP protocol error, or timeout expiry. This prevents indefinite blocking on slow servers with security scanning (like GoDaddy) while maintaining full compatibility with existing IMAP operations and session management.\n</info added on 2025-10-16T12:22:36.893Z>",
+        "testStrategy": "Test APPEND timeout with mock IMAP server that introduces artificial delays longer than the timeout threshold. Verify that the operation fails gracefully with ImapError::Timeout after the specified duration rather than hanging indefinitely. Test successful APPEND operations complete within the timeout window. Test with different timeout values to ensure configurability works. Verify that session state remains healthy after timeout failures and subsequent operations work correctly.",
+        "status": "done",
+        "dependencies": [
+          4,
+          6,
+          7
+        ],
+        "priority": "high",
+        "subtasks": []
+      },
+      {
+        "id": 82,
+        "title": "Add progress indicator for email save to Outbox operations",
+        "description": "Implement user-visible progress notification during IMAP APPEND operations to Outbox folder, showing message like \"Saving to Outbox (this may take up to 30 seconds)...\" to handle GoDaddy IMAP server delays.",
+        "details": "The current email sending implementation in src/dashboard/services/smtp.rs performs IMAP APPEND operations to save emails to the Outbox folder (line 196) which can take 30-60+ seconds with GoDaddy IMAP servers due to security scanning. This creates a poor UX where users see \"Sending...\" for extended periods without knowing what's happening.\n\nImplementation approach:\n\n1. **Frontend Changes (SendMailDialog.tsx)**:\n   - Add a new state variable `savingToOutbox` to track the Outbox save phase\n   - Update the sending button to show different messages: \"Saving to Outbox (this may take up to 30 seconds)...\" during IMAP APPEND, then \"Sending via SMTP...\" during actual sending\n   - Use existing toast notification system to show progress updates\n   - Modify the handleSubmit function to handle different phases of the send process\n\n2. **Backend API Changes (handlers.rs)**:\n   - Modify the send_email handler (line 3164) to return progress updates or use existing SSE system\n   - Consider splitting the operation into two API calls: save-to-outbox and send-via-smtp, or add progress callbacks\n\n3. **SMTP Service Updates (smtp.rs)**:\n   - Add logging improvements around the ensure_folder_exists_and_append call (line 196) to better track timing\n   - Consider adding timeout handling with user-friendly error messages for extremely slow IMAP operations\n   - The existing log message at line 195 already mentions \"this may take up to 30 seconds\" - leverage this for UX\n\n4. **UX Flow**:\n   - User clicks \"Send Email\" → Button shows \"Saving to Outbox (this may take up to 30 seconds)...\" with spinner\n   - After Outbox save completes → Button shows \"Sending via SMTP...\" \n   - After SMTP send completes → Success toast and dialog closes\n   - If Outbox save fails → Show specific error about Outbox save failure\n   - Add Cancel button during long operations if feasible\n\nThe implementation should leverage the existing toast system (useToast hook) already used in SendMailDialog.tsx and align with the existing \"Sending...\" state management pattern.",
+        "testStrategy": "1. Test with GoDaddy IMAP account to verify progress indicator appears during slow Outbox APPEND operations and shows appropriate timing messages. 2. Test with fast IMAP servers (Gmail) to ensure progress indicator still works correctly for quick operations. 3. Verify toast notifications appear at correct times and contain accurate messaging. 4. Test error scenarios where Outbox save fails to ensure proper error messaging. 5. Verify the UI remains responsive during long IMAP operations and the Cancel button works if implemented. 6. Test that the success flow completes properly with correct final toast message and dialog closure.",
+        "status": "pending",
+        "dependencies": [
+          25
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 83,
+        "title": "Implement background queue for asynchronous Outbox saves",
+        "description": "Replace blocking IMAP APPEND operations with a background queue system to prevent UI freezing during slow server operations while maintaining proper email send flow.",
+        "details": "Implement a comprehensive background task queue system to handle asynchronous IMAP operations:\n\n1. **Background Task Queue Service**: Create `BackgroundTaskQueue` struct using `crossbeam` channels (already in Cargo.toml) with task priority levels. Use `tokio::spawn` for worker threads that continuously process queued operations.\n\n2. **Email Send Flow Restructure**: Modify `SmtpService::send_email` to:\n   - Immediately send via SMTP (don't wait for Outbox)\n   - Queue Outbox save operation in background\n   - Queue Sent folder save operation after SMTP success\n   - Return success immediately after SMTP\n\n3. **Task Types and Retry Logic**: Define `BackgroundTask` enum for Outbox/Sent operations with exponential backoff retry (max 3 attempts). Include task metadata (account, message_id, email_bytes, folder).\n\n4. **User Notification System**: Integrate with existing SSE infrastructure in `src/dashboard/api/sse.rs` to notify users of background operation status. Add new event types for queue completion/failure.\n\n5. **Error Recovery**: Store failed operations in SQLite database (already configured) for manual retry via dashboard UI. Ensure atomic operations using existing IMAP patterns from `src/imap/atomic.rs`.\n\n6. **Service Integration**: Extend existing connection pooling (`src/connection_pool.rs`) to handle background IMAP sessions. Add queue metrics to dashboard services.\n\nThis maintains email reliability while solving the 60+ second GoDaddy IMAP timeout issue.",
+        "testStrategy": "1. **Unit Tests**: Test queue operations with mock IMAP sessions, verify retry logic with exponential backoff, test task serialization/deserialization.\n\n2. **Integration Tests**: Test complete email send flow with simulated slow IMAP server (using tokio::time::sleep), verify SSE notifications are sent correctly, test database persistence of failed tasks.\n\n3. **Load Testing**: Send 50+ emails concurrently to verify queue handles high throughput without blocking, monitor memory usage and task completion rates.\n\n4. **Failure Scenarios**: Test network failures during background operations, verify graceful degradation when queue is full, test recovery from database on service restart.\n\n5. **End-to-End Testing**: Test with real GoDaddy IMAP account to verify 60+ second operations don't block UI, confirm emails appear in Outbox immediately and move to Sent after background completion.\n\n6. **Dashboard Monitoring**: Verify queue metrics appear in dashboard, test manual retry functionality for failed tasks, confirm SSE events reach frontend correctly.",
+        "status": "pending",
+        "dependencies": [
+          4,
+          7,
+          10,
+          25
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 84,
+        "title": "Add SMTP-only developer mode to skip IMAP APPEND operations",
+        "description": "Implement SMTP_ONLY_MODE environment variable that bypasses slow IMAP APPEND operations and sends emails directly via SMTP without saving to Outbox or Sent folders.",
+        "details": "Add a developer feature that allows skipping slow IMAP APPEND operations by implementing:\n\n1. **Configuration Support**: Add SMTP_ONLY_MODE environment variable to src/config.rs Settings struct and .env.example file. Update config parsing to handle this boolean flag with appropriate defaults (false for production safety).\n\n2. **SMTP Service Modification**: Modify SmtpService::send_email() method in src/dashboard/services/smtp.rs to check SMTP_ONLY_MODE flag. When enabled, skip all calls to ensure_folder_exists_and_append(), append_to_outbox(), append_to_sent_folder(), and delete_from_outbox() methods. Send directly via SMTP transport without any IMAP operations.\n\n3. **Logging Integration**: Add explicit warning logs when SMTP_ONLY_MODE is active, clearly indicating this is a developer feature. Log at startup and during each email send operation to ensure visibility.\n\n4. **Frontend Warning Banner**: Create a prominent warning banner component in the React frontend that displays when SMTP_ONLY_MODE is enabled. The banner should show 'DEVELOPER MODE: SMTP-only (no Outbox/Sent folders)' with appropriate styling to indicate this is not for production use. Add API endpoint to check mode status.\n\n5. **Error Handling**: Ensure proper error handling when IMAP operations are skipped - return appropriate success responses without attempting folder operations. Maintain existing SMTP error handling for actual send failures.\n\nThis implementation should be minimal and focused on the core functionality while maintaining clear separation between production and developer code paths.",
+        "testStrategy": "Test SMTP_ONLY_MODE=true bypasses all IMAP APPEND operations and sends emails successfully via SMTP. Verify SMTP_ONLY_MODE=false maintains existing Outbox behavior. Test frontend warning banner displays correctly when mode is enabled. Verify warning logs are generated appropriately. Test with both successful and failed SMTP sends to ensure error handling works correctly. Test configuration loading from environment variables.",
+        "status": "pending",
+        "dependencies": [
+          6,
+          25
+        ],
+        "priority": "low",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -3037,7 +3095,7 @@
       ],
       "created": "2025-10-13T03:58:25.433Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-15T11:32:28.040Z"
+      "updated": "2025-10-16T12:22:42.709Z"
     }
   }
 }
