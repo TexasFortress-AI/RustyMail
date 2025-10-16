@@ -47,6 +47,7 @@ pub struct SmtpConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredAccount {
     // email_address is the primary identifier - id field removed
+    #[serde(rename = "display_name", alias = "account_name")]
     pub display_name: String,
     pub email_address: String,
     pub provider_type: Option<String>,

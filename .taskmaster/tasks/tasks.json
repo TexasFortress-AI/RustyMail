@@ -3101,7 +3101,7 @@
         "description": "Critical bug: Backend fails to load accounts from config/accounts.json with error \"missing field `display_name` at line 21 column 5\". The accounts.json file HAS display_name fields, so the issue is in the deserialization logic or struct definitions.",
         "details": "Error occurs in multiple places during startup:\n- Account migration from database: \"Account store error: Serialization error: missing field `display_name` at line 21 column 5\"\n- Sync accounts to database: Same error\n- Create default account from environment: Same error\n\nThe accounts.json file at config/accounts.json contains valid display_name fields for both accounts (lines 6 and 22), so the problem is likely:\n1. A mismatch between StoredAccount struct and Account struct\n2. Incorrect serde attributes causing deserialization failure\n3. Missing #[serde(default)] or #[serde(alias)] attributes\n\nFiles to investigate:\n- src/dashboard/services/account_store.rs (StoredAccount struct)\n- src/dashboard/services/account.rs (Account struct)\n- src/dashboard/services/mod.rs (account loading/migration logic)\n\nThis blocks all dashboard functionality including email compose, folder viewing, and account management.",
         "testStrategy": "1. Fix the struct deserialization issue\n2. Verify accounts.json loads successfully on backend startup\n3. Check logs show \"Successfully synced accounts to database\"\n4. Test dashboard loads and displays accounts\n5. Test email compose dialog shows correct \"From\" account\n6. Test folder dropdown shows account folders including Outbox",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "medium",
         "subtasks": []
@@ -3117,7 +3117,7 @@
       ],
       "created": "2025-10-13T03:58:25.433Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-16T20:17:52.998Z"
+      "updated": "2025-10-16T20:26:20.062Z"
     }
   }
 }
