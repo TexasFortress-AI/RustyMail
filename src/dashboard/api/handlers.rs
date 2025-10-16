@@ -3065,6 +3065,42 @@ pub struct EmailQueryParams {
     account_id: Option<String>,
 }
 
+pub async fn list_folders(
+    state: Data<DashboardState>,
+    query: web::Query<EmailQueryParams>,
+) -> Result<impl Responder, ApiError> {
+    // Get account ID from query parameters or use default
+    let account_id = match query.account_id.as_ref() {
+        Some(id) => id.clone(),
+        None => {
+            // Get default account if no account_id provided
+            let account_service = state.account_service.lock().await;
+            match account_service.get_default_account().await {
+                Ok(Some(account)) => account.email_address,
+                Ok(None) => return Err(ApiError::NotFound("No default account configured".to_string())),
+                Err(e) => return Err(ApiError::InternalError(format!("Failed to get default account: {}", e))),
+            }
+        }
+    };
+
+    info!("Listing folders for account: {}", account_id);
+
+    // List folders for the account
+    match state.email_service.list_folders_for_account(&account_id).await {
+        Ok(folders) => {
+            info!("Found {} folders for account {}", folders.len(), account_id);
+            Ok(HttpResponse::Ok().json(serde_json::json!({
+                "account_id": account_id,
+                "folders": folders
+            })))
+        }
+        Err(e) => {
+            error!("Failed to list folders for account {}: {}", account_id, e);
+            Err(ApiError::InternalError(format!("Failed to list folders: {}", e)))
+        }
+    }
+}
+
 pub async fn get_cached_emails(
     state: Data<DashboardState>,
     query: web::Query<EmailQueryParams>,

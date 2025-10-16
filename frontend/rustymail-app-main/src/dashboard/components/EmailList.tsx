@@ -97,6 +97,29 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     refetchInterval: 30000, // Refetch every 30 seconds
   });
 
+  // Fetch available folders from IMAP
+  const { data: foldersData, isLoading: foldersLoading } = useQuery<{account_id: string; folders: string[]}>({
+    queryKey: ['folders', currentAccount?.id],
+    queryFn: async () => {
+      if (!currentAccount) {
+        throw new Error('No account selected');
+      }
+      const response = await fetch(
+        `${API_BASE_URL}/dashboard/folders?account_id=${currentAccount.id}`,
+        {
+          headers: {
+            'X-API-Key': config.api.apiKey
+          }
+        }
+      );
+      if (!response.ok) {
+        throw new Error('Failed to fetch folders');
+      }
+      return response.json();
+    },
+    enabled: !!currentAccount,
+  });
+
   // Expose refetch function to parent
   useEffect(() => {
     if (onRefetchReady) {
@@ -245,6 +268,15 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
 
   const totalPages = Math.ceil((data?.count || 0) / pageSize);
 
+  const formatFolderName = (folder: string): string => {
+    // Special case for INBOX
+    if (folder === 'INBOX') return 'Inbox';
+    // Remove INBOX. prefix if present
+    const name = folder.replace('INBOX.', '');
+    // Capitalize first letter
+    return name.charAt(0).toUpperCase() + name.slice(1);
+  };
+
   const formatDate = (dateStr: string | null, internalDateStr: string | null) => {
     const dateToUse = dateStr || internalDateStr;
     if (!dateToUse) return 'No date';
@@ -322,11 +354,17 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="INBOX">Inbox</SelectItem>
-              <SelectItem value="INBOX.Sent">Sent</SelectItem>
-              <SelectItem value="INBOX.Drafts">Drafts</SelectItem>
-              <SelectItem value="INBOX.Trash">Trash</SelectItem>
-              <SelectItem value="INBOX.spam">Spam</SelectItem>
+              {foldersLoading ? (
+                <SelectItem value={currentFolder} disabled>Loading folders...</SelectItem>
+              ) : (foldersData?.folders && foldersData.folders.length > 0) ? (
+                foldersData.folders.map((folder) => (
+                  <SelectItem key={folder} value={folder}>
+                    {formatFolderName(folder)}
+                  </SelectItem>
+                ))
+              ) : (
+                <SelectItem value="INBOX">Inbox</SelectItem>
+              )}
             </SelectContent>
           </Select>
           <span className="text-sm font-normal text-muted-foreground">

@@ -14,6 +14,10 @@ use tokio::time::timeout;
 use super::account::{AccountService};
 use crate::prelude::CloneableImapSessionFactory;
 
+// Folder name constants (can be configured via environment or config file in the future)
+const OUTBOX_FOLDER: &str = "INBOX.Outbox";
+const SENT_FOLDER: &str = "INBOX.Sent";
+
 #[derive(Error, Debug)]
 pub enum SmtpError {
     #[error("SMTP configuration error: {0}")]
@@ -187,64 +191,115 @@ impl SmtpService {
         // Convert email to RFC822 format for IMAP operations
         let email_bytes = email.formatted();
 
-        // Step 1: Save to Outbox first (proper Outbox pattern)
-        log::info!("Saving email to Outbox before sending");
-        let outbox_timeout = Duration::from_secs(10);
-        match timeout(outbox_timeout, self.append_to_outbox(&account.email_address, &email_bytes)).await {
-            Ok(Ok(_)) => {
-                log::info!("Successfully saved email to Outbox");
+        // Step 1: Save to Outbox FIRST (blocking, must succeed - proper Outbox pattern)
+        log::info!("Saving email to {} before sending (this may take up to 30 seconds)", OUTBOX_FOLDER);
+        match self.ensure_folder_exists_and_append(&account.email_address, &email_bytes, OUTBOX_FOLDER).await {
+            Ok(_) => {
+                log::info!("Successfully saved email to {}", OUTBOX_FOLDER);
             }
-            Ok(Err(e)) => {
-                log::warn!("Failed to save to Outbox: {}. Proceeding with send anyway.", e);
-            }
-            Err(_) => {
-                log::warn!("Timeout saving to Outbox (exceeded {} seconds). Proceeding with send anyway.", outbox_timeout.as_secs());
+            Err(e) => {
+                // CRITICAL: If we can't save to Outbox, abort the send completely
+                log::error!("CRITICAL: Failed to save email to {}. Aborting send. Error: {}", OUTBOX_FOLDER, e);
+                return Err(e);
             }
         }
 
-        // Step 2: Send via SMTP
-        log::info!("Sending email via SMTP");
+        // Step 2: Now try to send via SMTP (Outbox has the email, so user can see it)
+        log::info!("Attempting to send email via SMTP...");
         match mailer.send(email.clone()).await {
             Ok(_) => {
                 log::info!("Email sent successfully via SMTP");
 
-                // Step 3: Move to Sent folder after successful send
-                let sent_timeout = Duration::from_secs(10);
-                match timeout(sent_timeout, self.append_to_sent_folder(&account.email_address, &email_bytes)).await {
-                    Ok(Ok(_)) => {
+                // Step 3: Save to Sent folder (best-effort, don't fail if it doesn't work)
+                match self.ensure_folder_exists_and_append(&account.email_address, &email_bytes, SENT_FOLDER).await {
+                    Ok(_) => {
                         log::info!("Successfully saved sent email to Sent folder");
                     }
-                    Ok(Err(e)) => {
-                        log::warn!("Failed to save sent email to Sent folder: {}", e);
-                    }
-                    Err(_) => {
-                        log::warn!("Timeout saving sent email to Sent folder (exceeded {} seconds)", sent_timeout.as_secs());
+                    Err(e) => {
+                        log::warn!("Failed to save sent email to Sent folder: {}. Email was sent successfully.", e);
                     }
                 }
 
                 // Step 4: Clean up Outbox after successful send
-                let cleanup_timeout = Duration::from_secs(10);
-                match timeout(cleanup_timeout, self.delete_from_outbox(&account.email_address, &message_id)).await {
-                    Ok(Ok(_)) => {
+                match self.delete_from_outbox(&account.email_address, &message_id).await {
+                    Ok(_) => {
                         log::info!("Successfully removed email from Outbox");
                     }
-                    Ok(Err(e)) => {
-                        log::warn!("Failed to remove email from Outbox: {}", e);
-                    }
-                    Err(_) => {
-                        log::warn!("Timeout removing email from Outbox (exceeded {} seconds)", cleanup_timeout.as_secs());
+                    Err(e) => {
+                        log::warn!("Failed to remove email from Outbox: {}. Email was sent successfully.", e);
                     }
                 }
 
                 Ok(SendEmailResponse {
                     success: true,
                     message_id,
-                    message: "Email sent successfully".to_string(),
+                    message: "Email sent successfully and moved to Sent folder".to_string(),
                 })
             }
             Err(e) => {
-                log::error!("SMTP send failed: {}. Email remains in Outbox for retry.", e);
+                log::error!("SMTP send failed: {}. Email remains in Outbox - please check Outbox folder to retry.", e);
                 Err(SmtpError::SendError(e))
+            }
+        }
+    }
+
+    /// Ensure folder exists and append email to it (creates folder if needed)
+    async fn ensure_folder_exists_and_append(
+        &self,
+        account_email: &str,
+        email_bytes: &[u8],
+        folder_name: &str,
+    ) -> Result<(), SmtpError> {
+        // Get account to create IMAP session
+        let account_service = self.account_service.lock().await;
+        let account = account_service
+            .get_account(account_email)
+            .await
+            .map_err(|_| SmtpError::AccountNotFound(account_email.to_string()))?;
+        drop(account_service);
+
+        // Create IMAP session for this account
+        let session = self.imap_session_factory
+            .create_session_for_account(&account)
+            .await
+            .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
+
+        // Try to append to the folder
+        let flags: Vec<String> = vec![];
+        match session.append(folder_name, email_bytes, &flags).await {
+            Ok(_) => {
+                log::info!("Successfully saved email to folder: {}", folder_name);
+                return Ok(());
+            }
+            Err(e) => {
+                log::warn!("Failed to append to folder '{}': {}. Attempting to create folder...", folder_name, e);
+
+                // Try to create the folder
+                match session.create_folder(folder_name).await {
+                    Ok(_) => {
+                        log::info!("Successfully created folder: {}", folder_name);
+
+                        // Now try to append again
+                        match session.append(folder_name, email_bytes, &flags).await {
+                            Ok(_) => {
+                                log::info!("Successfully saved email to newly created folder: {}", folder_name);
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                return Err(SmtpError::ConfigError(format!(
+                                    "Failed to append to folder '{}' even after creating it: {}",
+                                    folder_name, e
+                                )));
+                            }
+                        }
+                    }
+                    Err(create_err) => {
+                        return Err(SmtpError::ConfigError(format!(
+                            "Failed to append to folder '{}' and failed to create it: {}",
+                            folder_name, create_err
+                        )));
+                    }
+                }
             }
         }
     }

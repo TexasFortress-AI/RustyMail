@@ -30,6 +30,7 @@ pub fn configure_routes() -> Scope {
         .route("/sync/trigger", web::post().to(handlers::trigger_email_sync))
         .route("/sync/status", web::get().to(handlers::get_sync_status))
         // Email cache endpoints
+        .route("/folders", web::get().to(handlers::list_folders))
         .route("/emails", web::get().to(handlers::get_cached_emails))
         // SMTP email sending endpoint
         .route("/emails/send", web::post().to(handlers::send_email))
