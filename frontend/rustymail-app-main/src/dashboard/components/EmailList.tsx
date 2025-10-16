@@ -98,26 +98,46 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
   });
 
   // Fetch available folders from IMAP
-  const { data: foldersData, isLoading: foldersLoading } = useQuery<{account_id: string; folders: string[]}>({
+  const { data: foldersData, isLoading: foldersLoading, error: foldersError } = useQuery<{account_id: string; folders: string[]}>({
     queryKey: ['folders', currentAccount?.id],
     queryFn: async () => {
       if (!currentAccount) {
         throw new Error('No account selected');
       }
-      const response = await fetch(
-        `${API_BASE_URL}/dashboard/folders?account_id=${currentAccount.id}`,
-        {
-          headers: {
-            'X-API-Key': config.api.apiKey
+
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/dashboard/folders?account_id=${currentAccount.id}`,
+          {
+            headers: {
+              'X-API-Key': config.api.apiKey
+            },
+            signal: controller.signal
           }
+        );
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch folders');
         }
-      );
-      if (!response.ok) {
-        throw new Error('Failed to fetch folders');
+        return response.json();
+      } catch (error) {
+        clearTimeout(timeoutId);
+        if (error instanceof Error && error.name === 'AbortError') {
+          console.warn('Folders fetch timed out, using fallback');
+          // Return fallback folders instead of throwing
+          return { account_id: currentAccount.id, folders: ['INBOX', 'INBOX.Sent', 'INBOX.Drafts', 'INBOX.Trash'] };
+        }
+        throw error;
       }
-      return response.json();
     },
     enabled: !!currentAccount,
+    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    retry: false, // Don't retry on failure
   });
 
   // Expose refetch function to parent
