@@ -3047,7 +3047,7 @@
         "description": "Implement user-visible progress notification during IMAP APPEND operations to Outbox folder, showing message like \"Saving to Outbox (this may take up to 30 seconds)...\" to handle GoDaddy IMAP server delays.",
         "details": "The current email sending implementation in src/dashboard/services/smtp.rs performs IMAP APPEND operations to save emails to the Outbox folder (line 196) which can take 30-60+ seconds with GoDaddy IMAP servers due to security scanning. This creates a poor UX where users see \"Sending...\" for extended periods without knowing what's happening.\n\nImplementation approach:\n\n1. **Frontend Changes (SendMailDialog.tsx)**:\n   - Add a new state variable `savingToOutbox` to track the Outbox save phase\n   - Update the sending button to show different messages: \"Saving to Outbox (this may take up to 30 seconds)...\" during IMAP APPEND, then \"Sending via SMTP...\" during actual sending\n   - Use existing toast notification system to show progress updates\n   - Modify the handleSubmit function to handle different phases of the send process\n\n2. **Backend API Changes (handlers.rs)**:\n   - Modify the send_email handler (line 3164) to return progress updates or use existing SSE system\n   - Consider splitting the operation into two API calls: save-to-outbox and send-via-smtp, or add progress callbacks\n\n3. **SMTP Service Updates (smtp.rs)**:\n   - Add logging improvements around the ensure_folder_exists_and_append call (line 196) to better track timing\n   - Consider adding timeout handling with user-friendly error messages for extremely slow IMAP operations\n   - The existing log message at line 195 already mentions \"this may take up to 30 seconds\" - leverage this for UX\n\n4. **UX Flow**:\n   - User clicks \"Send Email\" → Button shows \"Saving to Outbox (this may take up to 30 seconds)...\" with spinner\n   - After Outbox save completes → Button shows \"Sending via SMTP...\" \n   - After SMTP send completes → Success toast and dialog closes\n   - If Outbox save fails → Show specific error about Outbox save failure\n   - Add Cancel button during long operations if feasible\n\nThe implementation should leverage the existing toast system (useToast hook) already used in SendMailDialog.tsx and align with the existing \"Sending...\" state management pattern.",
         "testStrategy": "1. Test with GoDaddy IMAP account to verify progress indicator appears during slow Outbox APPEND operations and shows appropriate timing messages. 2. Test with fast IMAP servers (Gmail) to ensure progress indicator still works correctly for quick operations. 3. Verify toast notifications appear at correct times and contain accurate messaging. 4. Test error scenarios where Outbox save fails to ensure proper error messaging. 5. Verify the UI remains responsive during long IMAP operations and the Cancel button works if implemented. 6. Test that the success flow completes properly with correct final toast message and dialog closure.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           25
         ],
@@ -3106,7 +3106,7 @@
       ],
       "created": "2025-10-13T03:58:25.433Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-16T18:55:28.678Z"
+      "updated": "2025-10-16T20:03:50.912Z"
     }
   }
 }

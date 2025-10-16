@@ -30,6 +30,7 @@ export function SendMailDialog({
 }: SendMailDialogProps) {
   const { toast } = useToast();
   const [sending, setSending] = useState(false);
+  const [sendingPhase, setSendingPhase] = useState<'idle' | 'preparing' | 'sending'>('idle');
 
   const [formData, setFormData] = useState<SendEmailRequest>({
     to: [],
@@ -81,6 +82,13 @@ export function SendMailDialog({
 
     try {
       setSending(true);
+      setSendingPhase('preparing');
+
+      // Show informational toast about potential delays
+      toast({
+        title: 'Preparing Email',
+        description: 'Saving to Outbox and sending (this may take up to 40 seconds with some email servers)...',
+      });
 
       const request: SendEmailRequest = {
         to: toEmails,
@@ -90,6 +98,9 @@ export function SendMailDialog({
         body: formData.body,
         body_html: formData.body_html,
       };
+
+      // Transition to sending phase after a brief moment
+      setTimeout(() => setSendingPhase('sending'), 1000);
 
       await emailsApi.sendEmail(request, accountEmail);
 
@@ -217,7 +228,7 @@ export function SendMailDialog({
               {sending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Sending...
+                  {sendingPhase === 'preparing' ? 'Saving to Outbox...' : 'Sending via SMTP...'}
                 </>
               ) : (
                 <>
