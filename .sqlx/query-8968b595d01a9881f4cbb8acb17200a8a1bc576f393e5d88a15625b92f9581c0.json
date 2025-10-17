@@ -1,0 +1,26 @@
+{
+  "db_name": "SQLite",
+  "query": "SELECT retry_count, max_retries FROM outbox_queue WHERE id = ?",
+  "describe": {
+    "columns": [
+      {
+        "name": "retry_count",
+        "ordinal": 0,
+        "type_info": "Int64"
+      },
+      {
+        "name": "max_retries",
+        "ordinal": 1,
+        "type_info": "Int64"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "8968b595d01a9881f4cbb8acb17200a8a1bc576f393e5d88a15625b92f9581c0"
+}

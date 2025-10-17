@@ -87,6 +87,12 @@ impl fmt::Debug for CloneableImapSessionFactory {
     }
 }
 
+// SAFETY: ImapClientFactory is Box<dyn Fn() + Send + Sync>, so Arc<ImapClientFactory> is Send
+unsafe impl Send for CloneableImapSessionFactory {}
+
+// SAFETY: ImapClientFactory is Box<dyn Fn() + Send + Sync>, so Arc<ImapClientFactory> is Sync
+unsafe impl Sync for CloneableImapSessionFactory {}
+
 // Previous commented-out definition for reference
 // pub type ImapSessionFactory = Arc<dyn Fn(&AccountConfig) -> BoxFuture<ImapSessionFactoryResult> + Send + Sync>;
 

@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            INSERT INTO outbox_queue (\n                account_email, message_id, to_addresses, cc_addresses, bcc_addresses,\n                subject, body_text, body_html, raw_email_bytes,\n                status, smtp_sent, outbox_saved, sent_folder_saved,\n                retry_count, max_retries\n            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 15
+    },
+    "nullable": []
+  },
+  "hash": "b0497493453a5022179480ba1aba717193b90befb02309ca1ef6ad98e2b3eb35"
+}

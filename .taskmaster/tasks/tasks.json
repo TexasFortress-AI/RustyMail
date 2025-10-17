@@ -3060,7 +3060,7 @@
         "description": "Replace blocking IMAP APPEND operations with a background queue system to prevent UI freezing during slow server operations while maintaining proper email send flow.",
         "details": "Implement a comprehensive background task queue system to handle asynchronous IMAP operations:\n\n1. **Background Task Queue Service**: Create `BackgroundTaskQueue` struct using `crossbeam` channels (already in Cargo.toml) with task priority levels. Use `tokio::spawn` for worker threads that continuously process queued operations.\n\n2. **Email Send Flow Restructure**: Modify `SmtpService::send_email` to:\n   - Immediately send via SMTP (don't wait for Outbox)\n   - Queue Outbox save operation in background\n   - Queue Sent folder save operation after SMTP success\n   - Return success immediately after SMTP\n\n3. **Task Types and Retry Logic**: Define `BackgroundTask` enum for Outbox/Sent operations with exponential backoff retry (max 3 attempts). Include task metadata (account, message_id, email_bytes, folder).\n\n4. **User Notification System**: Integrate with existing SSE infrastructure in `src/dashboard/api/sse.rs` to notify users of background operation status. Add new event types for queue completion/failure.\n\n5. **Error Recovery**: Store failed operations in SQLite database (already configured) for manual retry via dashboard UI. Ensure atomic operations using existing IMAP patterns from `src/imap/atomic.rs`.\n\n6. **Service Integration**: Extend existing connection pooling (`src/connection_pool.rs`) to handle background IMAP sessions. Add queue metrics to dashboard services.\n\nThis maintains email reliability while solving the 60+ second GoDaddy IMAP timeout issue.",
         "testStrategy": "1. **Unit Tests**: Test queue operations with mock IMAP sessions, verify retry logic with exponential backoff, test task serialization/deserialization.\n\n2. **Integration Tests**: Test complete email send flow with simulated slow IMAP server (using tokio::time::sleep), verify SSE notifications are sent correctly, test database persistence of failed tasks.\n\n3. **Load Testing**: Send 50+ emails concurrently to verify queue handles high throughput without blocking, monitor memory usage and task completion rates.\n\n4. **Failure Scenarios**: Test network failures during background operations, verify graceful degradation when queue is full, test recovery from database on service restart.\n\n5. **End-to-End Testing**: Test with real GoDaddy IMAP account to verify 60+ second operations don't block UI, confirm emails appear in Outbox immediately and move to Sent after background completion.\n\n6. **Dashboard Monitoring**: Verify queue metrics appear in dashboard, test manual retry functionality for failed tasks, confirm SSE events reach frontend correctly.",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           4,
           7,
@@ -3201,7 +3201,7 @@
       ],
       "created": "2025-10-13T03:58:25.433Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-17T00:50:00.157Z"
+      "updated": "2025-10-17T01:49:30.763Z"
     }
   }
 }

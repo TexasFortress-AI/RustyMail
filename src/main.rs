@@ -195,6 +195,17 @@ async fn main() -> std::io::Result<()> {
     Arc::clone(&dashboard_state.sync_service).start_background_sync();
     info!("Background email sync task started");
 
+    // Start outbox worker for asynchronous email sending
+    let outbox_worker = Arc::new(rustymail::dashboard::services::OutboxWorker::new(
+        Arc::clone(&dashboard_state.outbox_queue_service),
+        Arc::clone(&dashboard_state.smtp_service),
+        imap_session_factory.clone(),
+    ));
+    tokio::spawn(async move {
+        outbox_worker.start().await;
+    });
+    info!("Outbox worker started");
+
     // Start health monitoring service
     if let Some(ref health_service) = dashboard_state.health_service {
         Arc::clone(health_service).start_monitoring().await;

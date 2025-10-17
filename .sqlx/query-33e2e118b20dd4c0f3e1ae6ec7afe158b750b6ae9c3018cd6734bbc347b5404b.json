@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE outbox_queue SET smtp_sent = TRUE, smtp_sent_at = CURRENT_TIMESTAMP WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "33e2e118b20dd4c0f3e1ae6ec7afe158b750b6ae9c3018cd6734bbc347b5404b"
+}

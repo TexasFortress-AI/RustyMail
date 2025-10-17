@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE outbox_queue SET status = 'pending' WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "498cb2958bbd5e631996486f860307ff19983b1a3280d66a8219980d6b8bff90"
+}

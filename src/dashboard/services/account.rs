@@ -534,7 +534,7 @@ impl AccountService {
             // Check if domain matches any pattern
             if domain_patterns.iter().any(|pattern| domain == pattern) {
                 return Ok(Some(ProviderTemplate {
-                    provider_type: row.provider_type,
+                    provider_type: row.provider_type.unwrap(),
                     display_name: row.display_name,
                     domain_patterns,
                     imap_host: row.imap_host,

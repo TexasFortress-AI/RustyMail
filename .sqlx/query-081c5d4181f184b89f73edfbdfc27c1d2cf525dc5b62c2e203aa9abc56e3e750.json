@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE outbox_queue SET sent_folder_saved = TRUE WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "081c5d4181f184b89f73edfbdfc27c1d2cf525dc5b62c2e203aa9abc56e3e750"
+}

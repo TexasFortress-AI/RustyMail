@@ -32,6 +32,8 @@ pub mod events;
 pub mod event_integration;
 pub mod health;
 pub mod metrics;
+pub mod outbox_queue;
+pub mod outbox_worker;
 pub mod smtp;
 pub mod sync;
 
@@ -57,6 +59,8 @@ pub use ai::{AiService};
 pub use email::{EmailService};
 pub use events::{EventBus, DashboardEvent};
 pub use health::{HealthService, HealthReport, HealthStatus};
+pub use outbox_queue::{OutboxQueueService, OutboxQueueItem, OutboxStatus};
+pub use outbox_worker::{OutboxWorker};
 pub use smtp::{SmtpService, SendEmailRequest, SendEmailResponse, SmtpError};
 pub use sync::{SyncService};
 
@@ -88,6 +92,7 @@ pub struct DashboardState {
     pub ai_service: Arc<AiService>,
     pub email_service: Arc<EmailService>,
     pub smtp_service: Arc<SmtpService>,
+    pub outbox_queue_service: Arc<OutboxQueueService>,
     pub sync_service: Arc<SyncService>,
     pub account_service: Arc<TokioMutex<AccountService>>,
     pub sse_manager: Arc<SseManager>,
@@ -159,7 +164,7 @@ pub async fn init(
         .await
         .expect("Failed to create database pool for account service");
 
-    if let Err(e) = account_service_temp.initialize(account_db_pool).await {
+    if let Err(e) = account_service_temp.initialize(account_db_pool.clone()).await {
         error!("Failed to initialize account service: {}", e);
     }
 
@@ -179,6 +184,12 @@ pub async fn init(
         .with_cache(cache_service.clone())
         .with_account_service(account_service.clone())
     );
+
+    // Clone the pool before using it
+    let queue_pool = account_db_pool.clone();
+
+    // Initialize Outbox Queue Service
+    let outbox_queue_service = Arc::new(OutboxQueueService::new(queue_pool));
 
     // Initialize SMTP Service
     let smtp_service = Arc::new(SmtpService::new(
@@ -246,6 +257,7 @@ pub async fn init(
         ai_service,
         email_service,
         smtp_service,
+        outbox_queue_service,
         sync_service,
         account_service,
         sse_manager,

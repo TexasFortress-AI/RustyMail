@@ -1,0 +1,12 @@
+{
+  "db_name": "SQLite",
+  "query": "UPDATE outbox_queue SET status = 'sending', last_retry_at = CURRENT_TIMESTAMP WHERE id = ?",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": []
+  },
+  "hash": "d8045ba7fde7d252dba0398543616a69d30fa9cd401fa22e31e3c745c481ff45"
+}
