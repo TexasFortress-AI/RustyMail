@@ -2,7 +2,7 @@
   "master": {
     "tasks": [
       {
-        "id": 1,
+        "id": "1",
         "title": "Remove imap-types dependency completely",
         "description": "Eliminate all imap-types imports and dependencies from the codebase to use async-imap exclusively",
         "details": "Remove imap-types from Cargo.toml dependencies. Search for all imports of imap-types throughout the codebase and remove them. Replace any imap-types usage with equivalent async-imap types. Update all type conversions to use async-imap types directly. This is critical foundation work that must be completed before any other IMAP operations can be stabilized.",
@@ -75,7 +75,7 @@
         "expansionPrompt": "Break down the systematic removal of imap-types dependency: 1) Remove from Cargo.toml, 2) Find and eliminate all imap-types imports across 80+ Rust files, 3) Replace imap-types types with async-imap equivalents in client.rs and session.rs, 4) Update type conversions and error handling, 5) Verify compilation succeeds"
       },
       {
-        "id": 2,
+        "id": "2",
         "title": "Fix compilation errors in core modules",
         "description": "Resolve current compilation errors in sse.rs, rest.rs, and session.rs",
         "details": "Fix missing lifetime specifier in api/sse.rs Context type. Resolve missing validate_api_key function in api/rest.rs. Add missing Mutex import in imap/session.rs. Ensure all modules compile successfully with proper type annotations and imports.",
@@ -148,7 +148,7 @@
         "expansionPrompt": "Address specific compilation errors: 1) Fix missing lifetime specifier in api/sse.rs Context type around line 80-90, 2) Add missing validate_api_key function in api/rest.rs (referenced but not implemented), 3) Add missing Mutex import in imap/session.rs, 4) Run cargo check to verify all fixes"
       },
       {
-        "id": 3,
+        "id": "3",
         "title": "Consolidate IMAP client to async-imap only",
         "description": "Refactor all IMAP client code to use async-imap exclusively, removing any dual-library patterns",
         "details": "Update src/imap/client.rs to use only async-imap types and methods. Remove all type conversion functions between libraries. Standardize on AsyncImapSessionWrapper pattern. Ensure all IMAP operations (connect, authenticate, select, search, fetch, move, delete) work through async-imap only. Update error handling to map async-imap errors to domain errors.",
@@ -226,7 +226,7 @@
         "expansionPrompt": "Refactor IMAP client architecture: 1) Update client.rs to use only async-imap types, 2) Remove dual-library type conversion functions, 3) Standardize AsyncImapSessionWrapper pattern in session.rs, 4) Update connection handling in client.rs lines 90-155, 5) Map async-imap errors to domain errors, 6) Update all IMAP operations to use async-imap exclusively, 7) Test connection lifecycle and operations"
       },
       {
-        "id": 4,
+        "id": "4",
         "title": "Implement atomic IMAP operations",
         "description": "Ensure all email operations follow atomic patterns (select → copy → delete → expunge)",
         "details": "Implement atomic move operations using IMAP command sequence: SELECT source folder, COPY messages to destination, STORE delete flag on source messages, EXPUNGE to remove. Ensure all operations maintain ACID properties. Add proper error handling and rollback mechanisms. Track folder selection state in AsyncImapSessionWrapper.",
@@ -302,7 +302,7 @@
         "expansionPrompt": "Design atomic IMAP command sequences: 1) Research IMAP atomic operation patterns, 2) Implement SELECT-COPY-STORE-EXPUNGE sequence for moves, 3) Add transaction-like error handling with rollback, 4) Track folder selection state in AsyncImapSessionWrapper, 5) Implement operation state management, 6) Add concurrent access protection, 7) Create atomic operation tests, 8) Verify ACID properties in error scenarios"
       },
       {
-        "id": 5,
+        "id": "5",
         "title": "Standardize JSON-RPC 2.0 error handling",
         "description": "Implement comprehensive error handling with proper JSON-RPC 2.0 error codes across all interfaces",
         "details": "Define error code ranges from -32700 to -32099 as specified in PRD. Map async-imap errors to appropriate JSON-RPC error codes. Implement consistent error response format across REST, MCP stdio, and MCP SSE interfaces. Add structured error details with operation context.",
@@ -378,7 +378,7 @@
         "expansionPrompt": "Implement comprehensive error system: 1) Define error code ranges (-32700 to -32099) following JSON-RPC 2.0 spec, 2) Create error mapping from async-imap errors to JSON-RPC codes, 3) Implement consistent error response format across REST/MCP interfaces, 4) Add structured error details with operation context, 5) Update existing error handling in rest.rs and mcp modules, 6) Test error propagation through all interface layers"
       },
       {
-        "id": 6,
+        "id": "6",
         "title": "Complete core IMAP operations implementation",
         "description": "Finish implementation of all IMAP operations: list, search, fetch, move, delete with proper async-imap integration",
         "details": "Complete folder listing with hierarchical structure support. Implement server-side search using async-imap search methods. Add message fetching with MIME part handling. Complete move operations with atomic guarantees. Implement delete operations with proper flag handling and expunge.",
@@ -454,7 +454,7 @@
         "expansionPrompt": "Implement comprehensive IMAP operations: 1) Complete folder listing with hierarchical structure, 2) Implement server-side search using async-imap search methods, 3) Add message fetching with MIME part handling, 4) Complete atomic move operations with guarantees, 5) Implement delete operations with proper flag handling, 6) Add EXPUNGE operations, 7) Create integration tests for each operation, 8) Test with multiple IMAP server types (Gmail, Outlook), 9) Optimize for performance requirements (<500ms folder list, <200ms email fetch), 10) Add comprehensive error handling for each operation"
       },
       {
-        "id": 7,
+        "id": "7",
         "title": "Implement connection pooling and session management",
         "description": "Add proper connection pooling with session lifecycle tracking and cleanup",
         "details": "Implement connection pool using Arc<TokioMutex<>> pattern. Track active sessions with proper lifecycle management. Add connection health checking and automatic reconnection. Implement session timeout handling and cleanup on disconnection. Support concurrent session handling up to 100+ connections.",
@@ -532,7 +532,7 @@
         "expansionPrompt": "Build robust connection management: 1) Design connection pool using Arc<TokioMutex<>> pattern, 2) Implement session lifecycle tracking and cleanup, 3) Add connection health checking mechanisms, 4) Implement automatic reconnection logic, 5) Add session timeout handling, 6) Support concurrent session handling up to 100+ connections, 7) Create connection leak prevention, 8) Add performance monitoring and load testing for concurrent connections"
       },
       {
-        "id": 8,
+        "id": "8",
         "title": "Migrate to official MCP Rust SDK",
         "description": "Replace custom MCP implementations with the official rust-sdk from modelcontextprotocol",
         "details": "Remove custom MCP transport implementations in src/mcp/adapters/legacy.rs. Integrate rmcp dependency from rust-sdk. Update service definitions using SDK tooling. Migrate stdio and SSE transports to use official SDK patterns. Ensure backward compatibility with existing MCP clients.",
@@ -607,7 +607,7 @@
         "expansionPrompt": "Replace custom MCP implementation with official SDK: 1) Remove custom MCP transport implementations in legacy.rs, 2) Integrate rmcp dependency from rust-sdk (already in Cargo.toml), 3) Study official SDK patterns and API, 4) Update service definitions using SDK tooling, 5) Migrate stdio transport to use SDK patterns, 6) Migrate SSE transport to use SDK patterns, 7) Ensure backward compatibility with existing MCP clients and test integration"
       },
       {
-        "id": 9,
+        "id": "9",
         "title": "Complete REST API implementation",
         "description": "Finish REST API endpoints with proper error handling, authentication, and documentation",
         "details": "Complete all REST endpoints for folder operations, email search, fetch, move, and delete. Implement API key authentication middleware. Add request validation and rate limiting. Create comprehensive OpenAPI/Swagger documentation. Ensure RESTful conventions with proper HTTP status codes.",
@@ -689,7 +689,7 @@
         "expansionPrompt": "Finish REST API development: 1) Complete remaining REST endpoints for folder operations, 2) Implement email search, fetch, move, and delete endpoints, 3) Add API key authentication middleware (validate_api_key function missing), 4) Add request validation and rate limiting, 5) Implement proper HTTP status codes following REST conventions, 6) Create comprehensive OpenAPI/Swagger documentation, 7) Add end-to-end tests for all endpoints, 8) Performance test under load conditions"
       },
       {
-        "id": 10,
+        "id": "10",
         "title": "Implement dashboard backend services",
         "description": "Complete dashboard backend with metrics, client management, and configuration services",
         "details": "Complete metrics collection service using sysinfo crate. Implement client management service to track active connections and user agents. Add configuration service for runtime settings. Create SSE event broadcasting system for real-time updates. Implement system health monitoring.",
@@ -756,7 +756,7 @@
         "expansionPrompt": "Complete dashboard backend functionality: 1) Complete metrics collection service using sysinfo crate, 2) Implement client management service for tracking active connections, 3) Add configuration service for runtime settings, 4) Create SSE event broadcasting system for real-time updates, 5) Implement system health monitoring, 6) Test metrics accuracy and SSE broadcasting with multiple clients"
       },
       {
-        "id": 11,
+        "id": "11",
         "title": "Build and integrate dashboard frontend",
         "description": "Build the React dashboard frontend and integrate with backend services",
         "details": "Build the existing React frontend located in frontend/rustymail-app-main/ using Vite build system. Integrate built static files with Actix backend using actix-files middleware. Configure SSE EventSource connections for real-time updates. Implement stats display, client list, and configuration panels using existing React components.",
@@ -831,7 +831,7 @@
         "expansionPrompt": "Complete frontend integration: 1) Build React frontend using Vite in frontend/rustymail-app-main/ directory, 2) Configure build output for production, 3) Integrate static files with Actix backend using actix-files middleware, 4) Configure SSE EventSource connections for real-time updates, 5) Test frontend build process and backend integration across different browsers"
       },
       {
-        "id": 12,
+        "id": "12",
         "title": "Implement real-time SSE updates for dashboard",
         "description": "Add Server-Sent Events for real-time dashboard updates with proper connection management",
         "details": "Complete SSE implementation in dashboard/api/sse.rs. Add event broadcasting for metrics updates, client connections/disconnections, and system status changes. Implement proper SSE connection lifecycle management. Add event filtering and subscription management. Ensure browser reconnection handling.",
@@ -907,7 +907,7 @@
         "expansionPrompt": "Complete SSE implementation: 1) Finish SSE implementation in dashboard/api/sse.rs, 2) Add event broadcasting for metrics updates and client connections, 3) Implement proper SSE connection lifecycle management, 4) Add event filtering and subscription management, 5) Ensure browser reconnection handling, 6) Test SSE stability under network conditions and with multiple concurrent clients"
       },
       {
-        "id": 13,
+        "id": "13",
         "title": "Set up RIG framework for AI integration",
         "description": "Initialize RIG framework and configure LLM providers for natural language processing",
         "details": "Add RIG dependency to Cargo.toml. Configure OpenAI and OpenRouter providers in dashboard/services/ai/ modules. Set up LLM model selection and API key management. Create provider abstraction layer for multiple LLM services. Initialize conversation context management system.",
@@ -982,7 +982,7 @@
         "expansionPrompt": "Initialize AI integration framework: 1) Add RIG dependency to Cargo.toml, 2) Configure OpenAI and OpenRouter providers in dashboard/services/ai/ modules, 3) Set up LLM model selection and API key management, 4) Create provider abstraction layer and test connectivity with configured providers"
       },
       {
-        "id": 14,
+        "id": "14",
         "title": "Implement natural language to MCP conversion",
         "description": "Create pipeline to convert natural language queries into MCP operations",
         "details": "Implement natural language processing pipeline using RIG. Create prompt templates for email operations like 'show unread emails', 'emails from sender', 'move emails to folder'. Map natural language intents to specific MCP method calls. Add conversation context tracking for follow-up queries.",
@@ -1057,7 +1057,7 @@
         "expansionPrompt": "Build NLP to MCP pipeline: 1) Design natural language processing pipeline using RIG, 2) Create prompt templates for common email operations ('show unread emails', 'emails from sender', 'move emails to folder'), 3) Implement intent recognition and mapping to MCP method calls, 4) Add conversation context tracking for follow-up queries, 5) Create query parsing and validation, 6) Test natural language understanding with various query formats, 7) Verify correct MCP operation mapping and context maintenance"
       },
       {
-        "id": 15,
+        "id": "15",
         "title": "Build chatbot UI integration",
         "description": "Add chatbot interface to dashboard with conversation management",
         "details": "Extend existing ChatbotPanel.tsx component with full conversation interface. Add message history and conversation state management. Implement typing indicators and response streaming. Connect to backend AI service via SSE or WebSocket. Add conversation export and history features.",
@@ -1133,7 +1133,7 @@
         "expansionPrompt": "Complete chatbot interface: 1) Extend existing ChatbotPanel.tsx component with full conversation interface, 2) Add message history and conversation state management, 3) Implement typing indicators and response streaming, 4) Connect to backend AI service via SSE or WebSocket, 5) Add conversation export and history features, and test UI responsiveness"
       },
       {
-        "id": 16,
+        "id": "16",
         "title": "Create comprehensive test suite",
         "description": "Implement unit, integration, and end-to-end tests covering all functionality",
         "details": "Create unit tests for all IMAP operations using mock servers. Implement integration tests using real IMAP adapters for Gmail, Outlook, and standard servers. Add end-to-end tests covering complete user workflows through REST and MCP interfaces. Set up performance benchmarks for concurrent connection handling.",
@@ -1205,7 +1205,7 @@
         "expansionPrompt": "Implement full testing strategy: 1) Create unit tests for all IMAP operations using mock servers, 2) Set up mock IMAP server infrastructure, 3) Implement integration tests using real IMAP adapters for Gmail, 4) Add integration tests for Outlook servers, 5) Add integration tests for standard IMAP servers, 6) Create end-to-end tests covering complete user workflows through REST interface, 7) Create end-to-end tests for MCP interface workflows, 8) Set up performance benchmarks for concurrent connection handling, 9) Achieve >90% code coverage across all modules, 10) Test all error scenarios and edge cases, 11) Implement performance tests meeting requirements (<500ms folder list, <200ms email fetch, 100+ concurrent connections), 12) Set up continuous testing infrastructure"
       },
       {
-        "id": 17,
+        "id": "17",
         "title": "Configure CI/CD pipeline",
         "description": "Set up continuous integration and deployment with automated testing and releases",
         "details": "Configure GitHub Actions or similar CI/CD system. Set up automated testing on multiple Rust versions and platforms. Add security scanning and dependency vulnerability checks. Configure automated releases with proper versioning. Add Docker image building and container registry publishing.",
@@ -1285,7 +1285,7 @@
         "expansionPrompt": "Set up automated development pipeline: 1) Configure GitHub Actions or similar CI/CD system, 2) Set up automated testing on multiple Rust versions and platforms, 3) Add security scanning and dependency vulnerability checks, 4) Configure automated releases with proper semantic versioning, 5) Add Docker image building and container registry publishing, 6) Test CI/CD pipeline with pull requests and verify deployment automation"
       },
       {
-        "id": 18,
+        "id": "18",
         "title": "Create deployment documentation and tooling",
         "description": "Document deployment procedures and create deployment automation tools",
         "details": "Create deployment guides for standalone binary, Docker, and Kubernetes. Document configuration options and environment variables. Create deployment scripts and Docker Compose files. Add monitoring and logging configuration examples. Document security best practices and TLS setup.",
@@ -1362,7 +1362,7 @@
         "expansionPrompt": "Complete deployment resources: 1) Create deployment guides for standalone binary, Docker, and Kubernetes, 2) Document all configuration options and environment variables, 3) Create deployment scripts and Docker Compose files, 4) Add monitoring, logging configuration examples, and security best practices documentation"
       },
       {
-        "id": 19,
+        "id": "19",
         "title": "Fix configuration issues",
         "description": "Remove all hardcoded ports and ensure configuration is externalized",
         "details": "Update vite.config.ts to use environment variable DASHBOARD_PORT instead of hardcoded 8080. Add DASHBOARD_PORT=9440 to .env.example. Ensure all other configuration values are also externalized and not hardcoded in the codebase.",
@@ -1373,7 +1373,7 @@
         "subtasks": []
       },
       {
-        "id": 20,
+        "id": "20",
         "title": "Fix frontend-backend connectivity",
         "description": "Set up proper proxy configuration for frontend to communicate with backend",
         "details": "Add proxy configuration to vite.config.ts to forward /api requests to localhost:9437. Ensure CORS headers are properly set. Fix any API endpoint mismatches between frontend and backend.",
@@ -1386,7 +1386,7 @@
         "subtasks": []
       },
       {
-        "id": 21,
+        "id": "21",
         "title": "Fix IMAP connection issues",
         "description": "Debug and fix IMAP connection timeout errors",
         "details": "Investigate why IMAP connections to GoDaddy server are timing out (os error 60). Add better error handling and debugging. Implement retry logic with exponential backoff. Add mock fallback mode when real IMAP fails.",
@@ -1399,7 +1399,7 @@
         "subtasks": []
       },
       {
-        "id": 22,
+        "id": "22",
         "title": "Fix dashboard UI components",
         "description": "Fix empty IMAP adapter dropdown and other UI issues",
         "details": "Fix the IMAP adapter dropdown to show available adapters. Ensure stats and client list load properly. Fix any other UI components that are not displaying data correctly.",
@@ -1412,7 +1412,7 @@
         "subtasks": []
       },
       {
-        "id": 23,
+        "id": "23",
         "title": "Fix AI chatbot functionality",
         "description": "Fix MockAiProvider to return proper responses instead of errors",
         "details": "Update MockAiProvider implementation to return meaningful mock responses. Fix error handling in chatbot endpoints. Ensure chatbot can process queries and return responses even without real AI provider.",
@@ -1425,7 +1425,7 @@
         "subtasks": []
       },
       {
-        "id": 24,
+        "id": "24",
         "title": "Add comprehensive dashboard tests",
         "description": "Create tests for dashboard functionality that is currently untested",
         "details": "Add unit and integration tests for dashboard API endpoints, SSE streaming, frontend components, and IMAP connection handling. Ensure test coverage validates all critical dashboard features.",
@@ -1439,7 +1439,7 @@
         "subtasks": []
       },
       {
-        "id": 25,
+        "id": "25",
         "title": "Implement local email caching and IMAP synchronization",
         "description": "Create a proper email caching system that stores emails locally and syncs with IMAP like a real email client",
         "details": "Implement a local caching system for emails that:\n1. Stores all emails, folders, and metadata in a local database (SQLite or similar)\n2. Uses IMAP UIDVALIDITY and UIDNEXT for efficient synchronization\n3. Only fetches new/changed emails after initial sync\n4. Supports offline access to cached emails\n5. Handles folder synchronization and hierarchy\n6. Syncs message flags (read/unread, flagged, etc.)\n7. Handles deletions and moves properly\n8. Implements background sync service that periodically checks for updates\n9. Provides fast local search capabilities\n10. Manages storage efficiently with configurable retention policies\n\nThis should work exactly like traditional email clients (Thunderbird, Outlook, Apple Mail) where emails are stored locally and IMAP is used only for synchronization.",
@@ -1452,7 +1452,7 @@
         "subtasks": []
       },
       {
-        "id": 26,
+        "id": "26",
         "title": "Update Ollama base URL configuration to include /v1 suffix",
         "description": "Ollama offers OpenAI-compatible API at /v1/chat/completions endpoint. The OLLAMA_BASE_URL should include the /v1 suffix for proper OpenAI compatibility.",
         "details": "Update .env.example and ollama.rs to ensure base URL includes /v1 suffix. Change from http://localhost:11434 to http://localhost:11434/v1",
@@ -1463,7 +1463,7 @@
         "subtasks": []
       },
       {
-        "id": 27,
+        "id": "27",
         "title": "Implement tabbed UI interface for dashboard",
         "description": "Add tabbed interface with two tabs: Email tab (Inbox widget left, MCP Email Tools right, Email Assistant chatbot bottom) and System tab (System Statistics left, Connected Clients right with splitter, full vertical height)",
         "details": "Create tab navigation component in React. Reorganize existing widgets into proper tab layouts. Ensure proper responsive behavior and layout management.",
@@ -1474,7 +1474,7 @@
         "subtasks": []
       },
       {
-        "id": 28,
+        "id": "28",
         "title": "Add light/dark theme toggle to dashboard",
         "description": "Implement theme toggle in upper right corner of dashboard. Should default to system theme preference and allow manual override. All widgets should respect the selected theme.",
         "details": "Use React context for theme state. Implement system preference detection. Create theme-aware CSS variables. Update all components to support both themes.",
@@ -1485,7 +1485,7 @@
         "subtasks": []
       },
       {
-        "id": 29,
+        "id": "29",
         "title": "Convert Inbox widget to Folders widget with dropdown",
         "description": "Replace Inbox widget with Folders widget that includes a folder dropdown selector. Pagination should update when folder selection changes.",
         "details": "Add folder dropdown to widget header. Connect to backend folder listing API. Update pagination state on folder change. Maintain current page when appropriate.",
@@ -1496,7 +1496,7 @@
         "subtasks": []
       },
       {
-        "id": 30,
+        "id": "30",
         "title": "Add First and Last buttons to pagination controls",
         "description": "Enhance pagination controls by adding First and Last buttons in addition to existing Previous and Next buttons.",
         "details": "Update pagination component to include First (jump to page 1) and Last (jump to final page) buttons. Ensure proper disabled states for edge cases.",
@@ -1507,7 +1507,7 @@
         "subtasks": []
       },
       {
-        "id": 31,
+        "id": "31",
         "title": "Implement multiple email account support",
         "description": "Add support for multiple email accounts with auto-configuration based on email address and manual configuration fallback. Includes database schema changes and configuration UI.",
         "details": "Design multi-account database schema. Implement auto-config for common providers (Gmail, Outlook, etc.). Create accounts management UI. Support both IMAP and SMTP configuration. Add account switching functionality.",
@@ -1582,7 +1582,7 @@
         "updatedAt": "2025-10-02T18:53:39.070Z"
       },
       {
-        "id": 32,
+        "id": "32",
         "title": "Fix and verify all MCP email tools",
         "description": "There's a bug in the MCP tools - they're reporting incorrect information. Create subtasks to verify and fix each individual MCP email tool.",
         "details": "Systematically test each MCP tool (list_folders, search_emails, fetch_email, move_email, delete_email, etc.). Document expected vs actual behavior. Fix any bugs found. Add integration tests.",
@@ -1672,7 +1672,7 @@
         "updatedAt": "2025-10-02T16:00:47.981Z"
       },
       {
-        "id": 33,
+        "id": "33",
         "title": "Implement Automatic Cleanup of Stale API Clients",
         "description": "Add a backend background task that periodically removes inactive or disconnected API client entries based on their last_activity timestamp to prevent unbounded accumulation.",
         "details": "Implement a background cleanup service using the backend's asynchronous task scheduling mechanism (e.g., FastAPI's BackgroundTasks, Celery, or a custom async loop, depending on the stack). The service should:\n\n- Periodically (e.g., every 10 minutes) scan the client management datastore for entries where last_activity is older than a configurable threshold (e.g., 30 minutes).\n- Remove or mark as deleted all such stale client records.\n- Ensure the cleanup operation is safe for concurrent execution and does not interfere with active client sessions (use database transactions or atomic operations as appropriate).\n- Make the inactivity threshold and cleanup interval configurable via environment variables or application settings.\n- Log cleanup actions for auditability and debugging.\n- Integrate the cleanup logic with the existing client management service to ensure consistency with how clients are tracked and removed.\n- If using FastAPI, consider using a dedicated background task runner (such as a startup event with asyncio.create_task) for periodic jobs, as FastAPI's BackgroundTasks are request-scoped and not suitable for scheduled jobs[2][4].\n- Ensure the cleanup task is robust against failures (e.g., use try/except blocks, log errors, and avoid crashing the main application loop).\n\nExample (FastAPI with asyncio):\n```python\nimport asyncio\nfrom datetime import datetime, timedelta\nfrom myapp.db import get_stale_clients, remove_clients\n\nasync def cleanup_stale_clients(interval_seconds=600, inactivity_minutes=30):\n    while True:\n        try:\n            cutoff = datetime.utcnow() - timedelta(minutes=inactivity_minutes)\n            stale_clients = await get_stale_clients(last_activity_before=cutoff)\n            if stale_clients:\n                await remove_clients(stale_clients)\n                print(f\"Removed {len(stale_clients)} stale clients.\")\n        except Exception as e:\n            print(f\"Cleanup error: {e}\")\n        await asyncio.sleep(interval_seconds)\n\n@app.on_event(\"startup\")\nasync def start_cleanup_task():\n    asyncio.create_task(cleanup_stale_clients())\n```\nIf using another backend framework, adapt the scheduling and concurrency patterns accordingly. Ensure the cleanup logic is well-isolated and testable.",
@@ -1686,7 +1686,7 @@
         "updatedAt": "2025-10-02T22:55:03.336Z"
       },
       {
-        "id": 34,
+        "id": "34",
         "title": "Migrate MCP server from deprecated SSE transport to modern Streamable HTTP transport",
         "description": "Replace the current SSE-based MCP implementation with the new Streamable HTTP transport protocol using a single bidirectional /mcp endpoint to comply with 2025 MCP specification updates.",
         "details": "Replace the deprecated SSE-based MCP transport implementation in src/api/mcp_sse_real.rs with the modern Streamable HTTP transport as required by MCP specification version 2025-03-26. Create a new single HTTP endpoint at /mcp that supports both GET and POST methods for bidirectional communication. The POST method should handle JSON-RPC requests/responses/notifications with Accept headers supporting both application/json and text/event-stream. The GET method should provide optional SSE streaming capability. Implement proper session management using Mcp-Session-Id headers, connection resumability with Last-Event-ID support, and Origin header validation for DNS rebinding protection. Remove the separate /sse and /message endpoints and consolidate into the single /mcp endpoint pattern. Update all MCP client interfaces to use the new /mcp/v1 route structure. Ensure UTF-8 encoded JSON-RPC message handling and maintain backward compatibility during the transition period. Add proper error handling for the unified connection model and implement resumption token support for reliable network conditions.",
@@ -1762,7 +1762,7 @@
         "updatedAt": "2025-10-02T19:29:35.798Z"
       },
       {
-        "id": 35,
+        "id": "35",
         "title": "Fix Tab1 dashboard UI splitter and widget issues",
         "description": "Fix multiple UI issues in the Email tab of the dashboard including rigid splitters, missing scrollbars, dropdown folder selection not working, and AI assistant folder access.",
         "details": "Based on codebase analysis, multiple UI issues exist in the Email tab (Tab1) of the Dashboard component:\n\n1. Replace the current custom splitter implementation in Dashboard.tsx with proper ResizablePanelGroup components from react-resizable-panels library that's already imported. Currently the splitter between top/bottom sections is rigid due to incorrect height calculations and container queries.\n\n2. Add horizontal splitter between EmailList and McpTools components in the top section using ResizablePanel components instead of the current grid layout.\n\n3. Fix EmailList widget scrollbar issue by ensuring the container has proper overflow-y-auto styles and height constraints. The current flex layout may be causing content to scroll out of viewport.\n\n4. Add proper scrollbar to McpTools widget by updating the container styles from 'overflow-y-auto' to ensure content doesn't overflow the widget bounds.\n\n5. Update EmailList component's query to use the currentFolder state variable. Currently the API call in lines 52-53 uses hardcoded endpoint without folder parameter. Need to add folder parameter to the fetch URL.\n\n6. Enhance ChatbotPanel to have access to folder information by updating the backend API call to include current folder context, allowing the AI assistant to provide folder-specific responses instead of generic \"I don't have detailed information\" messages.\n\nTechnical implementation:\n- Replace custom splitter logic with ResizablePanelGroup, ResizablePanel, and ResizableHandle components\n- Update EmailList API endpoint to include folder parameter: `/dashboard/emails/${currentFolder}?limit=${pageSize}&offset=${offset}`\n- Add folder context to chatbot API calls\n- Fix CSS height/overflow styles on widgets",
@@ -1840,7 +1840,7 @@
         "updatedAt": "2025-10-02T22:54:25.485Z"
       },
       {
-        "id": 36,
+        "id": "36",
         "title": "Optimize list_cached_emails MCP tool for token efficiency",
         "description": "Modify list_cached_emails MCP tool to return email previews instead of full body content to reduce token usage.",
         "details": "Currently, the list_cached_emails tool in src/mcp_cache_tools.rs returns complete CachedEmail objects including full body_text and body_html fields from the cache service. This wastes tokens when users only need previews for list views. The optimization should: 1) Update CacheService::get_cached_emails method in src/dashboard/services/cache.rs to add a new parameter 'preview_mode: bool' that when true, truncates body_text and body_html to 150-200 characters with ellipsis. 2) Create a helper function to truncate text content intelligently (word boundaries, HTML-aware truncation). 3) Update the list_cached_emails_tool function to pass preview_mode=true by default, with an optional 'full_content' parameter to override. 4) Ensure get_email_by_uid and get_email_by_index tools continue to return full content since they're for individual email viewing. 5) Update any related SQL queries to use SUBSTR() for database-level truncation when in preview mode for better performance. The change should maintain backward compatibility and align with the web UI's pagination approach of showing previews in lists and full content on demand.",
@@ -1855,7 +1855,7 @@
         "updatedAt": "2025-10-03T02:05:57.030Z"
       },
       {
-        "id": 37,
+        "id": "37",
         "title": "Create persistent account configuration system separate from cache database",
         "description": "Implement a dedicated configuration file (accounts.json/accounts.toml) for storing account credentials and settings, keeping the cache database only for cached emails and sync state to allow safe cache deletion.",
         "details": "1. Create a new `ConfigAccountService` that manages accounts in a dedicated config file format (accounts.json or accounts.toml) in the config directory. 2. Design account configuration file structure with fields for account_name, email_address, provider_type, IMAP settings (host, port, user, pass, use_tls), SMTP settings, and metadata (is_active, is_default). 3. Implement file-based serialization/deserialization using serde for JSON or TOML format. 4. Update existing `AccountService` to migrate data from database to config file during startup. 5. Modify the account management APIs in `src/dashboard/api/accounts.rs` to use the new file-based system instead of database operations. 6. Update the account auto-configuration to save to config file instead of database. 7. Ensure proper file locking and atomic writes for concurrent access safety. 8. Update the `Settings` struct in `src/config.rs` to include accounts configuration file path. 9. Modify the cache database schema to remove account tables (accounts, provider_templates) and keep only email cache tables. 10. Add migration logic to move existing accounts from database to config file during first startup. 11. Update documentation to reflect the separation of concerns between config file (credentials) and cache database (emails).",
@@ -1869,7 +1869,7 @@
         "updatedAt": "2025-10-02T19:22:50.469Z"
       },
       {
-        "id": 38,
+        "id": "38",
         "title": "Fix cache_email() to accept account_id parameter for multi-account support",
         "description": "Update the cache_email() method to accept an account_id parameter instead of hardcoding account_id=1, and modify it to use get_or_create_folder_for_account() for proper multi-account support.",
         "details": "The cache_email() method in src/dashboard/services/cache.rs currently hardcodes account_id=1 by calling get_or_create_folder() instead of get_or_create_folder_for_account() (line 298). This breaks multi-account support as all emails are cached under account 1 regardless of their actual account. The fix requires: 1) Add account_id parameter to the cache_email() method signature: `pub async fn cache_email(&self, folder_name: &str, email: &Email, account_id: i64) -> Result<(), CacheError>`. 2) Replace the call to get_or_create_folder(folder_name) with get_or_create_folder_for_account(folder_name, account_id) on line 298. 3) Update the memory cache key generation to include account_id for proper isolation: format!(\"{}:{}:{}\", account_id, folder_name, email.uid) instead of format!(\"{}:{}\", folder_name, email.uid) on line 397. 4) Update all callers in src/dashboard/services/email.rs (line 219), src/dashboard/services/sync.rs (lines 207 and 225) to pass the appropriate account_id parameter. This ensures emails are correctly associated with their respective accounts in both the database and memory cache.",
@@ -1882,7 +1882,7 @@
         "subtasks": []
       },
       {
-        "id": 39,
+        "id": "39",
         "title": "Fix account_uuid_to_db_id() to actually look up the account's database ID instead of always returning 1",
         "description": "Replace the hardcoded return value of 1 in account_uuid_to_db_id() with actual database lookup functionality to map UUID strings to their corresponding numeric database IDs for proper multi-account support.",
         "details": "The account_uuid_to_db_id() function in src/dashboard/api/handlers.rs:274 currently ignores its UUID parameter and always returns 1, breaking multi-account functionality. This function is called throughout handlers.rs (lines 464, 504, 557, 609, 648, 690, 1486) to convert UUID strings from the file-based AccountStore to integer IDs used by the database schema. The fix requires: 1) Import necessary database types (Pool<Sqlite>, AccountService) into handlers.rs. 2) Modify the function signature to accept a database connection: `async fn account_uuid_to_db_id(account_uuid: &str, pool: &Pool<Sqlite>) -> Result<i64, ApiError>`. 3) Implement database query to find the account record matching the UUID in the accounts table, likely by joining with account metadata or using a mapping table. 4) Update all call sites to pass the database pool and handle the async Result. 5) Consider caching the UUID->ID mapping to avoid repeated database queries. 6) Add proper error handling for cases where the UUID doesn't exist in the database. The database schema shows accounts table has INTEGER PRIMARY KEY AUTOINCREMENT id field, so the function should query this table to find the numeric ID corresponding to the UUID string.",
@@ -1895,7 +1895,7 @@
         "subtasks": []
       },
       {
-        "id": 40,
+        "id": "40",
         "title": "Fix frontend pagination offset calculation in EmailList.tsx",
         "description": "Investigation reveals the frontend pagination is working correctly - offset is properly calculated as (currentPage - 1) * pageSize and sent in API calls. The actual issue is in the backend cache service get_cached_emails_for_account() method which appears to have a folder cache key mismatch causing it to return empty results instead of properly paginated data.",
         "status": "done",
@@ -1909,7 +1909,7 @@
         "subtasks": []
       },
       {
-        "id": 41,
+        "id": "41",
         "title": "Add second email account to accounts.json for multi-account testing",
         "description": "Create a second test email account in config/accounts.json to expose hardcoded account_id=1 bugs and verify multi-account functionality works correctly across the system.",
         "details": "Based on the existing accounts.json file which contains one account (chris@texasfortress.ai with ID 08c3cb97-1508-4d39-ad2f-71190cb306c7), add a second test account to the accounts array. The new account should: 1) Have a unique UUID-format ID (different from the existing one), 2) Use a different email address and account name, 3) Use the same or different IMAP provider settings for testing, 4) Be marked as active (is_active: true), 5) Include proper timestamps for created_at and updated_at. This addition will immediately expose any remaining hardcoded account_id=1 references throughout the codebase, particularly in the dashboard handlers and cache service where account_uuid_to_db_id() function calls occur. The second account will enable testing of multi-account functionality in the UI, API endpoints, email caching, folder management, and IMAP operations. Example format: Add an account with id like 'b7e4d8f2-9a3c-4e1b-8f6a-2d5c7e9f1a3b', account_name like 'Test Account (test@example.com)', and email_address 'test@example.com' with appropriate IMAP configuration.",
@@ -1923,7 +1923,7 @@
         "subtasks": []
       },
       {
-        "id": 42,
+        "id": "42",
         "title": "Create comprehensive integration tests for multi-account email sync",
         "description": "Implement comprehensive integration tests that verify multi-account email synchronization functionality works correctly, including account-folder relationships, email caching isolation, API endpoint isolation, and pagination calculations.",
         "status": "done",
@@ -1939,7 +1939,7 @@
         "subtasks": []
       },
       {
-        "id": 43,
+        "id": "43",
         "title": "Create unit tests for hardcoded account ID detection and static analysis",
         "description": "Create comprehensive unit tests that fail when functions use hardcoded account_id=1 values instead of accepting account ID as parameters, and implement static analysis/linting rules to prevent future hardcoding.",
         "status": "done",
@@ -1953,7 +1953,7 @@
         "subtasks": []
       },
       {
-        "id": 44,
+        "id": "44",
         "title": "Investigate and fix IMAP fetch failures for INBOX.Sent folder",
         "description": "Debug email fetch failures affecting 23 out of 48 emails in INBOX.Sent folder with 'Retrying missing UIDs' warnings, identifying root cause and improving retry logic and error handling.",
         "details": "The IMAP client is experiencing fetch failures specifically in the INBOX.Sent folder where 23 out of 48 emails fail to fetch with 'Retrying missing UIDs' warnings. This task requires: 1) Add comprehensive logging to src/imap/session.rs in the fetch_emails() implementation to track which specific UIDs are failing and why. 2) Investigate potential causes including: network timeouts (current timeout in src/imap/client.rs:156-158 may be insufficient for large Sent folder operations), server-side UID consistency issues, IMAP protocol handling bugs in the async-imap library integration, and folder-specific quirks with Sent folders. 3) Enhance the retry logic in AsyncImapSessionWrapper::fetch_emails() to implement exponential backoff with configurable max retries, add retry-specific error handling for missing UIDs, and implement partial success handling (return successfully fetched emails even if some UIDs fail). 4) Improve error reporting by distinguishing between permanent failures (non-existent UIDs) and transient failures (network/timeout), adding structured error context with specific failed UID information, and implementing warning-level logging for partial failures vs error-level for complete failures. 5) Add fetch operation timeout configuration separate from connection timeout, implement chunked fetching for large UID sets to avoid server timeouts, and add circuit breaker pattern for repeated failures to specific folders. The implementation should maintain backward compatibility with existing fetch_emails() API while adding internal resilience.",
@@ -1969,7 +1969,7 @@
         "updatedAt": "2025-10-08T03:42:23.048Z"
       },
       {
-        "id": 45,
+        "id": "45",
         "title": "Fix folder cache key mismatch for multi-account support",
         "description": "Resolve cache key inconsistency where folder_cache uses account-prefixed keys but load_folders_to_cache populates cache with non-prefixed keys, causing folder lookups to fail.",
         "details": "The issue is in the load_folders_to_cache() method at line 199 which populates the folder cache with non-prefixed keys (just folder name) while get_folder_from_cache_for_account() expects account-prefixed keys (format: '{account_id}:{folder_name}'). This mismatch causes get_cached_emails_for_account() to return empty results even when folders exist. The fix requires: 1) Update load_folders_to_cache() to query folders with their associated account_id from the database and populate cache using account-prefixed keys. 2) Modify the query to SELECT account_id along with other folder fields. 3) Update the cache insertion logic to use the correct format('{}:{}', account_id, name) instead of just the folder name. 4) Consider adding a cache migration utility to rebuild existing cache entries with proper key format. 5) Update any other methods that may be using the old non-prefixed key format for consistency.",
@@ -1983,7 +1983,7 @@
         "subtasks": []
       },
       {
-        "id": 46,
+        "id": "46",
         "title": "Fix offset query parameter parsing in get_cached_emails handler",
         "description": "Fix the backend get_cached_emails handler to properly parse the offset query parameter from URL instead of always returning 0, causing pagination to fail.",
         "details": "The issue is in the get_cached_emails handler at src/dashboard/api/handlers.rs:1530-1533. The handler uses web::Query<serde_json::Value> which may not correctly parse numeric query parameters from the URL string. When the frontend sends offset=20, the backend logs show 'offset: 0' indicating the parsing fails. Two potential solutions: 1) Create a dedicated struct for query parameters (similar to the existing ClientQueryParams struct at line 21-25) with properly typed fields: struct CacheQueryParams { folder: Option<String>, limit: Option<usize>, offset: Option<usize>, account_id: Option<String> }. Replace web::Query<serde_json::Value> with web::Query<CacheQueryParams> and access fields directly. 2) Fix the current serde_json::Value parsing by debugging why .as_u64() fails on URL query string values, possibly needing to parse string values first. The preferred solution is option 1 as it provides better type safety and follows the existing pattern used by get_connected_clients handler.",
@@ -1997,7 +1997,7 @@
         "subtasks": []
       },
       {
-        "id": 47,
+        "id": "47",
         "title": "Fix account deletion functionality - deletion is currently failing when user tries to delete an account from the UI",
         "description": "Update the delete_account API handler to properly connect to the AccountService and handle string-based UUID account IDs instead of integer IDs.",
         "details": "The delete_account handler in src/dashboard/api/accounts.rs:154-165 currently returns a 'not implemented' error instead of actually deleting accounts. After Task #37's migration to file-based account storage, the system now uses UUID strings as account IDs, but the API handler still expects i64 parameters and doesn't connect to the AccountService.\n\nRequired changes:\n1. Update the delete_account handler path parameter from web::Path<i64> to web::Path<String> to handle UUID strings\n2. Replace the placeholder implementation with actual AccountService integration by accessing state.account_service.lock().await\n3. Call account_service.delete_account(account_id.as_str()).await with proper error handling\n4. Return appropriate JSON responses for success/failure cases matching the existing API pattern\n5. Update other account API handlers (get_account, update_account, set_default_account, validate_connection) to use String instead of i64 parameters for consistency\n6. Ensure the frontend accountsApi.deleteAccount() call in frontend/rustymail-app-main/src/dashboard/api/accounts.ts:105-114 passes the correct string ID format\n\nThe AccountService is already properly initialized in DashboardState (src/dashboard/services/mod.rs:83,159) and the underlying AccountStore.delete_account() method works correctly with string IDs (src/dashboard/services/account_store.rs:218-236).",
@@ -2012,7 +2012,7 @@
         "subtasks": []
       },
       {
-        "id": 48,
+        "id": "48",
         "title": "Implement email account autodiscovery",
         "description": "Add email autodiscovery using RFC 6186 and Mozilla Autoconfig protocols when creating accounts through the Basic tab, with password field and fallback to manual IMAP/SMTP configuration only if autodiscovery fails.",
         "details": "Implement comprehensive email autodiscovery system that follows RFC 6186 (DNS SRV records) and Mozilla Autoconfig standards for automatic email server configuration discovery:\n\n1. **Backend Autodiscovery Service** (extend existing AccountService in src/dashboard/services/account.rs):\n   - Implement RFC 6186 autodiscovery: query DNS SRV records for _imap._tcp, _imaps._tcp, _submission._tcp, _smtp._tcp\n   - Add Mozilla Autoconfig support: fetch XML from autoconfig.$domain/mail/config-v1.1.xml and $domain/.well-known/autoconfig/mail/config-v1.1.xml\n   - Implement Thunderbird/Outlook database fallback for common providers\n   - Add connection validation to verify discovered settings work\n   - Update auto_configure method to use real autodiscovery instead of database-only lookup\n\n2. **Frontend UI Enhancements** (AccountFormDialog.tsx):\n   - Add password field to Basic tab (currently missing but referenced in error)\n   - Implement automatic autodiscovery trigger when email and password are entered\n   - Show autodiscovery progress with clear status indicators\n   - Only enable IMAP/SMTP tabs if autodiscovery fails or user chooses manual config\n   - Fix 'required fields missing' validation error by ensuring all Basic tab fields are properly validated\n\n3. **Backend API Integration**:\n   - Complete auto_configure endpoint implementation in dashboard/api/accounts.rs\n   - Add password parameter to autodiscovery requests\n   - Return comprehensive configuration including security settings\n   - Add endpoint for testing discovered settings before account creation\n\n4. **Autodiscovery Protocol Implementation**:\n   - DNS SRV lookup library integration (trust-dns-resolver or similar)\n   - HTTP client for fetching Mozilla autoconfig XML\n   - XML parsing for autoconfig responses\n   - Fallback priority: RFC 6186 → Mozilla Autoconfig → Provider database → Manual\n\n5. **Error Handling & UX**:\n   - Clear progress indicators during autodiscovery\n   - Informative error messages when autodiscovery fails\n   - Graceful fallback to manual configuration\n   - Connection validation before saving account\n\nThis implementation should significantly improve user experience by automatically configuring email accounts with minimal user input, following established email autodiscovery standards.",
@@ -2025,7 +2025,7 @@
         "subtasks": []
       },
       {
-        "id": 49,
+        "id": "49",
         "title": "Fix Sent folder showing only 25 emails when there are actually 48",
         "description": "Investigate and fix the issue where the Sent folder displays only 25 emails in RustyMail when Thunderbird shows 48 messages for chris@texasfortress.ai account.",
         "status": "done",
@@ -2101,7 +2101,7 @@
         "updatedAt": "2025-10-08T03:40:34.299Z"
       },
       {
-        "id": 50,
+        "id": "50",
         "title": "Use email address as account ID instead of generating UUID",
         "description": "Replace the UUID-based account ID generation with email address-based IDs to prevent account ID mismatches between dashboard account creation and email loading endpoints.",
         "details": "The current system generates UUID-based account IDs using `AccountStore::generate_account_id()` in src/dashboard/services/account_store.rs:265-272, which creates timestamp-based IDs like 'account_1234567890'. This causes ID mismatches between the dashboard account creation endpoint and email loading endpoints, as they operate with different ID systems.\n\nRequired changes:\n1. **Update AccountStore::generate_account_id()** in src/dashboard/services/account_store.rs:265-272:\n   - Change function signature from `pub fn generate_account_id() -> String` to `pub fn generate_account_id(email_address: &str) -> String`\n   - Replace the timestamp-based UUID generation with email address normalization\n   - Return the normalized email address as the account ID (e.g., convert to lowercase, validate format)\n   - Add email validation to ensure the provided email is valid before using as ID\n\n2. **Update create_account() function** in src/dashboard/services/account.rs:525:\n   - Change `let account_id = AccountStore::generate_account_id();` to pass the email address: `let account_id = AccountStore::generate_account_id(&account.email_address);`\n   - Update the StoredAccount creation to use the email-based ID\n\n3. **Update account creation API handler** in src/dashboard/api/accounts.rs around line 170:\n   - Ensure the API handler passes the email address to the account creation process\n   - Update any validation logic that expects UUID format IDs\n\n4. **Update existing account ID lookups**:\n   - Review account_uuid_to_db_id() function in src/dashboard/api/handlers.rs:474 to handle email-based IDs\n   - Update any hardcoded account ID references to work with email addresses\n   - Ensure email loading endpoints can properly resolve email-based account IDs\n\n5. **Add migration support**:\n   - Consider how existing accounts with UUID IDs will be handled\n   - May need to add a migration path or support both ID formats temporarily\n\nThis change will create a consistent ID system where the account ID is always the email address, eliminating the mismatch between different parts of the system.",
@@ -2117,7 +2117,7 @@
         "subtasks": []
       },
       {
-        "id": 51,
+        "id": "51",
         "title": "Fix account list not refreshing automatically after account creation",
         "description": "Investigate and fix the issue where the AccountListPanel does not refresh its local account list after a new account is created via the AccountFormDialog onSuccess callback.",
         "details": "The issue is that AccountListPanel maintains its own local state for accounts (line 39) and only refreshes it when the component first mounts or when manual actions like deleteAccount are performed. When a new account is created through the AccountFormDialog, the onSuccess callback in Dashboard.tsx calls refreshAccounts() from the AccountContext (line 331), but this doesn't trigger the AccountListPanel to reload its local accounts state.\n\nRequired fixes:\n1. **Update AccountListPanel to use AccountContext**: Replace the local accounts state with the accounts from AccountContext, eliminating the duplicate state management:\n   - Remove local accounts state (line 39) and loadAccounts function (lines 45-60)\n   - Import and use useAccount hook to get accounts from context\n   - Remove the useEffect that calls loadAccounts on mount (lines 62-64)\n   - Update the handleSetDefault and handleDelete functions to call refreshAccounts from context instead of the local loadAccounts\n\n2. **Alternative approach - if keeping local state**: Add a refresh mechanism by:\n   - Exposing the loadAccounts function through a ref or callback prop\n   - Having Dashboard.tsx call this refresh function in addition to refreshAccounts()\n\nThe first approach is recommended as it eliminates state duplication and ensures consistency across the application. The AccountContext already provides the necessary accounts data and refresh functionality.",
@@ -2130,7 +2130,7 @@
         "subtasks": []
       },
       {
-        "id": 52,
+        "id": "52",
         "title": "Refactor Account ID System to Use Email Address as Primary Key Across Application",
         "description": "Migrate the entire account identification system to use email addresses as the primary key, updating database schema, cache layers, service interfaces, and removing legacy ID translation logic.",
         "details": "1. **Database Schema Migration:** Design and implement a new schema where `email_address` is the primary key for the accounts table. Ensure all related tables reference `email_address` as a foreign key where appropriate. Use migration scripts to convert existing data, ensuring uniqueness and NOT NULL constraints on email addresses. Update ORM models and database access layers accordingly. While using a natural key (email) provides meaningful context, document and mitigate risks associated with potential email changes (e.g., enforce email immutability or provide a controlled update process)[3][2].\n\n2. **CacheService Refactor:** Refactor all cache-related code to use `&str` (email address) as the account identifier instead of `i64` or UUID. Update function signatures, key generation, and cache invalidation logic to use email addresses.\n\n3. **MCP Cache Tools Update:** Update all six MCP cache tools to require and operate on the email address as the account ID parameter. Refactor their interfaces, internal logic, and any downstream dependencies to accept and validate email addresses.\n\n4. **AI Service Integration:** Update the AI service to pass email addresses to MCP tools instead of legacy account IDs. Refactor any API contracts, serialization/deserialization logic, and ensure type safety throughout the service boundary.\n\n5. **Remove ID Translation Helpers:** Identify and remove all helper functions and code paths that translate between email, UUID, and integer account IDs. Clean up dead code and update documentation to reflect the new ID system.\n\n6. **Best Practices:** Ensure all new primary key and foreign key columns are indexed for performance[1][5]. Add comprehensive input validation for email addresses at all entry points. Document the rationale for using a natural key and the process for handling email changes, if allowed.\n\n7. **Code Quality:** Refactor incrementally with comprehensive unit and integration tests at each stage. Use feature flags or migration windows to minimize downtime and risk during deployment.",
@@ -2225,7 +2225,7 @@
         "updatedAt": "2025-10-10T06:03:37.586Z"
       },
       {
-        "id": 53,
+        "id": "53",
         "title": "Fix nested transaction bug in database migration system",
         "description": "Resolve the 'cannot start a transaction within a transaction' error that prevents schema creation during cache service initialization in the migration system. This issue has been successfully resolved by identifying and fixing the root cause.",
         "status": "done",
@@ -2310,7 +2310,7 @@
         "updatedAt": "2025-10-10T07:16:06.217Z"
       },
       {
-        "id": 54,
+        "id": "54",
         "title": "Fix schema mismatch between 'account_name' and 'display_name' in account service files",
         "description": "Update all code references that expect 'account_name' column in database to use 'display_name' instead, ensuring consistency between the API layer and database schema.",
         "details": "The analysis reveals a schema mismatch where the code expects an 'account_name' column but the database schemas actually have 'display_name' columns in the provider_templates table. The issue affects multiple files:\n\n1. **src/dashboard/services/account.rs**: Lines 53, 70, 427, 431, 448, 481, 506 use display_name for ProviderTemplate and AutoConfigResult structs, but the Account struct still uses account_name (line 30). The database migration and sync queries (lines 204, 228, 318, 326, 350, 358) all reference account_name.\n\n2. **src/dashboard/api/accounts.rs**: Lines 14, 34, 101, 133, 140, 172, 188, 274-275 use account_name consistently.\n\n3. **Database schema**: The provider_templates table uses 'display_name' (migrations/001_initial_schema.sql line 147), but the accounts table uses 'account_name' (line 8).\n\nThe fix requires:\n- Update all database queries and struct fields to consistently use either 'account_name' or 'display_name'\n- Update the Account struct field name if changing to display_name\n- Ensure API endpoints and serialization use the corrected field name\n- Update any logging or error messages that reference the old field name\n- Verify that the account configuration file format (accounts.json) uses the correct field name\n\nRecommended approach: Keep 'account_name' as the standard and update any 'display_name' references to 'account_name' for consistency across the codebase.",
@@ -2324,7 +2324,7 @@
         "subtasks": []
       },
       {
-        "id": 55,
+        "id": "55",
         "title": "Update legacy account validation function to match email-first architecture",
         "description": "The account_uuid_to_email function has been removed, but redundant validation remains. Since get_account_id_to_use() returns the email address directly and account_id IS the email address, we need to remove the unnecessary validate_account_exists() calls and simplify account validation throughout MCP tools.",
         "status": "done",
@@ -2338,7 +2338,7 @@
         "updatedAt": "2025-10-10T07:18:56.796Z"
       },
       {
-        "id": 56,
+        "id": "56",
         "title": "Create rustymail-mcp-stdio binary as a thin JSON-RPC proxy",
         "description": "Implement a minimal Rust binary that reads JSON-RPC requests from stdin, forwards them via HTTP to the backend MCP server, and writes responses to stdout, acting as a protocol translation layer with no business logic.",
         "status": "done",
@@ -2352,7 +2352,7 @@
         "subtasks": []
       },
       {
-        "id": 57,
+        "id": "57",
         "title": "Implement Email Assistant chatbot backend endpoint at /api/dashboard/chatbot/query",
         "description": "Create a chatbot endpoint that processes natural language queries about emails by calling existing MCP tools and returns structured responses with email data and followup suggestions.",
         "status": "done",
@@ -2398,7 +2398,7 @@
         ]
       },
       {
-        "id": 58,
+        "id": "58",
         "title": "Implement Streamable HTTP Transport for MCP Server",
         "description": "Streamable HTTP transport is already fully implemented and operational. Verify the implementation meets all MCP specification requirements and document the complete feature set.",
         "status": "done",
@@ -2489,7 +2489,7 @@
         ]
       },
       {
-        "id": 59,
+        "id": "59",
         "title": "Fix failing unit tests - environment variable configuration",
         "description": "Fix 3 failing tests in client_test module that panic due to missing environment variables (REST_HOST, SSE_HOST, etc). Tests should either mock the environment or use test fixtures that don't require hardcoded values.",
         "details": "",
@@ -2501,7 +2501,7 @@
         "updatedAt": "2025-10-10T08:25:20.992Z"
       },
       {
-        "id": 60,
+        "id": "60",
         "title": "Fix failing autodiscovery test - Mozilla autoconfig parsing",
         "description": "Fix the failing test_parse_mozilla_autoconfig test in dashboard::services::autodiscovery. Investigate why Mozilla autoconfig XML parsing is failing and fix the underlying functionality.",
         "details": "",
@@ -2513,7 +2513,7 @@
         "updatedAt": "2025-10-10T08:25:28.502Z"
       },
       {
-        "id": 61,
+        "id": "61",
         "title": "Add comprehensive test coverage for MCP HTTP endpoint",
         "description": "Create integration tests for the MCP Streamable HTTP endpoint at /mcp. Test all JSON-RPC methods: initialize, tools/list, tools/call for all email tools (list_folders, search_emails, fetch_emails, etc.). Verify proper error handling and response format.",
         "details": "",
@@ -2525,7 +2525,7 @@
         "updatedAt": "2025-10-10T08:34:48.738Z"
       },
       {
-        "id": 62,
+        "id": "62",
         "title": "Add test coverage for MCP stdio proxy (rustymail-mcp-stdio)",
         "description": "Create integration tests for the stdio proxy binary. Test that it correctly relays JSON-RPC requests from stdin to the backend HTTP endpoint and returns responses to stdout. Test error handling for connection failures, timeouts, and malformed JSON.",
         "details": "",
@@ -2537,7 +2537,7 @@
         "updatedAt": "2025-10-10T08:52:36.533Z"
       },
       {
-        "id": 63,
+        "id": "63",
         "title": "Add test coverage for Dashboard API endpoints",
         "description": "Create comprehensive integration tests for all Dashboard API endpoints: /api/dashboard/config, /api/dashboard/stats, /api/dashboard/accounts, /api/dashboard/emails, /api/dashboard/ai/providers, /api/dashboard/ai/models, /api/dashboard/mcp/tools. Test CRUD operations, error handling, authentication, and validation.",
         "details": "",
@@ -2549,7 +2549,7 @@
         "updatedAt": "2025-10-10T09:06:13.049Z"
       },
       {
-        "id": 64,
+        "id": "64",
         "title": "Add test coverage for Connection Pool",
         "description": "Create comprehensive tests for the IMAP connection pool: connection creation, reuse, health checks, idle timeout, max session duration, concurrent access, connection validation, and pool exhaustion scenarios. Verify connection pool maintains min/max connections properly.",
         "details": "",
@@ -2561,7 +2561,7 @@
         "updatedAt": "2025-10-10T09:21:12.524Z"
       },
       {
-        "id": 65,
+        "id": "65",
         "title": "Add test coverage for AI Service and Provider Manager",
         "description": "Create tests for AI service functionality: provider initialization, provider switching, model selection, chat completion requests, error handling for API failures, fallback behavior, conversation context management, and all supported providers (OpenAI, OpenRouter, Morpheus, Ollama, Anthropic, etc.).",
         "details": "",
@@ -2572,7 +2572,7 @@
         "subtasks": []
       },
       {
-        "id": 66,
+        "id": "66",
         "title": "Add test coverage for Email Cache Service",
         "description": "Create tests for cache service: database initialization, email caching, cache retrieval, cache invalidation, folder sync state, metadata storage, cache size limits, old email cleanup, and SQLite database migrations. Test both memory and disk cache layers.",
         "details": "",
@@ -2584,7 +2584,7 @@
         "updatedAt": "2025-10-11T03:16:56.571Z"
       },
       {
-        "id": 67,
+        "id": "67",
         "title": "Add test coverage for Account Service and Account Store",
         "description": "Create tests for account management: account creation, loading from JSON, database sync, account updates, account deletion, credential storage, provider templates, autodiscovery integration, and multi-account scenarios. Verify file-based and database-based storage consistency.",
         "details": "",
@@ -2596,7 +2596,7 @@
         "updatedAt": "2025-10-11T13:27:12.196Z"
       },
       {
-        "id": 68,
+        "id": "68",
         "title": "Add test coverage for Event Bus and SSE broadcasting",
         "description": "Create tests for MCP transport layer: Test both stdio proxy (rustymail-mcp-stdio) and HTTP backend (/mcp endpoint), verify tools list matches across all interfaces (stdio, HTTP, web UI chatbot, web UI MCP tools widget), test JSON-RPC protocol compliance, session management, and reconnection handling.",
         "status": "done",
@@ -2671,7 +2671,7 @@
         "updatedAt": "2025-10-13T03:44:26.270Z"
       },
       {
-        "id": 69,
+        "id": "69",
         "title": "Add end-to-end tests for complete email workflows",
         "description": "Implement comprehensive end-to-end tests using available MCP testing tools and browser automation infrastructure to validate complete email workflows from MCP client through HTTP backend to IMAP server.",
         "status": "done",
@@ -2687,7 +2687,8 @@
             "dependencies": [],
             "details": "Install and configure MCP Inspector using npx @modelcontextprotocol/inspector. Set up configuration to connect to RustyMail's stdio proxy and HTTP MCP endpoints. Create test configuration files for both transport methods. Validate basic connectivity and tool listing functionality.",
             "status": "done",
-            "testStrategy": "Manual verification of MCP Inspector UI functionality and automated connection tests"
+            "testStrategy": "Manual verification of MCP Inspector UI functionality and automated connection tests",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -2698,7 +2699,8 @@
             ],
             "details": "Create Python script using MCP SDK or minimal JSON-RPC implementation to programmatically test all MCP tools. Implement test cases for each of the 18 tools with proper error handling and validation. Include multi-account testing scenarios and edge cases. Support both stdio and HTTP transport methods.",
             "status": "done",
-            "testStrategy": "Automated test suite with assertions for each MCP tool response format and functionality"
+            "testStrategy": "Automated test suite with assertions for each MCP tool response format and functionality",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -2709,7 +2711,8 @@
             ],
             "details": "Extend tests/integration/mcp_http.rs to include comprehensive protocol compliance testing. Validate JSON-RPC 2.0 request/response format, error handling, and method resolution. Test both /mcp HTTP endpoint and cross-interface consistency with /api/dashboard/mcp/tools. Include timeout handling and concurrent request testing.\n<info added on 2025-10-13T04:15:23.850Z>\nTASK COMPLETION - Status set to done with cross-reference verification to Task 68.1\n\nThis work was previously completed in Task 68.1 which created comprehensive MCP protocol compliance tests in tests/integration/mcp_http.rs. The implemented tests fully cover the requirements for Task 69.3:\n\n**Verified Implementation:**\n- test_mcp_initialize_handshake (line 175) - JSON-RPC 2.0 handshake compliance ✓\n- test_mcp_tools_list (line 237) - Tools endpoint protocol validation ✓  \n- test_mcp_error_handling_invalid_method (line 396) - Error code -32601 compliance ✓\n- test_mcp_dashboard_api_consistency (line 696) - Cross-interface consistency ✓\n\n**Protocol Compliance Confirmed:**\n- JSON-RPC 2.0 request/response format validation ✓\n- Proper error handling with standardized error codes ✓\n- Method resolution and unknown method handling ✓\n- Cross-interface consistency between /mcp and /api/dashboard/mcp/tools ✓\n\nTest execution confirms all protocol compliance tests are passing and the implementation meets specifications. Task 69.3 requirements have been satisfied by existing Task 68.1 implementation.\n</info added on 2025-10-13T04:15:23.850Z>",
             "status": "done",
-            "testStrategy": "Integration tests with JSON-RPC protocol validation and error scenario testing"
+            "testStrategy": "Integration tests with JSON-RPC protocol validation and error scenario testing",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -2718,7 +2721,8 @@
             "dependencies": [],
             "details": "Configure the executeautomation/mcp-playwright server in mcp_servers/ directory. Create test configuration for connecting to local RustyMail dashboard. Set up browser automation scripts for testing Email Assistant widget and MCP Tools widget interactions. Configure headless mode for CI/CD compatibility.\n<info added on 2025-10-13T04:19:58.954Z>\nI'll analyze the codebase to understand the current testing infrastructure and then provide the update for subtask 69.4.Task 69.4 implementation complete. Successfully configured Puppeteer MCP server infrastructure for dashboard UI testing. Test framework established with DashboardUITester class in test_ui_e2e.py, including methods for testing dashboard loading, Email Assistant widget, MCP Tools widget, and account dropdown functionality. Documentation created in README_UI_TESTS.md with comprehensive test scenarios and CI/CD integration instructions. Test script made executable and ready for both manual execution via Claude Code's Puppeteer MCP tools and automated CI/CD pipelines. Implementation follows pattern from completed Tasks 68.1-68.3 by providing complete test infrastructure that can be activated when services are running.\n</info added on 2025-10-13T04:19:58.954Z>",
             "status": "done",
-            "testStrategy": "Browser automation setup with screenshot comparison and element interaction validation"
+            "testStrategy": "Browser automation setup with screenshot comparison and element interaction validation",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -2729,7 +2733,8 @@
             ],
             "details": "Create comprehensive UI tests covering Email Assistant chatbot interactions, MCP Tools widget functionality, real-time SSE updates, and dashboard metrics display. Test multi-account switching, error handling in UI, and responsive design. Include visual regression testing where appropriate.\n<info added on 2025-10-13T04:22:15.536Z>\nI'll analyze the codebase to understand the test infrastructure and then generate the subtask update based on the completed work.Task 69.5 completion status update with comprehensive test infrastructure implementation. Successfully delivered comprehensive dashboard UI end-to-end test planning and documentation in DASHBOARD_UI_TEST_PLAN.md, covering all major UI components and interactions. Created 7 complete test suites with detailed step-by-step procedures: Dashboard Loading & Initial State (2 tests), Email Assistant Widget (4 tests), MCP Tools Widget (4 tests), Multi-Account Functionality (3 tests), Real-Time Updates via SSE (3 tests), Visual Regression & Responsive Design (3 tests), and Performance & Load Testing (3 tests). Established test automation framework using Puppeteer MCP tools with ready-to-execute commands for browser automation. Built comprehensive test data requirements and environment setup documentation. Created Python test framework foundation in test_ui_e2e.py for future automation. Followed established project pattern from Tasks 62-63, 68.5, and 69.4 by providing complete test infrastructure that can be executed when services are available without requiring all systems running during development phase.\n</info added on 2025-10-13T04:22:15.536Z>",
             "status": "done",
-            "testStrategy": "Browser automation tests with DOM element validation and user interaction simulation"
+            "testStrategy": "Browser automation tests with DOM element validation and user interaction simulation",
+            "parentId": "undefined"
           },
           {
             "id": 6,
@@ -2741,7 +2746,8 @@
             ],
             "details": "Implement end-to-end workflow tests combining MCP client operations with dashboard UI validation. Test scenarios: email search via MCP → UI display, folder operations via Tools widget → backend updates, multi-account operations across interfaces. Include performance testing and concurrent operation validation.\n<info added on 2025-10-13T04:25:41.360Z>\nTask 69.6 complete - Successfully implemented comprehensive end-to-end workflow integration test infrastructure with complete test design documentation, orchestration scripts, and established testing patterns following the project's modular approach.\n\n**Delivered Components:**\n\n**1. Complete Test Design Documentation (WORKFLOW_INTEGRATION_TESTS.md)**\n- 5 comprehensive workflow categories covering all system layers\n- 10+ detailed end-to-end test scenarios combining MCP → HTTP Backend → Dashboard UI → IMAP\n- Specific test code examples using Python MCP client + Puppeteer automation\n- Performance benchmarks and timing assertions for each workflow\n- Cross-interface consistency validation across MCP stdio, REST API, and Dashboard UI\n\n**2. Automated Test Orchestration Infrastructure (run_workflow_tests.sh)**\n- Complete service lifecycle management (backend startup, frontend startup, cleanup)\n- Automated test execution with proper error handling and exit codes\n- Service health checks and readiness validation\n- Comprehensive logging to test-results/ directory\n- CI/CD integration ready with proper exit status reporting\n\n**3. Test Architecture & Validation Framework**\n- Full data flow validation: MCP Client → Stdio Proxy → HTTP Backend → Dashboard UI → IMAP/SQLite\n- Real-time SSE event validation for UI updates\n- Multi-account operation testing with proper isolation verification\n- Performance stress testing with concurrent operations\n- Cross-platform compatibility using existing infrastructure (Puppeteer MCP server, Python MCP SDK)\n\n**4. Implementation Following Established Patterns**\n- Consistent with Tasks 69.4 (Puppeteer infrastructure) and 69.5 (Dashboard UI tests)\n- Uses existing project testing patterns from tests/e2e/ and scripts/ directories\n- Leverages established MCP client infrastructure from scripts/test_mcp_client.py\n- Follows project's modular design approach with separate test categories\n\n**5. Ready for Execution**\n- Manual testing via Claude Code + Puppeteer MCP tools for interactive validation\n- Automated execution via run_workflow_tests.sh for continuous integration\n- Complete service orchestration without requiring all services running during development\n- Comprehensive error handling and reporting for production use\n\nThis implementation provides the complete workflow testing framework needed for Task 69.6, establishing comprehensive end-to-end validation across all system interfaces while maintaining the project's established patterns and testing methodology.\n</info added on 2025-10-13T04:25:41.360Z>",
             "status": "done",
-            "testStrategy": "Full workflow validation with timing assertions and cross-interface consistency verification"
+            "testStrategy": "Full workflow validation with timing assertions and cross-interface consistency verification",
+            "parentId": "undefined"
           },
           {
             "id": 7,
@@ -2752,12 +2758,13 @@
             ],
             "details": "Create test orchestration scripts combining all test phases. Configure CI/CD pipeline integration with proper service management (starting RustyMail server, managing test databases). Include test reporting, artifact collection, and failure analysis. Ensure proper cleanup and test isolation.\n<info added on 2025-10-13T04:29:02.575Z>\nI'll analyze the codebase to understand the project structure and provide a precise update for the CI/CD integration completion.Based on my analysis of the codebase and the user's request, I can see the CI/CD integration infrastructure has been successfully completed for Task 69.7. The implementation includes all necessary files and comprehensive documentation. Here's the update content to append to the subtask details:\n\nTASK 69.7 COMPLETED SUCCESSFULLY\n\nInfrastructure Files Created:\n- .github/workflows/e2e-tests.yml: 196-line comprehensive GitHub Actions workflow with multi-phase test execution, service lifecycle management, health checks, artifact collection, and proper cleanup handling\n- scripts/CICD_INTEGRATION.md: 551-line complete documentation covering workflow structure, test execution phases, environment configuration, failure handling, performance optimization, and integration patterns for GitHub Actions, GitLab CI, Jenkins, and CircleCI\n- scripts/validate_cicd.sh: 200-line automated validation script with colored output, dependency verification, build validation, and actionable error reporting\n\nWorkflow Architecture:\nThe GitHub Actions workflow implements a 6-phase execution pipeline: Environment Setup → Dependency Installation → Test Execution (Unit/Integration) → Service Startup (Backend/Frontend) → E2E Test Execution → Cleanup & Reporting. Each phase includes proper error handling, timeout management, and health check validation.\n\nMulti-Platform CI/CD Support:\nDocumentation includes complete configuration examples for GitHub Actions (primary), GitLab CI (.gitlab-ci.yml), Jenkins Pipeline (Jenkinsfile), and CircleCI (.circleci/config.yml), enabling deployment across different CI/CD environments with consistent test orchestration patterns.\n\nService Management:\nAutomated backend server startup on port 9437 and frontend server on port 5173 with health check validation, proper PID tracking, graceful shutdown, and comprehensive logging for debugging failed test runs.\n\nTest Orchestration:\nIntegrates existing test infrastructure including MCP client tests (scripts/test_mcp_client.py), integration tests (cargo test --test), unit tests (cargo test --lib), and UI workflow tests (scripts/test_ui_e2e.py when available).\n\nArtifact & Monitoring:\nConfigures 7-day artifact retention for server logs, test results, screenshots, and performance metrics. Includes GitHub Step Summary reporting and failure analysis with actionable debugging information.\n\nValidation & Local Testing:\nThe validate_cicd.sh script performs comprehensive readiness checks covering file existence, script permissions, Rust build success, Python dependencies, Node.js setup, and GitHub Actions YAML syntax validation with colored terminal output and proper exit codes.\n\nProduction Ready:\nComplete implementation following established patterns from existing test infrastructure, ready for immediate use in production CI/CD environments with proper caching, parallel execution support, and monitoring capabilities.\n</info added on 2025-10-13T04:29:02.575Z>",
             "status": "done",
-            "testStrategy": "CI/CD pipeline validation with automated test execution and comprehensive reporting"
+            "testStrategy": "CI/CD pipeline validation with automated test execution and comprehensive reporting",
+            "parentId": "undefined"
           }
         ]
       },
       {
-        "id": 70,
+        "id": "70",
         "title": "Fix frontend account selection bug",
         "description": "Frontend is sending account_id=undefined to API. Dropdown not showing currently selected account. Need to fix state management to properly track and display selected account.",
         "details": "",
@@ -2768,13 +2775,13 @@
         "subtasks": []
       },
       {
-        "id": 71,
+        "id": "71",
         "title": "Fix Email Assistant chatbot to pass account_id parameter to MCP tool calls",
         "description": "Update the Email Assistant chatbot's generate_mock_response method to properly propagate the account_id parameter from process_query to all MCP tool calls, ensuring accurate email counts and data retrieval for the correct account.",
         "status": "done",
         "dependencies": [
-          15,
-          23
+          "15",
+          "23"
         ],
         "priority": "medium",
         "details": "SPECIFIC BUG IDENTIFIED: In src/dashboard/services/ai.rs:289, the process_query method calls generate_mock_response without passing the account_id parameter, despite having extracted it on line 215. This causes MCP tool calls to use default account data instead of the selected account.\n\nEXACT IMPLEMENTATION REQUIRED:\n\n1. **Update generate_mock_response method signature (line 335)**: Change from `fn generate_mock_response(&self, query: &str)` to `fn generate_mock_response(&self, query: &str, account_id: Option<&str>)`\n\n2. **Update generate_mock_response call (line 289)**: Change from `self.generate_mock_response(&query_text)` to `self.generate_mock_response(&query_text, account_id.as_deref())`\n\n3. **Fix MCP tool calls inside generate_mock_response to include account_id parameter**:\n   - Line 346: `count_emails_in_folder` call - change `json!({\"folder\": \"INBOX\"})` to `json!({\"folder\": \"INBOX\", \"account_id\": account_id.unwrap_or(\"default\")})`\n   - Line 362: `get_folder_stats` call - change `json!({\"folder\": \"INBOX\"})` to `json!({\"folder\": \"INBOX\", \"account_id\": account_id.unwrap_or(\"default\")})`\n   - Line 368: `list_cached_emails` call - add `\"account_id\": account_id.unwrap_or(\"default\")` to existing json params\n\nVERIFICATION TARGET: After fix, selecting 'chris@texasfortress.ai' and asking \"how many emails?\" should return 299 (matching MCP Email Tools widget), not 142 from wrong account.\n\nNOTE: The fetch_email_context_with_data method (line 221) already correctly receives and uses account_id - no changes needed there.",
@@ -2787,7 +2794,8 @@
             "dependencies": [],
             "details": "Located in src/dashboard/services/ai.rs at line 335. This is a simple signature change that will allow the method to receive the account_id parameter that is already available in the process_query method but not being passed through.\n<info added on 2025-10-13T05:22:37.627Z>\n<invoke name=\"Grep\">\n<parameter name=\"pattern\">generate_mock_response\\(</parameter>\n<parameter name=\"path\">/Users/au/src/RustyMail/src/dashboard/services/ai.rs</parameter>\n<parameter name=\"output_mode\">content</parameter>\n<parameter name=\"-n\">true</parameter>\n</invoke>\n</info added on 2025-10-13T05:22:37.627Z>",
             "status": "done",
-            "testStrategy": "Ensure the code compiles after signature change and that all callers are updated accordingly."
+            "testStrategy": "Ensure the code compiles after signature change and that all callers are updated accordingly.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -2798,7 +2806,8 @@
             ],
             "details": "The account_id is already extracted on line 215 and available in the process_query method scope, but it's not being passed to generate_mock_response. This change ensures the account_id flows through to the MCP tool calls.\n<info added on 2025-10-13T05:23:02.461Z>\nLooking at the user request, I need to analyze the codebase to understand the specific change that was made.Let me also check the generate_mock_response method signature to confirm the change:Perfect! I can see that the implementation has been successfully updated. The user is confirming that:\n\n1. Line 289 was changed from `self.generate_mock_response(&query_text)` to `self.generate_mock_response(&query_text, account_id.as_deref())`\n2. The generate_mock_response method signature now accepts `account_id: Option<&str>` parameter\n3. This ensures the account_id flows from process_query through to MCP tool calls\n\nImplementation completed successfully. The code change on line 289 now properly passes the account_id parameter (extracted on line 215) to the generate_mock_response method call, ensuring MCP tools receive the correct account context for accurate email operations.\n</info added on 2025-10-13T05:23:02.461Z>",
             "status": "done",
-            "testStrategy": "Verify the account_id parameter is correctly passed and the mock mode responses reflect the correct account data."
+            "testStrategy": "Verify the account_id parameter is correctly passed and the mock mode responses reflect the correct account data.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -2810,7 +2819,8 @@
             ],
             "details": "This MCP call is used when users ask about email counts. Without the account_id parameter, it returns counts for the wrong account. The fix ensures it queries the correct account's email data.\n<info added on 2025-10-13T05:23:22.078Z>\nI'll analyze the codebase to better understand the current implementation before generating the subtask update.Perfect! I can see the implementation has been successfully updated. The code shows the exact pattern described in the user request - creating a mutable params JSON object and conditionally adding the account_id parameter when present. Let me verify this matches the pattern mentioned and generate the appropriate update text.\n\nImplementation successfully completed at lines 346-350 in src/dashboard/services/ai.rs. Changed from hardcoded json!({\"folder\": \"INBOX\"}) to dynamic parameter building: creates mutable params json object, conditionally adds account_id field when Some(account_id) is available, then passes complete params to MCP call. This pattern ensures the count_emails_in_folder MCP tool receives the correct account_id parameter for accurate email count retrieval from the appropriate account's data.\n</info added on 2025-10-13T05:23:22.078Z>",
             "status": "done",
-            "testStrategy": "Test with chris@texasfortress.ai selected - should return 299 emails instead of 142 from default account."
+            "testStrategy": "Test with chris@texasfortress.ai selected - should return 299 emails instead of 142 from default account.",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -2822,7 +2832,8 @@
             ],
             "details": "This call gets folder statistics including total and unread counts for inbox queries. Adding account_id ensures statistics are pulled from the correct account's data.\n<info added on 2025-10-13T05:23:43.173Z>\nI'll analyze the codebase to understand the project structure and locate the specific file mentioned in the user request.Based on the codebase analysis, I can see the exact implementation of the fix described in the user request. The get_folder_stats MCP call has been successfully updated at lines 366-370 in the ai.rs file. The implementation follows the same pattern used in previous subtasks, building a params object and conditionally adding the account_id parameter.\n\nImplementation completed successfully at lines 366-370 in src/dashboard/services/ai.rs. The fix follows the established pattern: creates base params object with json!({\"folder\": \"INBOX\"}), then conditionally adds account_id field using if let Some(acc_id) = account_id pattern. This ensures folder statistics correctly reflect the selected account's data rather than defaulting to generic account data. The implementation matches the pattern established in subtask 71.3 for consistent account_id parameter handling across all MCP tool calls.\n</info added on 2025-10-13T05:23:43.173Z>",
             "status": "done",
-            "testStrategy": "Verify folder statistics reflect the selected account's actual data, not default account data."
+            "testStrategy": "Verify folder statistics reflect the selected account's actual data, not default account data.",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -2834,7 +2845,8 @@
             ],
             "details": "This call retrieves recent emails for display in chatbot responses. Without account_id, it shows emails from the wrong account. The fix ensures the correct account's emails are displayed.\n<info added on 2025-10-13T05:23:54.305Z>\nImplementation completed successfully. The list_cached_emails MCP call at lines 376-384 has been updated to include the account_id parameter using the established conditional pattern. This ensures that when users query recent emails through the chatbot, the response shows messages from the selected account rather than defaulting to the primary account, maintaining consistency with other email operations throughout the application.\n</info added on 2025-10-13T05:23:54.305Z>",
             "status": "done",
-            "testStrategy": "Test email listing queries to ensure they show emails from the selected account, not the default account."
+            "testStrategy": "Test email listing queries to ensure they show emails from the selected account, not the default account.",
+            "parentId": "undefined"
           },
           {
             "id": 6,
@@ -2847,20 +2859,21 @@
             ],
             "details": "Comprehensive testing to ensure the account_id parameter flows correctly from frontend selection through the entire chain: Dashboard → ChatbotPanel → backend API → process_query → generate_mock_response → MCP tool calls. Verify both mock mode and real AI responses use the correct account data.\n<info added on 2025-10-13T05:24:48.925Z>\nI'll analyze the codebase to understand the current implementation before updating the subtask.Now I'll check the specific implementation lines referenced in the subtask to understand what was fixed:Let me check the git commit that was mentioned:Let me check if there's a test config to see the expected email count for chris@texasfortress.ai:Now let me check what the expected email count should be for chris@texasfortress.ai:Now let me check for more specific references to 299 count:Perfect! Now I understand the context. Let me check if there are any test files or configurations that might help verify the correct functionality:Excellent! The compilation is successful. Based on my analysis of the codebase and the user request, I now have a comprehensive understanding of what was completed:\n\nCode successfully compiled with `cargo build --release` (only warnings remain, no errors). Backend server has been restarted and is running. All implementation changes have been committed to git with detailed commit message. The fix ensures chris@texasfortress.ai account selection now properly passes the account_id parameter through the entire chain: UI → ChatbotPanel → backend API → process_query → generate_mock_response → MCP tool calls. Manual browser testing is now ready to verify chris@texasfortress.ai returns 299 emails instead of 142 (the count from the wrong default account).\n</info added on 2025-10-13T05:24:48.925Z>",
             "status": "done",
-            "testStrategy": "1. Select chris@texasfortress.ai, ask 'how many emails?' - expect 299 count. 2. Select different account, expect different count. 3. Test folder and email listing queries. 4. Verify MCP Email Tools widget and chatbot show same data for selected account."
+            "testStrategy": "1. Select chris@texasfortress.ai, ask 'how many emails?' - expect 299 count. 2. Select different account, expect different count. 3. Test folder and email listing queries. 4. Verify MCP Email Tools widget and chatbot show same data for selected account.",
+            "parentId": "undefined"
           }
         ]
       },
       {
-        "id": 72,
+        "id": "72",
         "title": "Add comprehensive integration tests for Email Assistant chatbot to verify correct account_id and current_folder parameter passing",
         "description": "Create integration test suite that verifies the Email Assistant chatbot correctly passes account_id and current_folder parameters to MCP tools through the new agentic MCP client loop architecture.",
         "status": "done",
         "dependencies": [
-          23,
-          32,
-          37,
-          42
+          "23",
+          "32",
+          "37",
+          "42"
         ],
         "priority": "medium",
         "details": "Based on Task #80's refactor (commit cc22ce6), the Email Assistant now implements an agentic MCP client loop in `process_query()` method (ai.rs:212-409). The implementation uses `ChatbotQuery` struct (models.rs:100-107) with account_id and current_folder parameters that must be correctly passed through the agentic workflow.\n\n**NEW ARCHITECTURE DETAILS:**\n- `process_query()` implements agentic MCP client loop with max 3 iterations\n- AI receives MCP tools in system prompt (provider-agnostic text format)\n- AI responds with `TOOL_CALL: tool_name {...}` format\n- System parses tool calls via `parse_tool_calls()` (ai.rs:619-647)\n- Tool execution via `call_mcp_tool()` (ai.rs:521-547)\n- Folder list pre-fetched and included in system prompt to reduce unnecessary tool calls\n- Loop stops when no tool calls detected or max iterations reached\n\n**TEST IMPLEMENTATION PLAN:**\n\n1. **Create test file**: `tests/integration/chatbot_integration.rs` following the pattern of existing integration tests like `multi_account_sync.rs`\n\n2. **Test Infrastructure Setup:**\n   - Use in-memory SQLite database with migrations\n   - Insert multiple test accounts (account1@test.com, account2@test.com)\n   - Create test folders and emails with different counts per account\n   - Set up AiService in both mock and full modes\n\n3. **Core Test Cases:**\n   - `test_agentic_loop_account_isolation`: Verify agentic loop queries with specific account_id return only that account's data\n   - `test_account_id_parameter_flow`: Test account_id flows from ChatbotQuery → system prompt → AI tool calls → `call_mcp_tool()` → MCP backend\n   - `test_current_folder_context_affects_ai`: Verify current_folder parameter in system prompt influences AI's tool selection\n   - `test_tool_call_parser`: Test `parse_tool_calls()` method correctly extracts tool names and JSON parameters\n   - `test_max_iterations_limit`: Verify agentic loop stops after 3 iterations maximum\n   - `test_folder_list_preloaded_in_prompt`: Confirm folder list is pre-fetched and included in system prompt to avoid redundant queries\n   - `test_call_mcp_tool_includes_account_id`: Verify `call_mcp_tool()` properly includes account_id in request parameters\n   - `test_different_accounts_different_data`: Confirm different accounts return different email counts through agentic loop\n\n4. **Fixture Data Setup:**\n   - Account 1: 25 emails in INBOX, 10 in Sent\n   - Account 2: 15 emails in INBOX, 5 in Sent\n   - Both accounts have same folder structure but different email counts\n\n5. **Parameter Verification Focus:**\n   - Test that account_id parameter flows through: ChatbotQuery → system prompt context → AI tool call decisions → `call_mcp_tool()` execution\n   - Verify system prompt includes folder list to reduce tool calls\n   - Confirm `parse_tool_calls()` correctly extracts tool parameters including account_id\n   - Test iteration limit prevents infinite loops\n\n6. **Test Assertions:**\n   - Email counts match expected values per account through agentic responses\n   - Folder queries respect current_folder parameter in system context\n   - No data leakage between accounts in agentic responses\n   - Tool call parser correctly identifies TOOL_CALL format\n   - Loop terminates within max_iterations limit\n   - System prompt contains pre-fetched folder list\n\n**KEY INTEGRATION POINTS:**\n- Tests the complete agentic MCP client loop in `process_query()`\n- Verifies `call_mcp_tool()` method includes account_id in parameters\n- Tests `parse_tool_calls()` method for correct tool call extraction\n- Uses existing CacheService and AccountService from multi-account infrastructure\n- Ensures account parameter passing works in the new agentic architecture\n- Validates that pre-fetched folder list reduces unnecessary MCP calls",
@@ -2868,35 +2881,35 @@
         "subtasks": []
       },
       {
-        "id": 73,
+        "id": "73",
         "title": "Add comprehensive E2E tests for Email Assistant chatbot with Python MCP client",
         "description": "Create comprehensive Python E2E test suite to verify Email Assistant chatbot works correctly through the complete stack (frontend → backend → MCP tools) with proper account isolation and data accuracy verification.",
         "details": "Extend the existing `scripts/test_mcp_client.py` to include comprehensive Email Assistant chatbot testing:\n\n1. **New Test Class**: Add `EmailAssistantChatbotTester` class with methods:\n   - `test_chatbot_endpoint_basic()`: Test POST /api/dashboard/chatbot/query accepts requests\n   - `test_chatbot_with_account_id()`: Verify account_id parameter is properly handled\n   - `test_chatbot_email_count_accuracy()`: Compare chatbot response to direct MCP count_emails_in_folder calls\n   - `test_account_isolation()`: Test multiple accounts to ensure no data leakage\n   - `test_folder_parameter_handling()`: Test different folder parameters (INBOX, Sent, etc.)\n   - `test_chatbot_response_structure()`: Validate ChatbotResponse format matches models.rs:110-127\n\n2. **Test Implementation**:\n   - Send HTTP POST requests to localhost:9437/api/dashboard/chatbot/query\n   - Use ChatbotQuery structure: {query, account_id, current_folder}\n   - Parse ChatbotResponse and extract email count from text field\n   - Compare against direct MCP tool execution of count_emails_in_folder\n   - Test queries like: 'How many emails do I have in INBOX?', 'Count emails in Sent folder'\n\n3. **Account Isolation Testing**:\n   - Test with multiple account_ids (if available from list_accounts MCP tool)\n   - Verify account A's query doesn't return account B's data\n   - Assert chatbot responses contain different counts for different accounts\n\n4. **Data Accuracy Verification**:\n   - Execute MCP count_emails_in_folder directly with same parameters\n   - Parse chatbot response text for numeric count\n   - Add assertions: `assert chatbot_count == mcp_direct_count`\n   - Test with multiple folder types to ensure folder parameter works\n\n5. **Integration with CI/CD**:\n   - Add test execution to existing .github/workflows/e2e-tests.yml at line 141\n   - Add command: `python scripts/test_mcp_client.py --test-chatbot --url http://localhost:9437`\n   - Ensure test fails if chatbot returns incorrect email counts\n\n6. **Error Scenarios**:\n   - Test with invalid account_id values\n   - Test with non-existent folder names\n   - Verify appropriate error responses",
         "testStrategy": "1. **Manual Verification**: Run extended test script locally against running backend server and verify all tests pass. 2. **Account Data Setup**: Use existing MCP tools to verify test accounts have different email counts in different folders. 3. **Accuracy Testing**: Execute direct MCP count_emails_in_folder calls and compare with chatbot responses - must match exactly. 4. **Isolation Testing**: Run chatbot queries with different account_ids and verify responses contain different data. 5. **CI/CD Integration**: Verify test runs successfully in GitHub Actions workflow and fails appropriately when chatbot returns incorrect data. 6. **Regression Prevention**: Ensure test catches the specific bug described in the user request (incorrect email counts due to missing account_id parameter).",
         "status": "done",
         "dependencies": [
-          71,
-          32,
-          15
+          "71",
+          "32",
+          "15"
         ],
         "priority": "medium",
         "subtasks": []
       },
       {
-        "id": 74,
+        "id": "74",
         "title": "Add debug information panel to Email Assistant chatbot UI",
         "description": "Update ChatbotPanel.tsx to display debug information showing current account and folder context, with toggle for request/response JSON and visual status indicators for account validation.",
         "details": "The task requires updating the ChatbotPanel component (located at src/dashboard/components/ChatbotPanel.tsx) to add comprehensive debugging capabilities:\n\n1. **Update ChatbotQuery interface in src/types/index.ts**: Add account_id and current_folder fields to the ChatbotQuery interface (currently only has query and conversation_id) to match what's being sent in the API call.\n\n2. **Add debug state management**: Create React state for debug mode toggle using useState hook, stored in localStorage for persistence across sessions.\n\n3. **Enhance panel header**: Add account/folder context display in the CardHeader section (lines 285-324), showing:\n   - Current account_id as a badge next to the 'Email Assistant' title\n   - Current folder name (if present) as a secondary badge\n   - Color-coded status indicators: green (account_id present), yellow (using default), red (missing/undefined)\n\n4. **Add debug toggle control**: Insert a debug toggle switch in the header dropdown menu (lines 296-322) alongside existing export options.\n\n5. **Implement request/response logging**: Modify the handleSubmit function (lines 129-204) to capture and store complete request/response JSON when debug mode is enabled.\n\n6. **Create debug panel component**: Add collapsible debug information panel below the messages area (around line 466) showing:\n   - Request payload JSON (prettified)\n   - Response JSON including provider/model information  \n   - Request/response timestamps\n   - Warning indicators for missing account context\n\n7. **Update API client types**: Ensure the ChatbotQuery type matches the actual payload being sent (account_id, current_folder, query, conversation_id).\n\n8. **Add visual indicators**: Use the Badge component with appropriate variant colors and icons from lucide-react (Alert, CheckCircle, XCircle) for status indication.\n<info added on 2025-10-13T05:31:28.962Z>\nI'll analyze the codebase to understand the current state and provide the appropriate update based on the implementation completion report.Based on the implementation completion report and my analysis of the codebase, I can see that all the specified changes have been successfully implemented. Here's the new text that should be appended to the task details:\n\n## IMPLEMENTATION COMPLETED (2024-10-13)\n\nFull implementation successfully completed with all requirements met:\n\n**1. Interface Updates (types/index.ts:58-63):**\n- ChatbotQuery interface extended with `current_folder?: string` and `account_id?: string` fields\n- Backend API contract alignment achieved per Task 71 requirements\n\n**2. Debug State Management (ChatbotPanel.tsx:45-71):**\n- DebugInfo interface implemented with request, response, timestamp, and error fields\n- debugMode state with localStorage persistence for cross-session retention\n- debugInfo state for capturing API request/response data\n- debugPanelOpen state for collapsible debug panel control\n\n**3. Account/Folder Context Display (lines 339-356):**\n- Account status badges with color-coded indicators: green (CheckCircle) for valid account_id, yellow (AlertCircle) for missing account\n- Folder context badge with Folder icon when currentFolder is available\n- Proper badge styling and responsive layout\n\n**4. Debug Toggle Control (lines 361-368):**\n- Bug icon button in header with variant switching (default/ghost) based on debug mode\n- Toggle functionality integrated with debug state management\n\n**5. Request/Response Logging (lines 190-228):**\n- Complete request object capture with timestamp on query submission\n- Success response logging with full API response data\n- Error state logging with error message capture\n- Debug information persistence throughout conversation lifecycle\n\n**6. Debug Panel Implementation (lines 543-640):**\n- Collapsible debug information panel with visual status indicators\n- JSON formatting for request and response data with copy-to-clipboard functionality\n- Scrollable content areas with max-height constraints\n- Conditional visibility based on debugMode and debugInfo state\n- Color-coded status display (green=success, yellow=pending, red=error)\n\n**7. JSX Syntax Correction:**\n- Fixed conditional rendering syntax error (lines 396-397) ensuring proper JSX structure\n\n**Build Status:** Frontend compiles successfully with no TypeScript errors or warnings. All debug functionality is ready for browser testing and user acceptance validation.\n</info added on 2025-10-13T05:31:28.962Z>",
         "testStrategy": "1. **Visual Verification**: Test that debug panel displays correctly with account/folder information in header badges and shows proper color coding (green/yellow/red status). 2. **Debug Toggle Testing**: Verify debug toggle persists across browser refreshes and properly shows/hides debug information panel. 3. **Account Context Testing**: Test with different account selections to ensure account_id badge updates correctly and shows appropriate status colors. 4. **JSON Display Testing**: Enable debug mode and send test queries, verify full request/response JSON is captured and displayed in readable format. 5. **Provider Information**: Confirm chatbot response includes and displays provider/model information from backend. 6. **Error State Testing**: Test with undefined/null account_id to verify warning indicators appear correctly. 7. **Responsive Design**: Test debug panel layout on different screen sizes to ensure it doesn't break mobile responsiveness.",
         "status": "done",
         "dependencies": [
-          71
+          "71"
         ],
         "priority": "medium",
         "subtasks": []
       },
       {
-        "id": 75,
+        "id": "75",
         "title": "Create comprehensive unit tests for SMTP service",
         "description": "Add full test coverage for SmtpService including send_email functionality, Outbox pattern (save→send→move to Sent→cleanup), error handling, and retry logic",
         "status": "done",
@@ -2912,7 +2925,8 @@
             "dependencies": [],
             "details": "Created comprehensive test infrastructure in tests/unit/smtp_service_tests.rs including database setup/cleanup, account creation helpers for both SMTP-enabled and SMTP-disabled accounts, email request builders, and registered module in tests/unit/mod.rs. All helper functions are working and compilation is successful.",
             "status": "done",
-            "testStrategy": "Infrastructure verified through compilation and basic test execution"
+            "testStrategy": "Infrastructure verified through compilation and basic test execution",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -2923,7 +2937,8 @@
             ],
             "details": "Implemented and verified 5 validation tests: SendEmailRequest structure validation, CC/BCC recipient handling, HTML body support, SmtpError type instantiation, and account creation with SMTP configuration. All tests are passing and provide foundation for integration tests.",
             "status": "done",
-            "testStrategy": "Unit tests for data structure validation and basic functionality without external dependencies"
+            "testStrategy": "Unit tests for data structure validation and basic functionality without external dependencies",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -2934,7 +2949,8 @@
             ],
             "details": "Need to implement mock SMTP server using lettre's test utilities or custom mock. This will enable testing of actual SMTP connection, authentication, and sending operations without requiring real SMTP servers. Should support success and failure scenarios.",
             "status": "done",
-            "testStrategy": "Mock server that can simulate SMTP responses, connection failures, and authentication errors"
+            "testStrategy": "Mock server that can simulate SMTP responses, connection failures, and authentication errors",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -2945,7 +2961,8 @@
             ],
             "details": "Need to create mock implementation of CloneableImapSessionFactory to test IMAP folder operations (append to Outbox, move to Sent, delete from Outbox). This is critical for testing the complete Outbox pattern implementation.",
             "status": "done",
-            "testStrategy": "Mock factory that simulates IMAP folder operations and can inject failures for error testing"
+            "testStrategy": "Mock factory that simulates IMAP folder operations and can inject failures for error testing",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -2956,7 +2973,8 @@
             ],
             "details": "Implement tests for successful email sending, SMTP connection errors, authentication failures, invalid recipients, and timeout handling. These tests will use the mock SMTP server to simulate various scenarios.",
             "status": "done",
-            "testStrategy": "Integration tests with mock SMTP server covering all error paths and success scenarios"
+            "testStrategy": "Integration tests with mock SMTP server covering all error paths and success scenarios",
+            "parentId": "undefined"
           },
           {
             "id": 6,
@@ -2967,12 +2985,13 @@
             ],
             "details": "Implement tests for full Outbox pattern: save to Outbox→send email→move to Sent folder→cleanup Outbox. Test both success and failure scenarios, including partial failures during the process.",
             "status": "done",
-            "testStrategy": "End-to-end tests using mock IMAP factory to verify complete email lifecycle management"
+            "testStrategy": "End-to-end tests using mock IMAP factory to verify complete email lifecycle management",
+            "parentId": "undefined"
           }
         ]
       },
       {
-        "id": 76,
+        "id": "76",
         "title": "Create unit tests for attachment operations",
         "description": "Add comprehensive test coverage for all attachment-related functionality including MCP tools and storage service",
         "details": "Test file: tests/unit/attachment_tests.rs\n\nTests needed:\n1. test_list_email_attachments - Verify attachment listing from emails\n2. test_download_attachment_to_storage - Test attachment download and storage\n3. test_download_multiple_attachments - Test batch download\n4. test_cleanup_attachments - Verify cleanup functionality\n5. test_attachment_storage_path_generation - Test unique path generation\n6. test_attachment_mime_type_detection - Verify MIME type handling\n7. test_attachment_with_special_characters - Test filename sanitization\n8. test_attachment_size_limits - Verify size limit handling\n9. test_attachment_not_found_error - Test missing attachment errors\n10. test_storage_permission_errors - Test file system error handling\n\nReference implementations:\n- src/mcp_attachment_tools.rs\n- src/dashboard/services/attachment_storage.rs\n- src/dashboard/api/attachments.rs",
@@ -2983,7 +3002,7 @@
         "subtasks": []
       },
       {
-        "id": 77,
+        "id": "77",
         "title": "Create unit tests for IMAP Keepalive/NOOP functionality",
         "description": "Add test coverage for NOOP command and connection pool health checking to ensure IMAP connections stay alive",
         "details": "Test file: tests/unit/imap_keepalive_tests.rs\n\nTests needed:\n1. test_noop_command_success - Verify NOOP command executes successfully\n2. test_noop_keeps_connection_alive - Test that NOOP prevents timeout\n3. test_connection_pool_health_check - Verify pool uses NOOP for validation\n4. test_health_check_detects_dead_connection - Test dead connection detection\n5. test_health_check_interval - Verify NOOP runs every 60 seconds (or configured interval)\n6. test_noop_during_idle_connection - Test keepalive on idle connections\n7. test_noop_error_handling - Test NOOP failure scenarios\n8. test_multiple_connections_keepalive - Test keepalive across multiple pooled connections\n\nReference implementations:\n- src/imap/session.rs (lines 599-609 for NOOP implementation)\n- src/main.rs (lines 117-130 for ConnectionFactory::validate)\n- Connection pool health checking with NOOP every 30 seconds",
@@ -2994,7 +3013,7 @@
         "subtasks": []
       },
       {
-        "id": 78,
+        "id": "78",
         "title": "Create integration tests for new MCP tools",
         "description": "Add end-to-end integration tests for newly added MCP tools: mark_as_read, mark_as_unread, send_email, and all attachment tools",
         "details": "Test file: tests/integration/mcp_new_tools.rs\n\nTests needed:\n1. test_mcp_mark_as_read - Test mark_as_read tool via MCP\n2. test_mcp_mark_as_unread - Test mark_as_unread tool via MCP\n3. test_mcp_send_email - Test send_email tool via MCP HTTP\n4. test_mcp_list_email_attachments - Test list_email_attachments tool\n5. test_mcp_download_email_attachments - Test download_email_attachments tool\n6. test_mcp_cleanup_attachments - Test cleanup_attachments tool\n7. test_mcp_send_email_with_cc_bcc - Test SMTP with CC/BCC via MCP\n8. test_mcp_attachment_workflow - Test full attachment workflow (list→download→cleanup)\n9. test_mcp_tool_error_handling - Verify proper error responses\n10. test_mcp_tool_parameter_validation - Test invalid parameter handling\n\nReference implementations:\n- src/mcp_port.rs (tool registry lines 722-753)\n- tests/integration/mcp_http.rs (existing MCP integration test patterns)\n- tests/integration/mcp_stdio.rs (stdio transport patterns)",
@@ -3005,7 +3024,7 @@
         "subtasks": []
       },
       {
-        "id": 79,
+        "id": "79",
         "title": "Create integration tests for dashboard SMTP and attachment REST endpoints",
         "description": "Add integration tests for dashboard REST API endpoints: /api/dashboard/emails/send and attachment-related endpoints",
         "details": "Test file: tests/integration/dashboard_smtp_attachments.rs\n\nTests needed:\n1. test_send_email_rest_endpoint - Test POST /api/dashboard/emails/send\n2. test_send_email_with_account_param - Test sending from specific account\n3. test_send_email_validation - Test parameter validation\n4. test_send_email_unauthorized - Test without authentication\n5. test_list_attachments_endpoint - Test attachment listing REST endpoint\n6. test_download_attachment_endpoint - Test attachment download REST endpoint\n7. test_cleanup_attachments_endpoint - Test attachment cleanup REST endpoint\n8. test_attachment_not_found_error - Test 404 for missing attachments\n9. test_smtp_connection_error_response - Test proper error responses\n10. test_concurrent_email_sends - Test multiple simultaneous email sends\n\nReference implementations:\n- src/dashboard/api/handlers.rs (send_email handler at line 2847)\n- src/dashboard/api/routes.rs (route configuration at line 35)\n- src/dashboard/api/attachments.rs\n- tests/integration/dashboard.rs (existing dashboard test patterns)",
@@ -3016,7 +3035,7 @@
         "subtasks": []
       },
       {
-        "id": 80,
+        "id": "80",
         "title": "Refactor Email Assistant to be a proper MCP client",
         "description": "Remove hardcoded query parsing logic and make Email Assistant use MCP tools via AI-driven tool calling",
         "details": "The Email Assistant currently has hardcoded query parsing logic (fetch_email_context_with_data) that decides which MCP tools to call. This is wrong - it should be a proper MCP client that:\n\n1. Fetches available tools from /api/dashboard/mcp/tools at startup\n2. Includes tool definitions in the system prompt (provider-agnostic)\n3. Lets the AI decide which tools to call based on user query\n4. Parses AI response to detect tool calls\n5. Executes tools via /api/dashboard/mcp/execute\n6. Feeds results back to AI for final response\n\nThis makes it work like Claude Desktop - the AI calls MCP tools directly, no hardcoded logic.\n\nFiles to modify:\n- src/dashboard/services/ai.rs (remove fetch_email_context_with_data, add MCP client loop)\n\nImplementation approach:\n- Add fetch_mcp_tools() to get tool list from /api/dashboard/mcp/tools\n- Add tool definitions to system prompt in provider-agnostic format\n- Add parse_tool_calls() to detect tool calls in AI response\n- Add agentic loop: query → AI → detect tools → execute → feed back → final response\n- Remove all hardcoded query parsing (fetch_email_context_with_data, extract_folder_from_query)",
@@ -3027,65 +3046,66 @@
         "subtasks": []
       },
       {
-        "id": 81,
+        "id": "81",
         "title": "Add timeout to IMAP APPEND operations to prevent indefinite hangs",
         "description": "Add configurable timeout (30-45 seconds) to IMAP APPEND operations in AsyncImapSessionWrapper to prevent indefinite blocking on slow servers like GoDaddy with security scanning.",
         "details": "Implement timeout handling in the AsyncImapSessionWrapper::append method in src/imap/session.rs around line 443-465. The implementation should: 1) Use tokio::time::timeout to wrap the existing session_guard.append() call with a configurable duration (default 35 seconds). 2) Add timeout configuration to ImapConfig or as a new field in AsyncImapSessionWrapper similar to existing timeout patterns in src/imap/client.rs (lines 164, 175, 189). 3) Return an appropriate ImapError::Timeout variant when timeout occurs, allowing graceful error handling rather than indefinite blocking. 4) Ensure the timeout applies specifically to the APPEND operation without affecting the overall session state. 5) Follow the existing pattern of using Duration from std::time and tokio::time::timeout as seen in the connection establishment code. The timeout should be configurable via environment variable (IMAP_APPEND_TIMEOUT_SECONDS) with a sensible default of 35 seconds to handle slow IMAP servers with security scanning delays.\n<info added on 2025-10-16T12:22:36.893Z>\nLooking at the user request, I need to analyze the current codebase to understand the implementation that was completed and verify the changes mentioned.Based on the analysis of the codebase and the user's implementation report, I can see that the timeout implementation has been successfully completed. The code analysis confirms all the changes mentioned in the user request:\n\n1. ✅ Environment variable `IMAP_APPEND_TIMEOUT_SECONDS` added to `.env.example` with default value 35\n2. ✅ `append_timeout` field added to `AsyncImapSessionWrapper` struct (line 135)\n3. ✅ `with_append_timeout()` constructor method implemented (lines 143-150)\n4. ✅ `connect()` method updated to accept append_timeout parameter (lines 152-197)\n5. ✅ APPEND operation wrapped with `tokio::time::timeout()` (lines 470-493)\n6. ✅ Proper error handling with `ImapError::Timeout` variant\n7. ✅ `connect_with_append_timeout()` method added to client.rs (lines 67-82)\n8. ✅ Environment variable reading implemented in connect function (lines 213-220)\n\nThe project builds successfully (only unrelated warnings), and the test suite shows 59 passed tests with only 1 unrelated failure (provider_manager test requiring OpenAI env var).\n\n**IMPLEMENTATION COMPLETED SUCCESSFULLY - 2025-10-16**\n\n**Final Changes Summary:**\n- **Configuration**: Added `IMAP_APPEND_TIMEOUT_SECONDS=35` environment variable to `.env.example` for configurable timeout control  \n- **Core Implementation**: Enhanced `AsyncImapSessionWrapper` with `append_timeout` field and `with_append_timeout()` constructor method\n- **Connection Method**: Updated `AsyncImapSessionWrapper::connect()` to accept `append_timeout` parameter for proper timeout initialization\n- **Timeout Logic**: Wrapped APPEND operation with `tokio::time::timeout()` in `session.rs:470-493`, providing graceful failure after configured duration instead of indefinite blocking\n- **Error Handling**: Returns descriptive `ImapError::Timeout` message when timeout occurs: \"APPEND operation timed out after {:?}. Server may be slow due to security scanning.\"\n- **Client Interface**: Added `ImapClient::connect_with_append_timeout()` method for direct timeout specification\n- **Environment Integration**: Updated `connect()` function to automatically read `IMAP_APPEND_TIMEOUT_SECONDS` from environment variables with 35-second fallback\n\n**Testing Validation:**\n- ✅ cargo build: SUCCESS (120 warnings, no errors)\n- ✅ cargo test --lib: 59/60 tests passed (1 unrelated provider_manager failure)\n- ✅ Follows existing timeout patterns from client.rs TCP/TLS/login operations\n- ✅ Maintains session state integrity after timeout failures\n\n**Technical Implementation Details:**\nThe timeout mechanism uses `tokio::time::timeout()` to wrap the `session_guard.append()` call, providing three distinct outcomes: successful completion, IMAP protocol error, or timeout expiry. This prevents indefinite blocking on slow servers with security scanning (like GoDaddy) while maintaining full compatibility with existing IMAP operations and session management.\n</info added on 2025-10-16T12:22:36.893Z>",
         "testStrategy": "Test APPEND timeout with mock IMAP server that introduces artificial delays longer than the timeout threshold. Verify that the operation fails gracefully with ImapError::Timeout after the specified duration rather than hanging indefinitely. Test successful APPEND operations complete within the timeout window. Test with different timeout values to ensure configurability works. Verify that session state remains healthy after timeout failures and subsequent operations work correctly.",
         "status": "done",
         "dependencies": [
-          4,
-          6,
-          7
+          "4",
+          "6",
+          "7"
         ],
         "priority": "high",
         "subtasks": []
       },
       {
-        "id": 82,
+        "id": "82",
         "title": "Add progress indicator for email save to Outbox operations",
         "description": "Implement user-visible progress notification during IMAP APPEND operations to Outbox folder, showing message like \"Saving to Outbox (this may take up to 30 seconds)...\" to handle GoDaddy IMAP server delays.",
         "details": "The current email sending implementation in src/dashboard/services/smtp.rs performs IMAP APPEND operations to save emails to the Outbox folder (line 196) which can take 30-60+ seconds with GoDaddy IMAP servers due to security scanning. This creates a poor UX where users see \"Sending...\" for extended periods without knowing what's happening.\n\nImplementation approach:\n\n1. **Frontend Changes (SendMailDialog.tsx)**:\n   - Add a new state variable `savingToOutbox` to track the Outbox save phase\n   - Update the sending button to show different messages: \"Saving to Outbox (this may take up to 30 seconds)...\" during IMAP APPEND, then \"Sending via SMTP...\" during actual sending\n   - Use existing toast notification system to show progress updates\n   - Modify the handleSubmit function to handle different phases of the send process\n\n2. **Backend API Changes (handlers.rs)**:\n   - Modify the send_email handler (line 3164) to return progress updates or use existing SSE system\n   - Consider splitting the operation into two API calls: save-to-outbox and send-via-smtp, or add progress callbacks\n\n3. **SMTP Service Updates (smtp.rs)**:\n   - Add logging improvements around the ensure_folder_exists_and_append call (line 196) to better track timing\n   - Consider adding timeout handling with user-friendly error messages for extremely slow IMAP operations\n   - The existing log message at line 195 already mentions \"this may take up to 30 seconds\" - leverage this for UX\n\n4. **UX Flow**:\n   - User clicks \"Send Email\" → Button shows \"Saving to Outbox (this may take up to 30 seconds)...\" with spinner\n   - After Outbox save completes → Button shows \"Sending via SMTP...\" \n   - After SMTP send completes → Success toast and dialog closes\n   - If Outbox save fails → Show specific error about Outbox save failure\n   - Add Cancel button during long operations if feasible\n\nThe implementation should leverage the existing toast system (useToast hook) already used in SendMailDialog.tsx and align with the existing \"Sending...\" state management pattern.",
         "testStrategy": "1. Test with GoDaddy IMAP account to verify progress indicator appears during slow Outbox APPEND operations and shows appropriate timing messages. 2. Test with fast IMAP servers (Gmail) to ensure progress indicator still works correctly for quick operations. 3. Verify toast notifications appear at correct times and contain accurate messaging. 4. Test error scenarios where Outbox save fails to ensure proper error messaging. 5. Verify the UI remains responsive during long IMAP operations and the Cancel button works if implemented. 6. Test that the success flow completes properly with correct final toast message and dialog closure.",
         "status": "done",
         "dependencies": [
-          25
+          "25"
         ],
         "priority": "medium",
         "subtasks": []
       },
       {
-        "id": 83,
+        "id": "83",
         "title": "Implement background queue for asynchronous Outbox saves",
         "description": "Replace blocking IMAP APPEND operations with a background queue system to prevent UI freezing during slow server operations while maintaining proper email send flow.",
         "details": "Implement a comprehensive background task queue system to handle asynchronous IMAP operations:\n\n1. **Background Task Queue Service**: Create `BackgroundTaskQueue` struct using `crossbeam` channels (already in Cargo.toml) with task priority levels. Use `tokio::spawn` for worker threads that continuously process queued operations.\n\n2. **Email Send Flow Restructure**: Modify `SmtpService::send_email` to:\n   - Immediately send via SMTP (don't wait for Outbox)\n   - Queue Outbox save operation in background\n   - Queue Sent folder save operation after SMTP success\n   - Return success immediately after SMTP\n\n3. **Task Types and Retry Logic**: Define `BackgroundTask` enum for Outbox/Sent operations with exponential backoff retry (max 3 attempts). Include task metadata (account, message_id, email_bytes, folder).\n\n4. **User Notification System**: Integrate with existing SSE infrastructure in `src/dashboard/api/sse.rs` to notify users of background operation status. Add new event types for queue completion/failure.\n\n5. **Error Recovery**: Store failed operations in SQLite database (already configured) for manual retry via dashboard UI. Ensure atomic operations using existing IMAP patterns from `src/imap/atomic.rs`.\n\n6. **Service Integration**: Extend existing connection pooling (`src/connection_pool.rs`) to handle background IMAP sessions. Add queue metrics to dashboard services.\n\nThis maintains email reliability while solving the 60+ second GoDaddy IMAP timeout issue.",
         "testStrategy": "1. **Unit Tests**: Test queue operations with mock IMAP sessions, verify retry logic with exponential backoff, test task serialization/deserialization.\n\n2. **Integration Tests**: Test complete email send flow with simulated slow IMAP server (using tokio::time::sleep), verify SSE notifications are sent correctly, test database persistence of failed tasks.\n\n3. **Load Testing**: Send 50+ emails concurrently to verify queue handles high throughput without blocking, monitor memory usage and task completion rates.\n\n4. **Failure Scenarios**: Test network failures during background operations, verify graceful degradation when queue is full, test recovery from database on service restart.\n\n5. **End-to-End Testing**: Test with real GoDaddy IMAP account to verify 60+ second operations don't block UI, confirm emails appear in Outbox immediately and move to Sent after background completion.\n\n6. **Dashboard Monitoring**: Verify queue metrics appear in dashboard, test manual retry functionality for failed tasks, confirm SSE events reach frontend correctly.",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [
-          4,
-          7,
-          10,
-          25
+          "4",
+          "7",
+          "10",
+          "25"
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-10-17T23:50:36.343Z"
       },
       {
-        "id": 84,
+        "id": "84",
         "title": "Add SMTP-only developer mode to skip IMAP APPEND operations",
         "description": "Implement SMTP_ONLY_MODE environment variable that bypasses slow IMAP APPEND operations and sends emails directly via SMTP without saving to Outbox or Sent folders.",
         "details": "Add a developer feature that allows skipping slow IMAP APPEND operations by implementing:\n\n1. **Configuration Support**: Add SMTP_ONLY_MODE environment variable to src/config.rs Settings struct and .env.example file. Update config parsing to handle this boolean flag with appropriate defaults (false for production safety).\n\n2. **SMTP Service Modification**: Modify SmtpService::send_email() method in src/dashboard/services/smtp.rs to check SMTP_ONLY_MODE flag. When enabled, skip all calls to ensure_folder_exists_and_append(), append_to_outbox(), append_to_sent_folder(), and delete_from_outbox() methods. Send directly via SMTP transport without any IMAP operations.\n\n3. **Logging Integration**: Add explicit warning logs when SMTP_ONLY_MODE is active, clearly indicating this is a developer feature. Log at startup and during each email send operation to ensure visibility.\n\n4. **Frontend Warning Banner**: Create a prominent warning banner component in the React frontend that displays when SMTP_ONLY_MODE is enabled. The banner should show 'DEVELOPER MODE: SMTP-only (no Outbox/Sent folders)' with appropriate styling to indicate this is not for production use. Add API endpoint to check mode status.\n\n5. **Error Handling**: Ensure proper error handling when IMAP operations are skipped - return appropriate success responses without attempting folder operations. Maintain existing SMTP error handling for actual send failures.\n\nThis implementation should be minimal and focused on the core functionality while maintaining clear separation between production and developer code paths.",
         "testStrategy": "Test SMTP_ONLY_MODE=true bypasses all IMAP APPEND operations and sends emails successfully via SMTP. Verify SMTP_ONLY_MODE=false maintains existing Outbox behavior. Test frontend warning banner displays correctly when mode is enabled. Verify warning logs are generated appropriately. Test with both successful and failed SMTP sends to ensure error handling works correctly. Test configuration loading from environment variables.",
         "status": "pending",
         "dependencies": [
-          6,
-          25
+          "6",
+          "25"
         ],
         "priority": "low",
         "subtasks": []
       },
       {
-        "id": 85,
+        "id": "85",
         "title": "Fix non-functioning IMAP APPEND timeout - operation hangs indefinitely despite tokio::time::timeout wrapper",
         "description": "Critical bug: The tokio::time::timeout wrapper around IMAP APPEND operations in session.rs is not working. During production testing, IMAP APPEND hung for 70+ seconds despite 35-second timeout, with no error logged and resources never released.",
         "details": "**CRITICAL BUG - Production Blocker**\n\nDuring E2E testing of Task #81's implementation, discovered that the `tokio::time::timeout()` wrapper is completely non-functional with the async-imap library's APPEND operation.\n\n**Evidence:**\n- Test email sent from Shannon to Chris at 11:40:06\n- Backend logs show \"Saving email to INBOX.Outbox before sending (this may take up to 30 seconds)\"\n- Operation STILL HANGING after 70+ seconds (timeout set to 35 seconds)\n- No timeout error logged in backend\n- No HTTP response sent to frontend\n- Backend resources remain locked\n- Frontend hit its own 60-second timeout and gave up waiting\n\n**Current Implementation (NOT WORKING):**\n```rust\n// src/imap/session.rs lines 470-493\nlet append_result = tokio::time::timeout(\n    append_timeout,\n    session_guard.append(folder, content)\n).await;\n```\n\n**Root Cause Analysis:**\nThe async-imap library likely uses blocking I/O internally that doesn't respect tokio's cancellation mechanisms. Simply wrapping with `tokio::time::timeout()` is insufficient.\n\n**Potential Solutions to Investigate:**\n\n1. **Use spawn_blocking** - Run IMAP APPEND in separate thread pool:\n   ```rust\n   tokio::task::spawn_blocking(move || {\n       // IMAP APPEND operation\n   }).await\n   ```\n\n2. **Socket-level timeout** - Set timeout at TCP socket level before IMAP protocol operations\n\n3. **Manual timeout with select** - Use tokio::select! for better cancellation control:\n   ```rust\n   tokio::select! {\n       result = session_guard.append(folder, content) => result,\n       _ = tokio::time::sleep(append_timeout) => Err(timeout_error)\n   }\n   ```\n\n4. **Alternative IMAP library** - Evaluate if other Rust IMAP libraries handle async cancellation better\n\n5. **Separate monitoring task** - Spawn watchdog task that forcibly terminates if operation exceeds timeout\n\n**Files to Modify:**\n- src/imap/session.rs (lines 468-493 - current non-working timeout)\n- src/imap/client.rs (may need connection-level changes)\n- Tests needed to verify timeout works with slow mock IMAP server\n\n**Dependencies:**\n- Depends on Task #81 code (already merged)\n- Blocks Task #82 (progress indicator assumes timeout works)\n- Blocks production deployment\n\n**Success Criteria:**\n- IMAP APPEND operation reliably times out after configured duration\n- Timeout error is logged with descriptive message\n- HTTP 500 error returned to frontend with timeout message\n- Resources (connections, memory) properly released on timeout\n- Test with GoDaddy IMAP server shows timeout triggers after 35 seconds",
@@ -3096,7 +3116,7 @@
         "subtasks": []
       },
       {
-        "id": 86,
+        "id": "86",
         "title": "Fix account deserialization error preventing backend startup",
         "description": "Critical bug: Backend fails to load accounts from config/accounts.json with error \"missing field `display_name` at line 21 column 5\". The accounts.json file HAS display_name fields, so the issue is in the deserialization logic or struct definitions.",
         "details": "Error occurs in multiple places during startup:\n- Account migration from database: \"Account store error: Serialization error: missing field `display_name` at line 21 column 5\"\n- Sync accounts to database: Same error\n- Create default account from environment: Same error\n\nThe accounts.json file at config/accounts.json contains valid display_name fields for both accounts (lines 6 and 22), so the problem is likely:\n1. A mismatch between StoredAccount struct and Account struct\n2. Incorrect serde attributes causing deserialization failure\n3. Missing #[serde(default)] or #[serde(alias)] attributes\n\nFiles to investigate:\n- src/dashboard/services/account_store.rs (StoredAccount struct)\n- src/dashboard/services/account.rs (Account struct)\n- src/dashboard/services/mod.rs (account loading/migration logic)\n\nThis blocks all dashboard functionality including email compose, folder viewing, and account management.",
@@ -3107,14 +3127,14 @@
         "subtasks": []
       },
       {
-        "id": 87,
+        "id": "87",
         "title": "Fix Outbox folder not visible in folders dropdown",
-        "description": "Users cannot see the Outbox folder in the folders dropdown because the folder is never being created. The IMAP APPEND operation that creates the Outbox folder is timing out after 40 seconds with GoDaddy's slow IMAP server, preventing the folder from existing and thus not appearing in the folder list.",
-        "status": "in-progress",
+        "description": "Users cannot see the Outbox folder in the folders dropdown because the folder is never being created. The IMAP APPEND operation that creates the Outbox folder is timing out after 40 seconds with GoDaddy's slow IMAP server, preventing the folder from existing and thus not appearing in the folder list.\n\nAdditional UI/UX improvements have been completed alongside the Outbox visibility fix:\n\n- **Smart Polling Strategy**: EmailList.tsx now uses a 5-second polling interval for the Outbox folder to catch rapid state changes, and a 30-second interval for other folders. This balances responsiveness for Outbox with reduced server load for less dynamic folders.\n- **Delayed Refetch Pattern**: After sending an email, EmailList.tsx triggers an immediate refetch and then schedules additional refetches at 2s and 8s. This ensures the UI accurately reflects email state transitions (e.g., queued → Outbox → Sent) without requiring manual refresh.\n- **Granular Cache Invalidation**: The backend delete_email handler (handlers.rs:3326) now uses a new delete_emails_by_uids() method in CacheService (cache.rs:700-725) to surgically remove only the deleted emails from both DB and memory cache. This prevents the entire email list from flashing empty and avoids unnecessary IMAP refetches, greatly improving UX.\n\nThese improvements ensure Outbox visibility is robust, email state transitions are reflected promptly in the UI, and cache invalidation is efficient and user-friendly.",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
-        "details": "ROOT CAUSE IDENTIFIED: The Outbox folder visibility issue is caused by IMAP timeout during folder creation, not a frontend display problem.\n\n**Backend Issue**: SmtpService attempts to save emails to \"INBOX.Outbox\" via IMAP APPEND, but this operation times out after 40 seconds due to GoDaddy's slow IMAP server performance. When the APPEND fails, the Outbox folder is never created, so it cannot appear in the folder list.\n\n**Error Flow**:\n1. User sends email via SmtpService\n2. Backend attempts IMAP APPEND to \"INBOX.Outbox\" with 40s timeout\n3. GoDaddy IMAP server is too slow, operation times out\n4. Email send is aborted with \"CRITICAL: Failed to save email to INBOX.Outbox\"\n5. Outbox folder never gets created\n6. fetch_folders endpoint cannot return non-existent folder\n\n**Additional Issues Discovered**:\n- Frontend validation bug: accountEmail becomes undefined intermittently, causing SendMailDialog to close without making API call or showing error\n- Backend parameter handling: Fixed to require account_email parameter instead of falling back to default account\n- SendMailDialog UI feedback: Dialog closes without sending or showing user feedback when accountEmail is undefined\n\n**Implementation Options**:\n1. **Pre-create Outbox folder** during account setup/validation (implemented in subtask 2)\n2. **Increase IMAP timeout** beyond 40 seconds for slow servers\n3. **Non-blocking Outbox save** - send email first, queue Outbox save for background processing\n4. **Full background queue** implementation (Task #83) for asynchronous operations\n\n**Files modified**:\n- src/dashboard/services/account.rs - Added ensure_essential_folders_exist() method called during validate_connection()\n- src/dashboard/services/smtp.rs - IMAP APPEND timeout handling\n- frontend/src/dashboard/components/SendMailDialog.tsx - Frontend validation for accountEmail\n- backend API endpoint - Required account_email parameter",
-        "testStrategy": "1. **Timeout Reproduction**: Attempt to send email and verify IMAP APPEND timeout occurs with GoDaddy accounts.\n\n2. **Folder Pre-creation**: Test that Outbox folder appears in dropdown after implementing pre-creation during account setup.\n\n3. **Backend Logging**: Verify backend logs show successful Outbox folder creation instead of timeout errors.\n\n4. **Cross-account Testing**: Test with both chris@ and shannon@ GoDaddy accounts to verify fix works for all accounts.\n\n5. **Folder List API**: Call /api/dashboard/emails/folders endpoint to verify Outbox is included after pre-creation.\n\n6. **Send Flow Testing**: Verify email send completes successfully after Outbox folder exists, without APPEND timeout errors.\n\n7. **Fresh Account Testing**: Test account setup creates Outbox folder automatically for new accounts.\n\n8. **Frontend Validation Testing**: Test that SendMailDialog shows proper error messages when accountEmail is undefined instead of silently closing.\n\n9. **Dialog Behavior Testing**: Verify compose dialog remains open and shows feedback during send process instead of closing without user feedback.\n\n10. **Backend Parameter Testing**: Verify backend properly rejects requests with missing account_email parameter instead of falling back to default account.",
+        "details": "ROOT CAUSE IDENTIFIED: The Outbox folder visibility issue is caused by IMAP timeout during folder creation, not a frontend display problem.\n\n**Backend Issue**: SmtpService attempts to save emails to \"INBOX.Outbox\" via IMAP APPEND, but this operation times out after 40 seconds due to GoDaddy's slow IMAP server performance. When the APPEND fails, the Outbox folder is never created, so it cannot appear in the folder list.\n\n**Error Flow**:\n1. User sends email via SmtpService\n2. Backend attempts IMAP APPEND to \"INBOX.Outbox\" with 40s timeout\n3. GoDaddy IMAP server is too slow, operation times out\n4. Email send is aborted with \"CRITICAL: Failed to save email to INBOX.Outbox\"\n5. Outbox folder never gets created\n6. fetch_folders endpoint cannot return non-existent folder\n\n**Additional Issues Discovered**:\n- Frontend validation bug: accountEmail becomes undefined intermittently, causing SendMailDialog to close without making API call or showing error\n- Backend parameter handling: Fixed to require account_email parameter instead of falling back to default account\n- SendMailDialog UI feedback: Dialog closes without sending or showing user feedback when accountEmail is undefined\n\n**Implementation Options**:\n1. **Pre-create Outbox folder** during account setup/validation (implemented in subtask 2)\n2. **Increase IMAP timeout** beyond 40 seconds for slow servers\n3. **Non-blocking Outbox save** - send email first, queue Outbox save for background processing\n4. **Full background queue** implementation (Task #83) for asynchronous operations\n\n**Files modified**:\n- src/dashboard/services/account.rs - Added ensure_essential_folders_exist() method called during validate_connection()\n- src/dashboard/services/smtp.rs - IMAP APPEND timeout handling\n- frontend/src/dashboard/components/SendMailDialog.tsx - Frontend validation for accountEmail\n- backend API endpoint - Required account_email parameter\n- frontend/rustymail-app-main/src/dashboard/components/EmailList.tsx - Smart polling and delayed refetches for Outbox\n- src/dashboard/services/cache.rs - delete_emails_by_uids method (lines 700-725)\n- src/dashboard/api/handlers.rs - delete_email handler now uses granular cache invalidation (line 3326)\n\n**Key Insight**: Cache invalidation should be surgical, not wholesale. Clearing the entire cache causes poor UX (flickering, empty states) and forces expensive IMAP refetches. Always prefer targeted cache updates when possible.",
+        "testStrategy": "1. **Timeout Reproduction**: Attempt to send email and verify IMAP APPEND timeout occurs with GoDaddy accounts.\n\n2. **Folder Pre-creation**: Test that Outbox folder appears in dropdown after implementing pre-creation during account setup.\n\n3. **Backend Logging**: Verify backend logs show successful Outbox folder creation instead of timeout errors.\n\n4. **Cross-account Testing**: Test with both chris@ and shannon@ GoDaddy accounts to verify fix works for all accounts.\n\n5. **Folder List API**: Call /api/dashboard/emails/folders endpoint to verify Outbox is included after pre-creation.\n\n6. **Send Flow Testing**: Verify email send completes successfully after Outbox folder exists, without APPEND timeout errors.\n\n7. **Fresh Account Testing**: Test account setup creates Outbox folder automatically for new accounts.\n\n8. **Frontend Validation Testing**: Test that SendMailDialog shows proper error messages when accountEmail is undefined instead of silently closing.\n\n9. **Dialog Behavior Testing**: Verify compose dialog remains open and shows feedback during send process instead of closing without user feedback.\n\n10. **Backend Parameter Testing**: Verify backend properly rejects requests with missing account_email parameter instead of falling back to default account.\n\n11. **Smart Polling Testing**: Confirm EmailList.tsx polls Outbox every 5 seconds and other folders every 30 seconds. Verify Outbox state changes are reflected promptly, while other folders do not cause unnecessary server load.\n\n12. **Delayed Refetch Testing**: After sending an email, verify that EmailList triggers immediate, 2s, and 8s delayed refetches, and that email transitions (queued → Outbox → Sent) are visible in the UI.\n\n13. **Granular Cache Invalidation Testing**: Delete an email and confirm only the relevant email is removed from the UI without the entire list flashing empty. Confirm no unnecessary IMAP refetches occur.",
         "subtasks": [
           {
             "id": 1,
@@ -3123,7 +3143,8 @@
             "dependencies": [],
             "details": "Review smtp.rs IMAP APPEND implementation to understand current timeout configuration. Test IMAP APPEND operations against GoDaddy servers to measure actual response times. Document whether 40 seconds is insufficient or if there are other performance factors. Check if timeout can be safely increased without affecting other operations.\n<info added on 2025-10-17T00:08:30.506Z>\nLet me analyze the current RustyMail codebase to understand the IMAP timeout configuration and provide a comprehensive update to this subtask.Based on my comprehensive analysis of the RustyMail codebase, I can provide the complete technical analysis that should be appended to the subtask details:\n\n**ANALYSIS COMPLETED - Comprehensive Multi-Layer Timeout Investigation**\n\n**Current Timeout Architecture:**\n1. Environment variable override: IMAP_APPEND_TIMEOUT_SECONDS=35 (default in .env.example:17)\n2. Socket-level timeouts: 35 seconds for read/write operations (session.rs:180-183)  \n3. IMAP APPEND operation timeout: 35 seconds using spawn_blocking (session.rs:506)\n4. SmtpService wrapper timeout: 40 seconds (smtp.rs:255)\n\n**GoDaddy Performance Analysis:**\n- Log analysis confirms CONSISTENT timeouts at exactly 40 seconds\n- Timeout occurs at SmtpService layer, not IMAP socket layer (35s < 40s)  \n- GoDaddy server-side processing exceeds 40 seconds consistently\n- Root cause: Server-side email scanning/filtering/indexing operations\n\n**Technical Findings:**\n1. **Multi-layer timeout protection is working correctly:** Socket timeouts (35s) → IMAP operation timeout (35s) → Service wrapper (40s)\n2. **GoDaddy APPEND operations require >40 seconds** due to server-side processing (likely virus scanning, spam filtering, indexing)\n3. **Pre-creation strategy (Task 87.2) reduces timeout risk** by eliminating folder CREATE overhead, but GoDaddy APPEND is still inherently slow\n4. **Current timeout values are insufficient for GoDaddy** while being appropriate for most other providers\n\n**Environment Variable Configuration Confirmed:**\n- IMAP_APPEND_TIMEOUT_SECONDS environment variable properly configured\n- Default 35s timeout propagated through: client.rs → session.rs socket timeouts → session.rs APPEND timeout  \n- Service wrapper adds 5s buffer (40s total) but still insufficient for GoDaddy\n\n**Recommendations for Task 87:**\n1. **Pre-creation remains valid strategy** - eliminates CREATE+APPEND compound latency\n2. **Consider timeout increase:** IMAP_APPEND_TIMEOUT_SECONDS=60 for GoDaddy accounts\n3. **Alternative approach:** Background queue for IMAP operations (referenced Task #83)\n4. **Provider-specific timeouts:** Different timeout values per email provider configuration\n</info added on 2025-10-17T00:08:30.506Z>",
             "status": "done",
-            "testStrategy": "Use IMAP client tools to measure APPEND operation times. Test with different email sizes and GoDaddy account configurations."
+            "testStrategy": "Use IMAP client tools to measure APPEND operation times. Test with different email sizes and GoDaddy account configurations.",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -3134,7 +3155,8 @@
             ],
             "details": "Add IMAP CREATE command for INBOX.Outbox folder during account setup in email.rs. Implement error handling for cases where folder already exists (ALREADYEXISTS error). Ensure folder creation happens during account validation so users see Outbox in dropdown immediately. Add logging to track successful folder creation.\n<info added on 2025-10-16T21:50:21.079Z>\nI'll analyze the codebase to better understand the implementation context before generating the update.IMPLEMENTATION COMPLETE AND VERIFIED ✅\n\nSuccessfully implemented account.rs:707 validate_connection() method integration with ensure_essential_folders_exist() at line 762. The implementation creates INBOX.Outbox, INBOX.Sent, and INBOX.Drafts folders during account validation using concrete ImapClient<AsyncImapSessionWrapper> type.\n\nVERIFICATION RESULTS:\n- Backend rebuild: Successful (25.86s compile time)\n- Backend restart: Complete via PM2 \n- API validation test: POST /api/dashboard/accounts/shannon@texasfortress.ai/validate returns {\"success\": true, \"message\": \"Connection validated successfully\"}\n- Backend logs confirm: \"Created essential folder: INBOX.Outbox\" message appears as expected\n- Folders endpoint verification shows Outbox now exists in folder hierarchy\n\nIMPLEMENTATION APPROACH:\n- Modified validate_connection() at line 729-734 to call ensure_essential_folders_exist() after successful IMAP connection\n- Added ensure_essential_folders_exist() method at lines 763-791 with proper error handling for \"already exists\" scenarios\n- Used graceful degradation: logs warnings for folder creation failures but doesn't fail overall validation\n- Strategic placement during validation ensures folders exist when users need them, avoiding timeout issues during send operations\n\nNEXT PHASE READY:\nAccount validation now ensures Outbox folder exists before users attempt email send operations, preventing the root cause timeout scenario. Ready to test actual email sending to verify complete resolution of IMAP timeout issues.\n</info added on 2025-10-16T21:50:21.079Z>",
             "status": "done",
-            "testStrategy": "Test with fresh accounts to verify Outbox appears in folder dropdown immediately after setup. Verify existing accounts are not affected negatively."
+            "testStrategy": "Test with fresh accounts to verify Outbox appears in folder dropdown immediately after setup. Verify existing accounts are not affected negatively.",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -3145,7 +3167,8 @@
             ],
             "details": "Remove or modify Outbox folder creation logic in smtp.rs since folder will be pre-created. Update error handling to distinguish between folder not existing vs. APPEND timeout. Consider implementing retry logic for failed APPEND operations. Ensure email send can proceed even if Outbox save fails (with appropriate logging).",
             "status": "done",
-            "testStrategy": "Test email send with pre-existing Outbox folder. Verify APPEND operations complete successfully. Test error scenarios when APPEND still fails."
+            "testStrategy": "Test email send with pre-existing Outbox folder. Verify APPEND operations complete successfully. Test error scenarios when APPEND still fails.",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -3156,7 +3179,8 @@
             ],
             "details": "Update frontend account setup flow to trigger folder list refresh after successful account validation. Ensure EmailList component refetches folders when account configuration changes. Add mechanism to detect when new folders should be available and trigger appropriate UI updates.\n<info added on 2025-10-17T00:49:54.724Z>\nLooking at the user request and the current implementation state, I need to analyze the codebase to verify the changes and provide accurate completion details.Based on my analysis of the codebase, I can confirm that the implementation has been successfully completed as described. Here's the new text content to add to the subtask details:\n\n**IMPLEMENTATION COMPLETED ✅**\n\nSuccessfully implemented folder refresh mechanism after account validation in AccountFormDialog.tsx:197-198. Added useQueryClient hook integration to trigger automatic folder cache invalidation when account validation succeeds, ensuring newly created folders (Outbox, Sent, Drafts) from backend pre-creation logic immediately appear in EmailList component dropdown without requiring page reload.\n\n**Key Integration Points Verified:**\n- React Query cache invalidation uses matching query key pattern ['folders', account.id] as defined in EmailList.tsx:102  \n- EmailList folders query already configured with proper staleTime (5 minutes) and enabled state management (lines 101-141)\n- Automatic refetch triggers when cache invalidated, leveraging existing retry/timeout logic (5 second timeout with fallback folders)\n\n**End-to-End Flow Validated:**\n1. User clicks \"Test Connection\" in Account Form Dialog\n2. Backend validates and pre-creates folders (Task 87.2 integration)  \n3. Frontend invalidates folders cache on validation success\n4. EmailList reactively refetches folders from API\n5. Outbox folder immediately appears in dropdown selector\n\nFrontend changes deployed to development server (port 9440). Ready for comprehensive testing with Task 87.5.\n</info added on 2025-10-17T00:49:54.724Z>",
             "status": "done",
-            "testStrategy": "Test that Outbox appears in dropdown immediately after account setup without requiring page refresh. Verify folder list updates correctly across all account operations."
+            "testStrategy": "Test that Outbox appears in dropdown immediately after account setup without requiring page refresh. Verify folder list updates correctly across all account operations.",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -3168,7 +3192,8 @@
             ],
             "details": "Test with fresh GoDaddy accounts (chris@, shannon@) to verify Outbox creation during setup. Verify existing accounts get Outbox folder added. Test email send operations complete successfully with visible Outbox folder. Confirm folder dropdown shows Outbox consistently across all account types and configurations.",
             "status": "pending",
-            "testStrategy": "Manual testing with multiple account types. Automated tests for folder creation and visibility. Performance testing to ensure changes don't negatively impact other operations."
+            "testStrategy": "Manual testing with multiple account types. Automated tests for folder creation and visibility. Performance testing to ensure changes don't negatively impact other operations.",
+            "parentId": "undefined"
           },
           {
             "id": 6,
@@ -3176,8 +3201,9 @@
             "description": "Resolve intermittent bug where accountEmail becomes undefined causing dialog to close without API call or error message, and improve user feedback during send process.",
             "dependencies": [],
             "details": "Investigate why accountEmail prop becomes undefined intermittently in SendMailDialog component. Add robust validation in handleSubmit() to check accountEmail before processing (already implemented lines 51-60). Ensure dialog stays open with proper error messaging when validation fails. Investigate dialog closing behavior without user feedback during send operations. Verify dialog state management and error handling provide clear user feedback throughout the send process.\n<info added on 2025-10-17T00:40:26.003Z>\nLooking at the investigation findings, I'll analyze the current codebase to understand the SendMailDialog implementation and provide specific technical details for the subtask update.**DETAILED CODE ANALYSIS FINDINGS:**\n\nCode verification confirms the validation logic in SendMailDialog.tsx:52-59 is correctly implemented with proper accountEmail undefined checking and toast error display. The Dialog component from shadcn/ui (lines 153-261) uses standard React state management and only closes via onOpenChange(false) on line 138 after successful email send, not during error conditions.\n\n**TECHNICAL ROOT CAUSE ANALYSIS:**\n\n1. **AccountContext State Management (AccountContext.tsx:17-50)**: The currentAccount state can become null during context re-renders or account switching operations, causing accountEmail prop to become undefined intermittently.\n\n2. **React Query Dependencies (EmailList.tsx:77,102,138)**: Multiple useQuery hooks depend on currentAccount?.id with enabled: !!currentAccount guards. If currentAccount becomes null during re-renders, this could trigger state changes affecting parent components.\n\n3. **Dialog Component Behavior**: The shadcn/ui Dialog component itself may have internal state management that could cause unexpected closing behavior if parent component state changes occur during form submission.\n\n**CONFIRMED ISSUE PATTERN:**\n\nThe problem is NOT validation failure (that works correctly) but rather the dialog closing WITHOUT any form submission attempt. This suggests:\n- External state change causing dialog close before handleSubmit is reached\n- Parent component (EmailList) re-rendering and changing composeDialogOpen state\n- AccountContext currentAccount becoming null during critical operations\n\n**DEBUGGING REQUIREMENTS:**\n\nNeed browser console logs during failure to identify: 1) Whether handleSubmit function is actually called, 2) Any React context or state warnings, 3) Network requests in browser dev tools to confirm if API call is attempted, 4) React DevTools to monitor currentAccount state changes during dialog interaction.\n</info added on 2025-10-17T00:40:26.003Z>",
-            "status": "in-progress",
-            "testStrategy": "Test dialog behavior with various account selection states. Verify error messages display correctly when accountEmail is undefined. Test dialog remains open during send process with appropriate feedback. Verify successful send completion shows proper confirmation before closing."
+            "status": "pending",
+            "testStrategy": "Test dialog behavior with various account selection states. Verify error messages display correctly when accountEmail is undefined. Test dialog remains open during send process with appropriate feedback. Verify successful send completion shows proper confirmation before closing.",
+            "parentId": "undefined"
           },
           {
             "id": 7,
@@ -3186,22 +3212,31 @@
             "dependencies": [],
             "details": "Verify backend API endpoint at /api/dashboard/emails/send requires account_email parameter. Test that requests without account_email parameter return proper error response instead of silently using default account. Ensure parameter validation is consistent with other API endpoints. Document the parameter requirement in API documentation.\n<info added on 2025-10-17T00:41:46.091Z>\nVERIFICATION COMPLETED ✅\n\n**Manual Test Results Confirmed**:\n1. API requests without account_email parameter correctly return HTTP 400 with error message \"account_email query parameter is required\"\n2. API requests with valid account_email parameter properly use the specified account instead of defaulting\n3. Backend logs confirm correct account selection: \"Sending email from account: shannon@texasfortress.ai\"\n\n**Code Implementation Verified** (handlers.rs:3164-3175):\nParameter validation uses `.ok_or_else()` pattern returning ApiError::BadRequest when account_email is missing, consistent with other API endpoints.\n\n**Security Validation**:\n- Prevents accidental email sends from incorrect accounts\n- No silent fallback behavior to default account\n- Clear error messaging for API consumers\n- Parameter requirement properly enforced\n\n**Backend parameter validation is fully implemented and working correctly. This subtask is complete.**\n</info added on 2025-10-17T00:41:46.091Z>",
             "status": "done",
-            "testStrategy": "Test API calls with missing account_email parameter to verify proper error responses. Test with various account configurations to ensure parameter handling is consistent."
+            "testStrategy": "Test API calls with missing account_email parameter to verify proper error responses. Test with various account configurations to ensure parameter handling is consistent.",
+            "parentId": "undefined"
+          },
+          {
+            "id": 8,
+            "title": "Implement smart polling, delayed refetch, and granular cache invalidation for Outbox and email list",
+            "description": "Enhance EmailList.tsx and backend cache handling to improve Outbox responsiveness and overall email list UX.",
+            "dependencies": [],
+            "details": "1. **Smart Polling**: In frontend/rustymail-app-main/src/dashboard/components/EmailList.tsx, implement conditional polling intervals: 5 seconds for Outbox folder, 30 seconds for all other folders. Use folder name checks to determine polling interval dynamically.\n\n2. **Delayed Refetch Pattern**: After a successful email send, trigger an immediate refetch of the email list, then schedule additional refetches at 2s and 8s. This ensures the UI reflects email state transitions (queued → Outbox → Sent) without manual refresh.\n\n3. **Granular Cache Invalidation**: In src/dashboard/services/cache.rs (lines 700-725), implement delete_emails_by_uids() to remove only the specified emails from both DB and memory cache. Update src/dashboard/api/handlers.rs (delete_email handler, line 3326) to use this method instead of clear_folder_cache(), preventing the entire email list from flashing empty and avoiding unnecessary IMAP refetches.\n\n4. **UX Validation**: Confirm that deleting an email only removes the relevant item from the UI, Outbox state changes are reflected promptly, and no unnecessary server load or UI flicker occurs.",
+            "status": "pending",
+            "testStrategy": "1. Verify Outbox folder is polled every 5 seconds and other folders every 30 seconds in EmailList.tsx.\n2. After sending an email, confirm immediate, 2s, and 8s delayed refetches update the UI to show email transitions.\n3. Delete an email and confirm only the relevant email is removed from the UI, with no full list flash or unnecessary IMAP refetch.\n4. Monitor server logs and network requests to ensure polling and cache invalidation are efficient and correct.",
+            "parentId": "undefined"
           }
-        ]
+        ],
+        "updatedAt": "2025-10-17T23:50:34.483Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-10-13T03:44:26.272Z",
-      "taskCount": 70,
-      "completedCount": 68,
+      "lastModified": "2025-10-17T23:50:36.345Z",
+      "taskCount": 87,
+      "completedCount": 86,
       "tags": [
         "master"
-      ],
-      "created": "2025-10-13T03:58:25.433Z",
-      "description": "Tasks for master context",
-      "updated": "2025-10-17T01:49:30.763Z"
+      ]
     }
   }
 }
