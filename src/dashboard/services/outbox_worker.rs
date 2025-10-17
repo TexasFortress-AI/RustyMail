@@ -107,7 +107,7 @@ impl OutboxWorker {
             }
         }
 
-        // Step 3: Save to Sent folder (and ideally remove from Outbox)
+        // Step 3: Save to Sent folder and remove from Outbox (completing the "move" operation)
         if !item.sent_folder_saved {
             match self.save_to_folder(&item, "INBOX.Sent").await {
                 Ok(_) => {
@@ -115,7 +115,19 @@ impl OutboxWorker {
                     if let Err(e) = self.queue_service.mark_sent_folder_saved(id).await {
                         warn!("Failed to mark sent folder saved for item {}: {}", id, e);
                     }
-                    // TODO: Remove from Outbox folder after successful send
+
+                    // Remove from Outbox now that it's in Sent folder
+                    if item.outbox_saved {
+                        match self.remove_from_outbox(&item).await {
+                            Ok(_) => {
+                                info!("Successfully moved email from Outbox to Sent folder");
+                            }
+                            Err(e) => {
+                                // Don't fail the whole operation - the email was sent and is in Sent folder
+                                warn!("Failed to remove from Outbox folder for item {}: {}. Email is still in Sent folder.", id, e);
+                            }
+                        }
+                    }
                 }
                 Err(e) => {
                     // Don't fail the whole operation, just log
@@ -174,6 +186,45 @@ impl OutboxWorker {
         session.append(folder, &item.raw_email_bytes, &flags).await?;
 
         info!("Saved email to {} folder for account {}", folder, item.account_email);
+        Ok(())
+    }
+
+    /// Remove email from Outbox folder after successful send
+    async fn remove_from_outbox(&self, item: &crate::dashboard::services::OutboxQueueItem) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use crate::imap::session::AsyncImapOps;
+
+        // Get the account for this email
+        let account_service = self.account_service.lock().await;
+        let account = account_service
+            .get_account(&item.account_email)
+            .await
+            .map_err(|e| format!("Failed to get account {}: {}", item.account_email, e))?;
+        drop(account_service);
+
+        // Create IMAP session for this specific account
+        let mut session = self.imap_factory.create_session_for_account(&account).await?;
+
+        // Select Outbox folder
+        session.select_folder("INBOX.Outbox").await?;
+
+        // Search for the email by subject
+        // Escape double quotes in subject for IMAP search
+        let escaped_subject = item.subject.replace("\"", "\\\"");
+        let search_criteria = format!("SUBJECT \"{}\"", escaped_subject);
+
+        let uids = session.search_emails(&search_criteria).await?;
+
+        if uids.is_empty() {
+            warn!("Email not found in Outbox for removal (subject: {})", item.subject);
+            return Ok(()); // Not an error - email might have been manually moved
+        }
+
+        info!("Found {} message(s) in Outbox matching subject '{}', deleting...", uids.len(), item.subject);
+
+        // Delete the messages (mark as deleted + expunge)
+        session.delete_messages(&uids).await?;
+
+        info!("Removed email from Outbox folder for account {}", item.account_email);
         Ok(())
     }
 

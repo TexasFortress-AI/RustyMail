@@ -437,7 +437,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="font-medium text-sm">
-                            {currentFolder === 'INBOX.Sent'
+                            {(currentFolder === 'INBOX.Sent' || currentFolder === 'INBOX.Outbox' || currentFolder === 'INBOX.Drafts')
                               ? (email.to_addresses && email.to_addresses.length > 0
                                   ? email.to_addresses.join(', ')
                                   : 'No recipients')
