@@ -3,7 +3,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tokio::sync::Mutex as TokioMutex;
 use log::{info, error, warn};
-use crate::dashboard::services::{OutboxQueueService, SmtpService, AccountService};
+use crate::dashboard::services::{OutboxQueueService, SmtpService, AccountService, CacheService};
 use crate::prelude::CloneableImapSessionFactory;
 
 /// Background worker that processes the outbox queue
@@ -12,6 +12,7 @@ pub struct OutboxWorker {
     smtp_service: Arc<SmtpService>,
     imap_factory: CloneableImapSessionFactory,
     account_service: Arc<TokioMutex<AccountService>>,
+    cache_service: Arc<CacheService>,
     poll_interval: Duration,
 }
 
@@ -27,6 +28,7 @@ impl OutboxWorker {
         smtp_service: Arc<SmtpService>,
         imap_factory: CloneableImapSessionFactory,
         account_service: Arc<TokioMutex<AccountService>>,
+        cache_service: Arc<CacheService>,
     ) -> Self {
         let poll_interval = std::env::var("OUTBOX_WORKER_INTERVAL_SECONDS")
             .ok()
@@ -38,6 +40,7 @@ impl OutboxWorker {
             smtp_service,
             imap_factory,
             account_service,
+            cache_service,
             poll_interval: Duration::from_secs(poll_interval),
         }
     }
@@ -82,6 +85,10 @@ impl OutboxWorker {
                     saved_to_outbox = true;
                     if let Err(e) = self.queue_service.mark_outbox_saved(id).await {
                         warn!("Failed to mark outbox saved for item {}: {}", id, e);
+                    }
+                    // Invalidate Outbox cache so UI shows the new email immediately
+                    if let Err(e) = self.cache_service.clear_folder_cache("INBOX.Outbox", &item.account_email).await {
+                        warn!("Failed to invalidate Outbox cache for {}: {}", item.account_email, e);
                     }
                 }
                 Err(e) => {
@@ -129,6 +136,14 @@ impl OutboxWorker {
                                 warn!("Failed to remove from Outbox folder for item {}: {}. Email is still in Sent folder.", id, e);
                             }
                         }
+                    }
+
+                    // Invalidate both Sent and Outbox caches so UI reflects the move
+                    if let Err(e) = self.cache_service.clear_folder_cache("INBOX.Sent", &item.account_email).await {
+                        warn!("Failed to invalidate Sent cache for {}: {}", item.account_email, e);
+                    }
+                    if let Err(e) = self.cache_service.clear_folder_cache("INBOX.Outbox", &item.account_email).await {
+                        warn!("Failed to invalidate Outbox cache for {}: {}", item.account_email, e);
                     }
                 }
                 Err(e) => {
