@@ -243,7 +243,10 @@ impl SmtpService {
         }
     }
 
-    /// Ensure folder exists and append email to it (creates folder if needed)
+    /// Append email to folder (expects folder to exist, creates as fallback)
+    ///
+    /// NOTE: Folders should be pre-created during account validation (see account.rs:ensure_essential_folders_exist)
+    /// This function only creates folders as a fallback for edge cases or legacy accounts.
     async fn ensure_folder_exists_and_append(
         &self,
         account_email: &str,
@@ -254,7 +257,7 @@ impl SmtpService {
         // This prevents indefinite hangs with slow IMAP servers
         let operation_timeout = Duration::from_secs(40); // 5 seconds more than IMAP APPEND timeout
 
-        log::info!("Starting IMAP APPEND operation with {}s timeout", operation_timeout.as_secs());
+        log::info!("Starting IMAP APPEND to '{}' with {}s timeout", folder_name, operation_timeout.as_secs());
 
         // Wrap the entire operation in a timeout
         let result = timeout(operation_timeout, async {
@@ -273,7 +276,7 @@ impl SmtpService {
                 .await
                 .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
 
-            // Try to append to the folder
+            // Try to append to the folder (folder should already exist from account validation)
             log::info!("Attempting IMAP APPEND to folder '{}'", folder_name);
             let flags: Vec<String> = vec![];
             match session.append(folder_name, email_bytes, &flags).await {
@@ -281,34 +284,50 @@ impl SmtpService {
                     log::info!("Successfully saved email to folder: {}", folder_name);
                     Ok(())
                 }
-                Err(e) => {
-                    log::warn!("Failed to append to folder '{}': {}. Attempting to create folder...", folder_name, e);
+                Err(append_err) => {
+                    let err_str = append_err.to_string().to_lowercase();
 
-                    // Try to create the folder
-                    match session.create_folder(folder_name).await {
-                        Ok(_) => {
-                            log::info!("Successfully created folder: {}", folder_name);
+                    // Check if error is due to folder not existing (common IMAP error patterns)
+                    let folder_not_found = err_str.contains("no such") ||
+                                          err_str.contains("not found") ||
+                                          err_str.contains("nonexistent") ||
+                                          err_str.contains("does not exist");
 
-                            // Now try to append again
-                            match session.append(folder_name, email_bytes, &flags).await {
-                                Ok(_) => {
-                                    log::info!("Successfully saved email to newly created folder: {}", folder_name);
-                                    Ok(())
-                                }
-                                Err(e) => {
-                                    Err(SmtpError::ConfigError(format!(
-                                        "Failed to append to folder '{}' even after creating it: {}",
-                                        folder_name, e
-                                    )))
+                    if folder_not_found {
+                        log::warn!("Folder '{}' does not exist (should have been pre-created). Attempting to create...", folder_name);
+
+                        // Try to create the folder as fallback
+                        match session.create_folder(folder_name).await {
+                            Ok(_) => {
+                                log::info!("Successfully created missing folder: {}", folder_name);
+
+                                // Now try to append again
+                                match session.append(folder_name, email_bytes, &flags).await {
+                                    Ok(_) => {
+                                        log::info!("Successfully saved email to newly created folder: {}", folder_name);
+                                        Ok(())
+                                    }
+                                    Err(e) => {
+                                        Err(SmtpError::ConfigError(format!(
+                                            "IMAP APPEND failed after creating folder '{}': {}. Server may be rejecting the operation.",
+                                            folder_name, e
+                                        )))
+                                    }
                                 }
                             }
+                            Err(create_err) => {
+                                Err(SmtpError::ConfigError(format!(
+                                    "Folder '{}' missing and could not be created: {}. Check account folder permissions.",
+                                    folder_name, create_err
+                                )))
+                            }
                         }
-                        Err(create_err) => {
-                            Err(SmtpError::ConfigError(format!(
-                                "Failed to append to folder '{}' and failed to create it: {}",
-                                folder_name, create_err
-                            )))
-                        }
+                    } else {
+                        // APPEND failed for a reason other than folder not existing (timeout, permissions, etc)
+                        Err(SmtpError::ConfigError(format!(
+                            "IMAP APPEND to existing folder '{}' failed: {}. This may be due to slow server processing or permissions.",
+                            folder_name, append_err
+                        )))
                     }
                 }
             }
@@ -327,8 +346,8 @@ impl SmtpService {
             Err(_elapsed) => {
                 log::error!("IMAP APPEND operation timed out after {}s. Abandoning session to prevent indefinite hang.", operation_timeout.as_secs());
                 Err(SmtpError::ConfigError(format!(
-                    "IMAP APPEND operation timed out after {}s. This may be due to slow server processing (e.g., email scanning). The operation has been cancelled.",
-                    operation_timeout.as_secs()
+                    "IMAP APPEND to folder '{}' timed out after {}s. Server may be performing security scanning. The operation has been cancelled.",
+                    folder_name, operation_timeout.as_secs()
                 )))
             }
         }
