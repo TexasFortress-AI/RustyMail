@@ -141,6 +141,18 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     retry: false, // Don't retry on failure
   });
 
+  // Validate currentFolder exists for new account, fallback to INBOX if not
+  useEffect(() => {
+    if (foldersData?.folders && foldersData.folders.length > 0) {
+      // Check if current folder exists in the new account's folders
+      if (!foldersData.folders.includes(currentFolder)) {
+        console.log(`Folder ${currentFolder} doesn't exist for account ${currentAccount?.email_address}, falling back to INBOX`);
+        setCurrentFolder('INBOX');
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [foldersData?.folders, currentAccount?.id]);
+
   // Expose refetch function to parent
   useEffect(() => {
     if (onRefetchReady) {
