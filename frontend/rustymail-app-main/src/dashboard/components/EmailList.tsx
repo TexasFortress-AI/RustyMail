@@ -94,7 +94,8 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
       return response.json();
     },
     enabled: !!currentAccount,
-    refetchInterval: 30000, // Refetch every 30 seconds
+    // Poll every 5 seconds for Outbox (to catch rapid changes), 30 seconds for other folders
+    refetchInterval: currentFolder === 'INBOX.Outbox' ? 5000 : 30000,
   });
 
   // Fetch available folders from IMAP
@@ -668,8 +669,11 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
         onOpenChange={setComposeDialogOpen}
         accountEmail={currentAccount?.email_address}
         onSuccess={() => {
-          // Refetch emails to show the sent email in the current folder
+          // Immediate refetch (email is queued but not in IMAP yet)
           refetch();
+          // Delayed refetches to catch the email appearing in Outbox then moving to Sent
+          setTimeout(() => refetch(), 2000);  // After worker saves to Outbox
+          setTimeout(() => refetch(), 8000);  // After worker moves to Sent
         }}
       />
     </Card>
