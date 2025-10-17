@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { RefreshCw, Mail, ChevronLeft, ChevronRight, X, ChevronsLeft, ChevronsRight, Paperclip, Download, PenSquare } from 'lucide-react';
+import { RefreshCw, Mail, ChevronLeft, ChevronRight, X, ChevronsLeft, ChevronsRight, Paperclip, Download, PenSquare, Trash2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '../../hooks/use-toast';
 import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
@@ -242,6 +242,60 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     }
   };
 
+  const handleDeleteEmail = async (email: Email, event: React.MouseEvent) => {
+    // Prevent the click from triggering email selection
+    event.stopPropagation();
+
+    if (!currentAccount) return;
+
+    if (!window.confirm(`Are you sure you want to delete "${email.subject || '(No subject)'}"`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/dashboard/emails/delete`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': config.api.apiKey
+        },
+        body: JSON.stringify({
+          folder: currentFolder,
+          uids: [email.uid],
+          account_email: currentAccount.email_address
+        })
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Email Deleted",
+          description: "The email has been deleted successfully.",
+        });
+        // Refetch emails to update the list
+        refetch();
+        // Clear selected email if it was deleted
+        if (selectedEmail?.uid === email.uid) {
+          setSelectedEmail(null);
+          onEmailSelect?.(undefined);
+        }
+      } else {
+        const errorData = await response.json();
+        toast({
+          title: "Delete Failed",
+          description: errorData.error || "Failed to delete email",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error deleting email:', error);
+      toast({
+        title: "Delete Error",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive",
+      });
+    }
+  };
+
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -426,7 +480,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
                   return (
                   <div
                     key={email.id}
-                    className="border rounded-lg p-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                    className="group border rounded-lg p-3 hover:bg-gray-50 cursor-pointer transition-colors"
                     onMouseEnter={() => onEmailSelect?.({ uid: email.uid, message_id: email.message_id, index: emailIndex })}
                     onClick={() => {
                       setSelectedEmail(email);
@@ -459,8 +513,17 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
                           </div>
                         )}
                       </div>
-                      <div className="text-xs text-gray-500">
-                        {formatDate(email.date, email.internal_date)}
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs text-gray-500">
+                          {formatDate(email.date, email.internal_date)}
+                        </div>
+                        <button
+                          onClick={(e) => handleDeleteEmail(email, e)}
+                          className="opacity-0 group-hover:opacity-100 hover:bg-red-100 p-1 rounded transition-all"
+                          title="Delete email"
+                        >
+                          <Trash2 className="h-4 w-4 text-red-600" />
+                        </button>
                       </div>
                     </div>
                   </div>
