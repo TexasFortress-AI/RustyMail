@@ -307,4 +307,21 @@ impl OutboxQueueService {
             completed_at: r.completed_at.map(naive_to_utc),
         }).collect())
     }
+
+    /// Get subjects of all completed or failed items for an account
+    /// Used for orphan cleanup to identify which emails should be removed from Outbox
+    pub async fn get_completed_subjects(&self, account_email: &str) -> Result<Vec<String>, sqlx::Error> {
+        let records = sqlx::query!(
+            r#"
+            SELECT subject
+            FROM outbox_queue
+            WHERE account_email = ? AND (status = 'sent' OR status = 'failed')
+            "#,
+            account_email
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(records.into_iter().map(|r| r.subject).collect())
+    }
 }

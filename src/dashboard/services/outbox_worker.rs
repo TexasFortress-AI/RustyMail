@@ -49,9 +49,20 @@ impl OutboxWorker {
     pub async fn start(self: Arc<Self>) {
         info!("Starting outbox worker with {} second poll interval", self.poll_interval.as_secs());
 
+        let mut iteration_count = 0u64;
+        let cleanup_interval = 12; // Run cleanup every 12 iterations (60 seconds with 5-second poll)
+
         loop {
             if let Err(e) = self.process_next().await {
                 error!("Error processing outbox queue: {}", e);
+            }
+
+            // Periodically clean up orphaned emails in Outbox folders
+            iteration_count += 1;
+            if iteration_count % cleanup_interval == 0 {
+                if let Err(e) = self.cleanup_orphaned_outbox_emails().await {
+                    error!("Error cleaning up orphaned outbox emails: {}", e);
+                }
             }
 
             sleep(self.poll_interval).await;
@@ -262,5 +273,108 @@ impl OutboxWorker {
                 error!("Error checking retry eligibility for item {}: {}", id, e);
             }
         }
+    }
+
+    /// Clean up orphaned emails from Outbox folders
+    /// This handles emails that were saved to Outbox but never removed (due to crashes, etc.)
+    async fn cleanup_orphaned_outbox_emails(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use crate::imap::session::AsyncImapOps;
+        use chrono::{Utc, Duration as ChronoDuration};
+
+        info!("Running orphaned outbox email cleanup...");
+
+        // Get all accounts
+        let account_service = self.account_service.lock().await;
+        let accounts = account_service.list_accounts().await.map_err(|e| format!("Failed to list accounts: {}", e))?;
+        drop(account_service);
+
+        for account in accounts {
+            let account_email = &account.email_address;
+
+            // Get all completed/failed queue items for this account to check against
+            let completed_subjects: Vec<String> = match self.queue_service.get_completed_subjects(account_email).await {
+                Ok(subjects) => subjects,
+                Err(e) => {
+                    warn!("Failed to get completed queue subjects for {}: {}", account_email, e);
+                    continue;
+                }
+            };
+
+            // Create IMAP session
+            let mut session = match self.imap_factory.create_session_for_account(&account).await {
+                Ok(s) => s,
+                Err(e) => {
+                    warn!("Failed to create IMAP session for {} during cleanup: {}", account_email, e);
+                    continue;
+                }
+            };
+
+            // Select Outbox folder
+            if let Err(e) = session.select_folder("INBOX.Outbox").await {
+                warn!("Failed to select Outbox folder for {}: {}", account_email, e);
+                continue;
+            }
+
+            // Search for all emails in Outbox
+            let all_uids = match session.search_emails("ALL").await {
+                Ok(uids) => uids,
+                Err(e) => {
+                    warn!("Failed to search Outbox for {}: {}", account_email, e);
+                    continue;
+                }
+            };
+
+            if all_uids.is_empty() {
+                continue; // No emails in Outbox
+            }
+
+            info!("Found {} emails in Outbox for {}, checking for orphans...", all_uids.len(), account_email);
+
+            // Fetch email headers to check dates and subjects
+            let emails = match session.fetch_emails(&all_uids).await {
+                Ok(emails) => emails,
+                Err(e) => {
+                    warn!("Failed to fetch Outbox emails for {}: {}", account_email, e);
+                    continue;
+                }
+            };
+
+            let cutoff_time = Utc::now() - ChronoDuration::minutes(10);
+            let mut orphans_to_delete = Vec::new();
+
+            for email in emails {
+                // Check if email is old enough to be considered orphaned
+                if let Some(internal_date) = email.internal_date {
+                    if internal_date < cutoff_time {
+                        // Get the subject from the envelope
+                        if let Some(ref envelope) = email.envelope {
+                            if let Some(ref subject) = envelope.subject {
+                                // Check if this email has a completed queue entry
+                                if completed_subjects.iter().any(|s| s == subject) {
+                                    info!("Found orphaned email '{}' in Outbox (already completed), will remove", subject);
+                                    orphans_to_delete.push(email.uid);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if !orphans_to_delete.is_empty() {
+                info!("Deleting {} orphaned emails from Outbox for {}", orphans_to_delete.len(), account_email);
+                if let Err(e) = session.delete_messages(&orphans_to_delete).await {
+                    warn!("Failed to delete orphaned emails from Outbox for {}: {}", account_email, e);
+                } else {
+                    info!("Successfully cleaned up {} orphaned emails from Outbox for {}", orphans_to_delete.len(), account_email);
+
+                    // Invalidate cache after cleanup
+                    if let Err(e) = self.cache_service.clear_folder_cache("INBOX.Outbox", account_email).await {
+                        warn!("Failed to invalidate Outbox cache after cleanup for {}: {}", account_email, e);
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }

@@ -1,0 +1,20 @@
+{
+  "db_name": "SQLite",
+  "query": "\n            SELECT subject\n            FROM outbox_queue\n            WHERE account_email = ? AND (status = 'sent' OR status = 'failed')\n            ",
+  "describe": {
+    "columns": [
+      {
+        "name": "subject",
+        "ordinal": 0,
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "0d5fa2b23ef6917a2ad2ca8cd8762c6df79ee84d232b6fad5039b7debd41ddf0"
+}
