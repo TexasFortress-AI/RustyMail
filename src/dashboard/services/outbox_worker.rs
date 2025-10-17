@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
+use tokio::sync::Mutex as TokioMutex;
 use log::{info, error, warn};
-use crate::dashboard::services::{OutboxQueueService, SmtpService};
+use crate::dashboard::services::{OutboxQueueService, SmtpService, AccountService};
 use crate::prelude::CloneableImapSessionFactory;
 
 /// Background worker that processes the outbox queue
@@ -10,6 +11,7 @@ pub struct OutboxWorker {
     queue_service: Arc<OutboxQueueService>,
     smtp_service: Arc<SmtpService>,
     imap_factory: CloneableImapSessionFactory,
+    account_service: Arc<TokioMutex<AccountService>>,
     poll_interval: Duration,
 }
 
@@ -24,6 +26,7 @@ impl OutboxWorker {
         queue_service: Arc<OutboxQueueService>,
         smtp_service: Arc<SmtpService>,
         imap_factory: CloneableImapSessionFactory,
+        account_service: Arc<TokioMutex<AccountService>>,
     ) -> Self {
         let poll_interval = std::env::var("OUTBOX_WORKER_INTERVAL_SECONDS")
             .ok()
@@ -34,6 +37,7 @@ impl OutboxWorker {
             queue_service,
             smtp_service,
             imap_factory,
+            account_service,
             poll_interval: Duration::from_secs(poll_interval),
         }
     }
@@ -151,7 +155,16 @@ impl OutboxWorker {
 
     /// Save email to IMAP folder (Outbox or Sent)
     async fn save_to_folder(&self, item: &crate::dashboard::services::OutboxQueueItem, folder: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let mut session = self.imap_factory.create_session().await?;
+        // Get the account for this email
+        let account_service = self.account_service.lock().await;
+        let account = account_service
+            .get_account(&item.account_email)
+            .await
+            .map_err(|e| format!("Failed to get account {}: {}", item.account_email, e))?;
+        drop(account_service);
+
+        // Create IMAP session for this specific account
+        let mut session = self.imap_factory.create_session_for_account(&account).await?;
 
         // Select folder
         session.select_folder(folder).await?;

@@ -200,6 +200,7 @@ async fn main() -> std::io::Result<()> {
         Arc::clone(&dashboard_state.outbox_queue_service),
         Arc::clone(&dashboard_state.smtp_service),
         imap_session_factory.clone(),
+        Arc::clone(&dashboard_state.account_service),
     ));
     tokio::spawn(async move {
         outbox_worker.start().await;
