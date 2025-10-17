@@ -34,6 +34,8 @@ pub fn configure_routes() -> Scope {
         .route("/emails", web::get().to(handlers::get_cached_emails))
         // SMTP email sending endpoint
         .route("/emails/send", web::post().to(handlers::send_email))
+        // Email deletion endpoint
+        .route("/emails/delete", web::post().to(handlers::delete_email))
         .route("/events", web::get().to(sse::sse_handler))
         // Account management endpoints
         .route("/accounts/auto-config", web::post().to(accounts::auto_configure))

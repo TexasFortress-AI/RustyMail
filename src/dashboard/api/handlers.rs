@@ -3280,3 +3280,56 @@ pub async fn send_email(
         }
     }
 }
+
+/// Delete email(s) from a folder
+#[derive(serde::Deserialize)]
+pub struct DeleteEmailRequest {
+    pub folder: String,
+    pub uids: Vec<u32>,
+    pub account_email: String,
+}
+
+pub async fn delete_email(
+    state: Data<DashboardState>,
+    body: web::Json<DeleteEmailRequest>,
+) -> Result<impl Responder, ApiError> {
+    let request = body.into_inner();
+
+    info!("Deleting {} email(s) from folder {} for account {}",
+          request.uids.len(), request.folder, request.account_email);
+
+    if request.uids.is_empty() {
+        return Err(ApiError::BadRequest("No UIDs provided".to_string()));
+    }
+
+    // Get account details
+    let account_service = state.account_service.lock().await;
+    let account = account_service.get_account(&request.account_email).await
+        .map_err(|e| ApiError::InternalError(format!("Account not found: {}", e)))?;
+    drop(account_service);
+
+    // Create IMAP session for this account
+    let mut session = state.imap_factory.create_session_for_account(&account).await
+        .map_err(|e| ApiError::InternalError(format!("Failed to create IMAP session: {}", e)))?;
+
+    // Select the folder
+    session.select_folder(&request.folder).await
+        .map_err(|e| ApiError::InternalError(format!("Failed to select folder {}: {}", request.folder, e)))?;
+
+    // Delete the messages
+    session.delete_messages(&request.uids).await
+        .map_err(|e| ApiError::InternalError(format!("Failed to delete messages: {}", e)))?;
+
+    info!("Successfully deleted {} email(s) from {}", request.uids.len(), request.folder);
+
+    // Invalidate cache for the folder
+    if let Err(e) = state.cache_service.clear_folder_cache(&request.folder, &request.account_email).await {
+        warn!("Failed to invalidate cache for folder {} after delete: {}", request.folder, e);
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "success": true,
+        "deleted_count": request.uids.len(),
+        "folder": request.folder
+    })))
+}
