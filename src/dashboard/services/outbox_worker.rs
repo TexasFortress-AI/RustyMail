@@ -74,10 +74,12 @@ impl OutboxWorker {
         }
 
         // Step 1: Save to IMAP Outbox folder FIRST (so user can see it in their email client)
+        let mut saved_to_outbox = item.outbox_saved;
         if !item.outbox_saved {
             match self.save_to_folder(&item, "INBOX.Outbox").await {
                 Ok(_) => {
                     info!("Email saved to Outbox folder - user can now see it in their email client");
+                    saved_to_outbox = true;
                     if let Err(e) = self.queue_service.mark_outbox_saved(id).await {
                         warn!("Failed to mark outbox saved for item {}: {}", id, e);
                     }
@@ -117,7 +119,7 @@ impl OutboxWorker {
                     }
 
                     // Remove from Outbox now that it's in Sent folder
-                    if item.outbox_saved {
+                    if saved_to_outbox {
                         match self.remove_from_outbox(&item).await {
                             Ok(_) => {
                                 info!("Successfully moved email from Outbox to Sent folder");
