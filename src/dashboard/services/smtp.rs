@@ -545,12 +545,13 @@ impl SmtpService {
         }
     }
 
-    /// Send email from raw RFC822 bytes (used by outbox worker)
-    pub async fn send_raw_email(
+    /// Send email via SMTP only (no IMAP operations) - used by outbox worker
+    /// This method ONLY sends the email via SMTP and does not save to any IMAP folders
+    pub async fn send_email_smtp_only(
         &self,
         account_email: &str,
-        email_bytes: &[u8],
-    ) -> Result<(), SmtpError> {
+        request: SendEmailRequest,
+    ) -> Result<String, SmtpError> {
         // Get account details
         let account_service = self.account_service.lock().await;
         let account = account_service
@@ -575,6 +576,78 @@ impl SmtpService {
         let smtp_port = account.smtp_port.unwrap_or(587) as u16;
         let use_starttls = account.smtp_use_starttls.unwrap_or(true);
 
+        // Build from address with properly quoted display name
+        let from_mailbox: Mailbox = if account.display_name.is_empty() {
+            account.email_address
+                .parse()
+                .map_err(|e| SmtpError::ConfigError(format!("Invalid from address: {}", e)))?
+        } else {
+            let quoted_name = if account.display_name.contains(|c: char| "()<>[]:;@\\,\"".contains(c)) {
+                format!("\"{}\"", account.display_name.replace('\"', "\\\""))
+            } else {
+                account.display_name.clone()
+            };
+            format!("{} <{}>", quoted_name, account.email_address)
+                .parse()
+                .map_err(|e| SmtpError::ConfigError(format!("Invalid from address: {}", e)))?
+        };
+
+        // Build email message
+        let mut email_builder = Message::builder()
+            .from(from_mailbox)
+            .subject(&request.subject);
+
+        // Add To recipients
+        for to_addr in &request.to {
+            email_builder = email_builder.to(to_addr.parse().map_err(|e| {
+                SmtpError::ConfigError(format!("Invalid to address {}: {}", to_addr, e))
+            })?);
+        }
+
+        // Add CC recipients
+        if let Some(cc_addrs) = &request.cc {
+            for cc_addr in cc_addrs {
+                email_builder = email_builder.cc(cc_addr.parse().map_err(|e| {
+                    SmtpError::ConfigError(format!("Invalid cc address {}: {}", cc_addr, e))
+                })?);
+            }
+        }
+
+        // Add BCC recipients
+        if let Some(bcc_addrs) = &request.bcc {
+            for bcc_addr in bcc_addrs {
+                email_builder = email_builder.bcc(bcc_addr.parse().map_err(|e| {
+                    SmtpError::ConfigError(format!("Invalid bcc address {}: {}", bcc_addr, e))
+                })?);
+            }
+        }
+
+        // Build multipart body (plain text + optional HTML)
+        let email = if let Some(html_body) = &request.body_html {
+            email_builder.multipart(
+                MultiPart::alternative()
+                    .singlepart(
+                        SinglePart::builder()
+                            .header(header::ContentType::TEXT_PLAIN)
+                            .body(request.body.clone()),
+                    )
+                    .singlepart(
+                        SinglePart::builder()
+                            .header(header::ContentType::TEXT_HTML)
+                            .body(html_body.clone()),
+                    ),
+            )?
+        } else {
+            email_builder.header(ContentType::TEXT_PLAIN).body(request.body.clone())?
+        };
+
+        // Get message ID before sending
+        let message_id = email
+            .headers()
+            .get_raw("Message-ID")
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+
         // Build SMTP transport
         let creds = Credentials::new(smtp_user.clone(), smtp_pass.clone());
 
@@ -592,24 +665,12 @@ impl SmtpService {
                 .build()
         };
 
-        // Send raw email bytes via SMTP
-        // We can't parse back to Message, so we need to use lettre's transport directly
-        // The email_bytes are already in RFC822 format, so we can send them as-is
-        use lettre::transport::smtp::client::SmtpConnection;
+        // Send via SMTP (no IMAP operations)
+        log::info!("Sending email via SMTP only (no IMAP operations)...");
+        mailer.send(email).await?;
+        log::info!("Email sent successfully via SMTP");
 
-        // For now, let's rebuild the email from the account info
-        // This is a limitation we'll need to work around differently
-        // TODO: Store the Message object in the queue instead of just bytes
-
-        // Actually, let's just use the mailer's send_raw method if available
-        // Since we have the bytes, we need to send them directly
-
-        // The simplest approach: don't use this method from the worker
-        // Instead, have the worker call the regular send_email API
-        return Err(SmtpError::ConfigError("send_raw_email not yet implemented - use send_email instead".to_string()));
-
-        log::info!("Successfully sent email via SMTP for account: {}", account_email);
-        Ok(())
+        Ok(message_id)
     }
 
     pub async fn test_smtp_connection(&self, account_email: &str) -> Result<(), SmtpError> {

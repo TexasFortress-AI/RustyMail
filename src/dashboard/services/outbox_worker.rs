@@ -69,10 +69,28 @@ impl OutboxWorker {
             return Ok(());
         }
 
-        // Step 1: Send via SMTP (already done when queued, but verify)
+        // Step 1: Save to IMAP Outbox folder FIRST (so user can see it in their email client)
+        if !item.outbox_saved {
+            match self.save_to_folder(&item, "INBOX.Outbox").await {
+                Ok(_) => {
+                    info!("Email saved to Outbox folder - user can now see it in their email client");
+                    if let Err(e) = self.queue_service.mark_outbox_saved(id).await {
+                        warn!("Failed to mark outbox saved for item {}: {}", id, e);
+                    }
+                }
+                Err(e) => {
+                    // If we can't save to Outbox, just log and continue
+                    // The email will still be sent via SMTP
+                    warn!("Failed to save to Outbox folder for item {}: {}. Will attempt SMTP send anyway.", id, e);
+                }
+            }
+        }
+
+        // Step 2: Send via SMTP
         if !item.smtp_sent {
             match self.send_via_smtp(&item).await {
                 Ok(_) => {
+                    info!("Email sent successfully via SMTP");
                     if let Err(e) = self.queue_service.mark_smtp_sent(id).await {
                         error!("Failed to mark SMTP sent for item {}: {}", id, e);
                     }
@@ -85,28 +103,15 @@ impl OutboxWorker {
             }
         }
 
-        // Step 2: Save to Outbox folder (non-blocking, best effort)
-        if !item.outbox_saved {
-            match self.save_to_folder(&item, "INBOX.Outbox").await {
-                Ok(_) => {
-                    if let Err(e) = self.queue_service.mark_outbox_saved(id).await {
-                        warn!("Failed to mark outbox saved for item {}: {}", id, e);
-                    }
-                }
-                Err(e) => {
-                    // Don't fail the whole operation, just log
-                    warn!("Failed to save to Outbox folder for item {}: {}. Continuing anyway.", id, e);
-                }
-            }
-        }
-
-        // Step 3: Save to Sent folder (non-blocking, best effort)
+        // Step 3: Save to Sent folder (and ideally remove from Outbox)
         if !item.sent_folder_saved {
             match self.save_to_folder(&item, "INBOX.Sent").await {
                 Ok(_) => {
+                    info!("Email saved to Sent folder");
                     if let Err(e) = self.queue_service.mark_sent_folder_saved(id).await {
                         warn!("Failed to mark sent folder saved for item {}: {}", id, e);
                     }
+                    // TODO: Remove from Outbox folder after successful send
                 }
                 Err(e) => {
                     // Don't fail the whole operation, just log
@@ -137,8 +142,9 @@ impl OutboxWorker {
             body_html: item.body_html.clone(),
         };
 
-        // Send using the normal SMTP service
-        self.smtp_service.send_email(&item.account_email, request).await?;
+        // Send using SMTP-only method (no IMAP operations)
+        // The worker handles IMAP saves separately
+        self.smtp_service.send_email_smtp_only(&item.account_email, request).await?;
 
         Ok(())
     }

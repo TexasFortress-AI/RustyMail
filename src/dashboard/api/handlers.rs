@@ -3166,23 +3166,117 @@ pub async fn send_email(
     query: web::Query<SendEmailQueryParams>,
     body: web::Json<crate::dashboard::services::SendEmailRequest>,
 ) -> Result<impl Responder, ApiError> {
+    use lettre::{Message, message::{header::ContentType, Mailbox, MultiPart, SinglePart, header}};
+    use chrono::Utc;
+
     // REQUIRE account_email parameter - do NOT fall back to default account
     // This prevents accidentally sending from the wrong account
     let account_email = query.account_email.as_ref()
         .ok_or_else(|| ApiError::BadRequest("account_email query parameter is required".to_string()))?
         .clone();
 
-    info!("Sending email from account: {}", account_email);
+    info!("Queueing email from account: {}", account_email);
 
-    // Send the email using SMTP service
-    match state.smtp_service.send_email(&account_email, body.into_inner()).await {
-        Ok(response) => {
-            info!("Email sent successfully: {:?}", response);
+    let request = body.into_inner();
+
+    // Get account details to build proper From header
+    let account_service = state.account_service.lock().await;
+    let account = account_service.get_account(&account_email).await
+        .map_err(|e| ApiError::InternalError(format!("Account not found: {}", e)))?;
+    drop(account_service);
+
+    // Build from address with properly quoted display name
+    let from_mailbox: Mailbox = if account.display_name.is_empty() {
+        account.email_address.parse()
+            .map_err(|e| ApiError::InternalError(format!("Invalid from address: {}", e)))?
+    } else {
+        let quoted_name = if account.display_name.contains(|c: char| "()<>[]:;@\\,\"".contains(c)) {
+            format!("\"{}\"", account.display_name.replace('\"', "\\\""))
+        } else {
+            account.display_name.clone()
+        };
+        format!("{} <{}>", quoted_name, account.email_address).parse()
+            .map_err(|e| ApiError::InternalError(format!("Invalid from address: {}", e)))?
+    };
+
+    // Build email message
+    let mut email_builder = Message::builder().from(from_mailbox).subject(&request.subject);
+
+    // Add recipients
+    for to_addr in &request.to {
+        email_builder = email_builder.to(to_addr.parse()
+            .map_err(|e| ApiError::BadRequest(format!("Invalid to address {}: {}", to_addr, e)))?);
+    }
+    if let Some(cc_addrs) = &request.cc {
+        for cc_addr in cc_addrs {
+            email_builder = email_builder.cc(cc_addr.parse()
+                .map_err(|e| ApiError::BadRequest(format!("Invalid cc address {}: {}", cc_addr, e)))?);
+        }
+    }
+    if let Some(bcc_addrs) = &request.bcc {
+        for bcc_addr in bcc_addrs {
+            email_builder = email_builder.bcc(bcc_addr.parse()
+                .map_err(|e| ApiError::BadRequest(format!("Invalid bcc address {}: {}", bcc_addr, e)))?);
+        }
+    }
+
+    // Build multipart body
+    let email = if let Some(html_body) = &request.body_html {
+        email_builder.multipart(
+            MultiPart::alternative()
+                .singlepart(SinglePart::builder().header(header::ContentType::TEXT_PLAIN).body(request.body.clone()))
+                .singlepart(SinglePart::builder().header(header::ContentType::TEXT_HTML).body(html_body.clone()))
+        ).map_err(|e| ApiError::InternalError(format!("Failed to build email: {}", e)))?
+    } else {
+        email_builder.header(ContentType::TEXT_PLAIN).body(request.body.clone())
+            .map_err(|e| ApiError::InternalError(format!("Failed to build email: {}", e)))?
+    };
+
+    // Get message ID and raw bytes
+    let message_id = email.headers().get_raw("Message-ID").map(|v| v.to_string());
+    let raw_email_bytes = email.formatted();
+
+    // Create outbox queue item
+    let queue_item = crate::dashboard::services::OutboxQueueItem {
+        id: None,
+        account_email: account_email.clone(),
+        message_id: message_id.clone(),
+        to_addresses: request.to.clone(),
+        cc_addresses: request.cc.clone(),
+        bcc_addresses: request.bcc.clone(),
+        subject: request.subject.clone(),
+        body_text: request.body.clone(),
+        body_html: request.body_html.clone(),
+        raw_email_bytes,
+        status: crate::dashboard::services::OutboxStatus::Pending,
+        smtp_sent: false,
+        outbox_saved: false,
+        sent_folder_saved: false,
+        retry_count: 0,
+        max_retries: 3,
+        last_error: None,
+        created_at: Utc::now(),
+        smtp_sent_at: None,
+        last_retry_at: None,
+        completed_at: None,
+    };
+
+    // Enqueue the email
+    match state.outbox_queue_service.enqueue(queue_item).await {
+        Ok(queue_id) => {
+            info!("Email queued successfully with ID: {} (will be sent asynchronously)", queue_id);
+
+            let response = crate::dashboard::services::SendEmailResponse {
+                success: true,
+                message_id,
+                message: format!("Email queued successfully (queue ID: {}). Background worker will send it shortly.", queue_id),
+            };
+
             Ok(HttpResponse::Ok().json(response))
         }
         Err(e) => {
-            error!("Failed to send email: {}", e);
-            Err(ApiError::InternalError(format!("Failed to send email: {}", e)))
+            error!("Failed to queue email: {}", e);
+            Err(ApiError::InternalError(format!("Failed to queue email: {}", e)))
         }
     }
 }
