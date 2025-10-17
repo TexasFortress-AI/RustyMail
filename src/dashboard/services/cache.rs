@@ -697,6 +697,33 @@ impl CacheService {
         }
     }
 
+    /// Delete specific emails from cache by UIDs
+    pub async fn delete_emails_by_uids(&self, folder_name: &str, uids: &[u32], account_id: &str) -> Result<(), CacheError> {
+        let folder = match self.get_folder_from_cache_for_account(folder_name, account_id).await {
+            Some(f) => f,
+            None => return Ok(()),
+        };
+
+        let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
+
+        // Delete emails from database
+        for uid in uids {
+            sqlx::query("DELETE FROM emails WHERE folder_id = ? AND uid = ?")
+                .bind(folder.id)
+                .bind(*uid as i64)
+                .execute(pool)
+                .await?;
+
+            // Remove from memory cache
+            let cache_key = format!("{}:{}:{}", account_id, folder_name, uid);
+            let mut memory_cache = self.memory_cache.write().await;
+            memory_cache.pop(&cache_key);
+        }
+
+        info!("Deleted {} email(s) from cache for folder {}", uids.len(), folder_name);
+        Ok(())
+    }
+
     pub async fn clear_folder_cache(&self, folder_name: &str, account_id: &str) -> Result<(), CacheError> {
         let folder = match self.get_folder_from_cache_for_account(folder_name, account_id).await {
             Some(f) => f,

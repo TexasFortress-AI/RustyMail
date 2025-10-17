@@ -3322,9 +3322,9 @@ pub async fn delete_email(
 
     info!("Successfully deleted {} email(s) from {}", request.uids.len(), request.folder);
 
-    // Invalidate cache for the folder
-    if let Err(e) = state.cache_service.clear_folder_cache(&request.folder, &request.account_email).await {
-        warn!("Failed to invalidate cache for folder {} after delete: {}", request.folder, e);
+    // Remove deleted emails from cache
+    if let Err(e) = state.cache_service.delete_emails_by_uids(&request.folder, &request.uids, &request.account_email).await {
+        warn!("Failed to remove deleted emails from cache: {}", e);
     }
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
