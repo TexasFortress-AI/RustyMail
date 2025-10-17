@@ -48,6 +48,16 @@ export function SendMailDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Validate account email is present
+    if (!accountEmail) {
+      toast({
+        title: 'No Account Selected',
+        description: 'Please select an email account before sending',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     // Parse comma-separated email lists
     const toEmails = toInput
       .split(',')

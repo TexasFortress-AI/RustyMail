@@ -3166,19 +3166,11 @@ pub async fn send_email(
     query: web::Query<SendEmailQueryParams>,
     body: web::Json<crate::dashboard::services::SendEmailRequest>,
 ) -> Result<impl Responder, ApiError> {
-    // Get account email from query parameters or use default
-    let account_email = match query.account_email.as_ref() {
-        Some(email) => email.clone(),
-        None => {
-            // Get default account if no account_email provided
-            let account_service = state.account_service.lock().await;
-            match account_service.get_default_account().await {
-                Ok(Some(account)) => account.email_address,
-                Ok(None) => return Err(ApiError::NotFound("No default account configured".to_string())),
-                Err(e) => return Err(ApiError::InternalError(format!("Failed to get default account: {}", e))),
-            }
-        }
-    };
+    // REQUIRE account_email parameter - do NOT fall back to default account
+    // This prevents accidentally sending from the wrong account
+    let account_email = query.account_email.as_ref()
+        .ok_or_else(|| ApiError::BadRequest("account_email query parameter is required".to_string()))?
+        .clone();
 
     info!("Sending email from account: {}", account_email);
 
