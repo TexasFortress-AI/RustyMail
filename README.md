@@ -298,11 +298,18 @@ RustyMail implements the Model Context Protocol (MCP) over stdio and Streamable 
 
 ## Claude Desktop Integration
 
-RustyMail can be integrated with Claude Desktop as an MCP server, allowing Claude to access your emails directly.
+RustyMail provides **two MCP variants** for different use cases:
 
-### Setup
+1. **Standard Variant** (`rustymail-mcp-stdio`) - 26+ low-level tools for direct email operations
+2. **High-Level Variant** (`rustymail-mcp-stdio-high-level`) - 12 AI-powered tools with reduced context pollution
 
-1. **Build the MCP stdio adapter** (if not already built):
+### Standard MCP Variant
+
+Best for **direct control** over email operations when you need fine-grained access to all IMAP/SMTP functions.
+
+**Setup:**
+
+1. **Build the standard MCP adapter**:
    ```bash
    cargo build --release --bin rustymail-mcp-stdio
    ```
@@ -316,12 +323,12 @@ RustyMail can be integrated with Claude Desktop as an MCP server, allowing Claud
    ./target/release/rustymail-server
    ```
 
-3. **Configure Claude Desktop** by editing your config file:
+3. **Configure Claude Desktop**:
    - **macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
    - **Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
    - **Linux**: `~/.config/Claude/claude_desktop_config.json`
 
-4. **Add RustyMail MCP server** to the config:
+4. **Add standard variant** to the config:
    ```json
    {
      "mcpServers": {
@@ -336,20 +343,132 @@ RustyMail can be integrated with Claude Desktop as an MCP server, allowing Claud
    }
    ```
 
-   **Important**: Replace `/absolute/path/to/RustyMail` with the actual full path to your RustyMail directory.
+### High-Level MCP Variant (Recommended for AI Agents)
 
-5. **Restart Claude Desktop** to load the MCP server
+Best for **AI-powered workflows** with natural language email management and reduced context pollution.
 
-### Usage
+**Features:**
+- 🤖 **AI-Powered Drafting**: Generate email replies and compositions using configurable AI models
+- 🔍 **Intelligent Workflows**: Process complex email instructions in natural language
+- 📉 **Reduced Context**: Only 12 tools (vs 26+) to minimize Claude's context usage
+- ⚙️ **Configurable Models**: Separate models for tool calling (routing) and drafting (composition)
 
-Once configured, you can ask Claude to interact with your emails:
+**Setup:**
 
-- "List my email folders"
-- "Show me unread emails in my inbox"
-- "Search for emails from john@example.com"
-- "What are the statistics for my INBOX folder?"
+1. **Build the high-level MCP adapter**:
+   ```bash
+   cargo build --release --bin rustymail-mcp-stdio-high-level
+   ```
 
-Claude will use the MCP tools to access your email data through RustyMail.
+2. **Configure AI models** (first-time setup):
+
+   The high-level variant uses two AI roles:
+   - **Tool-calling model** (e.g., `qwen2.5:7b`) - Routes tasks and calls tools
+   - **Drafting model** (e.g., `llama3.3:70b`) - Generates email content
+
+   Configure via Claude Desktop using the MCP tools:
+   ```
+   "Set tool calling model to ollama qwen2.5:7b at http://localhost:11434"
+   "Set drafting model to ollama llama3.3:70b at http://localhost:11434"
+   ```
+
+3. **Add high-level variant** to Claude Desktop config:
+   ```json
+   {
+     "mcpServers": {
+       "rustymail-high-level": {
+         "command": "/absolute/path/to/RustyMail/target/release/rustymail-mcp-stdio-high-level",
+         "env": {
+           "MCP_BACKEND_URL": "http://localhost:9437/mcp",
+           "MCP_TIMEOUT": "120"
+         }
+       }
+     }
+   }
+   ```
+
+   **Note**: Higher timeout (120s) recommended for AI generation tasks.
+
+### High-Level Tools Reference
+
+#### AI-Powered Tools
+
+- **`process_email_instructions`** - Execute complex email workflows from natural language
+  - Example: "Find all unread emails from john@example.com in the last week and draft replies"
+  - Uses sub-agent with iterative tool calling
+  - MAX_ITERATIONS: 10 to prevent infinite loops
+
+- **`draft_reply`** - Generate AI-powered email reply
+  - Fetches original email
+  - Generates contextual reply using drafting model
+  - Automatically saves draft to INBOX.Drafts folder with `\Draft` flag
+  - Parameters: `email_uid`, `folder`, `account_id`, `instruction` (optional)
+
+- **`draft_email`** - Generate new email from scratch
+  - Creates email based on recipient, subject, and context
+  - Uses drafting model for generation
+  - Automatically saves to INBOX.Drafts folder
+  - Parameters: `to`, `subject`, `context`, `account_id`
+
+#### Browsing Tools (Read-Only)
+
+- `list_accounts` - List configured email accounts
+- `list_folders_hierarchical` - Get folder tree structure
+- `list_cached_emails` - List emails with pagination (supports 30,000+ email folders)
+- `get_email_by_uid` - Fetch specific email by UID
+- `search_cached_emails` - Search emails by subject/sender/date
+- `get_folder_stats` - Get folder statistics (total, unread)
+
+#### Configuration Tools
+
+- `get_model_configurations` - View current AI model settings
+- `set_tool_calling_model` - Configure routing model (provider, model name, API key)
+- `set_drafting_model` - Configure email generation model
+
+### Usage Examples
+
+**Standard Variant:**
+```
+"List my email folders"
+"Show me unread emails in my inbox"
+"Move email UID 123 from INBOX to Archive"
+"Mark emails 100-105 as read"
+```
+
+**High-Level Variant:**
+```
+"Draft a reply to the email from john@example.com thanking him for the update"
+"Generate a professional email to shannon@texasfortress.ai about the project status"
+"Process my unread emails: draft replies to questions, archive newsletters"
+"What's in my Drafts folder?"
+```
+
+### Using Both Variants Together
+
+You can configure **both variants** in Claude Desktop to access different tool sets:
+
+```json
+{
+  "mcpServers": {
+    "rustymail": {
+      "command": "/path/to/rustymail-mcp-stdio",
+      "env": {
+        "MCP_BACKEND_URL": "http://localhost:9437/mcp",
+        "MCP_TIMEOUT": "30"
+      }
+    },
+    "rustymail-high-level": {
+      "command": "/path/to/rustymail-mcp-stdio-high-level",
+      "env": {
+        "MCP_BACKEND_URL": "http://localhost:9437/mcp",
+        "MCP_TIMEOUT": "120"
+      }
+    }
+  }
+}
+```
+
+Claude will have access to both tool sets and automatically choose the appropriate variant based on your request.
 
 ### Architecture
 
