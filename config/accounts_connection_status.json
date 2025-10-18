@@ -3,9 +3,9 @@
     "chris@texasfortress.ai": {
       "email_address": "chris@texasfortress.ai",
       "imap": {
-        "timestamp": "2025-10-18T00:26:02.935362Z",
+        "timestamp": "2025-10-18T00:35:05.437560Z",
         "status": "success",
-        "message": "Successfully connected to p3plzcpnl505455.prod.phx3.secureserver.net for sync"
+        "message": "Successfully connected to p3plzcpnl505455.prod.phx3.secureserver.net"
       },
       "smtp": {
         "timestamp": "2025-10-14T08:23:13.223335Z",
@@ -16,9 +16,9 @@
     "shannon@texasfortress.ai": {
       "email_address": "shannon@texasfortress.ai",
       "imap": {
-        "timestamp": "2025-10-18T00:26:24.493383Z",
+        "timestamp": "2025-10-18T00:35:14.084240Z",
         "status": "success",
-        "message": "Successfully connected to p3plzcpnl505455.prod.phx3.secureserver.net for sync"
+        "message": "Successfully connected to p3plzcpnl505455.prod.phx3.secureserver.net"
       },
       "smtp": {
         "timestamp": "2025-10-15T01:22:50.341503Z",

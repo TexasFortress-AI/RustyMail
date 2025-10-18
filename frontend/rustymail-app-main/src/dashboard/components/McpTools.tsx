@@ -123,10 +123,11 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
     setResults(prev => ({ ...prev, [toolName]: null }));
 
     try {
-      // Merge user parameters with account_id
+      // Use user-provided parameters, only default account_id if not specified
+      const userParams = parameters[toolName] || {};
       const toolParameters = {
-        ...parameters[toolName] || {},
-        ...(currentAccount ? { account_id: currentAccount.id } : {})
+        ...(currentAccount && !userParams.account_id ? { account_id: currentAccount.id } : {}),
+        ...userParams
       };
 
       const response = await fetch(`${config.api.baseUrl}/dashboard/mcp/execute`, {
