@@ -73,20 +73,6 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFolder, currentAccount?.id]);
 
-  // Validate currentFolder exists when folders data loads or account changes
-  useEffect(() => {
-    // Only validate if we have folders data and a current folder
-    if (foldersData?.folders && foldersData.folders.length > 0 && currentFolder) {
-      // If current folder doesn't exist for this account, switch to INBOX
-      if (!foldersData.folders.includes(currentFolder)) {
-        console.log(`Folder ${currentFolder} doesn't exist for account ${currentAccount?.email_address}, switching to INBOX`);
-        setCurrentFolder('INBOX');
-      }
-    }
-    // Only run when account ID or folders data changes, NOT when currentFolder changes
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentAccount?.id, foldersData]);
-
   const { data, isLoading, error, refetch, isFetching } = useQuery<EmailListResponse>({
     queryKey: ['emails', currentAccount?.id, currentFolder, currentPage],
     queryFn: async () => {
@@ -161,6 +147,20 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
       onRefetchReady(() => refetch());
     }
   }, [refetch, onRefetchReady]);
+
+  // Validate currentFolder exists when folders data loads or account changes
+  useEffect(() => {
+    // Only validate if we have folders data and a current folder
+    if (foldersData?.folders && foldersData.folders.length > 0 && currentFolder) {
+      // If current folder doesn't exist for this account, switch to INBOX
+      if (!foldersData.folders.includes(currentFolder)) {
+        console.log(`Folder ${currentFolder} doesn't exist for account ${currentAccount?.email_address}, switching to INBOX`);
+        setCurrentFolder('INBOX');
+      }
+    }
+    // Only run when account ID or folders data changes, NOT when currentFolder changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentAccount?.id, foldersData]);
 
   const handleSync = async () => {
     if (!currentAccount) {
