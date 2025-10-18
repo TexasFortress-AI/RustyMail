@@ -4,6 +4,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use actix_web::{web, HttpRequest, HttpResponse, Error as ActixError};
+use serde::Deserialize;
 use actix_web::http::header::{ACCEPT, ORIGIN};
 use futures::stream::Stream;
 use futures::StreamExt;
@@ -26,21 +27,34 @@ const SESSION_TIMEOUT: Duration = Duration::from_secs(600); // 10 minutes
 const EVENT_HISTORY_SIZE: usize = 100;
 const CLEANUP_INTERVAL: Duration = Duration::from_secs(60); // 1 minute
 
+/// Query parameters for MCP endpoint
+#[derive(Deserialize)]
+struct McpQuery {
+    #[serde(default = "default_variant")]
+    variant: String,
+}
+
+fn default_variant() -> String {
+    "standard".to_string()
+}
+
 /// Session data with event history for resumability
 struct SessionData {
     sender: mpsc::Sender<String>,
     last_activity: Instant,
     event_history: VecDeque<(u64, String)>,
     next_event_id: u64,
+    variant: String,  // "standard" or "high-level"
 }
 
 impl SessionData {
-    fn new(sender: mpsc::Sender<String>) -> Self {
+    fn new(sender: mpsc::Sender<String>, variant: String) -> Self {
         Self {
             sender,
             last_activity: Instant::now(),
             event_history: VecDeque::with_capacity(EVENT_HISTORY_SIZE),
             next_event_id: 1,
+            variant,
         }
     }
 
@@ -169,7 +183,7 @@ fn validate_origin(req: &HttpRequest) -> bool {
 
 /// Handle MCP request and generate JSON-RPC response
 /// Returns None for notifications (requests without id), Some(Value) for requests
-async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>) -> Option<Value> {
+async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, variant: &str) -> Option<Value> {
     let method = request.get("method")
         .and_then(|m| m.as_str())
         .unwrap_or("");
@@ -220,8 +234,12 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>) ->
             })
         },
         "tools/list" => {
-            // Get all tools in MCP JSON-RPC format from dashboard handlers
-            let tools = crate::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
+            // Get tools based on variant
+            let tools = if variant == "high-level" {
+                crate::dashboard::api::high_level_tools::get_mcp_high_level_tools_jsonrpc_format()
+            } else {
+                crate::dashboard::api::handlers::get_mcp_tools_jsonrpc_format()
+            };
 
             json!({
                 "jsonrpc": "2.0",
@@ -236,12 +254,20 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>) ->
             let tool_name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
             let tool_params = params.get("arguments").cloned().unwrap_or(json!({}));
 
-            // Call the tool execution logic directly to get the result
-            let result = crate::dashboard::api::handlers::execute_mcp_tool_inner(
-                state.get_ref(),
-                tool_name,
-                tool_params
-            ).await;
+            // Call the appropriate tool execution logic based on variant
+            let result = if variant == "high-level" {
+                crate::dashboard::api::high_level_tools::execute_high_level_tool(
+                    state.get_ref(),
+                    tool_name,
+                    tool_params
+                ).await
+            } else {
+                crate::dashboard::api::handlers::execute_mcp_tool_inner(
+                    state.get_ref(),
+                    tool_name,
+                    tool_params
+                ).await
+            };
 
             // Format result for MCP protocol
             match result.get("success").and_then(|v| v.as_bool()) {
@@ -297,10 +323,12 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>) ->
 /// Handles JSON-RPC requests and returns responses
 pub async fn mcp_post_handler(
     req: HttpRequest,
+    query: web::Query<McpQuery>,
     body: web::Json<Value>,
     state: web::Data<DashboardState>,
 ) -> Result<HttpResponse, ActixError> {
-    info!("MCP POST request received");
+    let variant = &query.variant;
+    info!("MCP POST request received (variant: {})", variant);
 
     // Validate Origin header for security
     if !validate_origin(&req) {
@@ -337,7 +365,7 @@ pub async fn mcp_post_handler(
 
     // Process the JSON-RPC request
     let request = body.into_inner();
-    let response_opt = handle_mcp_request(request.clone(), state).await;
+    let response_opt = handle_mcp_request(request.clone(), state, variant).await;
 
     // If this is a notification, don't send a response
     let response = match response_opt {
@@ -377,9 +405,11 @@ pub async fn mcp_post_handler(
 /// Opens an SSE stream for server-initiated messages with resumability support
 pub async fn mcp_get_handler(
     req: HttpRequest,
+    query: web::Query<McpQuery>,
     _state: web::Data<DashboardState>,
 ) -> Result<HttpResponse, ActixError> {
-    info!("MCP GET request received for SSE stream");
+    let variant = query.variant.clone();
+    info!("MCP GET request received for SSE stream (variant: {})", variant);
 
     // Validate Origin header
     if !validate_origin(&req) {
@@ -434,7 +464,7 @@ pub async fn mcp_get_handler(
         } else {
             // New session
             info!("Creating new session: {}", session_id);
-            sessions.insert(session_id.clone(), SessionData::new(sender.clone()));
+            sessions.insert(session_id.clone(), SessionData::new(sender.clone(), variant.clone()));
         }
     }
 

@@ -44,7 +44,7 @@
         "description": "Create handlers for get_model_configurations, set_tool_calling_model, set_drafting_model",
         "details": "Implement the three configuration tools that read/write to ai_model_configurations table. Validate model configurations and test connectivity before saving.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           2,
           3
@@ -58,7 +58,7 @@
         "description": "Connect existing read-only browsing tools to high-level tool router",
         "details": "Reuse existing handlers for list_accounts, list_folders_hierarchical, list_cached_emails, get_email_by_uid, search_cached_emails, get_folder_stats. Add routing logic in execute_high_level_tool() to call these handlers.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           3
         ],
@@ -84,7 +84,7 @@
         "description": "Create MCP tool handlers for email drafting",
         "details": "Implement handlers that fetch email content, construct prompts, call EmailDrafter service, and return formatted draft text. Handle errors gracefully.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           6
         ],
@@ -108,7 +108,7 @@
         "description": "Implement agent_executor.rs for running sub-agent with iterative tool calling",
         "details": "Create src/dashboard/services/ai/agent_executor.rs with AgentExecutor struct and execute_with_tools() method. Implement iterative loop: send instruction with tools to Ollama, handle tool_calls response, execute requested tools using existing handlers, send results back, repeat until completion. Aggregate results and return formatted response with actions_taken list.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           8
         ],
@@ -121,7 +121,7 @@
         "description": "Create MCP tool handler for complex email workflow execution",
         "details": "Implement handler that takes natural language instruction, gets tool-calling model config, converts all low-level MCP tools to Ollama format, calls AgentExecutor, formats result. Include logic to detect when user feedback is needed and return questions in JSON format.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           9
         ],
@@ -134,7 +134,7 @@
         "description": "Modify mcp_http.rs to support ?variant=high-level query parameter",
         "details": "Update tools/list handler to check for variant parameter and return high-level tools when variant=high-level. Update tools/call handler to route to execute_high_level_tool() for high-level variant. Store variant in session data.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           3,
           10
@@ -148,7 +148,7 @@
         "description": "Create rustymail-mcp-stdio-high-level binary",
         "details": "Create src/bin/mcp_stdio_high_level.rs that connects to backend with ?variant=high-level parameter. Can be copy of mcp_stdio.rs with modified default URL, or same binary with --mode flag. Add binary to Cargo.toml.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           11
         ],
@@ -174,7 +174,7 @@
         "description": "Add /settings/ai-models page to dashboard",
         "details": "Create UI for configuring tool-calling and drafting models. Include provider dropdown, model name input with autocomplete, base URL input, API key input, test connection button, save button. Display current configurations. Wire up to backend API endpoints.",
         "testStrategy": "",
-        "status": "pending",
+        "status": "in-progress",
         "dependencies": [
           4
         ],
@@ -205,7 +205,7 @@
       ],
       "created": "2025-10-18T12:29:46.283Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-18T13:24:53.302Z"
+      "updated": "2025-10-18T13:35:53.132Z"
     }
   }
 }

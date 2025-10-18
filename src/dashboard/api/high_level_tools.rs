@@ -300,24 +300,15 @@ pub async fn execute_high_level_tool(
             crate::dashboard::api::handlers::execute_mcp_tool_inner(state, tool_name, arguments).await
         }
 
-        // Agentic/drafting tools (stub implementations for now)
+        // Agentic/drafting tools
         "process_email_instructions" => {
-            json!({
-                "success": false,
-                "error": "process_email_instructions not yet implemented"
-            })
+            handle_process_email_instructions(state, arguments).await
         }
         "draft_reply" => {
-            json!({
-                "success": false,
-                "error": "draft_reply not yet implemented"
-            })
+            handle_draft_reply(state, arguments).await
         }
         "draft_email" => {
-            json!({
-                "success": false,
-                "error": "draft_email not yet implemented"
-            })
+            handle_draft_email(state, arguments).await
         }
 
         _ => {
@@ -469,6 +460,258 @@ async fn handle_set_drafting_model(state: &DashboardState, arguments: Value) -> 
             json!({
                 "success": false,
                 "error": format!("Failed to set drafting model: {}", e)
+            })
+        }
+    }
+}
+
+// === Agentic Tool Handlers ===
+
+async fn handle_process_email_instructions(state: &DashboardState, arguments: Value) -> Value {
+    use crate::dashboard::services::ai::agent_executor::AgentExecutor;
+
+    let pool = match state.cache_service.db_pool.as_ref() {
+        Some(p) => p,
+        None => return json!({
+            "success": false,
+            "error": "Database not initialized"
+        }),
+    };
+
+    let instruction = match arguments.get("instruction").and_then(|v| v.as_str()) {
+        Some(i) => i,
+        None => return json!({
+            "success": false,
+            "error": "Missing required parameter: instruction"
+        }),
+    };
+
+    let _account_id = match arguments.get("account_id").and_then(|v| v.as_str()) {
+        Some(a) => a,
+        None => return json!({
+            "success": false,
+            "error": "Missing required parameter: account_id"
+        }),
+    };
+
+    debug!("Processing email instruction: {}", instruction);
+
+    // Get all low-level MCP tools for the sub-agent
+    let low_level_tools = crate::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
+
+    // Also include drafting tools so the sub-agent can draft emails
+    let drafting_tools = vec![
+        json!({
+            "name": "draft_reply",
+            "description": "Generate a draft reply to an email",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "email_uid": {"type": "integer"},
+                    "folder": {"type": "string"},
+                    "instruction": {"type": "string"},
+                    "account_id": {"type": "string"}
+                },
+                "required": ["email_uid", "folder", "account_id"]
+            }
+        }),
+        json!({
+            "name": "draft_email",
+            "description": "Generate a draft email from scratch",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "to": {"type": "string"},
+                    "subject": {"type": "string"},
+                    "context": {"type": "string"},
+                    "account_id": {"type": "string"}
+                },
+                "required": ["to", "subject", "context", "account_id"]
+            }
+        }),
+    ];
+
+    // Combine all available tools
+    let mut all_tools = low_level_tools;
+    all_tools.extend(drafting_tools);
+
+    // Execute with agent executor
+    let executor = AgentExecutor::new();
+    match executor.execute_with_tools(pool, state, instruction, all_tools).await {
+        Ok(result) => {
+            json!({
+                "success": result.success,
+                "data": {
+                    "response": result.final_response,
+                    "actions": result.actions_taken,
+                    "iterations": result.iterations,
+                    "error": result.error
+                }
+            })
+        }
+        Err(e) => {
+            error!("Failed to execute email instructions: {}", e);
+            json!({
+                "success": false,
+                "error": format!("Failed to execute: {}", e)
+            })
+        }
+    }
+}
+
+async fn handle_draft_reply(state: &DashboardState, arguments: Value) -> Value {
+    use crate::dashboard::services::ai::email_drafter::{EmailDrafter, DraftReplyRequest};
+
+    let pool = match state.cache_service.db_pool.as_ref() {
+        Some(p) => p,
+        None => return json!({
+            "success": false,
+            "error": "Database not initialized"
+        }),
+    };
+
+    let email_uid = match arguments.get("email_uid").and_then(|v| v.as_u64()) {
+        Some(u) => u as u32,
+        None => return json!({
+            "success": false,
+            "error": "Missing required parameter: email_uid"
+        }),
+    };
+
+    let folder = match arguments.get("folder").and_then(|v| v.as_str()) {
+        Some(f) => f,
+        None => return json!({
+            "success": false,
+            "error": "Missing required parameter: folder"
+        }),
+    };
+
+    let account_id = match arguments.get("account_id").and_then(|v| v.as_str()) {
+        Some(a) => a,
+        None => return json!({
+            "success": false,
+            "error": "Missing required parameter: account_id"
+        }),
+    };
+
+    let instruction = arguments.get("instruction").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+    // Fetch the original email
+    let email_args = json!({
+        "uid": email_uid,
+        "folder": folder,
+        "account_id": account_id
+    });
+
+    let email_result = crate::dashboard::api::handlers::execute_mcp_tool_inner(
+        state,
+        "get_email_by_uid",
+        email_args
+    ).await;
+
+    if !email_result.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+        return json!({
+            "success": false,
+            "error": "Failed to fetch original email"
+        });
+    }
+
+    let email_data = match email_result.get("data") {
+        Some(d) => d,
+        None => return json!({
+            "success": false,
+            "error": "Email data not found in response"
+        }),
+    };
+
+    // Extract email fields
+    let original_from = email_data.get("from_address").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let original_subject = email_data.get("subject").and_then(|v| v.as_str()).unwrap_or("(no subject)");
+    let original_body = email_data.get("body_text").and_then(|v| v.as_str()).unwrap_or("");
+
+    let request = DraftReplyRequest {
+        original_from: original_from.to_string(),
+        original_subject: original_subject.to_string(),
+        original_body: original_body.to_string(),
+        instruction,
+    };
+
+    let drafter = EmailDrafter::new();
+    match drafter.draft_reply(pool, request).await {
+        Ok(draft) => {
+            json!({
+                "success": true,
+                "data": {
+                    "draft": draft
+                }
+            })
+        }
+        Err(e) => {
+            error!("Failed to draft reply: {}", e);
+            json!({
+                "success": false,
+                "error": format!("Failed to draft reply: {}", e)
+            })
+        }
+    }
+}
+
+async fn handle_draft_email(state: &DashboardState, arguments: Value) -> Value {
+    use crate::dashboard::services::ai::email_drafter::{EmailDrafter, DraftEmailRequest};
+
+    let pool = match state.cache_service.db_pool.as_ref() {
+        Some(p) => p,
+        None => return json!({
+            "success": false,
+            "error": "Database not initialized"
+        }),
+    };
+
+    let to = match arguments.get("to").and_then(|v| v.as_str()) {
+        Some(t) => t.to_string(),
+        None => return json!({
+            "success": false,
+            "error": "Missing required parameter: to"
+        }),
+    };
+
+    let subject = match arguments.get("subject").and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => return json!({
+            "success": false,
+            "error": "Missing required parameter: subject"
+        }),
+    };
+
+    let context = match arguments.get("context").and_then(|v| v.as_str()) {
+        Some(c) => c.to_string(),
+        None => return json!({
+            "success": false,
+            "error": "Missing required parameter: context"
+        }),
+    };
+
+    let request = DraftEmailRequest {
+        to,
+        subject,
+        context,
+    };
+
+    let drafter = EmailDrafter::new();
+    match drafter.draft_email(pool, request).await {
+        Ok(draft) => {
+            json!({
+                "success": true,
+                "data": {
+                    "draft": draft
+                }
+            })
+        }
+        Err(e) => {
+            error!("Failed to draft email: {}", e);
+            json!({
+                "success": false,
+                "error": format!("Failed to draft email: {}", e)
             })
         }
     }
