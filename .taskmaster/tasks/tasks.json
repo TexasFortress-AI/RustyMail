@@ -159,14 +159,69 @@
         "id": 13,
         "title": "Test high-level MCP variant with Claude Desktop",
         "description": "Integration testing of complete high-level tool flow",
-        "details": "Configure Claude Desktop to use rustymail-mcp-stdio-high-level. Test: configuration tools, browsing tools, drafting tools, simple process_email_instructions workflows. Verify tool count is ~12 instead of 26+.",
-        "testStrategy": "",
         "status": "pending",
         "dependencies": [
           12
         ],
         "priority": "medium",
-        "subtasks": []
+        "details": "Configure Claude Desktop to use rustymail-mcp-stdio-high-level binary. Migration 004 (ai_model_configurations table) has been applied with default models: qwen2.5:7b for tool_calling and llama3.3:70b for drafting. Test workflow: 1) Use set_tool_calling_model and set_drafting_model tools to configure actual models instead of defaults, 2) Test browsing tools (list_accounts, list_folders_hierarchical, get_email_by_uid), 3) Test configuration tools (get_model_configurations), 4) Test drafting tools (draft_reply, draft_email), 5) Test process_email_instructions with simple workflows. Verify tool count is ~12 instead of 26+. Process_email_instructions tool should now work properly after database migration fix.",
+        "testStrategy": "Configure Claude Desktop with rustymail-mcp-stdio-high-level, verify 12 tools available instead of 26+. First configure models using configuration tools, then test each tool category: browsing (list accounts/folders/emails), drafting (generate replies/emails), and workflow execution (process_email_instructions). Confirm all tools work without database errors.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Configure Claude Desktop with high-level MCP binary",
+            "description": "Set up Claude Desktop to use rustymail-mcp-stdio-high-level binary and verify connection",
+            "dependencies": [],
+            "details": "Update Claude Desktop configuration to point to target/release/rustymail-mcp-stdio-high-level binary. Ensure server is running on configured port. Verify Claude Desktop shows ~12 tools available instead of 26+.",
+            "status": "pending",
+            "testStrategy": "Check Claude Desktop shows correct tool count and can connect to MCP server"
+          },
+          {
+            "id": 2,
+            "title": "Configure AI models using configuration tools",
+            "description": "Use set_tool_calling_model and set_drafting_model to replace default configurations",
+            "dependencies": [
+              1
+            ],
+            "details": "Migration 004 created default configurations (qwen2.5:7b for tool_calling, llama3.3:70b for drafting). Use the MCP configuration tools to set actual models the user wants to use. Test get_model_configurations to verify settings are saved correctly.",
+            "status": "pending",
+            "testStrategy": "Verify model configurations are saved and retrieved correctly from ai_model_configurations table"
+          },
+          {
+            "id": 3,
+            "title": "Test browsing tools functionality",
+            "description": "Test list_accounts, list_folders_hierarchical, list_cached_emails, and get_email_by_uid tools",
+            "dependencies": [
+              2
+            ],
+            "details": "Verify all browsing tools work correctly with high-level MCP variant. Test that these tools provide the same functionality as the low-level variant but through the simplified interface.",
+            "status": "pending",
+            "testStrategy": "Execute each browsing tool and verify expected data structure and content returned"
+          },
+          {
+            "id": 4,
+            "title": "Test drafting tools functionality",
+            "description": "Test draft_reply and draft_email tools using configured drafting model",
+            "dependencies": [
+              2
+            ],
+            "details": "Verify AI-powered drafting tools work with the configured drafting model from step 2. Test that drafts are generated with appropriate quality and relevance to input context.",
+            "status": "pending",
+            "testStrategy": "Generate sample drafts and verify they are contextually appropriate and well-formatted"
+          },
+          {
+            "id": 5,
+            "title": "Test process_email_instructions workflow execution",
+            "description": "Test the main workflow tool with simple email management instructions",
+            "dependencies": [
+              2,
+              3
+            ],
+            "details": "Test process_email_instructions with simple workflows like 'list unread emails in INBOX' or 'show folder statistics'. Should now work correctly after ai_model_configurations table migration fix. Verify the tool uses other available tools to complete the workflow.",
+            "status": "pending",
+            "testStrategy": "Execute simple instructions and verify workflow completion without database errors"
+          }
+        ]
       },
       {
         "id": 14,
