@@ -73,6 +73,20 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFolder, currentAccount?.id]);
 
+  // Validate currentFolder exists when folders data loads or account changes
+  useEffect(() => {
+    // Only validate if we have folders data and a current folder
+    if (foldersData?.folders && foldersData.folders.length > 0 && currentFolder) {
+      // If current folder doesn't exist for this account, switch to INBOX
+      if (!foldersData.folders.includes(currentFolder)) {
+        console.log(`Folder ${currentFolder} doesn't exist for account ${currentAccount?.email_address}, switching to INBOX`);
+        setCurrentFolder('INBOX');
+      }
+    }
+    // Only run when account ID or folders data changes, NOT when currentFolder changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentAccount?.id, foldersData]);
+
   const { data, isLoading, error, refetch, isFetching } = useQuery<EmailListResponse>({
     queryKey: ['emails', currentAccount?.id, currentFolder, currentPage],
     queryFn: async () => {
@@ -140,18 +154,6 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
     retry: false, // Don't retry on failure
   });
-
-  // Validate currentFolder exists for new account, fallback to INBOX if not
-  useEffect(() => {
-    if (foldersData?.folders && foldersData.folders.length > 0) {
-      // Check if current folder exists in the new account's folders
-      if (!foldersData.folders.includes(currentFolder)) {
-        console.log(`Folder ${currentFolder} doesn't exist for account ${currentAccount?.email_address}, falling back to INBOX`);
-        setCurrentFolder('INBOX');
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [foldersData?.folders, currentAccount?.id]);
 
   // Expose refetch function to parent
   useEffect(() => {
