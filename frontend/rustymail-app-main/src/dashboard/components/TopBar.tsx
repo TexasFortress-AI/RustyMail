@@ -10,7 +10,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useConfig, useSetActiveAdapter, useAiProviders, useSetAiProvider, useAiModels, useSetAiModel } from '@/dashboard/api/hooks';
-import { Loader2, Bot, Search, Sun, Moon, Monitor } from 'lucide-react';
+import { Loader2, Bot, Search, Sun, Moon, Monitor, X } from 'lucide-react';
 import { useTheme } from '@/contexts/ThemeContext';
 import {
   DropdownMenu,
@@ -35,7 +35,18 @@ const TopBar: React.FC = () => {
 
   // Local state for model search
   const [modelSearchQuery, setModelSearchQuery] = useState('');
+  const [isModelSelectOpen, setIsModelSelectOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Focus search input when dropdown opens
+  useEffect(() => {
+    if (isModelSelectOpen && searchInputRef.current) {
+      // Use setTimeout to ensure the Select has finished rendering
+      setTimeout(() => {
+        searchInputRef.current?.focus();
+      }, 0);
+    }
+  }, [isModelSelectOpen]);
 
   // Filter models based on search query
   const filteredModels = useMemo(() => {
@@ -46,6 +57,16 @@ const TopBar: React.FC = () => {
       model.toLowerCase().includes(modelSearchQuery.toLowerCase())
     );
   }, [aiModels?.availableModels, modelSearchQuery]);
+
+  // Auto-select best match when there's exactly one result
+  useEffect(() => {
+    if (filteredModels.length === 1 && modelSearchQuery.trim()) {
+      // Don't auto-select if it's already the current model
+      if (filteredModels[0] !== aiModels?.currentModel) {
+        handleAiModelChange(filteredModels[0]);
+      }
+    }
+  }, [filteredModels, modelSearchQuery]);
 
   // Restore saved model when provider changes
   useEffect(() => {
@@ -194,6 +215,12 @@ const TopBar: React.FC = () => {
                 <Select
                   value={aiModels.currentModel || ''}
                   onValueChange={handleAiModelChange}
+                  onOpenChange={(open) => {
+                    setIsModelSelectOpen(open);
+                    if (!open) {
+                      setModelSearchQuery(''); // Clear search when closing
+                    }
+                  }}
                   disabled={setAiModelMutation.isPending || !aiProviders?.currentProvider}
                   data-testid="ai-model-selector"
                 >
@@ -201,23 +228,46 @@ const TopBar: React.FC = () => {
                     <SelectValue placeholder="Select model" />
                   </SelectTrigger>
                   <SelectContent>
-                    <div className="p-2 border-b">
+                    <div className="p-2 border-b" onPointerDown={(e) => e.stopPropagation()}>
                       <div className="relative">
-                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
                         <Input
                           ref={searchInputRef}
                           placeholder="Search models..."
                           value={modelSearchQuery}
                           onChange={(e) => {
-                            // Use setTimeout to defer the state update
-                            const newValue = e.target.value;
-                            setTimeout(() => {
-                              setModelSearchQuery(newValue);
-                            }, 0);
+                            setModelSearchQuery(e.target.value);
                           }}
-                          className="pl-8 h-8"
-                          autoFocus={false}
+                          onKeyDown={(e) => {
+                            // Prevent Select from closing when typing
+                            e.stopPropagation();
+                          }}
+                          onMouseDown={(e) => {
+                            // Prevent Select from stealing focus
+                            e.stopPropagation();
+                          }}
+                          className="pl-8 pr-8 h-8"
+                          autoFocus={true}
                         />
+                        {modelSearchQuery && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setModelSearchQuery('');
+                              // Maintain focus on the input
+                              setTimeout(() => searchInputRef.current?.focus(), 0);
+                            }}
+                            onMouseDown={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                            }}
+                            className="absolute right-2 top-2.5 h-4 w-4 text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     </div>
                     <div className="max-h-60 overflow-y-auto">
