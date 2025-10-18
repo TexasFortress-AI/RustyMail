@@ -3096,13 +3096,14 @@
         "description": "Implement SMTP_ONLY_MODE environment variable that bypasses slow IMAP APPEND operations and sends emails directly via SMTP without saving to Outbox or Sent folders.",
         "details": "Add a developer feature that allows skipping slow IMAP APPEND operations by implementing:\n\n1. **Configuration Support**: Add SMTP_ONLY_MODE environment variable to src/config.rs Settings struct and .env.example file. Update config parsing to handle this boolean flag with appropriate defaults (false for production safety).\n\n2. **SMTP Service Modification**: Modify SmtpService::send_email() method in src/dashboard/services/smtp.rs to check SMTP_ONLY_MODE flag. When enabled, skip all calls to ensure_folder_exists_and_append(), append_to_outbox(), append_to_sent_folder(), and delete_from_outbox() methods. Send directly via SMTP transport without any IMAP operations.\n\n3. **Logging Integration**: Add explicit warning logs when SMTP_ONLY_MODE is active, clearly indicating this is a developer feature. Log at startup and during each email send operation to ensure visibility.\n\n4. **Frontend Warning Banner**: Create a prominent warning banner component in the React frontend that displays when SMTP_ONLY_MODE is enabled. The banner should show 'DEVELOPER MODE: SMTP-only (no Outbox/Sent folders)' with appropriate styling to indicate this is not for production use. Add API endpoint to check mode status.\n\n5. **Error Handling**: Ensure proper error handling when IMAP operations are skipped - return appropriate success responses without attempting folder operations. Maintain existing SMTP error handling for actual send failures.\n\nThis implementation should be minimal and focused on the core functionality while maintaining clear separation between production and developer code paths.",
         "testStrategy": "Test SMTP_ONLY_MODE=true bypasses all IMAP APPEND operations and sends emails successfully via SMTP. Verify SMTP_ONLY_MODE=false maintains existing Outbox behavior. Test frontend warning banner displays correctly when mode is enabled. Verify warning logs are generated appropriately. Test with both successful and failed SMTP sends to ensure error handling works correctly. Test configuration loading from environment variables.",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "6",
           "25"
         ],
         "priority": "low",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2025-10-18T00:12:50.063Z"
       },
       {
         "id": "85",
@@ -3231,9 +3232,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-10-17T23:50:36.345Z",
+      "lastModified": "2025-10-18T00:12:50.065Z",
       "taskCount": 87,
-      "completedCount": 86,
+      "completedCount": 87,
       "tags": [
         "master"
       ]
