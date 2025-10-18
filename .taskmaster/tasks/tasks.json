@@ -174,7 +174,7 @@
         "description": "Add /settings/ai-models page to dashboard",
         "details": "Create UI for configuring tool-calling and drafting models. Include provider dropdown, model name input with autocomplete, base URL input, API key input, test connection button, save button. Display current configurations. Wire up to backend API endpoints.",
         "testStrategy": "",
-        "status": "in-progress",
+        "status": "deferred",
         "dependencies": [
           4
         ],
@@ -205,7 +205,7 @@
       ],
       "created": "2025-10-18T12:29:46.283Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-18T13:35:53.132Z"
+      "updated": "2025-10-18T13:36:57.711Z"
     }
   }
 }

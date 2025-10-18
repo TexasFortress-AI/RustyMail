@@ -15,7 +15,7 @@ pub struct EmailDrafter {
 }
 
 /// Draft email request
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DraftEmailRequest {
     pub to: String,
     pub subject: String,
@@ -23,7 +23,7 @@ pub struct DraftEmailRequest {
 }
 
 /// Draft reply request
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DraftReplyRequest {
     pub original_from: String,
     pub original_subject: String,

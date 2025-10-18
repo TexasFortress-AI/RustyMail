@@ -637,14 +637,44 @@ async fn handle_draft_reply(state: &DashboardState, arguments: Value) -> Value {
     };
 
     let drafter = EmailDrafter::new();
-    match drafter.draft_reply(pool, request).await {
+    match drafter.draft_reply(pool, request.clone()).await {
         Ok(draft) => {
-            json!({
-                "success": true,
-                "data": {
-                    "draft": draft
+            // Save the draft to the Drafts folder
+            let account_email = account_id.to_string();
+
+            // Construct reply subject (add "Re: " if not already present)
+            let reply_subject = if original_subject.starts_with("Re: ") {
+                original_subject.to_string()
+            } else {
+                format!("Re: {}", original_subject)
+            };
+
+            match state.smtp_service.save_draft(
+                &account_email,
+                &request.original_from,
+                &reply_subject,
+                &draft
+            ).await {
+                Ok(_) => {
+                    json!({
+                        "success": true,
+                        "data": {
+                            "draft": draft,
+                            "saved_to": "Drafts folder"
+                        }
+                    })
                 }
-            })
+                Err(e) => {
+                    error!("Draft generated but failed to save to Drafts folder: {}", e);
+                    json!({
+                        "success": true,
+                        "data": {
+                            "draft": draft,
+                            "warning": format!("Draft generated but not saved to folder: {}", e)
+                        }
+                    })
+                }
+            }
         }
         Err(e) => {
             error!("Failed to draft reply: {}", e);
@@ -691,6 +721,14 @@ async fn handle_draft_email(state: &DashboardState, arguments: Value) -> Value {
         }),
     };
 
+    let account_id = match arguments.get("account_id").and_then(|v| v.as_str()) {
+        Some(a) => a.to_string(),
+        None => return json!({
+            "success": false,
+            "error": "Missing required parameter: account_id"
+        }),
+    };
+
     let request = DraftEmailRequest {
         to,
         subject,
@@ -698,14 +736,35 @@ async fn handle_draft_email(state: &DashboardState, arguments: Value) -> Value {
     };
 
     let drafter = EmailDrafter::new();
-    match drafter.draft_email(pool, request).await {
+    match drafter.draft_email(pool, request.clone()).await {
         Ok(draft) => {
-            json!({
-                "success": true,
-                "data": {
-                    "draft": draft
+            // Save the draft to the Drafts folder
+            match state.smtp_service.save_draft(
+                &account_id,
+                &request.to,
+                &request.subject,
+                &draft
+            ).await {
+                Ok(_) => {
+                    json!({
+                        "success": true,
+                        "data": {
+                            "draft": draft,
+                            "saved_to": "Drafts folder"
+                        }
+                    })
                 }
-            })
+                Err(e) => {
+                    error!("Draft generated but failed to save to Drafts folder: {}", e);
+                    json!({
+                        "success": true,
+                        "data": {
+                            "draft": draft,
+                            "warning": format!("Draft generated but not saved to folder: {}", e)
+                        }
+                    })
+                }
+            }
         }
         Err(e) => {
             error!("Failed to draft email: {}", e);

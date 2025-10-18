@@ -15,6 +15,7 @@ use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::time::timeout;
+use chrono;
 
 use super::account::{AccountService};
 use crate::prelude::CloneableImapSessionFactory;
@@ -724,5 +725,91 @@ impl SmtpService {
         mailer.test_connection().await?;
 
         Ok(())
+    }
+
+    /// Save a draft email to the Drafts folder with the \Draft flag
+    pub async fn save_draft(
+        &self,
+        account_email: &str,
+        to: &str,
+        subject: &str,
+        body: &str,
+    ) -> Result<(), SmtpError> {
+        // Get account to get the from address
+        let account_service = self.account_service.lock().await;
+        let account = account_service
+            .get_account(account_email)
+            .await
+            .map_err(|_| SmtpError::AccountNotFound(account_email.to_string()))?;
+        drop(account_service);
+
+        // Construct RFC822 message
+        let from_address = account_email;
+        let date = chrono::Utc::now().to_rfc2822();
+
+        let rfc822_message = format!(
+            "From: {}\r\nTo: {}\r\nSubject: {}\r\nDate: {}\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n{}",
+            from_address, to, subject, date, body
+        );
+
+        let email_bytes = rfc822_message.as_bytes();
+
+        // Append to Drafts folder with \Draft flag
+        let operation_timeout = Duration::from_secs(40);
+        log::info!("Saving draft to Drafts folder with {}s timeout", operation_timeout.as_secs());
+
+        let result = timeout(operation_timeout, async {
+            let session = self.imap_session_factory
+                .create_session_for_account(&account)
+                .await
+                .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
+
+            let drafts_folder = "INBOX.Drafts";
+            let flags = vec!["\\Draft".to_string()];
+
+            match session.append(drafts_folder, email_bytes, &flags).await {
+                Ok(_) => {
+                    log::info!("Successfully saved draft to {}", drafts_folder);
+                    Ok(())
+                }
+                Err(append_err) => {
+                    let err_str = append_err.to_string().to_lowercase();
+                    let folder_not_found = err_str.contains("no such") ||
+                                          err_str.contains("not found") ||
+                                          err_str.contains("nonexistent") ||
+                                          err_str.contains("does not exist");
+
+                    if folder_not_found {
+                        log::warn!("Drafts folder does not exist, attempting to create...");
+                        match session.create_folder(drafts_folder).await {
+                            Ok(_) => {
+                                log::info!("Created Drafts folder");
+                                match session.append(drafts_folder, email_bytes, &flags).await {
+                                    Ok(_) => Ok(()),
+                                    Err(e) => Err(SmtpError::ConfigError(format!(
+                                        "Failed to append draft after creating folder: {}", e
+                                    )))
+                                }
+                            }
+                            Err(e) => Err(SmtpError::ConfigError(format!(
+                                "Failed to create Drafts folder: {}", e
+                            )))
+                        }
+                    } else {
+                        Err(SmtpError::ConfigError(format!(
+                            "Failed to save draft: {}", append_err
+                        )))
+                    }
+                }
+            }
+        }).await;
+
+        match result {
+            Ok(Ok(())) => Ok(()),
+            Ok(Err(e)) => Err(e),
+            Err(_) => Err(SmtpError::ConfigError(format!(
+                "Save draft operation timed out after {}s", operation_timeout.as_secs()
+            )))
+        }
     }
 }
