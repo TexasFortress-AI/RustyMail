@@ -6,6 +6,9 @@
 pub mod provider;
 pub mod provider_manager;
 pub mod nlp_processor;
+pub mod model_config;
+pub mod tool_converter;
+pub mod email_drafter;
 
 use log::{debug, error, info, warn};
 use crate::dashboard::api::models::{ChatbotQuery, ChatbotResponse, EmailData, EmailMessage, EmailFolder};

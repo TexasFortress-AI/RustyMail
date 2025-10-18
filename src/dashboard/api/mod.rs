@@ -18,6 +18,7 @@ pub mod middleware;
 pub mod config;
 pub mod health;
 pub mod attachments;
+pub mod high_level_tools;
 
 // Re-export main types needed elsewhere
 pub use routes::configure as init_routes;
