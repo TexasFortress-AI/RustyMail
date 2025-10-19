@@ -209,7 +209,7 @@ impl AgentExecutor {
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&request_body)
-            .timeout(std::time::Duration::from_secs(120))
+            .timeout(std::time::Duration::from_secs(300))  // 5 minutes for large tool contexts
             .send()
             .await
             .map_err(|e| {
