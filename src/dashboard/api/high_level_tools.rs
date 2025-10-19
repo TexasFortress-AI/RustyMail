@@ -486,7 +486,7 @@ async fn handle_process_email_instructions(state: &DashboardState, arguments: Va
         }),
     };
 
-    let _account_id = match arguments.get("account_id").and_then(|v| v.as_str()) {
+    let account_id = match arguments.get("account_id").and_then(|v| v.as_str()) {
         Some(a) => a,
         None => return json!({
             "success": false,
@@ -494,7 +494,7 @@ async fn handle_process_email_instructions(state: &DashboardState, arguments: Va
         }),
     };
 
-    debug!("Processing email instruction: {}", instruction);
+    debug!("Processing email instruction for account {}: {}", account_id, instruction);
 
     // Get all low-level MCP tools for the sub-agent
     let low_level_tools = crate::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
@@ -535,9 +535,9 @@ async fn handle_process_email_instructions(state: &DashboardState, arguments: Va
     let mut all_tools = low_level_tools;
     all_tools.extend(drafting_tools);
 
-    // Execute with agent executor
+    // Execute with agent executor, passing account_id for context
     let executor = AgentExecutor::new();
-    match executor.execute_with_tools(pool, state, instruction, all_tools).await {
+    match executor.execute_with_tools(pool, state, instruction, Some(account_id), all_tools).await {
         Ok(result) => {
             json!({
                 "success": result.success,

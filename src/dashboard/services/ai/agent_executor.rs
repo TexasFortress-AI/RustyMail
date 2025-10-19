@@ -51,6 +51,7 @@ impl AgentExecutor {
         pool: &SqlitePool,
         state: &DashboardState,
         instruction: &str,
+        account_id: Option<&str>,
         tools: Vec<Value>,  // MCP tool definitions
     ) -> Result<AgentResult, ApiError> {
         info!("Executing instruction with {} tools available", tools.len());
@@ -62,11 +63,18 @@ impl AgentExecutor {
         let ollama_tools = mcp_to_ollama_tools(&tools);
         debug!("Converted {} MCP tools to Ollama format", ollama_tools.len());
 
+        // Build instruction with account context if provided
+        let full_instruction = if let Some(acc_id) = account_id {
+            format!("Account: {}\n\nInstruction: {}\n\nIMPORTANT: When calling tools that require an account_id parameter, use '{}'.", acc_id, instruction, acc_id)
+        } else {
+            instruction.to_string()
+        };
+
         // Initialize conversation with user instruction
         let mut messages = vec![
             json!({
                 "role": "user",
-                "content": instruction
+                "content": full_instruction
             })
         ];
 
