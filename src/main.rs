@@ -315,6 +315,7 @@ async fn main() -> std::io::Result<()> {
         error!("Failed to bind server to {}: {}", listen_addr, e);
         e
     })?
+    .workers(1)  // TEMPORARY: Use single worker to debug memory leak
     .run();
 
     // Spawn the Dashboard SSE broadcast task 
