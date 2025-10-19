@@ -950,17 +950,22 @@ impl CacheService {
             String, Option<String>, Option<String>, DateTime<Utc>
         )>(
             r#"
-            SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
-                   to_addresses, cc_addresses, date, internal_date, size,
-                   flags, body_text, body_html, cached_at
-            FROM emails
-            WHERE folder_id = ?
-            AND (subject LIKE ? OR from_address LIKE ? OR from_name LIKE ? OR body_text LIKE ?)
-            ORDER BY COALESCE(date, internal_date) DESC
+            SELECT DISTINCT e.id, e.folder_id, e.uid, e.message_id, e.subject, e.from_address, e.from_name,
+                   e.to_addresses, e.cc_addresses, e.date, e.internal_date, e.size,
+                   e.flags, e.body_text, e.body_html, e.cached_at
+            FROM emails e
+            LEFT JOIN attachment_metadata a ON e.message_id = a.message_id AND a.account_email = ?
+            WHERE e.folder_id = ?
+            AND (e.subject LIKE ? OR e.from_address LIKE ? OR e.from_name LIKE ?
+                 OR e.body_text LIKE ? OR e.body_html LIKE ? OR a.filename LIKE ?)
+            ORDER BY COALESCE(e.date, e.internal_date) DESC
             LIMIT ?
             "#
         )
+        .bind(account_id)
         .bind(folder.id)
+        .bind(&search_pattern)
+        .bind(&search_pattern)
         .bind(&search_pattern)
         .bind(&search_pattern)
         .bind(&search_pattern)

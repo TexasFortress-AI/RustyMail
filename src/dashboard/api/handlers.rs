@@ -188,32 +188,6 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
             }
         }),
         serde_json::json!({
-            "name": "search_emails",
-            "description": "Search for emails matching criteria",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "folder": {
-                        "type": "string",
-                        "description": "Folder to search in (e.g., INBOX)"
-                    },
-                    "query": {
-                        "type": "string",
-                        "description": "Search query (e.g., FROM user@example.com)"
-                    },
-                    "max_results": {
-                        "type": "integer",
-                        "description": "Maximum number of results (optional)"
-                    },
-                    "account_id": {
-                        "type": "string",
-                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
-                    }
-                },
-                "required": ["account_id"]
-            }
-        }),
-        serde_json::json!({
             "name": "fetch_emails_with_mime",
             "description": "Fetch email content with MIME data",
             "inputSchema": {
@@ -743,16 +717,6 @@ pub async fn list_mcp_tools(
             }
         }),
         serde_json::json!({
-            "name": "search_emails",
-            "description": "Search for emails matching criteria",
-            "parameters": {
-                "folder": "Folder to search in (e.g., INBOX)",
-                "query": "Search query (e.g., FROM user@example.com)",
-                "max_results": "Maximum number of results (optional)",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
             "name": "fetch_emails_with_mime",
             "description": "Fetch email content with MIME data",
             "parameters": {
@@ -1187,53 +1151,6 @@ pub async fn execute_mcp_tool_inner(
                     serde_json::json!({
                         "success": false,
                         "error": format!("Failed to rename folder: {}", e),
-                        "tool": tool_name
-                    })
-                }
-            }
-        }
-        "search_emails" => {
-            let folder = params.get("folder")
-                .and_then(|v| v.as_str())
-                .unwrap_or("INBOX");
-            let query = params.get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("ALL");
-
-            // Get account ID from request or use default
-            let account_id = match get_account_id_to_use(&params, &state_data).await {
-                Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
-            };
-
-            // search_emails returns UIDs, not full emails
-            match email_service.search_emails_for_account(folder, query, &account_id).await {
-                Ok(uids) => {
-                    // Optionally limit results
-                    let max_results = params.get("max_results")
-                        .and_then(|v| v.as_u64())
-                        .map(|v| v as usize);
-
-                    let limited_uids = if let Some(max) = max_results {
-                        uids.into_iter().take(max).collect::<Vec<_>>()
-                    } else {
-                        uids
-                    };
-
-                    serde_json::json!({
-                        "success": true,
-                        "data": limited_uids,
-                        "tool": tool_name
-                    })
-                }
-                Err(e) => {
-                    serde_json::json!({
-                        "success": false,
-                        "error": format!("Failed to search emails: {}", e),
                         "tool": tool_name
                     })
                 }

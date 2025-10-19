@@ -225,7 +225,7 @@ pub fn get_mcp_high_level_tools_jsonrpc_format() -> Vec<Value> {
                     },
                     "model_name": {
                         "type": "string",
-                        "description": "Model name (e.g., 'qwen2.5:7b', 'gpt-4')"
+                        "description": "Model name (e.g., 'qwen3:4b-q8_0', 'gpt-4')"
                     },
                     "base_url": {
                         "type": "string",
@@ -251,7 +251,7 @@ pub fn get_mcp_high_level_tools_jsonrpc_format() -> Vec<Value> {
                     },
                     "model_name": {
                         "type": "string",
-                        "description": "Model name (e.g., 'llama3.3:70b', 'gpt-4')"
+                        "description": "Model name (e.g., 'gemma3:27b-it-q8_0', 'gpt-4')"
                     },
                     "base_url": {
                         "type": "string",

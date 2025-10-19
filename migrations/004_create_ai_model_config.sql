@@ -21,8 +21,8 @@ CREATE TRIGGER update_ai_model_config_timestamp
 -- Insert default configurations
 -- Tool-calling model: lightweight model for routing and executing workflows
 INSERT OR IGNORE INTO ai_model_configurations (role, provider, model_name, base_url)
-VALUES ('tool_calling', 'ollama', 'qwen2.5:7b', 'http://localhost:11434');
+VALUES ('tool_calling', 'ollama', 'qwen3:4b-q8_0', 'http://localhost:11434');
 
 -- Drafting model: larger model for generating email text
 INSERT OR IGNORE INTO ai_model_configurations (role, provider, model_name, base_url)
-VALUES ('drafting', 'ollama', 'llama3.3:70b', 'http://localhost:11434');
+VALUES ('drafting', 'ollama', 'gemma3:27b-it-q8_0', 'http://localhost:11434');
