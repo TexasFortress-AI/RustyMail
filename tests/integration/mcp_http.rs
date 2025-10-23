@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use rustymail::dashboard::services::{
     DashboardState, ClientManager, MetricsService, CacheService, CacheConfig,
     ConfigService, AiService, EmailService, SyncService, AccountService,
-    EventBus, SmtpService
+    EventBus, SmtpService, OutboxQueueService
 };
 use rustymail::dashboard::api::sse::SseManager;
 use rustymail::config::Settings;
@@ -82,7 +82,7 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
 
     let mut account_service_temp = AccountService::new(&accounts_config_path);
     let account_db_pool = SqlitePool::connect(&db_url).await.unwrap();
-    account_service_temp.initialize(account_db_pool).await.unwrap();
+    account_service_temp.initialize(account_db_pool.clone()).await.unwrap();
     let account_service = Arc::new(TokioMutex::new(account_service_temp));
 
     // Create mock IMAP session factory (returns a function that creates mock clients)
@@ -134,6 +134,9 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
     // Initialize SMTP Service
     let smtp_service = Arc::new(SmtpService::new(account_service.clone(), imap_session_factory.clone()));
 
+    // Initialize Outbox Queue Service
+    let outbox_queue_service = Arc::new(OutboxQueueService::new(account_db_pool.clone()));
+
     // Create event bus
     let event_bus = Arc::new(EventBus::new());
 
@@ -155,6 +158,7 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
         sync_service,
         account_service,
         smtp_service,
+        outbox_queue_service,
         sse_manager,
         event_bus,
         health_service: None,

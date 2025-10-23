@@ -399,7 +399,7 @@ fn test_stdio_proxy_command_line_args_override_env() {
         .expect("Failed to spawn binary");
 
     // Give it time to start and print config to stderr
-    std::thread::sleep(std::time::Duration::from_millis(200));
+    std::thread::sleep(std::time::Duration::from_millis(500));
 
     // Kill and get output
     let mut child = output;

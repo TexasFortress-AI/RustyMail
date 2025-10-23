@@ -20,14 +20,10 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 #[tokio::main]
 async fn main() {
-    // Parse command-line arguments
+    // Parse command-line arguments FIRST
     let args: Vec<String> = std::env::args().collect();
-    let mut backend_url = std::env::var("MCP_BACKEND_URL")
-        .expect("MCP_BACKEND_URL environment variable must be set (e.g., http://localhost:9437/mcp)");
-    let mut timeout_secs = std::env::var("MCP_TIMEOUT")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .expect("MCP_TIMEOUT environment variable must be set (e.g., 30)");
+    let mut backend_url: Option<String> = None;
+    let mut timeout_secs: Option<u64> = None;
 
     // Parse command-line arguments
     let mut i = 1;
@@ -35,7 +31,7 @@ async fn main() {
         match args[i].as_str() {
             "--backend-url" => {
                 if i + 1 < args.len() {
-                    backend_url = args[i + 1].clone();
+                    backend_url = Some(args[i + 1].clone());
                     i += 2;
                 } else {
                     eprintln!("Error: --backend-url requires a value");
@@ -45,7 +41,7 @@ async fn main() {
             "--timeout" => {
                 if i + 1 < args.len() {
                     timeout_secs = match args[i + 1].parse::<u64>() {
-                        Ok(t) => t,
+                        Ok(t) => Some(t),
                         Err(_) => {
                             eprintln!("Error: --timeout must be a number");
                             std::process::exit(1);
@@ -68,6 +64,13 @@ async fn main() {
             }
         }
     }
+
+    // Now read environment variables as defaults if not set via command-line
+    let backend_url = backend_url.or_else(|| std::env::var("MCP_BACKEND_URL").ok())
+        .expect("MCP_BACKEND_URL must be set via environment variable or --backend-url flag");
+    let timeout_secs = timeout_secs.or_else(|| {
+        std::env::var("MCP_TIMEOUT").ok().and_then(|s| s.parse::<u64>().ok())
+    }).unwrap_or(30); // Default to 30 seconds if neither env var nor flag is set
 
     eprintln!("MCP stdio proxy starting...");
     eprintln!("Backend URL: {}", backend_url);

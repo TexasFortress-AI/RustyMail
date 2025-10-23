@@ -157,161 +157,141 @@ impl ProviderManager {
         // Check for Ollama configuration
         if let Ok(base_url) = std::env::var("OLLAMA_BASE_URL") {
             if let Ok(model) = std::env::var("OLLAMA_MODEL") {
-                let config = ProviderConfig {
-                    name: "ollama".to_string(),
-                    provider_type: ProviderType::Ollama,
-                    api_key: None, // Ollama doesn't require an API key for local instances
-                    model,
-                    max_tokens: std::env::var("OLLAMA_MAX_TOKENS")
-                        .ok()
-                        .and_then(|v| v.parse().ok()),
-                    temperature: std::env::var("OLLAMA_TEMPERATURE")
-                        .ok()
-                        .and_then(|v| v.parse().ok()),
-                    priority: 4,
-                    enabled: true,
-                };
-                configs.push(config);
+            let config = ProviderConfig {
+                name: "ollama".to_string(),
+                provider_type: ProviderType::Ollama,
+                api_key: None, // Ollama doesn't require an API key for local instances
+                model: std::env::var("OLLAMA_MODEL")
+                    .expect("OLLAMA_MODEL environment variable must be set when using Ollama provider"),
+                max_tokens: std::env::var("OLLAMA_MAX_TOKENS")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+                temperature: std::env::var("OLLAMA_TEMPERATURE")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+                priority: 4,
+                enabled: true,
+            };
+            configs.push(config);
 
-                // Create Ollama provider
-                let provider = Arc::new(OllamaAdapter::new(base_url, self.http_client.clone()));
-                self.providers.write().await.insert("ollama".to_string(), provider);
-                info!("Initialized Ollama provider");
-            } else {
-                warn!("OLLAMA_BASE_URL is set but OLLAMA_MODEL is not - skipping Ollama provider");
-            }
+            // Create Ollama provider
+            let provider = Arc::new(OllamaAdapter::new(base_url, self.http_client.clone()));
+            self.providers.write().await.insert("ollama".to_string(), provider);
+            info!("Initialized Ollama provider");
         }
 
         // Check for Anthropic Claude configuration
         if let Ok(api_key) = std::env::var("ANTHROPIC_API_KEY") {
-            if let Ok(model) = std::env::var("ANTHROPIC_MODEL") {
-                let config = ProviderConfig {
-                    name: "anthropic".to_string(),
-                    provider_type: ProviderType::Anthropic,
-                    api_key: Some(api_key.clone()),
-                    model,
-                    max_tokens: None,
-                    temperature: None,
-                    priority: 5,
-                    enabled: true,
-                };
-                configs.push(config);
-                let provider = Arc::new(AnthropicAdapter::new(api_key, self.http_client.clone()));
-                self.providers.write().await.insert("anthropic".to_string(), provider);
-                info!("Initialized Anthropic Claude provider");
-            } else {
-                warn!("ANTHROPIC_API_KEY is set but ANTHROPIC_MODEL is not - skipping Anthropic provider");
-            }
+            let config = ProviderConfig {
+                name: "anthropic".to_string(),
+                provider_type: ProviderType::Anthropic,
+                api_key: Some(api_key.clone()),
+                model: std::env::var("ANTHROPIC_MODEL")
+                    .expect("ANTHROPIC_MODEL environment variable must be set when using Anthropic provider"),
+                max_tokens: None,
+                temperature: None,
+                priority: 5,
+                enabled: true,
+            };
+            configs.push(config);
+            let provider = Arc::new(AnthropicAdapter::new(api_key, self.http_client.clone()));
+            self.providers.write().await.insert("anthropic".to_string(), provider);
+            info!("Initialized Anthropic Claude provider");
         }
 
         // Check for DeepSeek configuration
         if let Ok(api_key) = std::env::var("DEEPSEEK_API_KEY") {
-            if let Ok(model) = std::env::var("DEEPSEEK_MODEL") {
-                let config = ProviderConfig {
-                    name: "deepseek".to_string(),
-                    provider_type: ProviderType::DeepSeek,
-                    api_key: Some(api_key.clone()),
-                    model,
-                    max_tokens: None,
-                    temperature: None,
-                    priority: 6,
-                    enabled: true,
-                };
-                configs.push(config);
-                let provider = Arc::new(DeepSeekAdapter::new(api_key, self.http_client.clone()));
-                self.providers.write().await.insert("deepseek".to_string(), provider);
-                info!("Initialized DeepSeek provider");
-            } else {
-                warn!("DEEPSEEK_API_KEY is set but DEEPSEEK_MODEL is not - skipping DeepSeek provider");
-            }
+            let config = ProviderConfig {
+                name: "deepseek".to_string(),
+                provider_type: ProviderType::DeepSeek,
+                api_key: Some(api_key.clone()),
+                model: std::env::var("DEEPSEEK_MODEL")
+                    .expect("DEEPSEEK_MODEL environment variable must be set when using DeepSeek provider"),
+                max_tokens: None,
+                temperature: None,
+                priority: 6,
+                enabled: true,
+            };
+            configs.push(config);
+            let provider = Arc::new(DeepSeekAdapter::new(api_key, self.http_client.clone()));
+            self.providers.write().await.insert("deepseek".to_string(), provider);
+            info!("Initialized DeepSeek provider");
         }
 
         // Check for xAI (Grok) configuration
         if let Ok(api_key) = std::env::var("XAI_API_KEY") {
-            if let Ok(model) = std::env::var("XAI_MODEL") {
-                let config = ProviderConfig {
-                    name: "xai".to_string(),
-                    provider_type: ProviderType::XAI,
-                    api_key: Some(api_key.clone()),
-                    model,
-                    max_tokens: None,
-                    temperature: None,
-                    priority: 7,
-                    enabled: true,
-                };
-                configs.push(config);
-                let provider = Arc::new(XAIAdapter::new(api_key, self.http_client.clone()));
-                self.providers.write().await.insert("xai".to_string(), provider);
-                info!("Initialized xAI (Grok) provider");
-            } else {
-                warn!("XAI_API_KEY is set but XAI_MODEL is not - skipping xAI provider");
-            }
+            let config = ProviderConfig {
+                name: "xai".to_string(),
+                provider_type: ProviderType::XAI,
+                api_key: Some(api_key.clone()),
+                model: std::env::var("XAI_MODEL")
+                    .expect("XAI_MODEL environment variable must be set when using xAI provider"),
+                max_tokens: None,
+                temperature: None,
+                priority: 7,
+                enabled: true,
+            };
+            configs.push(config);
+            let provider = Arc::new(XAIAdapter::new(api_key, self.http_client.clone()));
+            self.providers.write().await.insert("xai".to_string(), provider);
+            info!("Initialized xAI (Grok) provider");
         }
 
         // Check for Google Gemini configuration
         if let Ok(api_key) = std::env::var("GEMINI_API_KEY") {
-            if let Ok(model) = std::env::var("GEMINI_MODEL") {
-                let config = ProviderConfig {
-                    name: "gemini".to_string(),
-                    provider_type: ProviderType::Gemini,
-                    api_key: Some(api_key.clone()),
-                    model,
-                    max_tokens: None,
-                    temperature: None,
-                    priority: 8,
-                    enabled: true,
-                };
-                configs.push(config);
-                let provider = Arc::new(GeminiAdapter::new(api_key, self.http_client.clone()));
-                self.providers.write().await.insert("gemini".to_string(), provider);
-                info!("Initialized Google Gemini provider");
-            } else {
-                warn!("GEMINI_API_KEY is set but GEMINI_MODEL is not - skipping Gemini provider");
-            }
+            let config = ProviderConfig {
+                name: "gemini".to_string(),
+                provider_type: ProviderType::Gemini,
+                api_key: Some(api_key.clone()),
+                model: std::env::var("GEMINI_MODEL")
+                    .expect("GEMINI_MODEL environment variable must be set when using Gemini provider"),
+                max_tokens: None,
+                temperature: None,
+                priority: 8,
+                enabled: true,
+            };
+            configs.push(config);
+            let provider = Arc::new(GeminiAdapter::new(api_key, self.http_client.clone()));
+            self.providers.write().await.insert("gemini".to_string(), provider);
+            info!("Initialized Google Gemini provider");
         }
 
         // Check for Mistral AI configuration
         if let Ok(api_key) = std::env::var("MISTRAL_API_KEY") {
-            if let Ok(model) = std::env::var("MISTRAL_MODEL") {
-                let config = ProviderConfig {
-                    name: "mistral".to_string(),
-                    provider_type: ProviderType::Mistral,
-                    api_key: Some(api_key.clone()),
-                    model,
-                    max_tokens: None,
-                    temperature: None,
-                    priority: 9,
-                    enabled: true,
-                };
-                configs.push(config);
-                let provider = Arc::new(MistralAdapter::new(api_key, self.http_client.clone()));
-                self.providers.write().await.insert("mistral".to_string(), provider);
-                info!("Initialized Mistral AI provider");
-            } else {
-                warn!("MISTRAL_API_KEY is set but MISTRAL_MODEL is not - skipping Mistral provider");
-            }
+            let config = ProviderConfig {
+                name: "mistral".to_string(),
+                provider_type: ProviderType::Mistral,
+                api_key: Some(api_key.clone()),
+                model: std::env::var("MISTRAL_MODEL")
+                    .expect("MISTRAL_MODEL environment variable must be set when using Mistral provider"),
+                max_tokens: None,
+                temperature: None,
+                priority: 9,
+                enabled: true,
+            };
+            configs.push(config);
+            let provider = Arc::new(MistralAdapter::new(api_key, self.http_client.clone()));
+            self.providers.write().await.insert("mistral".to_string(), provider);
+            info!("Initialized Mistral AI provider");
         }
 
         // Check for Together AI configuration
         if let Ok(api_key) = std::env::var("TOGETHER_API_KEY") {
-            if let Ok(model) = std::env::var("TOGETHER_MODEL") {
-                let config = ProviderConfig {
-                    name: "together".to_string(),
-                    provider_type: ProviderType::Together,
-                    api_key: Some(api_key.clone()),
-                    model,
-                    max_tokens: None,
-                    temperature: None,
-                    priority: 10,
-                    enabled: true,
-                };
-                configs.push(config);
-                let provider = Arc::new(TogetherAdapter::new(api_key, self.http_client.clone()));
-                self.providers.write().await.insert("together".to_string(), provider);
-                info!("Initialized Together AI provider");
-            } else {
-                warn!("TOGETHER_API_KEY is set but TOGETHER_MODEL is not - skipping Together provider");
-            }
+            let config = ProviderConfig {
+                name: "together".to_string(),
+                provider_type: ProviderType::Together,
+                api_key: Some(api_key.clone()),
+                model: std::env::var("TOGETHER_MODEL")
+                    .expect("TOGETHER_MODEL environment variable must be set when using Together provider"),
+                max_tokens: None,
+                temperature: None,
+                priority: 10,
+                enabled: true,
+            };
+            configs.push(config);
+            let provider = Arc::new(TogetherAdapter::new(api_key, self.http_client.clone()));
+            self.providers.write().await.insert("together".to_string(), provider);
+            info!("Initialized Together AI provider");
         }
 
         // Check for Azure OpenAI configuration
