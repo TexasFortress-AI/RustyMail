@@ -633,7 +633,10 @@ MIT License. See `LICENSE`.
 ### [Pondering AGI Part 2](https://christopherdavidodom.substack.com/p/pondering-agi-part-2)
 [![Pondering AGI Part 2](https://substackcdn.com/image/fetch/w_600,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F6815d224-5ae0-4e71-bd50-f14c3525cce9_725x522.png)](https://christopherdavidodom.substack.com/p/pondering-agi-part-2)
 
-*Part 3 coming soon!*
+### [Pondering AGI Part 3](https://christopherdavidodom.substack.com/p/pondering-agi-part-3)
+[![Pondering AGI Part 3](https://substackcdn.com/image/fetch/$s_!ooN_!,f_auto,q_auto:good,fl_progressive:steep/https%3A%2F%2Fsubstack-post-media.s3.amazonaws.com%2Fpublic%2Fimages%2F504d2f57-a02f-4313-b76e-aa279783df7f_796x568.png)](https://christopherdavidodom.substack.com/p/pondering-agi-part-3)
+
+*Part 4 coming soon!*
 
 ## Sponsors
 
