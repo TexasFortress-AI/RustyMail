@@ -1,3 +1,8 @@
+// Copyright (c) 2025 TexasFortress.AI
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 /// MCP stdio proxy - A thin JSON-RPC proxy that forwards requests from stdin to the MCP HTTP backend
 ///
 /// This binary acts as a protocol translation layer between line-oriented JSON-RPC-over-stdin/stdout

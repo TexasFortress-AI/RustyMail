@@ -1,3 +1,8 @@
+// Copyright (c) 2025 TexasFortress.AI
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 /// Tests to detect and prevent hardcoded account ID values
 ///
 /// This module ensures that the codebase does not contain hardcoded account IDs

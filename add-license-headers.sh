@@ -5,13 +5,11 @@
 set -e
 
 # Copyright notice to add
-read -r -d '' LICENSE_HEADER << 'EOF' || true
-// Copyright (c) 2025 TexasFortress.AI
+LICENSE_HEADER='// Copyright (c) 2025 TexasFortress.AI
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
-EOF
+'
 
 # Counters
 ADDED=0
@@ -64,53 +62,29 @@ echo ""
 
 # Process Rust files in src/
 echo "📁 Processing Rust files in src/..."
-while IFS= read -r -d '' file; do
+for file in $(find src -type f -name "*.rs" 2>/dev/null); do
     ((TOTAL++))
     add_license_header "$file"
-done < <(find src -type f -name "*.rs" -print0 2>/dev/null)
+done
 
 # Process Rust files in tests/
 echo ""
 echo "📁 Processing Rust files in tests/..."
-while IFS= read -r -d '' file; do
+for file in $(find tests -type f -name "*.rs" 2>/dev/null); do
     ((TOTAL++))
     add_license_header "$file"
-done < <(find tests -type f -name "*.rs" -print0 2>/dev/null)
+done
 
 # Process TypeScript/JavaScript files in frontend/
 if [ -d "frontend" ]; then
     echo ""
     echo "📁 Processing TypeScript/JavaScript files in frontend/..."
 
-    # Process .ts files
-    while IFS= read -r -d '' file; do
+    # Process all relevant frontend files
+    for file in $(find frontend -type f \( -name "*.ts" -o -name "*.tsx" -o -name "*.js" -o -name "*.jsx" -o -name "*.vue" \) -not -path "*/node_modules/*" -not -path "*/dist/*" -not -path "*/.vite/*" 2>/dev/null); do
         ((TOTAL++))
         add_license_header "$file"
-    done < <(find frontend -type f -name "*.ts" -not -path "*/node_modules/*" -not -path "*/dist/*" -not -path "*/.vite/*" -print0 2>/dev/null)
-
-    # Process .tsx files
-    while IFS= read -r -d '' file; do
-        ((TOTAL++))
-        add_license_header "$file"
-    done < <(find frontend -type f -name "*.tsx" -not -path "*/node_modules/*" -not -path "*/dist/*" -not -path "*/.vite/*" -print0 2>/dev/null)
-
-    # Process .js files
-    while IFS= read -r -d '' file; do
-        ((TOTAL++))
-        add_license_header "$file"
-    done < <(find frontend -type f -name "*.js" -not -path "*/node_modules/*" -not -path "*/dist/*" -not -path "*/.vite/*" -print0 2>/dev/null)
-
-    # Process .jsx files
-    while IFS= read -r -d '' file; do
-        ((TOTAL++))
-        add_license_header "$file"
-    done < <(find frontend -type f -name "*.jsx" -not -path "*/node_modules/*" -not -path "*/dist/*" -not -path "*/.vite/*" -print0 2>/dev/null)
-
-    # Process .vue files
-    while IFS= read -r -d '' file; do
-        ((TOTAL++))
-        add_license_header "$file"
-    done < <(find frontend -type f -name "*.vue" -not -path "*/node_modules/*" -not -path "*/dist/*" -not -path "*/.vite/*" -print0 2>/dev/null)
+    done
 fi
 
 echo ""
