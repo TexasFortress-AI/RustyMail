@@ -94,3 +94,4 @@ node_modules/
 # Task files
 # tasks.json
 # tasks/ 
+config/accounts_connection_status.json
