@@ -67,9 +67,9 @@ impl MetricsService {
     }
     
     async fn collect_metrics(
-        sys: &mut System, 
-        store: Arc<RwLock<MetricsStore>>, 
-        dashboard_state: Arc<DashboardState>
+        sys: &mut System,
+        store: Arc<RwLock<MetricsStore>>,
+        connection_pool: Arc<crate::connection_pool::ConnectionPool>
     ) {
         sys.refresh_specifics(
             RefreshKind::new()
@@ -84,7 +84,7 @@ impl MetricsService {
         store_guard.memory_usage = (sys.used_memory() as f32 / sys.total_memory() as f32) * 100.0;
 
         // --- Get active IMAP connection count from connection pool ---
-        let pool_stats = dashboard_state.connection_pool.stats().await;
+        let pool_stats = connection_pool.stats().await;
         store_guard.active_imap_connections = pool_stats.active_connections;
         debug!("Collected IMAP connection pool stats: active={}, total={}, available={}",
                pool_stats.active_connections, pool_stats.total_connections, pool_stats.available_connections);
@@ -182,12 +182,10 @@ impl MetricsService {
         }
     }
 
-    // Modify the background task spawner to pass DashboardState
-    pub fn start_background_collection(&self, dashboard_state_data: web::Data<DashboardState>) {
+    // Start background collection task with only the connection pool (breaks circular reference)
+    pub fn start_background_collection(&self, connection_pool: Arc<crate::connection_pool::ConnectionPool>) {
         let metrics_store_clone = Arc::clone(&self.metrics_store);
         let collection_interval = self.collection_interval;
-        // Clone the Arc directly from web::Data
-        let dashboard_state_arc: Arc<DashboardState> = dashboard_state_data.into_inner(); 
 
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(collection_interval);
@@ -195,11 +193,11 @@ impl MetricsService {
                 .with_cpu(CpuRefreshKind::everything())
                 .with_memory(MemoryRefreshKind::everything());
             let mut sys = System::new_with_specifics(refresh_kind);
-            
+
             loop {
                 interval.tick().await;
-                // Pass the cloned Arc<DashboardState>
-                MetricsService::collect_metrics(&mut sys, metrics_store_clone.clone(), dashboard_state_arc.clone()).await;
+                // Only pass the connection pool, not the entire DashboardState
+                MetricsService::collect_metrics(&mut sys, metrics_store_clone.clone(), connection_pool.clone()).await;
             }
         });
         info!("Started background metrics collection task");

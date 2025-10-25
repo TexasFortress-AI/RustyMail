@@ -170,11 +170,15 @@ impl AutodiscoveryService {
     async fn try_mozilla_autoconfig(&self, email: &str, domain: &str) -> Result<EmailConfig, AutodiscoveryError> {
         debug!("Attempting Mozilla Autoconfig for domain: {}", domain);
 
-        // Try both autoconfig URLs as per Mozilla spec
+        // Try autoconfig URLs in order of preference as per Mozilla spec
         let urls = vec![
+            // 1. Domain-hosted autoconfig (HTTPS)
             format!("https://autoconfig.{}/mail/config-v1.1.xml?emailaddress={}", domain, email),
+            // 2. Well-known location (HTTPS)
             format!("https://{}/.well-known/autoconfig/mail/config-v1.1.xml?emailaddress={}", domain, email),
-            // Fallback to HTTP if HTTPS fails (less secure but some providers only support HTTP)
+            // 3. Mozilla ISPDB (centralized database that Thunderbird uses)
+            format!("https://autoconfig.thunderbird.net/v1.1/{}", domain),
+            // 4. Fallback to HTTP if HTTPS fails (less secure but some providers only support HTTP)
             format!("http://autoconfig.{}/mail/config-v1.1.xml?emailaddress={}", domain, email),
         ];
 

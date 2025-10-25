@@ -132,6 +132,10 @@ pub async fn init(
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(1000),
+        max_folder_items: std::env::var("CACHE_MAX_FOLDER_ITEMS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(100),
         max_cache_size_mb: std::env::var("CACHE_MAX_SIZE_MB")
             .ok()
             .and_then(|s| s.parse().ok())

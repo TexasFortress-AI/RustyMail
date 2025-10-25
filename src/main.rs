@@ -193,8 +193,8 @@ async fn main() -> std::io::Result<()> {
     ).await;
     info!("Dashboard state initialized.");
 
-    // Start background metrics collection task (needs DashboardState)
-    dashboard_state.metrics_service.start_background_collection(dashboard_state.clone());
+    // Start background metrics collection task (pass only connection pool to avoid circular reference)
+    dashboard_state.metrics_service.start_background_collection(Arc::clone(&dashboard_state.connection_pool));
 
     // Start background email sync task
     Arc::clone(&dashboard_state.sync_service).start_background_sync();

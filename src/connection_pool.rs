@@ -438,10 +438,31 @@ impl ConnectionPool {
             // Clean up expired connections (lock-free operations)
             for id in expired_ids {
                 self.connections.remove(&id);
-                // Note: ArrayQueue doesn't have retain, but expired connections
-                // will be filtered out naturally during acquisition
                 debug!("Removed expired connection {}", id);
             }
+
+            // Periodically rebuild the available queue to remove stale IDs
+            // This prevents unbounded queue growth from accumulating stale UUIDs
+            let valid_ids: Vec<Uuid> = self.connections.iter()
+                .filter(|entry| {
+                    let (_, conn) = entry.pair();
+                    !conn.in_use && conn.is_healthy && !conn.is_expired(self.config.idle_timeout)
+                })
+                .map(|entry| *entry.key())
+                .collect();
+
+            // Drain the old queue
+            while self.available.pop().is_some() {
+                // Drain all stale IDs
+            }
+
+            // Rebuild with only valid IDs
+            for id in valid_ids {
+                if self.available.push(id).is_err() {
+                    warn!("Queue full during rebuild, skipping connection {}", id);
+                }
+            }
+            debug!("Rebuilt available queue with {} valid connections", self.available.len());
 
             // Force-release stuck connections
             for id in stuck_ids {

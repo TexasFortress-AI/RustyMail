@@ -83,7 +83,7 @@ pub enum SyncStatus {
 pub struct CacheService {
     pub db_pool: Option<SqlitePool>,
     memory_cache: Arc<RwLock<LruCache<String, CachedEmail>>>,
-    folder_cache: Arc<RwLock<HashMap<String, CachedFolder>>>,
+    folder_cache: Arc<RwLock<LruCache<String, CachedFolder>>>,
     config: CacheConfig,
 }
 
@@ -92,7 +92,7 @@ impl std::fmt::Debug for CacheService {
         f.debug_struct("CacheService")
             .field("db_pool", &self.db_pool.is_some())
             .field("memory_cache", &"<LruCache>")
-            .field("folder_cache", &"<HashMap>")
+            .field("folder_cache", &"<LruCache>")
             .field("config", &self.config)
             .finish()
     }
@@ -102,6 +102,7 @@ impl std::fmt::Debug for CacheService {
 pub struct CacheConfig {
     pub database_url: String,
     pub max_memory_items: usize,
+    pub max_folder_items: usize,
     pub max_cache_size_mb: u64,
     pub max_email_age_days: u32,
     pub sync_interval_seconds: u64,
@@ -112,6 +113,7 @@ impl Default for CacheConfig {
         Self {
             database_url: "sqlite:data/email_cache.db".to_string(),
             max_memory_items: 1000,
+            max_folder_items: 100,
             max_cache_size_mb: 1000,
             max_email_age_days: 30,
             sync_interval_seconds: 300,
@@ -124,7 +126,9 @@ impl CacheService {
         let memory_cache = Arc::new(RwLock::new(
             LruCache::new(NonZeroUsize::new(config.max_memory_items).unwrap())
         ));
-        let folder_cache = Arc::new(RwLock::new(HashMap::new()));
+        let folder_cache = Arc::new(RwLock::new(
+            LruCache::new(NonZeroUsize::new(config.max_folder_items).unwrap())
+        ));
 
         Self {
             db_pool: None,
@@ -204,7 +208,7 @@ impl CacheService {
                 last_sync,
             };
 
-            folder_cache.insert(name, cached_folder);
+            folder_cache.put(name, cached_folder);
         }
 
         Ok(())
@@ -217,7 +221,7 @@ impl CacheService {
         let cache_key = format!("{}:{}", account_id, name);
         {
             let folder_cache = self.folder_cache.read().await;
-            if let Some(folder) = folder_cache.get(&cache_key) {
+            if let Some(folder) = folder_cache.peek(&cache_key) {
                 return Ok(folder.clone());
             }
         }
@@ -252,7 +256,7 @@ impl CacheService {
 
             // Add to memory cache
             let mut folder_cache = self.folder_cache.write().await;
-            folder_cache.insert(cache_key.clone(), cached_folder.clone());
+            folder_cache.put(cache_key.clone(), cached_folder.clone());
 
             Ok(cached_folder)
         } else {
@@ -279,7 +283,7 @@ impl CacheService {
 
             // Add to memory cache
             let mut folder_cache = self.folder_cache.write().await;
-            folder_cache.insert(cache_key, cached_folder.clone());
+            folder_cache.put(cache_key, cached_folder.clone());
 
             Ok(cached_folder)
         }
@@ -576,7 +580,7 @@ impl CacheService {
         // Check in-memory cache first
         {
             let folder_cache = self.folder_cache.read().await;
-            if let Some(folder) = folder_cache.get(&cache_key) {
+            if let Some(folder) = folder_cache.peek(&cache_key) {
                 return Some(folder.clone());
             }
         }
@@ -630,7 +634,7 @@ impl CacheService {
 
         // Add to memory cache for future access
         let mut folder_cache = self.folder_cache.write().await;
-        folder_cache.insert(cache_key, cached_folder.clone());
+        folder_cache.put(cache_key, cached_folder.clone());
 
         Some(cached_folder)
     }
