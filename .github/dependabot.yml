@@ -3,10 +3,10 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"  # Changed from weekly to monthly
       day: "monday"
       time: "04:00"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5  # Reduced from 10 to 5
     reviewers:
       - "au"
     labels:
@@ -27,10 +27,10 @@ updates:
   - package-ecosystem: "npm"
     directory: "/frontend/rustymail-app-main"
     schedule:
-      interval: "weekly"
+      interval: "monthly"  # Changed from weekly to monthly
       day: "monday"
       time: "04:00"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5  # Reduced from 10 to 5
     reviewers:
       - "au"
     labels:
@@ -51,10 +51,10 @@ updates:
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "monthly"  # Changed from weekly to monthly
       day: "monday"
       time: "04:00"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3  # Reduced from 5 to 3
     reviewers:
       - "au"
     labels:

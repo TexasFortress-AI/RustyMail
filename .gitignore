@@ -93,6 +93,11 @@ node_modules/
 
 # Task files
 # tasks.json
-# tasks/ 
+# tasks/
+
+# Account connection status files (runtime state, not for version control)
 config/accounts_connection_status.json
-config/accounts_connection_status.json
+frontend/rustymail-app-main/config/accounts_connection_status.json
+**/accounts_connection_status.json
+test_data/*_accounts_connection_status.json
+
