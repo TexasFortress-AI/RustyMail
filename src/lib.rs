@@ -22,6 +22,10 @@ pub mod session_manager;
 pub mod connection_pool;
 pub mod utils;
 
+// Test modules
+#[cfg(test)]
+mod test_mail_parser_leak;
+
 // Re-export key types for convenience
 pub mod prelude {
     // Config

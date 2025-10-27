@@ -45,6 +45,9 @@ const Dashboard: React.FC = () => {
   // Selected email context (for MCP tools)
   const [selectedEmailContext, setSelectedEmailContext] = useState<EmailContext | undefined>(undefined);
 
+  // Compose handler for EmailBody to trigger compose in EmailList
+  const [composeHandler, setComposeHandler] = useState<((mode: 'reply' | 'forward', originalEmail: any) => void) | null>(null);
+
   // Account management state
   const [accountFormOpen, setAccountFormOpen] = useState(false);
   const [selectedAccount, setSelectedAccount] = useState<Account | null>(null);
@@ -299,6 +302,7 @@ const Dashboard: React.FC = () => {
                   currentFolder={currentFolder}
                   setCurrentFolder={setCurrentFolder}
                   onEmailSelect={setSelectedEmailContext}
+                  onComposeRequest={setComposeHandler}
                 />
               </div>
 
@@ -323,6 +327,7 @@ const Dashboard: React.FC = () => {
                 <EmailBody
                   currentFolder={currentFolder}
                   selectedEmailContext={selectedEmailContext}
+                  onCompose={composeHandler || undefined}
                 />
               </div>
             </div>

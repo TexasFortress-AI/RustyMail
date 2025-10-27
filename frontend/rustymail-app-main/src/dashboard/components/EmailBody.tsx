@@ -9,7 +9,7 @@ import { config } from '../config';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { useAccount } from '../../contexts/AccountContext';
-import { RefreshCw, Mail, Paperclip, Download, Archive } from 'lucide-react';
+import { RefreshCw, Mail, Paperclip, Download, Archive, Reply, Forward } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '../../hooks/use-toast';
 import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
@@ -33,9 +33,10 @@ interface EmailBodyProps {
   currentFolder: string;
   selectedEmailContext: EmailContext | undefined;
   onAttachmentsLoaded?: () => void;
+  onCompose?: (mode: 'reply' | 'forward', originalEmail: Email) => void;
 }
 
-const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailContext, onAttachmentsLoaded }) => {
+const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailContext, onAttachmentsLoaded, onCompose }) => {
   const { currentAccount } = useAccount();
   const { toast } = useToast();
   const [email, setEmail] = useState<Email | null>(null);
@@ -253,10 +254,34 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
   return (
     <Card className="h-full flex flex-col min-h-0">
       <CardHeader className="flex-shrink-0">
-        <CardTitle className="flex items-center gap-3">
-          <Mail className="h-5 w-5" />
-          Email Body
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-3">
+            <Mail className="h-5 w-5" />
+            Email Body
+          </CardTitle>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onCompose?.('reply', email)}
+              disabled={!email}
+              title="Reply to this email"
+            >
+              <Reply className="h-4 w-4 mr-1" />
+              Reply
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => onCompose?.('forward', email)}
+              disabled={!email}
+              title="Forward this email"
+            >
+              <Forward className="h-4 w-4 mr-1" />
+              Forward
+            </Button>
+          </div>
+        </div>
       </CardHeader>
       <CardContent className="flex-1 overflow-y-auto">
         <div className="mb-4">

@@ -123,6 +123,9 @@ tracing = "0.1.41"
 tokio-native-tls = "0.3.0"
 native-tls = "0.2"
 
+# Optional profiling dependencies
+dhat = { version = "0.3", optional = true }
+
 [dev-dependencies]
 # Remove reqwest native-tls feature if not needed
 reqwest = { version = "0.12", features = ["json", "stream"] }
@@ -151,6 +154,8 @@ default = []
 integration_tests = []
 # Feature flag for enabling live integration tests
 live_tests = []
+# Feature flag for heap profiling with DHAT
+dhat-heap = ["dep:dhat"]
 
 [lib]
 name = "rustymail"

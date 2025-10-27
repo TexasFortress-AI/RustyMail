@@ -31,8 +31,17 @@ use rustymail::imap::client::ImapClient; // Needed for the factory closure
 // use rustymail::mcp::handler::JsonRpcHandler;
 use rustymail::prelude::*; // Import many common types
 
+// Enable DHAT heap profiler when compiled with --features dhat-heap
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    // Initialize DHAT profiler if enabled
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
+
     // Load .env file if present
     dotenv().ok();
 

@@ -3,7 +3,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { emailsApi, SendEmailRequest } from '../api/emails';
 import {
   Dialog,
@@ -25,6 +25,14 @@ interface SendMailDialogProps {
   onOpenChange: (open: boolean) => void;
   accountEmail?: string;
   onSuccess?: () => void;
+  mode?: 'compose' | 'reply' | 'forward';
+  originalEmail?: {
+    subject: string | null;
+    from_address: string | null;
+    from_name: string | null;
+    to_addresses: string[];
+    body_text: string | null;
+  };
 }
 
 export function SendMailDialog({
@@ -32,6 +40,8 @@ export function SendMailDialog({
   onOpenChange,
   accountEmail,
   onSuccess,
+  mode = 'compose',
+  originalEmail,
 }: SendMailDialogProps) {
   const { toast } = useToast();
   const [sending, setSending] = useState(false);
@@ -49,6 +59,49 @@ export function SendMailDialog({
   const [toInput, setToInput] = useState('');
   const [ccInput, setCcInput] = useState('');
   const [bccInput, setBccInput] = useState('');
+
+  // Prefill form based on mode and originalEmail
+  useEffect(() => {
+    if (open && originalEmail) {
+      if (mode === 'reply') {
+        // Reply: Set TO to original sender
+        setToInput(originalEmail.from_address || '');
+        // Prefix subject with Re: if not already present
+        const subject = originalEmail.subject || '';
+        const newSubject = subject.toLowerCase().startsWith('re:') ? subject : `Re: ${subject}`;
+        setFormData(prev => ({
+          ...prev,
+          subject: newSubject,
+          body: `\n\n-------- Original Message --------\nFrom: ${originalEmail.from_name || originalEmail.from_address || 'Unknown'}\nSubject: ${originalEmail.subject || '(No subject)'}\n\n${originalEmail.body_text || ''}`
+        }));
+      } else if (mode === 'forward') {
+        // Forward: Clear TO, prefix subject with Fwd:
+        setToInput('');
+        const subject = originalEmail.subject || '';
+        const newSubject = subject.toLowerCase().startsWith('fwd:') || subject.toLowerCase().startsWith('fw:')
+          ? subject
+          : `Fwd: ${subject}`;
+        setFormData(prev => ({
+          ...prev,
+          subject: newSubject,
+          body: `\n\n-------- Forwarded Message --------\nFrom: ${originalEmail.from_name || originalEmail.from_address || 'Unknown'}\nTo: ${originalEmail.to_addresses.join(', ')}\nSubject: ${originalEmail.subject || '(No subject)'}\n\n${originalEmail.body_text || ''}`
+        }));
+      }
+    } else if (open && mode === 'compose') {
+      // Reset form for new compose
+      setToInput('');
+      setCcInput('');
+      setBccInput('');
+      setFormData({
+        to: [],
+        cc: [],
+        bcc: [],
+        subject: '',
+        body: '',
+        body_html: undefined,
+      });
+    }
+  }, [open, mode, originalEmail]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

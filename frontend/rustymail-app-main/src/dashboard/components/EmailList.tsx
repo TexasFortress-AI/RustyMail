@@ -18,7 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { RefreshCw, Mail, ChevronLeft, ChevronRight, X, ChevronsLeft, ChevronsRight, Paperclip, Download, PenSquare, Trash2 } from 'lucide-react';
+import { RefreshCw, Mail, ChevronLeft, ChevronRight, X, ChevronsLeft, ChevronsRight, Paperclip, Download, PenSquare, Trash2, FolderOpen } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '../../hooks/use-toast';
 import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
@@ -56,9 +56,10 @@ interface EmailListProps {
   setCurrentFolder: (folder: string) => void;
   onEmailSelect?: (context: EmailContext | undefined) => void;
   onRefetchReady?: (refetch: () => void) => void;
+  onComposeRequest?: (handler: (mode: 'reply' | 'forward', originalEmail: Email) => void) => void;
 }
 
-const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, onEmailSelect, onRefetchReady }) => {
+const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, onEmailSelect, onRefetchReady, onComposeRequest }) => {
   const { currentAccount } = useAccount();
   const { toast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
@@ -68,6 +69,9 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
   const [currentMessageId, setCurrentMessageId] = useState<string>('');
   const [loadingAttachments, setLoadingAttachments] = useState(false);
   const [composeDialogOpen, setComposeDialogOpen] = useState(false);
+  const [composeMode, setComposeMode] = useState<'compose' | 'reply' | 'forward'>('compose');
+  const [composeOriginalEmail, setComposeOriginalEmail] = useState<Email | null>(null);
+  const [folderMovePopup, setFolderMovePopup] = useState<{email: Email, x: number, y: number} | null>(null);
   const pageSize = 20;
 
   // Reset to page 1 when folder or account changes
@@ -145,6 +149,20 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
     retry: false, // Don't retry on failure
   });
+
+  // Handle compose requests from EmailBody
+  const handleComposeRequest = (mode: 'reply' | 'forward', originalEmail: Email) => {
+    setComposeMode(mode);
+    setComposeOriginalEmail(originalEmail);
+    setComposeDialogOpen(true);
+  };
+
+  // Expose compose handler to parent
+  useEffect(() => {
+    if (onComposeRequest) {
+      onComposeRequest(handleComposeRequest);
+    }
+  }, [onComposeRequest]);
 
   // Expose refetch function to parent
   useEffect(() => {
@@ -316,6 +334,102 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     }
   };
 
+  const handleMoveClick = (email: Email, event: React.MouseEvent) => {
+    event.stopPropagation();
+    const rect = (event.target as HTMLElement).getBoundingClientRect();
+    setFolderMovePopup({
+      email,
+      x: rect.left,
+      y: rect.bottom + 4
+    });
+  };
+
+  const handleMoveToFolder = async (email: Email, targetFolder: string) => {
+    setFolderMovePopup(null); // Close popup immediately
+
+    if (!currentAccount) {
+      toast({
+        title: "Error",
+        description: "No account selected",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (targetFolder === currentFolder) {
+      toast({
+        title: "Notice",
+        description: "Email is already in this folder",
+      });
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/dashboard/emails/move`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': config.api.apiKey
+        },
+        body: JSON.stringify({
+          account_id: currentAccount.id,
+          uid: email.uid,
+          from_folder: currentFolder,
+          to_folder: targetFolder
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        toast({
+          title: "Success",
+          description: `Email moved to ${targetFolder}`,
+        });
+        // Refetch to update the list
+        refetch();
+      } else {
+        const errorData = await response.json().catch(() => ({ error: 'Failed to parse error' }));
+        toast({
+          title: "Error",
+          description: errorData.error || "Failed to move email",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error('Error moving email:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "An unknown error occurred",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Close folder popup when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (folderMovePopup) {
+        setFolderMovePopup(null);
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [folderMovePopup]);
+
+  // Close folder popup on ESC
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && folderMovePopup) {
+        setFolderMovePopup(null);
+      }
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [folderMovePopup]);
+
   const formatFileSize = (bytes: number): string => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -439,6 +553,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
   }
 
   return (
+    <>
     <Card className="h-full flex flex-col min-h-0">
       <CardHeader className="flex flex-row items-center justify-between flex-shrink-0">
         <CardTitle className="flex items-center gap-3">
@@ -537,6 +652,13 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
                         <div className="text-xs text-gray-500">
                           {formatDate(email.date, email.internal_date)}
                         </div>
+                        <button
+                          onClick={(e) => handleMoveClick(email, e)}
+                          className="opacity-0 group-hover:opacity-100 hover:bg-blue-100 p-1 rounded transition-all"
+                          title="Move to folder"
+                        >
+                          <FolderOpen className="h-4 w-4 text-blue-600" />
+                        </button>
                         <button
                           onClick={(e) => handleDeleteEmail(email, e)}
                           className="opacity-0 group-hover:opacity-100 hover:bg-red-100 p-1 rounded transition-all"
@@ -685,8 +807,17 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
       {/* Send Mail Dialog */}
       <SendMailDialog
         open={composeDialogOpen}
-        onOpenChange={setComposeDialogOpen}
+        onOpenChange={(open) => {
+          setComposeDialogOpen(open);
+          if (!open) {
+            // Reset to compose mode when dialog closes
+            setComposeMode('compose');
+            setComposeOriginalEmail(null);
+          }
+        }}
         accountEmail={currentAccount?.email_address}
+        mode={composeMode}
+        originalEmail={composeOriginalEmail || undefined}
         onSuccess={() => {
           // Immediate refetch (email is queued but not in IMAP yet)
           refetch();
@@ -696,6 +827,37 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
         }}
       />
     </Card>
+
+    {/* Folder Move Popup */}
+    {folderMovePopup && foldersData && (
+      <div
+        className="absolute z-50 bg-white border rounded-lg shadow-lg py-2"
+        style={{
+          left: `${folderMovePopup.x}px`,
+          top: `${folderMovePopup.y}px`,
+          minWidth: '200px'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="px-3 py-2 text-sm font-semibold border-b">
+          Move to folder:
+        </div>
+        <div className="max-h-64 overflow-y-auto">
+          {foldersData.folders
+            .filter(folder => folder !== currentFolder)
+            .map(folder => (
+              <button
+                key={folder}
+                onClick={() => handleMoveToFolder(folderMovePopup.email, folder)}
+                className="w-full px-3 py-2 text-sm text-left hover:bg-gray-100 transition-colors"
+              >
+                {folder}
+              </button>
+            ))}
+        </div>
+      </div>
+    )}
+    </>
   );
 };
 
