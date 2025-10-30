@@ -310,7 +310,7 @@
         "description": "Fix the frontend EmailBody component to properly render HTML content and display images/links correctly instead of showing raw text",
         "details": "The current implementation in EmailBody.tsx:303 only displays the plain text body (email.body_text) using whitespace-pre-wrap styling, which causes HTML content and embedded images to appear as raw text/artifacts. The fix involves: 1) Check if email.html_body is available from the backend (already stored in cache.rs and available via the REST API), 2) Modify the EmailBody component to conditionally render HTML content using dangerouslySetInnerHTML when HTML is available, with proper sanitization, 3) Add CSS styles to handle image display, link styling, and proper HTML formatting, 4) Implement a toggle between HTML and plain text views for user preference, 5) Add security measures to sanitize HTML content before rendering to prevent XSS attacks, 6) Update the email fetching logic to include html_body field in the API response. The backend already stores both text_body and html_body in the database (migrations/001_create_schema.sql:101-102) and the IMAP parsing extracts both via mail_parser (imap/types.rs:737-738).",
         "testStrategy": "Test by: 1) Sending HTML emails with embedded images and links to test accounts, 2) Verify HTML content renders properly with images displayed and links clickable, 3) Test the plain text fallback when no HTML is available, 4) Verify HTML/plain text toggle functionality works, 5) Test with malicious HTML content to ensure sanitization prevents XSS, 6) Test responsive display on different screen sizes, 7) Verify that emails without HTML content still display plain text correctly, 8) Test performance with large HTML emails containing multiple images",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           4
         ],
@@ -323,7 +323,7 @@
         "description": "Implement a privacy-focused image loading control in the email viewer with an optional button similar to Thunderbird, where images are blocked by default to prevent tracking.",
         "details": "Based on the current EmailBody.tsx implementation that only displays plain text (line 303 uses whitespace-pre-wrap on email.body_text), add image privacy controls when displaying HTML emails: 1) Add a state variable `showImages` (default false) to control image display, 2) When rendering HTML content using email.html_body (which is already available from the backend as seen in cache.rs), implement a two-stage rendering approach: first render HTML with all img src attributes stripped/blocked, 3) Add a 'Show Images' button (using existing Button component and Eye/EyeOff icons from lucide-react) that appears when HTML content contains images, 4) When clicked, re-render the HTML with images enabled, 5) Use DOMParser to safely detect and modify img tags before dangerouslySetInnerHTML rendering, 6) Add user preference persistence via localStorage to remember the choice per sender/domain, 7) Style the button consistently with existing Reply/Forward buttons in the header area (lines 262-284), 8) Ensure the feature works with the existing HTML/text toggle functionality mentioned in Task 17",
         "testStrategy": "Test by: 1) Sending HTML emails with embedded images and tracking pixels to test accounts, 2) Verify images are blocked by default and 'Show Images' button appears, 3) Test button functionality enables images properly, 4) Test localStorage persistence remembers preference, 5) Verify no external requests are made when images are blocked (check network tab), 6) Test with various email clients (Gmail, Outlook, etc.) to ensure compatibility, 7) Test the feature works alongside Task 17's HTML rendering improvements, 8) Verify button styling matches existing UI components",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           17
         ],
@@ -382,7 +382,7 @@
       ],
       "created": "2025-10-18T12:29:46.283Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-30T02:52:26.160Z"
+      "updated": "2025-10-30T02:57:38.911Z"
     }
   }
 }

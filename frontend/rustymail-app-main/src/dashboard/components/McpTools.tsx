@@ -4,7 +4,8 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import React, { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, Play, Terminal, Code, X, Copy, Check } from 'lucide-react';
+import { ChevronDown, ChevronRight, Play, Terminal, Code, X, Copy, Check, Layers, Zap } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import config from '../config';
 import { useAccount } from '../../contexts/AccountContext';
 import type { EmailContext } from './EmailList';
@@ -22,13 +23,18 @@ interface McpToolsProps {
 
 const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext }) => {
   const { currentAccount } = useAccount();
-  const [tools, setTools] = useState<McpTool[]>([]);
+  const [lowLevelTools, setLowLevelTools] = useState<McpTool[]>([]);
+  const [highLevelTools, setHighLevelTools] = useState<McpTool[]>([]);
+  const [activeTab, setActiveTab] = useState<'low-level' | 'high-level'>('low-level');
   const [expandedTool, setExpandedTool] = useState<string | null>(null);
   const [executing, setExecuting] = useState<string | null>(null);
   const [results, setResults] = useState<{ [key: string]: any }>({});
   const [parameters, setParameters] = useState<{ [key: string]: { [key: string]: string } }>({});
   const [error, setError] = useState<string | null>(null);
   const [copiedTool, setCopiedTool] = useState<string | null>(null);
+
+  // Get the active tools based on current tab
+  const tools = activeTab === 'low-level' ? lowLevelTools : highLevelTools;
 
   // Get context-based default values for parameters
   const getContextDefaults = (paramName: string): string => {
@@ -95,22 +101,29 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
 
   const fetchTools = async () => {
     try {
-      const response = await fetch(`${config.api.baseUrl}/dashboard/mcp/tools`, {
-        headers: {
-          'X-API-Key': config.api.apiKey
-        }
-      });
+      // Fetch both low-level and high-level tools
+      const [lowLevelResponse, highLevelResponse] = await Promise.all([
+        fetch(`${config.api.baseUrl}/dashboard/mcp/tools?variant=standard`, {
+          headers: { 'X-API-Key': config.api.apiKey }
+        }),
+        fetch(`${config.api.baseUrl}/dashboard/mcp/tools?variant=high-level`, {
+          headers: { 'X-API-Key': config.api.apiKey }
+        })
+      ]);
 
-      if (!response.ok) {
-        throw new Error(`Failed to fetch tools: ${response.statusText}`);
+      if (!lowLevelResponse.ok || !highLevelResponse.ok) {
+        throw new Error(`Failed to fetch tools`);
       }
 
-      const data = await response.json();
-      setTools(data.tools || []);
+      const lowLevelData = await lowLevelResponse.json();
+      const highLevelData = await highLevelResponse.json();
+
+      setLowLevelTools(lowLevelData.tools || []);
+      setHighLevelTools(highLevelData.tools || []);
 
       // Initialize parameters state for all tools
       const initialParams: { [key: string]: { [key: string]: string } } = {};
-      data.tools?.forEach((tool: McpTool) => {
+      [...(lowLevelData.tools || []), ...(highLevelData.tools || [])].forEach((tool: McpTool) => {
         initialParams[tool.name] = {};
         Object.keys(tool.parameters).forEach(param => {
           initialParams[tool.name][param] = '';
@@ -135,7 +148,8 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
         ...userParams
       };
 
-      const response = await fetch(`${config.api.baseUrl}/dashboard/mcp/execute`, {
+      const variant = activeTab === 'high-level' ? 'high-level' : 'standard';
+      const response = await fetch(`${config.api.baseUrl}/dashboard/mcp/execute?variant=${variant}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -223,9 +237,6 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
       <div className="flex items-center gap-2 mb-4 flex-shrink-0">
         <Terminal className="w-5 h-5 text-primary" />
         <h3 className="text-lg font-semibold">MCP Email Tools</h3>
-        <span className="text-xs text-muted-foreground ml-auto">
-          {tools.length} tools available
-        </span>
       </div>
 
       {error && (
@@ -234,8 +245,21 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
         </div>
       )}
 
-      <div className="space-y-2 flex-1 overflow-y-auto">
-        {tools.map(tool => (
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'low-level' | 'high-level')} className="flex-1 flex flex-col">
+        <TabsList className="grid w-full grid-cols-2 mb-4">
+          <TabsTrigger value="low-level" className="flex items-center gap-2">
+            <Layers className="w-4 h-4" />
+            Low-Level ({lowLevelTools.length})
+          </TabsTrigger>
+          <TabsTrigger value="high-level" className="flex items-center gap-2">
+            <Zap className="w-4 h-4" />
+            High-Level ({highLevelTools.length})
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value={activeTab} className="flex-1 overflow-y-auto mt-0">
+          <div className="space-y-2">
+            {tools.map(tool => (
           <div key={tool.name} className="border rounded overflow-hidden">
             {/* Tool Header */}
             <button
@@ -338,15 +362,17 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
               </div>
             )}
           </div>
-        ))}
-      </div>
+            ))}
+          </div>
 
-      {tools.length === 0 && !error && (
-        <div className="text-center py-8 text-muted-foreground">
-          <Terminal className="w-12 h-12 mx-auto mb-2 opacity-50" />
-          <p className="text-sm">Loading MCP tools...</p>
-        </div>
-      )}
+          {tools.length === 0 && !error && (
+            <div className="text-center py-8 text-muted-foreground">
+              <Terminal className="w-12 h-12 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">Loading MCP tools...</p>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 };
