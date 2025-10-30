@@ -672,11 +672,57 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
     ]
 }
 
+// Query parameters for MCP tools endpoint
+#[derive(Debug, Deserialize)]
+pub struct McpToolsQuery {
+    #[serde(default = "default_variant")]
+    pub variant: String,
+}
+
+fn default_variant() -> String {
+    "low-level".to_string()
+}
+
 pub async fn list_mcp_tools(
     _state: web::Data<DashboardState>,
+    query: web::Query<McpToolsQuery>,
 ) -> Result<impl Responder, ApiError> {
-    // List of MCP tools available in the system
-    let tools = vec![
+    debug!("Listing MCP tools with variant: {}", query.variant);
+
+    // Check which variant to return
+    let tools = if query.variant == "high-level" {
+        // Return high-level tools
+        use crate::dashboard::api::high_level_tools;
+        let high_level_tools = high_level_tools::get_mcp_high_level_tools_jsonrpc_format();
+
+        // Convert from JSON-RPC format to dashboard format
+        high_level_tools.iter().map(|tool| {
+            let name = tool["name"].as_str().unwrap_or("unknown");
+            let description = tool["description"].as_str().unwrap_or("");
+            let input_schema = &tool["inputSchema"];
+
+            // Extract parameters from inputSchema
+            let mut parameters = serde_json::json!({});
+            if let Some(props) = input_schema.get("properties") {
+                if let Some(props_obj) = props.as_object() {
+                    for (key, value) in props_obj {
+                        let desc = value.get("description")
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("");
+                        parameters[key] = serde_json::Value::String(desc.to_string());
+                    }
+                }
+            }
+
+            serde_json::json!({
+                "name": name,
+                "description": description,
+                "parameters": parameters
+            })
+        }).collect()
+    } else {
+        // Return low-level tools (existing implementation)
+        vec![
         serde_json::json!({
             "name": "list_folders",
             "description": "List all email folders in the account",
@@ -911,7 +957,8 @@ pub async fn list_mcp_tools(
                 "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
             }
         })
-    ];
+    ]
+    }; // End of if-else for variant
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "tools": tools

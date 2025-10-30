@@ -103,7 +103,7 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
     try {
       // Fetch both low-level and high-level tools
       const [lowLevelResponse, highLevelResponse] = await Promise.all([
-        fetch(`${config.api.baseUrl}/dashboard/mcp/tools?variant=standard`, {
+        fetch(`${config.api.baseUrl}/dashboard/mcp/tools?variant=low-level`, {
           headers: { 'X-API-Key': config.api.apiKey }
         }),
         fetch(`${config.api.baseUrl}/dashboard/mcp/tools?variant=high-level`, {
@@ -257,7 +257,7 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value={activeTab} className="flex-1 overflow-y-auto mt-0">
+        <div className="flex-1 overflow-y-auto">
           <div className="space-y-2">
             {tools.map(tool => (
           <div key={tool.name} className="border rounded overflow-hidden">
@@ -371,7 +371,7 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
               <p className="text-sm">Loading MCP tools...</p>
             </div>
           )}
-        </TabsContent>
+        </div>
       </Tabs>
     </div>
   );
