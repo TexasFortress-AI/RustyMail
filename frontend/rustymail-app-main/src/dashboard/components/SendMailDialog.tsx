@@ -60,6 +60,14 @@ export function SendMailDialog({
   const [ccInput, setCcInput] = useState('');
   const [bccInput, setBccInput] = useState('');
 
+  // Debug logging for dialog open state
+  useEffect(() => {
+    console.log('[SendMailDialog] open prop changed:', open, 'mode:', mode);
+    if (open) {
+      console.trace('[SendMailDialog] Dialog opened - stack trace:');
+    }
+  }, [open]);
+
   // Prefill form based on mode and originalEmail
   useEffect(() => {
     if (open && originalEmail) {

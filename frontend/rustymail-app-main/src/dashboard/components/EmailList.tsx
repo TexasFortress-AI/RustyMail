@@ -68,7 +68,26 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
   const [attachments, setAttachments] = useState<AttachmentInfo[]>([]);
   const [currentMessageId, setCurrentMessageId] = useState<string>('');
   const [loadingAttachments, setLoadingAttachments] = useState(false);
-  const [composeDialogOpen, setComposeDialogOpen] = useState(false);
+  const [composeDialogOpen, setComposeDialogOpen] = useState(() => {
+    console.log('[EmailList] Initializing composeDialogOpen state to false');
+    return false;
+  });
+
+  // Debug: Component mount
+  useEffect(() => {
+    console.log('[EmailList] Component mounted');
+    return () => {
+      console.log('[EmailList] Component unmounting');
+    };
+  }, []);
+
+  // Debug: Log when dialog state changes with stack trace
+  useEffect(() => {
+    console.log('[EmailList] Compose dialog state changed:', composeDialogOpen);
+    if (composeDialogOpen) {
+      console.trace('[EmailList] Dialog opened - stack trace:');
+    }
+  }, [composeDialogOpen]);
   const [composeMode, setComposeMode] = useState<'compose' | 'reply' | 'forward'>('compose');
   const [composeOriginalEmail, setComposeOriginalEmail] = useState<Email | null>(null);
   const [folderMovePopup, setFolderMovePopup] = useState<{email: Email, x: number, y: number} | null>(null);
@@ -152,6 +171,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
 
   // Handle compose requests from EmailBody
   const handleComposeRequest = (mode: 'reply' | 'forward', originalEmail: Email) => {
+    console.log('[EmailList] handleComposeRequest called:', mode);
     setComposeMode(mode);
     setComposeOriginalEmail(originalEmail);
     setComposeDialogOpen(true);
@@ -159,7 +179,9 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
 
   // Expose compose handler to parent
   useEffect(() => {
+    console.log('[EmailList] useEffect for onComposeRequest running');
     if (onComposeRequest) {
+      console.log('[EmailList] Registering handleComposeRequest with parent');
       onComposeRequest(handleComposeRequest);
     }
   }, [onComposeRequest]);
@@ -582,7 +604,10 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
         </CardTitle>
         <div className="flex gap-2">
           <Button
-            onClick={() => setComposeDialogOpen(true)}
+            onClick={() => {
+              console.log('[EmailList] Compose button clicked');
+              setComposeDialogOpen(true);
+            }}
             size="sm"
             variant="default"
           >
@@ -804,21 +829,31 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
         )}
       </CardContent>
 
-      {/* Send Mail Dialog */}
-      <SendMailDialog
-        open={composeDialogOpen}
-        onOpenChange={(open) => {
-          setComposeDialogOpen(open);
-          if (!open) {
-            // Reset to compose mode when dialog closes
-            setComposeMode('compose');
-            setComposeOriginalEmail(null);
-          }
-        }}
-        accountEmail={currentAccount?.email_address}
-        mode={composeMode}
-        originalEmail={composeOriginalEmail || undefined}
-        onSuccess={() => {
+      {/* Send Mail Dialog - Only render when explicitly opened */}
+      {composeDialogOpen && (
+        <SendMailDialog
+          open={composeDialogOpen}
+          onOpenChange={(open) => {
+            console.log('[EmailList] onOpenChange called with:', open, 'current state:', composeDialogOpen);
+
+            // Guard against spurious false->true transitions on mount
+            if (open && !composeDialogOpen) {
+              console.warn('[EmailList] Blocking spurious open request on mount');
+              return;
+            }
+
+            setComposeDialogOpen(open);
+
+            if (!open) {
+              // Reset to compose mode when dialog closes
+              setComposeMode('compose');
+              setComposeOriginalEmail(null);
+            }
+          }}
+          accountEmail={currentAccount?.email_address}
+          mode={composeMode}
+          originalEmail={composeOriginalEmail || undefined}
+          onSuccess={() => {
           // Immediate refetch (email is queued but not in IMAP yet)
           refetch();
           // Delayed refetches to catch the email appearing in Outbox then moving to Sent
@@ -826,6 +861,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
           setTimeout(() => refetch(), 8000);  // After worker moves to Sent
         }}
       />
+      )}
     </Card>
 
     {/* Folder Move Popup */}

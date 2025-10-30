@@ -248,6 +248,128 @@
         ],
         "priority": "low",
         "subtasks": []
+      },
+      {
+        "id": 16,
+        "title": "Fix compose dialog appearing on hard refresh",
+        "description": "Prevent the SendMailDialog from automatically opening when the web UI is hard-refreshed (F5 or Ctrl+F5)",
+        "status": "in-progress",
+        "dependencies": [
+          4
+        ],
+        "priority": "medium",
+        "details": "SPECIFIC BUG IDENTIFIED: The dialog is appearing on page load with `data-state=\"open\"` in the DOM. The `composeDialogOpen` state is correctly initialized as `false` in EmailList.tsx:71, but something is triggering it to become `true` during component mount. Debug logging has been added at EmailList.tsx:74-76 to track state changes. The visual confusion is compounded by placeholder text in input fields (recipient@example.com, cc@example.com, etc.) that appears gray but looks like actual values. ROOT CAUSE INVESTIGATION NEEDED: 1) Trace what's calling setComposeDialogOpen(true) during initialization - check browser dev tools console for debug logs, 2) Verify if any useEffect hooks or props are triggering dialog open on mount, 3) Check if Radix UI Dialog component has any default behavior causing auto-open, 4) Investigate if URL parameters, localStorage, or sessionStorage are influencing initial state, 5) Ensure the Dialog component's `open` prop is properly controlled by the `composeDialogOpen` state variable",
+        "testStrategy": "Test by: 1) Adding more granular debug logging to track exactly when and why setComposeDialogOpen(true) is called, 2) Performing a hard refresh (F5 or Ctrl+F5) and checking browser console for debug output, 3) Verifying dialog does not appear on hard refresh after fix, 4) Testing soft refresh and normal navigation to ensure functionality still works, 5) Testing actual compose dialog triggers (Compose button, Reply, Forward) to ensure they still work correctly, 6) Cross-browser testing in Chrome, Firefox, Safari to ensure consistent behavior, 7) Verify placeholder text styling doesn't create visual confusion about empty vs filled fields",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Add comprehensive debug logging to track dialog state changes",
+            "description": "Implement detailed logging to identify what triggers setComposeDialogOpen(true) during component initialization",
+            "dependencies": [],
+            "details": "Add console.log statements at all locations where setComposeDialogOpen is called, including stack traces. Log component mount/unmount cycles and prop changes. Add logging in useEffect hooks that might influence dialog state. Check EmailList.tsx:162 (handleComposeRequest) and EmailList.tsx:590 (Compose button click) for unexpected calls.",
+            "status": "done",
+            "testStrategy": "Open browser dev tools console, perform hard refresh, and verify detailed logs show exact sequence of state changes and what triggers dialog opening"
+          },
+          {
+            "id": 2,
+            "title": "Investigate Radix UI Dialog component behavior on mount",
+            "description": "Check if Radix UI Dialog has any default open behavior or hydration issues",
+            "dependencies": [
+              1
+            ],
+            "details": "Examine the Dialog component in components/ui/dialog.tsx and its usage in SendMailDialog.tsx:211. Verify the `open` prop is properly bound to composeDialogOpen state. Check if DialogPrimitive.Root has any default state that could cause auto-opening. Review Radix UI documentation for known hydration or SSR issues that might cause initial open state.",
+            "status": "pending",
+            "testStrategy": "Test with different initial values for the open prop and verify the Dialog component respects the controlled state properly"
+          },
+          {
+            "id": 3,
+            "title": "Add hard refresh detection to prevent unwanted dialog opening",
+            "description": "Implement logic to detect hard refresh and ensure dialog remains closed",
+            "dependencies": [
+              1,
+              2
+            ],
+            "details": "Add a useEffect hook in EmailList component that detects if the page was loaded fresh (hard refresh) vs navigated to. Use performance.navigation.type or window.performance.getEntriesByType('navigation') to detect refresh. Set a flag to prevent dialog from opening on fresh page loads. Ensure this doesn't interfere with legitimate compose dialog triggers.",
+            "status": "pending",
+            "testStrategy": "Test hard refresh (F5/Ctrl+F5) vs normal navigation and verify dialog only opens when explicitly triggered by user actions"
+          },
+          {
+            "id": 4,
+            "title": "Fix placeholder text styling to reduce visual confusion",
+            "description": "Update input placeholder styling to be more clearly distinguishable from actual values",
+            "dependencies": [],
+            "details": "Modify placeholder text in SendMailDialog.tsx:235, 250, 261 to be more obviously placeholders. Consider using lighter gray color, italic styling, or different placeholder text that's clearly not a real email address. Update CSS classes if needed to make placeholders more visually distinct from user input.",
+            "status": "pending",
+            "testStrategy": "Verify placeholder text is clearly distinguishable from actual input values and doesn't contribute to the perception that fields are pre-filled"
+          }
+        ]
+      },
+      {
+        "id": 17,
+        "title": "Fix email body rendering issues - HTML/image artifacts showing as raw text instead of being properly rendered",
+        "description": "Fix the frontend EmailBody component to properly render HTML content and display images/links correctly instead of showing raw text",
+        "details": "The current implementation in EmailBody.tsx:303 only displays the plain text body (email.body_text) using whitespace-pre-wrap styling, which causes HTML content and embedded images to appear as raw text/artifacts. The fix involves: 1) Check if email.html_body is available from the backend (already stored in cache.rs and available via the REST API), 2) Modify the EmailBody component to conditionally render HTML content using dangerouslySetInnerHTML when HTML is available, with proper sanitization, 3) Add CSS styles to handle image display, link styling, and proper HTML formatting, 4) Implement a toggle between HTML and plain text views for user preference, 5) Add security measures to sanitize HTML content before rendering to prevent XSS attacks, 6) Update the email fetching logic to include html_body field in the API response. The backend already stores both text_body and html_body in the database (migrations/001_create_schema.sql:101-102) and the IMAP parsing extracts both via mail_parser (imap/types.rs:737-738).",
+        "testStrategy": "Test by: 1) Sending HTML emails with embedded images and links to test accounts, 2) Verify HTML content renders properly with images displayed and links clickable, 3) Test the plain text fallback when no HTML is available, 4) Verify HTML/plain text toggle functionality works, 5) Test with malicious HTML content to ensure sanitization prevents XSS, 6) Test responsive display on different screen sizes, 7) Verify that emails without HTML content still display plain text correctly, 8) Test performance with large HTML emails containing multiple images",
+        "status": "pending",
+        "dependencies": [
+          4
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 18,
+        "title": "Add 'Show Images' button to email viewer for privacy protection",
+        "description": "Implement a privacy-focused image loading control in the email viewer with an optional button similar to Thunderbird, where images are blocked by default to prevent tracking.",
+        "details": "Based on the current EmailBody.tsx implementation that only displays plain text (line 303 uses whitespace-pre-wrap on email.body_text), add image privacy controls when displaying HTML emails: 1) Add a state variable `showImages` (default false) to control image display, 2) When rendering HTML content using email.html_body (which is already available from the backend as seen in cache.rs), implement a two-stage rendering approach: first render HTML with all img src attributes stripped/blocked, 3) Add a 'Show Images' button (using existing Button component and Eye/EyeOff icons from lucide-react) that appears when HTML content contains images, 4) When clicked, re-render the HTML with images enabled, 5) Use DOMParser to safely detect and modify img tags before dangerouslySetInnerHTML rendering, 6) Add user preference persistence via localStorage to remember the choice per sender/domain, 7) Style the button consistently with existing Reply/Forward buttons in the header area (lines 262-284), 8) Ensure the feature works with the existing HTML/text toggle functionality mentioned in Task 17",
+        "testStrategy": "Test by: 1) Sending HTML emails with embedded images and tracking pixels to test accounts, 2) Verify images are blocked by default and 'Show Images' button appears, 3) Test button functionality enables images properly, 4) Test localStorage persistence remembers preference, 5) Verify no external requests are made when images are blocked (check network tab), 6) Test with various email clients (Gmail, Outlook, etc.) to ensure compatibility, 7) Test the feature works alongside Task 17's HTML rendering improvements, 8) Verify button styling matches existing UI components",
+        "status": "pending",
+        "dependencies": [
+          17
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 19,
+        "title": "Add tabs to MCP Email Tools widget in web UI - one tab for low-level MCP tools, another tab for high-level AI-powered MCP tools",
+        "description": "Enhance the existing McpTools component to display two separate tabs: one showing all the existing low-level MCP tools and another showing the high-level AI-powered MCP tools",
+        "details": "Modify the existing McpTools.tsx component (src/dashboard/components/McpTools.tsx) to use Radix UI Tabs component from components/ui/tabs.tsx. The component should: 1) Import and use Tabs, TabsList, TabsTrigger, and TabsContent from '../ui/tabs', 2) Create two tab triggers: 'Low-Level Tools' and 'AI Tools', 3) Move existing tool fetching and display logic into the 'Low-Level Tools' tab content, 4) Add a new API endpoint fetch to get high-level tools from the backend endpoint '/dashboard/mcp/high-level-tools' (which needs to be implemented to call get_mcp_high_level_tools_jsonrpc_format() from high_level_tools.rs), 5) Display the high-level tools in the 'AI Tools' tab with the same UI pattern as existing tools, 6) Maintain all existing functionality including parameter auto-filling, execution, and result display for both tool types, 7) Update the header to show total tools from both tabs, 8) Ensure proper state management so expanding/collapsing tools, parameters, and results work independently between tabs. The backend route handler should call execute_high_level_tool() for AI tool executions and existing execute_mcp_tool_inner() for low-level tools.",
+        "testStrategy": "Test by: 1) Verifying both tabs are visible and clickable in the MCP Tools widget, 2) Confirming the 'Low-Level Tools' tab shows existing tools with unchanged functionality, 3) Verifying the 'AI Tools' tab displays the 12 high-level tools (process_email_instructions, draft_reply, draft_email, list_accounts, etc.), 4) Testing parameter auto-filling works in both tabs based on current email context, 5) Testing tool execution works correctly for both low-level and high-level tools with proper API routing, 6) Verifying results display properly in both tabs, 7) Testing tab switching preserves expanded tool states and parameter values, 8) Confirming the total tool count in header updates correctly when switching tabs",
+        "status": "pending",
+        "dependencies": [
+          3,
+          5
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 20,
+        "title": "Add MCP server enable/disable controls to Email Assistant chatbot widget",
+        "description": "Implement checkboxes/dropdown controls in ChatbotPanel to enable/disable individual MCP servers (low-level and high-level) for the AI assistant to use during conversations.",
+        "details": "Based on the current ChatbotPanel.tsx (lines 334-677) and McpTools.tsx components, add MCP server configuration controls to the chatbot: 1) Add a settings dropdown menu next to the debug toggle button in the ChatbotPanel header (around line 364), 2) Create a new state for tracking enabled/disabled MCP servers with localStorage persistence similar to debugMode (line 72-74), 3) Add a collapsible settings panel that shows two sections: 'Low-Level Tools' and 'High-Level AI Tools', 4) For low-level tools, fetch from existing '/dashboard/mcp/tools' endpoint (line 98 in McpTools.tsx), 5) For high-level tools, create new endpoint '/dashboard/mcp/high-level-tools' that calls get_mcp_high_level_tools_jsonrpc_format() from high_level_tools.rs:11, 6) Display each tool as a checkbox with the tool name and description, allowing users to individually enable/disable tools, 7) Pass the enabled tools list to the chatbot query (in the ChatbotQuery interface) so the backend can filter available tools during AI conversations, 8) Use consistent UI patterns from the existing codebase: Radix UI components (checkbox.tsx, collapsible.tsx), similar styling to the debug panel (lines 549-644), and localStorage persistence pattern.",
+        "testStrategy": "Test by: 1) Verifying the settings dropdown appears in the chatbot header and is functional, 2) Confirming both low-level and high-level tools are fetched and displayed correctly with checkboxes, 3) Testing that individual tool enable/disable states persist across browser sessions via localStorage, 4) Verifying the enabled tools list is correctly passed to chatbot queries and affects AI responses, 5) Testing the UI responsiveness and proper styling consistency with existing components, 6) Ensuring the new high-level tools endpoint returns the expected tool definitions from the backend.",
+        "status": "pending",
+        "dependencies": [
+          19
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 21,
+        "title": "Disable thinking mode in Qwen3 model by setting enable_thinking=False in Ollama provider configuration",
+        "description": "Modify Ollama provider to support additional_config parameters and update Qwen3 model configuration to disable thinking mode for faster response times.",
+        "details": "Update the Ollama provider implementation to read and apply additional_config parameters from the ai_model_configurations table: 1) Modify OllamaChatRequest struct in src/dashboard/services/ai/provider/ollama.rs to include optional additional parameters field, 2) Update OllamaAdapter::generate_response() method to fetch model configuration using get_model_config() and parse additional_config JSON to extract provider-specific parameters, 3) Add logic to merge additional_config parameters into the Ollama API request payload, 4) Use set_model_config() to update the Qwen3 model configuration with additional_config JSON: {\"enable_thinking\": false}, 5) Test that the parameter is properly passed to Ollama API and that thinking blocks are no longer generated in responses. The additional_config field should be parsed as JSON and merged into the request body sent to Ollama's /v1/chat/completions endpoint.",
+        "testStrategy": "Test by: 1) Verifying that the Ollama provider properly reads additional_config from database and parses JSON parameters, 2) Confirming that enable_thinking=false parameter is included in API requests to Ollama for Qwen3 model, 3) Testing that Qwen3 responses no longer contain <think> blocks and show improved response speed, 4) Verifying that other models without this configuration continue to work normally, 5) Testing configuration updates through MCP tools to ensure the additional_config field can be modified and persisted correctly.",
+        "status": "pending",
+        "dependencies": [
+          2,
+          4
+        ],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -260,7 +382,7 @@
       ],
       "created": "2025-10-18T12:29:46.283Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-18T16:24:54.840Z"
+      "updated": "2025-10-30T02:52:26.160Z"
     }
   }
 }
