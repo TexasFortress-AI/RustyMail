@@ -9,11 +9,13 @@ import { config } from '../config';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { useAccount } from '../../contexts/AccountContext';
-import { RefreshCw, Mail, Paperclip, Download, Archive, Reply, Forward } from 'lucide-react';
+import { RefreshCw, Mail, Paperclip, Download, Archive, Reply, Forward, Code, FileText, Image } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '../../hooks/use-toast';
 import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
 import { EmailContext } from './EmailList';
+import DOMPurify from 'dompurify';
+import './EmailBody.css';
 
 interface Email {
   id: number;
@@ -27,6 +29,7 @@ interface Email {
   internal_date: string | null;
   flags: string[];
   body_text: string | null;
+  body_html?: string | null;
 }
 
 interface EmailBodyProps {
@@ -44,6 +47,8 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
   const [attachments, setAttachments] = useState<AttachmentInfo[]>([]);
   const [currentMessageId, setCurrentMessageId] = useState<string>('');
   const [loadingAttachments, setLoadingAttachments] = useState(false);
+  const [viewMode, setViewMode] = useState<'html' | 'text'>('html');
+  const [showImages, setShowImages] = useState(false);
 
   useEffect(() => {
     const fetchEmail = async () => {
@@ -299,8 +304,86 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
           </p>
         </div>
 
-        <div className="mb-4 whitespace-pre-wrap border-t pt-4">
-          {email.body_text || 'No content'}
+        {/* View Mode Toggle and Show Images Button */}
+        <div className="mb-4 border-t pt-4">
+          <div className="flex gap-2 mb-4">
+            {email.body_html && (
+              <Button
+                size="sm"
+                variant={viewMode === 'html' ? 'default' : 'outline'}
+                onClick={() => setViewMode('html')}
+              >
+                <Code className="h-4 w-4 mr-1" />
+                HTML
+              </Button>
+            )}
+            <Button
+              size="sm"
+              variant={viewMode === 'text' ? 'default' : 'outline'}
+              onClick={() => setViewMode('text')}
+            >
+              <FileText className="h-4 w-4 mr-1" />
+              Plain Text
+            </Button>
+            {viewMode === 'html' && email.body_html && !showImages && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setShowImages(true)}
+              >
+                <Image className="h-4 w-4 mr-1" />
+                Show Images
+              </Button>
+            )}
+          </div>
+
+          {/* Email Body Content */}
+          {viewMode === 'html' && email.body_html ? (
+            <div
+              className="email-html-content"
+              dangerouslySetInnerHTML={{
+                __html: DOMPurify.sanitize(email.body_html, {
+                  ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li', 'blockquote',
+                                 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'pre', 'code', 'table', 'thead',
+                                 'tbody', 'tr', 'th', 'td', 'img', 'hr', 'div', 'span'],
+                  ALLOWED_ATTR: ['href', 'target', 'rel', 'src', 'alt', 'width', 'height', 'style', 'class'],
+                  ALLOW_DATA_ATTR: false,
+                  ADD_ATTR: ['target'],
+                  FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
+                  FORBID_ATTR: ['onerror', 'onload', 'onclick'],
+                  transformTags: {
+                    'a': (tagName, attribs) => {
+                      return {
+                        tagName: 'a',
+                        attribs: {
+                          ...attribs,
+                          target: '_blank',
+                          rel: 'noopener noreferrer'
+                        }
+                      };
+                    },
+                    'img': (tagName, attribs) => {
+                      if (!showImages) {
+                        // Block images when showImages is false
+                        return {
+                          tagName: 'span',
+                          attribs: {
+                            class: 'inline-block px-2 py-1 text-xs bg-gray-200 rounded'
+                          },
+                          text: '[Image blocked]'
+                        };
+                      }
+                      return { tagName, attribs };
+                    }
+                  }
+                })
+              }}
+            />
+          ) : (
+            <div className="whitespace-pre-wrap">
+              {email.body_text || 'No content'}
+            </div>
+          )}
         </div>
 
         {/* Attachments Section */}
