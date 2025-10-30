@@ -68,26 +68,47 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
   const [attachments, setAttachments] = useState<AttachmentInfo[]>([]);
   const [currentMessageId, setCurrentMessageId] = useState<string>('');
   const [loadingAttachments, setLoadingAttachments] = useState(false);
-  const [composeDialogOpen, setComposeDialogOpen] = useState(() => {
-    console.log('[EmailList] Initializing composeDialogOpen state to false');
-    return false;
-  });
+  const [composeDialogOpen, setComposeDialogOpen] = useState(false);
+  const [hasUserInteracted, setHasUserInteracted] = useState(false);
 
-  // Debug: Component mount
+  // Add a mounted flag to prevent any dialog operations until fully mounted
+  const [isMounted, setIsMounted] = useState(false);
+
+  // Add an additional safety flag that absolutely prevents dialog rendering
+  const [dialogEnabled, setDialogEnabled] = useState(false);
+
+  // Debug: Component mount - delay mounted flag to avoid any initial render issues
   useEffect(() => {
-    console.log('[EmailList] Component mounted');
+    console.log('[EmailList] Component mounted, delaying mounted flag...');
+    const timer = setTimeout(() => {
+      console.log('[EmailList] Setting isMounted to true');
+      setIsMounted(true);
+    }, 500); // Half second delay to ensure everything is settled
     return () => {
       console.log('[EmailList] Component unmounting');
+      clearTimeout(timer);
     };
   }, []);
 
+  // Enable dialog only after user interaction AND mount
+  useEffect(() => {
+    if (isMounted && hasUserInteracted) {
+      console.log('[EmailList] Enabling dialog - user has interacted and component is mounted');
+      setDialogEnabled(true);
+    }
+  }, [isMounted, hasUserInteracted]);
+
   // Debug: Log when dialog state changes with stack trace
   useEffect(() => {
-    console.log('[EmailList] Compose dialog state changed:', composeDialogOpen);
+    console.log('[EmailList] Compose dialog state changed:', composeDialogOpen, 'dialogEnabled:', dialogEnabled);
+    if (composeDialogOpen && !dialogEnabled) {
+      console.error('[EmailList] CRITICAL: Dialog trying to open but not enabled! Forcing closed.');
+      setComposeDialogOpen(false);
+    }
     if (composeDialogOpen) {
       console.trace('[EmailList] Dialog opened - stack trace:');
     }
-  }, [composeDialogOpen]);
+  }, [composeDialogOpen, dialogEnabled]);
   const [composeMode, setComposeMode] = useState<'compose' | 'reply' | 'forward'>('compose');
   const [composeOriginalEmail, setComposeOriginalEmail] = useState<Email | null>(null);
   const [folderMovePopup, setFolderMovePopup] = useState<{email: Email, x: number, y: number} | null>(null);
@@ -174,6 +195,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     console.log('[EmailList] handleComposeRequest called:', mode);
     setComposeMode(mode);
     setComposeOriginalEmail(originalEmail);
+    setHasUserInteracted(true);
     setComposeDialogOpen(true);
   };
 
@@ -606,6 +628,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
           <Button
             onClick={() => {
               console.log('[EmailList] Compose button clicked');
+              setHasUserInteracted(true);
               setComposeDialogOpen(true);
             }}
             size="sm"
@@ -829,19 +852,22 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
         )}
       </CardContent>
 
-      {/* Send Mail Dialog - Only render when explicitly opened */}
-      {composeDialogOpen && (
+      {/* Send Mail Dialog - Only render when explicitly enabled by user interaction */}
+      {dialogEnabled && (
         <SendMailDialog
           open={composeDialogOpen}
           onOpenChange={(open) => {
-            console.log('[EmailList] onOpenChange called with:', open, 'current state:', composeDialogOpen);
-
-            // Guard against spurious false->true transitions on mount
-            if (open && !composeDialogOpen) {
-              console.warn('[EmailList] Blocking spurious open request on mount');
+            console.log('[EmailList] onOpenChange called with:', open, 'current state:', composeDialogOpen, 'dialogEnabled:', dialogEnabled);
+            // Absolutely prevent opening if dialog not enabled
+            if (!dialogEnabled) {
+              console.error('[EmailList] BLOCKING: Dialog not enabled, cannot change state');
               return;
             }
-
+            // Only allow dialog state changes if user has interacted
+            if (!hasUserInteracted && open) {
+              console.warn('[EmailList] Blocking dialog open - no user interaction yet');
+              return;
+            }
             setComposeDialogOpen(open);
 
             if (!open) {
