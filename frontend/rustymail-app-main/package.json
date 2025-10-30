@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "dotenv -e ../../.env -- vite",
+    "dev:clean": "dotenv -e ../../.env -- vite --force",
     "build": "dotenv -e ../../.env -- vite build",
     "build:dev": "dotenv -e ../../.env -- vite build --mode development",
     "lint": "eslint .",

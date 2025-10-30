@@ -56,10 +56,9 @@ interface EmailListProps {
   setCurrentFolder: (folder: string) => void;
   onEmailSelect?: (context: EmailContext | undefined) => void;
   onRefetchReady?: (refetch: () => void) => void;
-  onComposeRequest?: (handler: (mode: 'reply' | 'forward', originalEmail: Email) => void) => void;
 }
 
-const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, onEmailSelect, onRefetchReady, onComposeRequest }) => {
+const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, onEmailSelect, onRefetchReady }) => {
   const { currentAccount } = useAccount();
   const { toast } = useToast();
   const [currentPage, setCurrentPage] = useState(1);
@@ -70,6 +69,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
   const [loadingAttachments, setLoadingAttachments] = useState(false);
   const [composeDialogOpen, setComposeDialogOpen] = useState(false);
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
+  const [composeRequested, setComposeRequested] = useState(false);
 
   // Add a mounted flag to prevent any dialog operations until fully mounted
   const [isMounted, setIsMounted] = useState(false);
@@ -109,6 +109,13 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
       console.trace('[EmailList] Dialog opened - stack trace:');
     }
   }, [composeDialogOpen, dialogEnabled]);
+
+  useEffect(() => {
+    if (composeRequested && dialogEnabled) {
+      setComposeDialogOpen(true);
+      setComposeRequested(false);
+    }
+  }, [composeRequested, dialogEnabled]);
   const [composeMode, setComposeMode] = useState<'compose' | 'reply' | 'forward'>('compose');
   const [composeOriginalEmail, setComposeOriginalEmail] = useState<Email | null>(null);
   const [folderMovePopup, setFolderMovePopup] = useState<{email: Email, x: number, y: number} | null>(null);
@@ -190,23 +197,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     retry: false, // Don't retry on failure
   });
 
-  // Handle compose requests from EmailBody
-  const handleComposeRequest = (mode: 'reply' | 'forward', originalEmail: Email) => {
-    console.log('[EmailList] handleComposeRequest called:', mode);
-    setComposeMode(mode);
-    setComposeOriginalEmail(originalEmail);
-    setHasUserInteracted(true);
-    setComposeDialogOpen(true);
-  };
 
-  // Expose compose handler to parent
-  useEffect(() => {
-    console.log('[EmailList] useEffect for onComposeRequest running');
-    if (onComposeRequest) {
-      console.log('[EmailList] Registering handleComposeRequest with parent');
-      onComposeRequest(handleComposeRequest);
-    }
-  }, [onComposeRequest]);
 
   // Expose refetch function to parent
   useEffect(() => {
@@ -629,7 +620,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
             onClick={() => {
               console.log('[EmailList] Compose button clicked');
               setHasUserInteracted(true);
-              setComposeDialogOpen(true);
+              setComposeRequested(true);
             }}
             size="sm"
             variant="default"
@@ -858,17 +849,11 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
           open={composeDialogOpen}
           onOpenChange={(open) => {
             console.log('[EmailList] onOpenChange called with:', open, 'current state:', composeDialogOpen, 'dialogEnabled:', dialogEnabled);
-            // Absolutely prevent opening if dialog not enabled
-            if (!dialogEnabled) {
-              console.error('[EmailList] BLOCKING: Dialog not enabled, cannot change state');
+            if (open) {
+              // Prevent the dialog from opening itself directly
               return;
             }
-            // Only allow dialog state changes if user has interacted
-            if (!hasUserInteracted && open) {
-              console.warn('[EmailList] Blocking dialog open - no user interaction yet');
-              return;
-            }
-            setComposeDialogOpen(open);
+            setComposeDialogOpen(false);
 
             if (!open) {
               // Reset to compose mode when dialog closes

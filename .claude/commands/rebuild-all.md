@@ -10,6 +10,8 @@ Perform a **complete, from-scratch rebuild** of the entire RustyMail system:
 **SINGLE SOURCE OF TRUTH**: All port numbers are defined in `.env` and `.env.example`.
 No hardcoded ports anywhere in scripts or configs.
 
+**PORTABLE**: This script uses `git rev-parse --show-toplevel` to auto-detect the project root, so it works on any developer's machine regardless of their home directory path.
+
 ## Port Configuration (from .env)
 
 These ports are automatically read by the applications:
@@ -17,30 +19,48 @@ These ports are automatically read by the applications:
 - `SSE_PORT=9438` - Backend SSE endpoint
 - `DASHBOARD_PORT=9439` - Frontend dashboard
 
+**Important**: The frontend `vite.config.ts` has `strictPort: true` set to prevent Vite from auto-incrementing to 9440/9441 if port 9439 is busy. This ensures rebuild scripts fail fast rather than silently starting on wrong ports.
+
 ## Complete Rebuild Steps
 
 ### 1. KILL ALL PROCESSES (No survivors!)
 
 ```bash
+# Detect project root (works on any developer's machine)
+PROJECT_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+echo "Project root: $PROJECT_ROOT"
+
 # Stop all PM2 processes
 pm2 delete all 2>/dev/null || true
 
-# Kill any processes still running on our ports (alternate ports, orphans, etc.)
+# Kill by FULL PATH to avoid conflicts with other projects
+# (Important: generic pkill patterns can kill wrong processes)
+pkill -f "$PROJECT_ROOT/target/release/rustymail-server" 2>/dev/null || true
+pkill -f "$PROJECT_ROOT/target/release/rustymail-mcp-stdio" 2>/dev/null || true
+pkill -f "$PROJECT_ROOT/target/debug/rustymail-server" 2>/dev/null || true
+pkill -f "$PROJECT_ROOT/frontend/rustymail-app-main/node_modules/.bin/vite" 2>/dev/null || true
+pkill -f "$PROJECT_ROOT/frontend/rustymail-app-main/node_modules/.bin/dotenv" 2>/dev/null || true
+pkill -f "$PROJECT_ROOT/frontend/rustymail-app-main/node_modules/@esbuild" 2>/dev/null || true
+
+# Kill any processes on our specific ports (catches orphans and alternate port users)
 lsof -ti:9437 | xargs kill -9 2>/dev/null || true
 lsof -ti:9438 | xargs kill -9 2>/dev/null || true
 lsof -ti:9439 | xargs kill -9 2>/dev/null || true
 
-# Also check for any vite dev servers that might be on alternate ports
-pkill -f "vite.*rustymail" 2>/dev/null || true
-pkill -f "rustymail-server" 2>/dev/null || true
-pkill -f "rustymail-mcp-stdio" 2>/dev/null || true
+# IMPORTANT: Node process trees (Vite + esbuild) take 2-3 seconds to fully terminate
+# Don't reduce this delay or you'll hit port race conditions!
+echo "Waiting for process cleanup..."
+sleep 3
 
-# Give processes time to die
-sleep 2
+# Verify ports are actually free before proceeding
+echo "Verifying ports are free..."
+if lsof -i:9437,9438,9439 2>/dev/null; then
+    echo "⚠️  WARNING: Some ports still in use! Forcing cleanup..."
+    lsof -ti:9437,9438,9439 | xargs kill -9 2>/dev/null || true
+    sleep 2
+fi
 
-# Verify ports are free
-echo "Checking if ports are free..."
-lsof -i:9437,9438,9439 || echo "All ports are free!"
+lsof -i:9437,9438,9439 || echo "✅ All ports are free!"
 ```
 
 ### 2. CLEAN ALL BUILD ARTIFACTS

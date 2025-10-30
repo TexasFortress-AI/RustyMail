@@ -25,6 +25,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: process.env.DASHBOARD_HOST || "0.0.0.0",
       port: parseInt(dashboardPort),
+      strictPort: true,
       proxy: {
         '/api': {
           target: `http://localhost:${restPort}`,

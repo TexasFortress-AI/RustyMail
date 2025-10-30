@@ -36,10 +36,9 @@ interface EmailBodyProps {
   currentFolder: string;
   selectedEmailContext: EmailContext | undefined;
   onAttachmentsLoaded?: () => void;
-  onCompose?: (mode: 'reply' | 'forward', originalEmail: Email) => void;
 }
 
-const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailContext, onAttachmentsLoaded, onCompose }) => {
+const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailContext, onAttachmentsLoaded }) => {
   const { currentAccount } = useAccount();
   const { toast } = useToast();
   const [email, setEmail] = useState<Email | null>(null);
@@ -268,7 +267,6 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
             <Button
               size="sm"
               variant="outline"
-              onClick={() => onCompose?.('reply', email)}
               disabled={!email}
               title="Reply to this email"
             >
@@ -278,7 +276,6 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
             <Button
               size="sm"
               variant="outline"
-              onClick={() => onCompose?.('forward', email)}
               disabled={!email}
               title="Forward this email"
             >

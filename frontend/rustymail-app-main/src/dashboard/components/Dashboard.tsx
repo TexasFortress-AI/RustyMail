@@ -6,7 +6,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useSSEEvents } from '@/dashboard/hooks/useSSEEvents';
-import { GripHorizontal } from 'lucide-react';
+import { GripHorizontal, GripVertical } from 'lucide-react';
 import TopBar from './TopBar';
 import StatsPanel from './StatsPanel';
 import ClientListPanel from './ClientListPanel';
@@ -45,8 +45,6 @@ const Dashboard: React.FC = () => {
   // Selected email context (for MCP tools)
   const [selectedEmailContext, setSelectedEmailContext] = useState<EmailContext | undefined>(undefined);
 
-  // Compose handler for EmailBody to trigger compose in EmailList
-  const [composeHandler, setComposeHandler] = useState<((mode: 'reply' | 'forward', originalEmail: any) => void) | null>(null);
 
   // Account management state
   const [accountFormOpen, setAccountFormOpen] = useState(false);
@@ -302,7 +300,6 @@ const Dashboard: React.FC = () => {
                   currentFolder={currentFolder}
                   setCurrentFolder={setCurrentFolder}
                   onEmailSelect={setSelectedEmailContext}
-                  onComposeRequest={setComposeHandler}
                 />
               </div>
 
@@ -310,13 +307,13 @@ const Dashboard: React.FC = () => {
               <div
                 className={`
                   relative w-4 px-1 bg-muted/30 cursor-ew-resize flex items-center justify-center
-                  hover:bg-muted/50 transition-colors duration-150 select-none flex-shrink-0
+                  hover:bg-muted/50 transition-colors duration-150 select-none flex-shrink-0 h-full
                   ${isResizingEmailTop ? 'bg-primary/20' : ''}
                 `}
                 onMouseDown={handleEmailTopResizeStart}
                 title="Drag to resize panels"
               >
-                <div className="h-full w-px bg-muted-foreground/20" />
+                <GripVertical className="h-4 w-4 text-muted-foreground pointer-events-none" />
               </div>
 
               {/* EmailBody */}
@@ -327,7 +324,6 @@ const Dashboard: React.FC = () => {
                 <EmailBody
                   currentFolder={currentFolder}
                   selectedEmailContext={selectedEmailContext}
-                  onCompose={composeHandler || undefined}
                 />
               </div>
             </div>
@@ -342,7 +338,7 @@ const Dashboard: React.FC = () => {
               onMouseDown={handleEmailResizeStart}
               title="Drag to resize panels"
             >
-              <GripHorizontal className="h-3 w-3 text-muted-foreground pointer-events-none" />
+              <GripHorizontal className="h-3 w-3 text-muted-foreground pointer-events-none w-full justify-center" />
             </div>
 
             {/* Bottom section - Chatbot and McpTools */}
@@ -377,12 +373,12 @@ const Dashboard: React.FC = () => {
                 onMouseDown={handleEmailBottomResizeStart}
                 title="Drag to resize panels"
               >
-                <div className="h-full w-px bg-muted-foreground/20" />
+                <GripVertical className="h-4 w-4 text-muted-foreground pointer-events-none" />
               </div>
 
               {/* McpTools */}
               <div
-                className="overflow-hidden min-h-0"
+                className="overflow-hidden min-h-0 flex flex-col"
                 style={{ width: `${100 - emailBottomChatbotWidth}%` }}
               >
                 <McpTools
@@ -426,7 +422,7 @@ const Dashboard: React.FC = () => {
               onMouseDown={handleSystemResizeStart}
               title="Drag to resize panels"
             >
-              <div className="h-full w-px bg-muted-foreground/20" />
+              <GripVertical className="h-4 w-4 text-muted-foreground pointer-events-none" />
             </div>
 
             {/* Right panel - ClientListPanel */}

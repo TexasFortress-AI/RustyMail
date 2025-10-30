@@ -6,6 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronRight, Play, Terminal, Code, X, Copy, Check, Layers, Zap } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import config from '../config';
 import { useAccount } from '../../contexts/AccountContext';
 import type { EmailContext } from './EmailList';
@@ -233,20 +234,22 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
   };
 
   return (
-    <div className="bg-card border rounded-lg p-4 h-full flex flex-col">
-      <div className="flex items-center gap-2 mb-4 flex-shrink-0">
+    <div className="bg-card border rounded-lg h-full flex flex-col">
+      <div className="p-4 flex items-center gap-2">
         <Terminal className="w-5 h-5 text-primary" />
         <h3 className="text-lg font-semibold">MCP Email Tools</h3>
       </div>
 
       {error && (
-        <div className="bg-destructive/10 border border-destructive/50 rounded p-3 mb-4 flex-shrink-0">
-          <p className="text-destructive text-sm">{error}</p>
+        <div className="px-4 pb-4">
+          <div className="bg-destructive/10 border border-destructive/50 rounded p-3 flex-shrink-0">
+            <p className="text-destructive text-sm">{error}</p>
+          </div>
         </div>
       )}
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'low-level' | 'high-level')} className="flex-1 flex flex-col">
-        <TabsList className="grid w-full grid-cols-2 mb-4">
+      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'low-level' | 'high-level')} className="flex-1 flex flex-col min-h-0 px-4 pb-4">
+        <TabsList className="grid w-full grid-cols-2 mb-4 flex-shrink-0">
           <TabsTrigger value="low-level" className="flex items-center gap-2">
             <Layers className="w-4 h-4" />
             Low-Level ({lowLevelTools.length})
@@ -257,124 +260,189 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
           </TabsTrigger>
         </TabsList>
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="space-y-2">
-            {tools.map(tool => (
-          <div key={tool.name} className="border rounded overflow-hidden">
-            {/* Tool Header */}
-            <button
-              onClick={() => toggleTool(tool.name)}
-              className="w-full flex items-center gap-2 p-3 bg-muted hover:bg-muted/80 transition-colors"
-            >
-              {expandedTool === tool.name ?
-                <ChevronDown className="w-4 h-4 text-muted-foreground" /> :
-                <ChevronRight className="w-4 h-4 text-muted-foreground" />
-              }
-              <Code className="w-4 h-4 text-primary" />
-              <span className="font-mono text-sm">{tool.name}</span>
-              <span className="text-muted-foreground text-xs ml-auto">{tool.description}</span>
-            </button>
-
-            {/* Tool Body */}
-            {expandedTool === tool.name && (
-              <div className="p-4 bg-muted/50 border-t">
-                {/* Parameters */}
-                {Object.keys(tool.parameters).length > 0 && (
-                  <div className="mb-4">
-                    <h4 className="text-xs font-semibold text-muted-foreground mb-2">PARAMETERS</h4>
-                    <div className="space-y-2">
-                      {Object.entries(tool.parameters).map(([paramName, paramDesc]) => (
-                        <div key={paramName}>
-                          <label className="block text-xs text-muted-foreground mb-1">
-                            {paramName}: <span className="text-muted-foreground/70">{paramDesc}</span>
-                          </label>
-                          <div className="relative">
-                            <input
-                              type="text"
-                              value={parameters[tool.name]?.[paramName] || ''}
-                              onChange={(e) => updateParameter(tool.name, paramName, e.target.value)}
-                              className="w-full px-2 py-1 pr-8 bg-background border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                              placeholder={`Enter ${paramName}`}
-                            />
-                            {parameters[tool.name]?.[paramName] && (
-                              <button
-                                onClick={() => clearParameter(tool.name, paramName)}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-muted rounded"
-                                title="Clear field"
-                              >
-                                <X className="w-3 h-3 text-muted-foreground hover:text-foreground" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Execute Button */}
-                <button
-                  onClick={() => executeTool(tool.name)}
-                  disabled={executing === tool.name}
-                  className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 disabled:bg-muted disabled:opacity-50 text-primary-foreground text-sm rounded transition-colors"
-                >
-                  {executing === tool.name ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Executing...
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-4 h-4" />
-                      Execute Tool
-                    </>
-                  )}
-                </button>
-
-                {/* Results */}
-                {results[tool.name] && (
-                  <div className="mt-4 p-3 bg-muted rounded border">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-xs font-semibold text-muted-foreground">RESULT</h4>
-                      <button
-                        onClick={() => copyResult(tool.name)}
-                        className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-background rounded transition-colors"
-                        title="Copy result to clipboard"
-                      >
-                        {copiedTool === tool.name ? (
-                          <>
-                            <Check className="w-3 h-3" />
-                            Copied!
-                          </>
-                        ) : (
-                          <>
-                            <Copy className="w-3 h-3" />
-                            Copy
-                          </>
-                        )}
-                      </button>
-                    </div>
-                    <pre className="text-xs overflow-x-auto">
-                      {JSON.stringify(results[tool.name], null, 2)}
-                    </pre>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-            ))}
-          </div>
-
-          {tools.length === 0 && !error && (
-            <div className="text-center py-8 text-muted-foreground">
-              <Terminal className="w-12 h-12 mx-auto mb-2 opacity-50" />
-              <p className="text-sm">Loading MCP tools...</p>
+        <TabsContent value="low-level" className="flex-1 h-full min-h-0">
+          <ScrollArea className="h-full">
+            <div className="space-y-2 p-1">
+              {lowLevelTools.map(tool => (
+                <ToolItem
+                  key={tool.name}
+                  tool={tool}
+                  expandedTool={expandedTool}
+                  executing={executing}
+                  results={results}
+                  parameters={parameters}
+                  copiedTool={copiedTool}
+                  toggleTool={toggleTool}
+                  updateParameter={updateParameter}
+                  clearParameter={clearParameter}
+                  executeTool={executeTool}
+                  copyResult={copyResult}
+                />
+              ))}
             </div>
-          )}
-        </div>
+            {lowLevelTools.length === 0 && !error && <LoadingTools />}
+          </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="high-level" className="flex-1 h-full min-h-0">
+          <ScrollArea className="h-full">
+            <div className="space-y-2 p-1">
+              {highLevelTools.map(tool => (
+                <ToolItem
+                  key={tool.name}
+                  tool={tool}
+                  expandedTool={expandedTool}
+                  executing={executing}
+                  results={results}
+                  parameters={parameters}
+                  copiedTool={copiedTool}
+                  toggleTool={toggleTool}
+                  updateParameter={updateParameter}
+                  clearParameter={clearParameter}
+                  executeTool={executeTool}
+                  copyResult={copyResult}
+                />
+              ))}
+            </div>
+            {highLevelTools.length === 0 && !error && <LoadingTools />}
+          </ScrollArea>
+        </TabsContent>
       </Tabs>
     </div>
   );
 };
+
+const ToolItem: React.FC<{
+  tool: McpTool;
+  expandedTool: string | null;
+  executing: string | null;
+  results: { [key: string]: any };
+  parameters: { [key: string]: { [key: string]: string } };
+  copiedTool: string | null;
+  toggleTool: (name: string) => void;
+  updateParameter: (toolName: string, paramName: string, value: string) => void;
+  clearParameter: (toolName: string, paramName: string) => void;
+  executeTool: (name: string) => void;
+  copyResult: (name: string) => void;
+}> = ({
+  tool,
+  expandedTool,
+  executing,
+  results,
+  parameters,
+  copiedTool,
+  toggleTool,
+  updateParameter,
+  clearParameter,
+  executeTool,
+  copyResult
+}) => {
+  return (
+    <div key={tool.name} className="border rounded overflow-hidden">
+      <button
+        onClick={() => toggleTool(tool.name)}
+        className="w-full flex items-center gap-2 p-3 bg-muted hover:bg-muted/80 transition-colors"
+      >
+        {expandedTool === tool.name ?
+          <ChevronDown className="w-4 h-4 text-muted-foreground" /> :
+          <ChevronRight className="w-4 h-4 text-muted-foreground" />
+        }
+        <Code className="w-4 h-4 text-primary" />
+        <span className="font-mono text-sm">{tool.name}</span>
+        <span className="text-muted-foreground text-xs ml-auto">{tool.description}</span>
+      </button>
+
+      {expandedTool === tool.name && (
+        <div className="p-4 bg-muted/50 border-t">
+          {Object.keys(tool.parameters).length > 0 && (
+            <div className="mb-4">
+              <h4 className="text-xs font-semibold text-muted-foreground mb-2">PARAMETERS</h4>
+              <div className="space-y-2">
+                {Object.entries(tool.parameters).map(([paramName, paramDesc]) => (
+                  <div key={paramName}>
+                    <label className="block text-xs text-muted-foreground mb-1">
+                      {paramName}: <span className="text-muted-foreground/70">{paramDesc}</span>
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={parameters[tool.name]?.[paramName] || ''}
+                        onChange={(e) => updateParameter(tool.name, paramName, e.target.value)}
+                        className="w-full px-2 py-1 pr-8 bg-background border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary p-1"
+                        placeholder={`Enter ${paramName}`}
+                      />
+                      {parameters[tool.name]?.[paramName] && (
+                        <button
+                          onClick={() => clearParameter(tool.name, paramName)}
+                          className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 hover:bg-muted rounded"
+                          title="Clear field"
+                        >
+                          <X className="w-3 h-3 text-muted-foreground hover:text-foreground" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={() => executeTool(tool.name)}
+            disabled={executing === tool.name}
+            className="flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/90 disabled:bg-muted disabled:opacity-50 text-primary-foreground text-sm rounded transition-colors"
+          >
+            {executing === tool.name ? (
+              <>
+                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                Executing...
+              </>
+            ) : (
+              <>
+                <Play className="w-4 h-4" />
+                Execute Tool
+              </>
+            )}
+          </button>
+
+          {results[tool.name] && (
+            <div className="mt-4 p-3 bg-muted rounded border">
+              <div className="flex items-center justify-between mb-2">
+                <h4 className="text-xs font-semibold text-muted-foreground">RESULT</h4>
+                <button
+                  onClick={() => copyResult(tool.name)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-background rounded transition-colors"
+                  title="Copy result to clipboard"
+                >
+                  {copiedTool === tool.name ? (
+                    <>
+                      <Check className="w-3 h-3" />
+                      Copied!
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3 h-3" />
+                      Copy
+                    </>
+                  )}
+                </button>
+              </div>
+              <pre className="text-xs overflow-x-auto">
+                {JSON.stringify(results[tool.name], null, 2)}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+const LoadingTools: React.FC = () => (
+  <div className="text-center py-8 text-muted-foreground">
+    <Terminal className="w-12 h-12 mx-auto mb-2 opacity-50" />
+    <p className="text-sm">Loading MCP tools...</p>
+  </div>
+);
 
 export default McpTools;

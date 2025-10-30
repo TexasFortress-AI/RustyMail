@@ -39,6 +39,7 @@ export function useConfig() {
     queryFn: async () => {
       return apiClient.getConfig();
     },
+    retry: false, // Prevent re-rendering loops on block errors
   });
 }
 
@@ -74,6 +75,7 @@ export function useAiProviders() {
     queryFn: async () => {
       return apiClient.getAiProviders();
     },
+    retry: false,
   });
 }
 
@@ -101,6 +103,7 @@ export function useAiModels() {
     queryFn: async () => {
       return apiClient.getAiModels();
     },
+    retry: false,
   });
 }
 
