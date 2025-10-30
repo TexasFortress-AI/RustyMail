@@ -50,6 +50,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
   const [showImages, setShowImages] = useState(false);
 
   useEffect(() => {
+    setShowImages(false);
     const fetchEmail = async () => {
       if (!currentAccount || !selectedEmailContext) {
         setEmail(null);
@@ -340,10 +341,12 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
               className="email-html-content"
               dangerouslySetInnerHTML={{
                 __html: DOMPurify.sanitize(email.body_html, {
-                  ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li', 'blockquote',
-                                 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'pre', 'code', 'table', 'thead',
-                                 'tbody', 'tr', 'th', 'td', 'img', 'hr', 'div', 'span'],
-                  ALLOWED_ATTR: ['href', 'target', 'rel', 'src', 'alt', 'width', 'height', 'style', 'class'],
+                  ALLOWED_TAGS: [
+                    'p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li', 'blockquote',
+                    'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'pre', 'code', 'table', 'thead',
+                    'tbody', 'tr', 'th', 'td', 'img', 'hr', 'div', 'span'
+                  ],
+                  ALLOWED_ATTR: showImages ? ['href', 'target', 'rel', 'src', 'alt', 'width', 'height', 'style', 'class'] : ['href', 'target', 'rel', 'class'],
                   ALLOW_DATA_ATTR: false,
                   ADD_ATTR: ['target'],
                   FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
@@ -361,7 +364,6 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
                     },
                     'img': (tagName, attribs) => {
                       if (!showImages) {
-                        // Block images when showImages is false
                         return {
                           tagName: 'span',
                           attribs: {
