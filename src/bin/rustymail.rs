@@ -17,11 +17,9 @@ use std::process::exit;
 // Remove unused imports
 // use actix_web::{web, App, HttpServer, Responder, HttpResponse};
 // --- Add imports for registry ---
-use rustymail::mcp_port::create_mcp_tool_registry;
 // Remove unused imports
 // use rustymail::api::mcp_stdio::McpStdioAdapter;
 // use rustymail::api::mcp_sse::SseState;  // Not implemented yet
-use tokio::sync::Mutex as TokioMutex;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {

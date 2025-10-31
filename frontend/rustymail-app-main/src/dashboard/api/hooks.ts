@@ -121,3 +121,14 @@ export function useSetAiModel() {
     },
   });
 }
+
+// Hook for fetching MCP tools
+export function useMcpTools(variant: 'low-level' | 'high-level') {
+  return useQuery({
+    queryKey: ['mcpTools', variant],
+    queryFn: async () => {
+      return apiClient.getMcpTools(variant);
+    },
+    retry: false,
+  });
+}

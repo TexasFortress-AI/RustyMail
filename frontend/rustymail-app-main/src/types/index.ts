@@ -4,6 +4,8 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 
+export * from './mcp';
+
 // Stats Types
 export interface DashboardStats {
   activeConnections: number;
@@ -64,7 +66,8 @@ export interface ChatbotQuery {
   query: string;
   conversation_id?: string;
   current_folder?: string;
-  account_id?: string;
+    account_id?: string;
+  enabled_tools?: string[];
 }
 
 export interface ChatbotResponse {

@@ -109,6 +109,7 @@ pub struct ChatbotQuery {
     pub model_override: Option<String>,
     pub current_folder: Option<String>,
     pub account_id: Option<String>,
+    pub enabled_tools: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

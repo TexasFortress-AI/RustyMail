@@ -230,7 +230,7 @@ impl AiService {
                conversation_id, query_text, current_folder, account_id);
 
         // Fetch MCP tools and add them to system prompt
-        let tools = match self.fetch_mcp_tools().await {
+                let tools = match self.fetch_mcp_tools(query.enabled_tools.clone()).await {
             Ok(t) => t,
             Err(e) => {
                 warn!("Failed to fetch MCP tools: {}", e);
@@ -247,7 +247,7 @@ impl AiService {
                         let folder_names: Vec<String> = folders.iter()
                             .filter_map(|f| f.as_str())
                             .map(|s| s.to_string())
-                            .collect();
+                            .collect::<Vec<String>>();
                         Some(format!("Available folders: {}", folder_names.join(", ")))
                     } else {
                         None
@@ -277,10 +277,15 @@ impl AiService {
 
         let mut messages_history: Vec<AiChatMessage> = conversation.entries.iter()
             .map(|entry| entry.message.clone())
-            .collect();
+            .collect::<Vec<AiChatMessage>>();
 
-        // Add system prompt with MCP tools
-        if messages_history.is_empty() || !messages_history.iter().any(|m| m.role == "system") {
+        // If enabled_tools are specified, regenerate the system prompt
+        if query.enabled_tools.is_some() {
+            messages_history.retain(|m| m.role != "system");
+        }
+
+        // Add system prompt with MCP tools if it doesn't exist
+        if !messages_history.iter().any(|m| m.role == "system") {
             let mut system_content = "You are RustyMail Assistant, an email management AI acting as an MCP client. You can call tools to access email data.".to_string();
 
             // Add current context
@@ -556,71 +561,100 @@ impl AiService {
     }
 
     /// Fetch available MCP tools from the API and cache them
-    async fn fetch_mcp_tools(&self) -> Result<Vec<Value>, String> {
-        // Check if tools are already cached
-        {
-            let tools = self.mcp_tools.read().await;
-            if !tools.is_empty() {
-                return Ok(tools.clone());
-            }
-        }
+        async fn fetch_mcp_tools(&self, enabled_tools_filter: Option<Vec<String>>) -> Result<Vec<Value>, String> {
+                                let fetch_and_cache_tools = async {
+            let low_level_url = format!("{}/dashboard/mcp/tools?variant=low-level", self.mcp_base_url);
+            let high_level_url = format!("{}/dashboard/mcp/tools?variant=high-level", self.mcp_base_url);
 
-        // Fetch tools from API
-        let url = format!("{}/dashboard/mcp/tools", self.mcp_base_url);
+            let low_level_future = self.http_client.get(&low_level_url).header("X-API-Key", &self.api_key).send();
+            let high_level_future = self.http_client.get(&high_level_url).header("X-API-Key", &self.api_key).send();
 
-        match self.http_client
-            .get(&url)
-            .header("X-API-Key", &self.api_key)
-            .send()
-            .await
-        {
-            Ok(response) => {
+            let (low_level_res, high_level_res) = tokio::join!(low_level_future, high_level_future);
+
+            use std::collections::HashSet;
+
+            let mut all_tools = Vec::new();
+            let mut seen_tool_names = HashSet::new();
+
+            if let Ok(response) = low_level_res {
                 if response.status().is_success() {
-                    let result: Value = response.json().await
-                        .map_err(|e| format!("Failed to parse MCP tools response: {}", e))?;
-
-                    if let Some(tools_array) = result.get("tools").and_then(|t| t.as_array()) {
-                        let tools: Vec<Value> = tools_array.clone();
-
-                        // Cache the tools
-                        let mut cached_tools = self.mcp_tools.write().await;
-                        *cached_tools = tools.clone();
-
-                        info!("Fetched and cached {} MCP tools", tools.len());
-                        Ok(tools)
-                    } else {
-                        Err("MCP tools response missing 'tools' array".to_string())
+                    if let Ok(result_val) = response.json::<Value>().await {
+                        if let Some(tools) = result_val.get("tools").and_then(|t| t.as_array()) {
+                            for tool in tools {
+                                if let Some(name) = tool.get("name").and_then(|n| n.as_str()) {
+                                    if seen_tool_names.insert(name.to_string()) {
+                                        all_tools.push(tool.clone());
+                                    }
+                                }
+                            }
+                        }
                     }
-                } else {
-                    Err(format!("Failed to fetch MCP tools: {}", response.status()))
                 }
             }
-            Err(e) => Err(format!("Failed to call MCP tools endpoint: {}", e))
+
+            if let Ok(response) = high_level_res {
+                if response.status().is_success() {
+                    if let Ok(result_val) = response.json::<Value>().await {
+                        if let Some(tools) = result_val.get("tools").and_then(|t| t.as_array()) {
+                            for tool in tools {
+                                if let Some(name) = tool.get("name").and_then(|n| n.as_str()) {
+                                    if seen_tool_names.insert(name.to_string()) {
+                                        all_tools.push(tool.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            let mut cached_tools = self.mcp_tools.write().await;
+            *cached_tools = all_tools.clone();
+            info!("Fetched and cached {} total MCP tools", all_tools.len());
+            Ok::<Vec<Value>, String>(all_tools)
+        };
+
+        let all_tools = {
+            let tools = self.mcp_tools.read().await;
+            if tools.is_empty() {
+                drop(tools); // Release read lock before trying to write
+                fetch_and_cache_tools.await?
+            } else {
+                tools.clone()
+            }
+        };
+
+        if let Some(filter) = enabled_tools_filter {
+            let filtered_tools = all_tools
+                .into_iter()
+                .filter(|tool| {
+                    if let Some(name) = tool.get("name").and_then(|n| n.as_str()) {
+                        filter.contains(&name.to_string())
+                    } else {
+                        false
+                    }
+                })
+                .collect::<Vec<Value>>();
+            Ok(filtered_tools)
+        } else {
+            // If no filter is provided, return all tools (default behavior)
+            Ok(all_tools)
         }
     }
 
     /// Format MCP tools for inclusion in system prompt (provider-agnostic)
     fn format_tools_for_prompt(tools: &[Value]) -> String {
-        let mut prompt = String::from("\n\nAVAILABLE TOOLS:\n");
+        let tool_count = tools.len();
+        let mut prompt = format!("\n\nAVAILABLE TOOLS ({} total):\n", tool_count);
         prompt.push_str("You have access to the following tools. To use a tool, respond with:\n");
         prompt.push_str("TOOL_CALL: tool_name {\"param1\": \"value1\", \"param2\": \"value2\"}\n\n");
+        prompt.push_str("In your first message, you MUST greet the user and then list ALL of the tools available in a numbered list. Do not add any extra commentary or summarization. Just the list.\n\n");
 
-        for tool in tools {
+        for (i, tool) in tools.iter().enumerate() {
             let name = tool.get("name").and_then(|n| n.as_str()).unwrap_or("unknown");
             let description = tool.get("description").and_then(|d| d.as_str()).unwrap_or("No description");
-
-            prompt.push_str(&format!("- {}: {}\n", name, description));
-
-            if let Some(params) = tool.get("parameters").and_then(|p| p.as_object()) {
-                prompt.push_str("  Parameters:\n");
-                for (param_name, param_desc) in params {
-                    let desc_str = param_desc.as_str().unwrap_or("No description");
-                    prompt.push_str(&format!("    - {}: {}\n", param_name, desc_str));
-                }
-            }
-            prompt.push('\n');
+            prompt.push_str(&format!("{}. **{}**: {}\n", i + 1, name, description));
         }
-
         prompt
     }
 
@@ -671,7 +705,7 @@ impl AiService {
                         let folder_names: Vec<String> = folders.iter()
                             .filter_map(|f| f.as_str())
                             .map(|s| s.to_string())
-                            .collect();
+                            .collect::<Vec<String>>();
 
                         let context = format!("Your email account has {} folders:\n{}",
                             folder_names.len(),

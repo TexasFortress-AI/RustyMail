@@ -253,7 +253,7 @@
         "id": 16,
         "title": "Fix compose dialog appearing on hard refresh",
         "description": "Prevent the SendMailDialog from automatically opening when the web UI is hard-refreshed (F5 or Ctrl+F5)",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [
           4
         ],
@@ -278,7 +278,7 @@
               1
             ],
             "details": "Examine the Dialog component in components/ui/dialog.tsx and its usage in SendMailDialog.tsx:211. Verify the `open` prop is properly bound to composeDialogOpen state. Check if DialogPrimitive.Root has any default state that could cause auto-opening. Review Radix UI documentation for known hydration or SSR issues that might cause initial open state.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test with different initial values for the open prop and verify the Dialog component respects the controlled state properly"
           },
           {
@@ -290,7 +290,7 @@
               2
             ],
             "details": "Add a useEffect hook in EmailList component that detects if the page was loaded fresh (hard refresh) vs navigated to. Use performance.navigation.type or window.performance.getEntriesByType('navigation') to detect refresh. Set a flag to prevent dialog from opening on fresh page loads. Ensure this doesn't interfere with legitimate compose dialog triggers.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test hard refresh (F5/Ctrl+F5) vs normal navigation and verify dialog only opens when explicitly triggered by user actions"
           },
           {
@@ -299,7 +299,7 @@
             "description": "Update input placeholder styling to be more clearly distinguishable from actual values",
             "dependencies": [],
             "details": "Modify placeholder text in SendMailDialog.tsx:235, 250, 261 to be more obviously placeholders. Consider using lighter gray color, italic styling, or different placeholder text that's clearly not a real email address. Update CSS classes if needed to make placeholders more visually distinct from user input.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Verify placeholder text is clearly distinguishable from actual input values and doesn't contribute to the perception that fields are pre-filled"
           }
         ]
@@ -382,7 +382,7 @@
       ],
       "created": "2025-10-18T12:29:46.283Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-30T03:00:46.419Z"
+      "updated": "2025-10-30T18:02:11.322Z"
     }
   }
 }

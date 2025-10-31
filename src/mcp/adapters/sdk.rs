@@ -87,7 +87,7 @@ impl RustyMailService {
             Ok(value) => {
                 let text = serde_json::to_string_pretty(&value).unwrap_or_else(|_| "null".to_string());
                 let content = Content {
-                    raw: RawContent::Text(RawTextContent { text }),
+                    raw: RawContent::Text(RawTextContent { text, meta: None }),
                     annotations: None,
                 };
                 Ok(CallToolResult::success(vec![content]))
@@ -114,7 +114,10 @@ impl ServerHandler for RustyMailService {
             },
             server_info: Implementation {
                 name: "RustyMail MCP Server".to_string(),
+                title: Some("RustyMail MCP".to_string()),
                 version: "0.1.0".to_string(),
+                icons: None,
+                website_url: None,
             },
             instructions: Some("IMAP client with MCP interface for email operations".to_string()),
         }
@@ -136,8 +139,11 @@ impl ServerHandler for RustyMailService {
         let items: Vec<Tool> = self.tool_registry.keys().map(|name| {
             Tool {
                 name: name.clone().into(),
+                title: Some(name.clone().into()),
                 description: Some(format!("IMAP tool: {}", name).into()),
                 input_schema: Arc::new(serde_json::Map::new()),
+                output_schema: None,
+                icons: None,
                 annotations: None,
             }
         }).collect();
@@ -210,7 +216,7 @@ impl McpHandler for SdkMcpAdapter {
                 let result_value = if !result.content.is_empty() {
                     json!({
                         "content": result.content.iter().map(|c| match c {
-                            Content { raw: RawContent::Text(RawTextContent { ref text }), .. } => json!({ "type": "text", "text": text }),
+                            Content { raw: RawContent::Text(RawTextContent { ref text, .. }), .. } => json!({ "type": "text", "text": text }),
                             _ => json!(null),
                         }).collect::<Vec<_>>(),
                         "isError": result.is_error,

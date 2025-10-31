@@ -147,6 +147,7 @@ export const apiClient = {
         model_override: query.model_override,
         current_folder: query.current_folder,
         account_id: query.account_id,
+        enabled_tools: query.enabled_tools,
       }),
     });
 
@@ -207,7 +208,12 @@ export const apiClient = {
         model_name: modelName,
       }),
     });
-  }
+  },
+
+  // MCP Tools
+  getMcpTools: async (variant: 'low-level' | 'high-level'): Promise<{ tools: McpTool[] }> => {
+    return await apiRequest<{ tools: McpTool[] }>(`${API_BASE}/mcp/tools?variant=${variant}`);
+  },
 };
 
 // Initialize EventSource for SSE

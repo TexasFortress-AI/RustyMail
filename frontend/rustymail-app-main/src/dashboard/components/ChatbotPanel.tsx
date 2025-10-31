@@ -10,10 +10,10 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
-import { useChatbotMutation } from '@/dashboard/api/hooks';
+import { useChatbotMutation, useMcpTools } from '@/dashboard/api/hooks';
 import { useSSEChatbot } from '@/dashboard/api/useSSEChatbot';
 import { ChatMessage, ChatbotQuery, ChatbotResponse } from '@/types';
-import { Send, Bot, User, Loader2, Mail, Folder, Download, Copy, Trash2, Bug, CheckCircle, AlertCircle, XCircle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Send, Bot, User, Loader2, Mail, Folder, Download, Copy, Trash2, Bug, CheckCircle, AlertCircle, XCircle, ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { toast } from '@/hooks/use-toast';
 import {
@@ -26,6 +26,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { MoreHorizontal } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Checkbox } from '@/components/ui/checkbox';
 
 // Load conversation from localStorage
 const loadConversation = (): ChatMessage[] => {
@@ -75,7 +76,24 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
   const [debugInfo, setDebugInfo] = useState<DebugInfo | null>(null);
   const [debugPanelOpen, setDebugPanelOpen] = useState(false);
 
-  const chatbotMutation = useChatbotMutation();
+  // MCP Tools settings state
+  const [settingsPanelOpen, setSettingsPanelOpen] = useState(false);
+      const [enabledToolsets, setEnabledToolsets] = useState(() => {
+    try {
+      const saved = localStorage.getItem('chatbot-enabled-toolsets');
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch {
+      // ignore and use default
+    }
+    return { lowLevel: false, highLevel: true };
+  });
+
+    const chatbotMutation = useChatbotMutation();
+
+      const { data: lowLevelToolsData } = useMcpTools('low-level');
+  const { data: highLevelToolsData } = useMcpTools('high-level');
 
   const { streamQuery, isStreaming } = useSSEChatbot({
     onStart: (convId) => {
@@ -139,6 +157,15 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
     localStorage.setItem('chatbot-debug-mode', String(debugMode));
   }, [debugMode]);
 
+  // Persist enabled tools to localStorage
+    useEffect(() => {
+    try {
+      localStorage.setItem('chatbot-enabled-toolsets', JSON.stringify(enabledToolsets));
+    } catch (e) {
+      console.error('Failed to save enabled toolsets:', e);
+    }
+  }, [enabledToolsets]);
+
   // Clear conversation when account changes
   const prevAccountIdRef = useRef<string | undefined>(accountId);
   useEffect(() => {
@@ -156,19 +183,30 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!inputText.trim()) return;
+            if (!inputText.trim()) return;
 
-    // Add user message to the conversation
+    const enabledToolsList: string[] = [];
+    if (enabledToolsets.lowLevel && lowLevelToolsData) {
+      console.log("Adding LOW LEVEL tools to the list.");
+      enabledToolsList.push(...lowLevelToolsData.tools.map(t => t.name));
+    }
+    if (enabledToolsets.highLevel && highLevelToolsData) {
+      console.log("Adding HIGH LEVEL tools to the list.");
+      enabledToolsList.push(...highLevelToolsData.tools.map(t => t.name));
+    }
+    console.log("Final enabledToolsList being sent:", enabledToolsList);
+
+    const queryText = inputText;
+
+    setInputText('');
+
     const userMessage: ChatMessage = {
       id: uuidv4(),
       type: 'user',
-      text: inputText,
-      timestamp: new Date().toISOString()
+      text: queryText,
+      timestamp: new Date().toISOString(),
     };
-
     setMessages(prev => [...prev, userMessage]);
-    const queryText = inputText;
-    setInputText('');
 
     if (useStreaming) {
       // Use SSE streaming
@@ -185,11 +223,20 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
       await streamQuery(queryText, conversationId);
     } else {
       // Use traditional HTTP POST
+      const enabledToolsList: string[] = [];
+      if (enabledToolsets.lowLevel && lowLevelToolsData) {
+        enabledToolsList.push(...lowLevelToolsData.tools.map(t => t.name));
+      }
+      if (enabledToolsets.highLevel && highLevelToolsData) {
+        enabledToolsList.push(...highLevelToolsData.tools.map(t => t.name));
+      }
+
       const request: ChatbotQuery = {
         query: queryText,
         conversation_id: conversationId,
         current_folder: currentFolder,
-        account_id: accountId
+        account_id: accountId,
+        enabled_tools: enabledToolsList.length > 0 ? enabledToolsList : undefined,
       };
 
       // Capture debug info if debug mode is enabled
@@ -372,6 +419,16 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
               <Bug className="h-4 w-4" />
             </Button>
 
+            {/* Settings toggle */}
+            <Button
+              variant={"ghost"} // Decide on active variant later
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => setSettingsPanelOpen(!settingsPanelOpen)}
+            >
+              <Settings className="h-4 w-4" />
+            </Button>
+
             {messages.length > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -544,6 +601,61 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
             </>
           )}
         </div>
+
+        {/* MCP Tools Settings Panel */}
+        <Collapsible open={settingsPanelOpen} onOpenChange={setSettingsPanelOpen} className="border-t">
+          <CollapsibleTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full h-8 flex items-center justify-between px-4 hover:bg-accent/50"
+            >
+              <div className="flex items-center gap-2 text-xs">
+                <Settings className="h-3.5 w-3.5" />
+                <span className="font-medium">MCP Tool Settings</span>
+              </div>
+              {settingsPanelOpen ? (
+                <ChevronUp className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronDown className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </CollapsibleTrigger>
+          <CollapsibleContent className="px-4 pb-3 max-h-60 overflow-y-auto bg-muted/30">
+            <div className="space-y-4 py-2">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="low-level-tools"
+                  checked={enabledToolsets.lowLevel}
+                  onCheckedChange={(checked) => {
+                    setEnabledToolsets(prev => ({ ...prev, lowLevel: !!checked }));
+                  }}
+                />
+                <label
+                  htmlFor="low-level-tools"
+                  className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Low-Level Tools
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="high-level-tools"
+                  checked={enabledToolsets.highLevel}
+                  onCheckedChange={(checked) => {
+                    setEnabledToolsets(prev => ({ ...prev, highLevel: !!checked }));
+                  }}
+                />
+                <label
+                  htmlFor="high-level-tools"
+                  className="text-xs font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  High-Level AI Tools
+                </label>
+              </div>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         {/* Debug Panel */}
         {debugMode && debugInfo && (

@@ -29,7 +29,7 @@ const CLEANUP_INTERVAL: Duration = Duration::from_secs(60); // 1 minute
 
 /// Query parameters for MCP endpoint
 #[derive(Deserialize)]
-struct McpQuery {
+pub struct McpQuery {
     #[serde(default = "default_variant")]
     variant: String,
 }
