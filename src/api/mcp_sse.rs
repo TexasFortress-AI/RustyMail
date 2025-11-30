@@ -4,17 +4,15 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use actix::prelude::*;
-use actix::{Actor, Addr, Context, Handler, Message, ResponseFuture, Running, StreamHandler};
+use actix::{Actor, Addr, Handler, Message, ResponseFuture, Running, StreamHandler};
 use actix_web::{
     web::{self, Data, Payload},
     Error as ActixError, HttpRequest, HttpResponse,
 };
-use actix_web_lab::sse::{self, Sse};
+use actix_web_lab::sse::{self};
 use actix_web_actors::ws;
-use futures_util::{StreamExt as _, TryStreamExt as _};
+use futures_util::{StreamExt as _};
 use log::{debug, info, error, warn};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -23,21 +21,18 @@ use std::{
 };
 use tokio::{
     sync::{mpsc, Mutex as TokioMutex},
-    time::{interval, Instant},
+    time::{Instant},
 };
 use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 use actix::fut;
 
-// Crate-local imports
 use crate::{
-    config::Settings,
     mcp::{
         handler::McpHandler,
         types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError},
         ErrorCode,
     },
-    session_manager::SessionManager,
 };
 
 // --- SSE State Actor (Simplified - combines SseState and ClientState handling) ---

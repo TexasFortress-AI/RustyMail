@@ -14,7 +14,7 @@ pub mod error;
 pub mod session;
 pub mod types;
 
-// --- Re-exports --- 
+// --- Re-exports ---
 // Keep these minimal and focused on the public API
 
 pub use client::ImapClient;
@@ -43,7 +43,7 @@ use crate::imap::session::ImapClientFactory;
 pub type ImapSessionFactoryResult = Result<ImapClient<AsyncImapSessionWrapper>, ImapError>;
 
 // Add ImapSessionFactory as a type alias for ImapClientFactory
-pub type ImapSessionFactory = ImapClientFactory;
+pub type ImapSessionFactory = Box<dyn Fn() -> BoxFuture<'static, ImapSessionFactoryResult> + Send + Sync>;
 
 // Cloneable wrapper for ImapSessionFactory
 #[derive(Clone)]
@@ -59,8 +59,8 @@ impl CloneableImapSessionFactory {
     }
 
     /// Create a session using the default factory (credentials from .env)
-    pub async fn create_session(&self) -> ImapSessionFactoryResult {
-        (self.factory)().await
+    pub fn create_session(&self) -> BoxFuture<ImapSessionFactoryResult> {
+        (self.factory)()
     }
 
     /// Create a session for a specific account (using account's credentials)

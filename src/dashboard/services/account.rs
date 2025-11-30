@@ -7,7 +7,6 @@ use sqlx::{SqlitePool, Row};
 use log::{info, debug, error, warn};
 use thiserror::Error;
 use serde::{Serialize, Deserialize};
-use std::time::Duration;
 use super::account_store::{AccountStore, StoredAccount, AccountStoreError};
 use super::connection_status_store::{ConnectionStatusStore, ConnectionStatusStoreError};
 use super::connection_status::AccountConnectionStatus;

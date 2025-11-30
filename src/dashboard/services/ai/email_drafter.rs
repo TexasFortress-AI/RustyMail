@@ -4,7 +4,7 @@
 use serde::{Serialize, Deserialize};
 use serde_json::{json, Value};
 use reqwest::Client;
-use log::{debug, error, warn};
+use log::{debug, error};
 use sqlx::SqlitePool;
 use crate::api::errors::ApiError;
 use super::model_config::{get_model_config, ModelConfiguration};

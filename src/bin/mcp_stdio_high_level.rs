@@ -5,86 +5,46 @@
 ///
 /// This HIGH-LEVEL variant automatically uses ?variant=high-level to expose only high-level AI-powered tools
 /// instead of the full set of low-level tools.
-///
-/// Usage:
-///   rustymail-mcp-stdio-high-level [OPTIONS]
-///
-/// Options:
-///   --backend-url <URL>  Backend MCP server URL (from MCP_BACKEND_URL env var)
-///   --timeout <SECONDS>  Request timeout in seconds (default: 30)
-///   --help              Show this help message
-///
-/// Environment variables:
-///   MCP_BACKEND_URL     Backend MCP server URL (overrides default)
-///   MCP_TIMEOUT         Request timeout in seconds
-
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    /// Backend MCP server URL.
+    #[arg(long, env = "MCP_BACKEND_URL")]
+    backend_url: String,
+
+    /// Request timeout in seconds.
+    #[arg(long, env = "MCP_TIMEOUT", default_value = "30")]
+    timeout: u64,
+
+    /// Path to the configuration file.
+    #[arg(short, long)]
+    config: Option<String>,
+}
 
 #[tokio::main]
 async fn main() {
-    // Parse command-line arguments
-    let args: Vec<String> = std::env::args().collect();
-    let mut backend_url = std::env::var("MCP_BACKEND_URL")
-        .expect("MCP_BACKEND_URL environment variable must be set (e.g., http://localhost:9437/mcp)");
-    let mut timeout_secs = std::env::var("MCP_TIMEOUT")
-        .ok()
-        .and_then(|s| s.parse::<u64>().ok())
-        .expect("MCP_TIMEOUT environment variable must be set (e.g., 30)");
-
-    // Parse command-line arguments
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--backend-url" => {
-                if i + 1 < args.len() {
-                    backend_url = args[i + 1].clone();
-                    i += 2;
-                } else {
-                    eprintln!("Error: --backend-url requires a value");
-                    std::process::exit(1);
-                }
-            }
-            "--timeout" => {
-                if i + 1 < args.len() {
-                    timeout_secs = match args[i + 1].parse::<u64>() {
-                        Ok(t) => t,
-                        Err(_) => {
-                            eprintln!("Error: --timeout must be a number");
-                            std::process::exit(1);
-                        }
-                    };
-                    i += 2;
-                } else {
-                    eprintln!("Error: --timeout requires a value");
-                    std::process::exit(1);
-                }
-            }
-            "--help" => {
-                print_help();
-                std::process::exit(0);
-            }
-            arg => {
-                eprintln!("Error: Unknown argument: {}", arg);
-                print_help();
-                std::process::exit(1);
-            }
-        }
-    }
+    let mut cli = Cli::parse();
 
     // Append ?variant=high-level to backend URL if not already present
-    if !backend_url.contains("variant=") {
-        let separator = if backend_url.contains('?') { "&" } else { "?" };
-        backend_url = format!("{}{}variant=high-level", backend_url, separator);
+    if !cli.backend_url.contains("variant=") {
+        let separator = if cli.backend_url.contains('?') { "&" } else { "?" };
+        cli.backend_url = format!("{}{}variant=high-level", cli.backend_url, separator);
     }
 
     eprintln!("MCP stdio proxy (HIGH-LEVEL) starting...");
-    eprintln!("Backend URL: {}", backend_url);
-    eprintln!("Timeout: {}s", timeout_secs);
+    eprintln!("Backend URL: {}", cli.backend_url);
+    eprintln!("Timeout: {}s", cli.timeout);
+    if let Some(config_path) = &cli.config {
+        eprintln!("Config file: {}", config_path);
+    }
 
     // Create HTTP client with timeout
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .timeout(std::time::Duration::from_secs(cli.timeout))
         .build()
         .expect("Failed to create HTTP client");
 
@@ -127,7 +87,7 @@ async fn main() {
                         }
 
                         // Forward request to backend
-                        match client.post(&backend_url).json(&request).send().await {
+                        match client.post(&cli.backend_url).json(&request).send().await {
                             Ok(response) => {
                                 let status = response.status();
 
@@ -210,28 +170,4 @@ async fn write_response(stdout: &mut tokio::io::Stdout, response: &str) {
     if let Err(e) = stdout.flush().await {
         eprintln!("Error flushing stdout: {}", e);
     }
-}
-
-/// Print help message
-fn print_help() {
-    println!("MCP stdio proxy (HIGH-LEVEL VARIANT) - JSON-RPC proxy for RustyMail MCP backend");
-    println!();
-    println!("This HIGH-LEVEL variant uses ?variant=high-level to expose only high-level AI-powered tools.");
-    println!();
-    println!("Usage:");
-    println!("  rustymail-mcp-stdio-high-level [OPTIONS]");
-    println!();
-    println!("Options:");
-    println!("  --backend-url <URL>  Backend MCP server URL (from MCP_BACKEND_URL env var)");
-    println!("  --timeout <SECONDS>  Request timeout in seconds (default: 30)");
-    println!("  --help              Show this help message");
-    println!();
-    println!("Environment variables:");
-    println!("  MCP_BACKEND_URL     Backend MCP server URL (overrides default)");
-    println!("  MCP_TIMEOUT         Request timeout in seconds");
-    println!();
-    println!("Protocol:");
-    println!("  Reads line-delimited JSON-RPC requests from stdin");
-    println!("  Writes line-delimited JSON-RPC responses to stdout");
-    println!("  Logs errors and warnings to stderr");
 }

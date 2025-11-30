@@ -6,7 +6,6 @@
 // src/dashboard/services/ai/provider_manager.rs
 // Unified AI Provider Management with dynamic selection and failover
 
-use async_trait::async_trait;
 use log::{debug, warn, error, info};
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;

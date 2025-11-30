@@ -21,7 +21,9 @@ use std::task::{Context, Poll};
 use uuid::Uuid;
 use actix_web::web::Bytes;
 
-use crate::dashboard::services::DashboardState;
+use crate::dashboard::services::{DashboardState, JobRecord, JobStatus};
+
+
 
 const SESSION_TIMEOUT: Duration = Duration::from_secs(600); // 10 minutes
 const EVENT_HISTORY_SIZE: usize = 100;
@@ -234,7 +236,6 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, va
             })
         },
         "tools/list" => {
-            // Get tools based on variant
             let tools = if variant == "high-level" {
                 crate::dashboard::api::high_level_tools::get_mcp_high_level_tools_jsonrpc_format()
             } else {
@@ -250,20 +251,102 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, va
             })
         },
         "tools/call" => {
-            // Handle tool calls
             let tool_name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
             let tool_params = params.get("arguments").cloned().unwrap_or(json!({}));
+            if tool_name == "get_workflow_status" {
+                let job_id = tool_params.get("jobId").and_then(|id| id.as_str());
+                let response = if let Some(job_id) = job_id {
+                    if let Some(job) = state.jobs.get(job_id) {
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "result": {
+                                "content": [{
+                                    "type": "text",
+                                    "text": serde_json::to_string(&*job.value()).unwrap_or_default()
+                                }]
+                            }
+                        })
+                    } else {
+                        json!({
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "error": {
+                                "code": -32603,
+                                "message": format!("Job not found: {}", job_id)
+                            }
+                        })
+                    }
+                } else {
+                    json!({
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {
+                            "code": -32602,
+                            "message": "Missing required parameter: jobId"
+                        }
+                    })
+                };
+                return Some(response);
+            }
+
+
+                if tool_name == "process_email_instructions" {
+                let job_id = Uuid::new_v4().to_string();
+                let state_clone = state.clone();
+                let job_id_for_response = job_id.clone();
+
+                tokio::spawn(async move {
+                    let job_record = JobRecord {
+                        job_id: job_id.clone(),
+                        status: JobStatus::Running,
+                        started_at: Instant::now(),
+                    };
+                    state_clone.jobs.insert(job_id.clone(), job_record);
+
+                    let result = crate::dashboard::api::high_level_tools::execute_high_level_tool(
+                        state_clone.as_ref(),
+                        "process_email_instructions",
+                        tool_params.clone(),
+                    ).await;
+
+                    let final_status = match result.get("success").and_then(|v| v.as_bool()) {
+                        Some(true) => JobStatus::Completed(result.get("data").cloned().unwrap_or(json!(null))),
+                        _ => JobStatus::Failed(result.get("error").and_then(|v| v.as_str()).unwrap_or("Unknown error").to_string()),
+                    };
+
+                    if let Some(mut job) = state_clone.jobs.get_mut(&job_id) {
+                        job.status = final_status;
+                    }
+                });
+
+                let response = json!({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "content": [{
+                            "type": "text",
+                            "text": json!({
+                                "status": "started",
+                                "jobId": job_id_for_response
+                            }).to_string()
+                        }]
+                    }
+                });
+                return Some(response);
+            }
+
 
             // Call the appropriate tool execution logic based on variant
-            let result = if variant == "high-level" {
+                        let result = if variant == "high-level" {
                 crate::dashboard::api::high_level_tools::execute_high_level_tool(
-                    state.get_ref(),
+                    state.as_ref(),
                     tool_name,
                     tool_params
                 ).await
             } else {
                 crate::dashboard::api::handlers::execute_mcp_tool_inner(
-                    state.get_ref(),
+                    state.as_ref(),
                     tool_name,
                     tool_params
                 ).await
@@ -274,7 +357,7 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, va
                 Some(true) => {
                     // Success - format data as MCP content
                     let data = result.get("data").cloned().unwrap_or(json!(null));
-                    let data_str = serde_json::to_string_pretty(&data).unwrap_or_else(|_| "null".to_string());
+                    let data_str = serde_json::to_string(&data).unwrap_or_else(|_| "null".to_string());
 
                     json!({
                         "jsonrpc": "2.0",

@@ -9,7 +9,6 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Serialize, Deserialize};
 use log::{debug, warn, error};
-use crate::dashboard::api::errors::ApiError;
 use super::{AiProvider, AiChatMessage};
 use crate::api::errors::ApiError as RestApiError;
 

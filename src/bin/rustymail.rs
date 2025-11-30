@@ -65,7 +65,7 @@ async fn main() -> std::io::Result<()> {
 
     // --- Start REST Server Directly (if configured) ---
     if let Some(ref rest_config) = config.rest {
-        if !rest_config.enabled { 
+        if !rest_config.enabled {
              error!("REST server is configured but not enabled in rustymail binary. Exiting.");
              exit(1);
         }
@@ -74,8 +74,22 @@ async fn main() -> std::io::Result<()> {
         use rustymail::mcp::adapters::sdk::SdkMcpAdapter;
         use rustymail::session_manager::SessionManager;
 
+        let config_clone = Arc::new(config.clone());
+        let session_factory: rustymail::imap::ImapSessionFactory = Box::new(move || {
+            let config = config_clone.clone();
+            Box::pin(async move {
+                rustymail::imap::client::ImapClient::<rustymail::imap::session::AsyncImapSessionWrapper>::connect(
+                    &config.imap_host,
+                    config.imap_port,
+                    &config.imap_user,
+                    &config.imap_pass,
+                )
+                .await
+            })
+        });
+
         let mcp_handler: Arc<dyn rustymail::mcp::handler::McpHandler> = Arc::new(
-            SdkMcpAdapter::new_placeholder()
+            SdkMcpAdapter::new(rustymail::imap::CloneableImapSessionFactory::new(session_factory))
                 .expect("Failed to create MCP adapter")
         );
         let session_manager = Arc::new(SessionManager::new(Arc::new(config.clone())));
@@ -89,7 +103,7 @@ async fn main() -> std::io::Result<()> {
     }
 
     // --- MCP / Other Servers (Commented Out) ---
-    // If needed, these would likely need to run concurrently using tokio::join! 
+    // If needed, these would likely need to run concurrently using tokio::join!
     // or similar *before* starting the Actix server if Actix blocks the main thread.
     /*
     if let Some(mcp_config) = config.mcp {
@@ -111,4 +125,4 @@ async fn main() -> std::io::Result<()> {
     // Remove task waiting logic as we run REST server directly now
     info!("Main function finished.");
     Ok(())
-} 
+}

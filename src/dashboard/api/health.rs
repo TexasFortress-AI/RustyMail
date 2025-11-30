@@ -11,8 +11,7 @@
 use actix_web::{web, HttpResponse, Result};
 use log::{info, debug};
 use serde::{Serialize, Deserialize};
-use std::sync::Arc;
-use crate::dashboard::services::{DashboardState, health::HealthService};
+use crate::dashboard::services::{DashboardState};
 
 // Health check response format
 #[derive(Debug, Serialize, Deserialize)]

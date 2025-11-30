@@ -3278,7 +3278,7 @@ pub async fn delete_email(
     drop(account_service);
 
     // Create IMAP session for this account
-    let mut session = state.imap_session_factory.create_session_for_account(&account).await
+    let session = state.imap_session_factory.create_session_for_account(&account).await
         .map_err(|e| ApiError::InternalError(format!("Failed to create IMAP session: {}", e)))?;
 
     // Select the folder

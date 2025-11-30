@@ -134,8 +134,7 @@ impl Folder {
 
     /// Creates a hierarchical folder tree from a flat list of folder paths
     pub fn build_hierarchy(folder_paths: Vec<(String, Option<String>, Vec<String>)>) -> Vec<Folder> {
-        let mut folders: Vec<Folder> = Vec::new();
-        let mut folder_map = std::collections::HashMap::new();
+                let mut folder_map = std::collections::HashMap::new();
 
         // First pass: create all folders
         for (full_path, delimiter, attributes) in folder_paths {
@@ -729,8 +728,8 @@ impl Email {
             .ok_or_else(|| ImapError::Parse("Failed to parse email message".to_string()))?;
 
         let mut mime_parts = Vec::new();
-        let mut text_body = None;
-        let mut html_body = None;
+        let text_body;
+        let html_body;
         let mut attachments = Vec::new();
 
         // Extract text and HTML bodies directly from the message

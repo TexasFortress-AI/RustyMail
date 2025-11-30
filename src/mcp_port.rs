@@ -7,8 +7,6 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use tokio::sync::Mutex as TokioMutex;
 use crate::mcp::{types::{JsonRpcError, McpPortState}};
-use crate::imap::client::ImapClient;
-use crate::imap::session::AsyncImapSessionWrapper;
 use crate::imap::types::FlagOperation;
 use base64::{engine::general_purpose, Engine as _};
 use log::{info, warn, error, debug};

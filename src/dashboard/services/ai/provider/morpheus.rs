@@ -10,7 +10,6 @@ use reqwest::Client;
 use serde::{Serialize, Deserialize};
 use serde_json;
 use log::{debug, warn, error};
-use crate::dashboard::api::errors::ApiError;
 use super::{AiProvider, AiChatMessage}; // Import trait and common message struct
 use crate::api::errors::ApiError as RestApiError;
 

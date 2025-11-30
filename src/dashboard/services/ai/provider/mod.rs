@@ -5,7 +5,6 @@
 
 use async_trait::async_trait;
 use serde::{Serialize, Deserialize};
-use thiserror::Error;
 use crate::api::errors::ApiError as RestApiError;
 
 pub mod openai;

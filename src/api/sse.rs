@@ -1,53 +1,39 @@
-// Copyright (c) 2025 TexasFortress.AI
-// This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
-//! Provides generic Server-Sent Events (SSE) capabilities.
-//! 
-//! NOTE: This module appears to overlap significantly with `src/api/mcp_sse.rs`.
-//! It defines a similar `SseState` and handler (`sse_handler`) for managing SSE clients.
-//! However, `mcp_sse.rs` seems more specifically tailored for handling events related
-//! to MCP/IMAP operations via the `/mcp/events/{client_id}` endpoint.
-//! This module might be intended for more general server broadcasts (like the example
-//! `broadcast_task`) or could be partially legacy. Clarification on the intended
-//! distinct roles of `sse.rs` and `mcp_sse.rs` might be needed.
-
-use actix::prelude::*;
-use actix::Context as ActorContext;
-use actix_web::{
-    web::{self, Data, Payload},
-    Error as ActixError, HttpRequest, HttpResponse,
-};
-use actix_web_actors::ws;
-use actix_web_lab::sse::{self, Sse};
-use futures_util::{StreamExt as _, TryStreamExt as _};
-use log::{debug, info, error, warn};
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::{
-    collections::HashMap,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-    time::{Duration, Instant},
-};
-use tokio::{
-    sync::{mpsc, Mutex as TokioMutex},
-    time::interval,
-};
-use tokio_stream::wrappers::ReceiverStream;
-use uuid::Uuid;
+/*
+use std::time::{Duration, Instant};
+use std::collections::HashMap;
+use std::sync::Arc;
+use actix_web_lab::sse::{self, Event};
+use futures_util::{StreamExt as _};
 
 use crate::{
-    config::Settings,
     mcp::{
         handler::McpHandler,
         types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError},
         ErrorCode,
     },
-    session_manager::SessionManager,
 };
+
+NOTE: This module appears to overlap significantly with `src/api/mcp_sse.rs`.
+It defines a similar `SseState` and handler (`sse_handler`) for managing SSE clients.
+However, `mcp_sse.rs` seems more specifically tailored for handling events related
+to MCP/IMAP operations via the `/mcp/events/{client_id}` endpoint.
+This module might be intended for more general server broadcasts (like the example
+`broadcast_task`) or could be partially legacy. Clarification on the intended
+distinct roles of `sse.rs` and `mcp_sse.rs` might be needed.
+
+use actix::prelude::*;
+use actix::Context as ActorContext;
+use actix_web::{
+    web::{self, Data, BytesMut},
+    Error as ActixError, HttpRequest, HttpResponse,
+};
+use log::{debug, info, error, warn};
+use tokio::{
+    sync::{mpsc, Mutex as TokioMutex},
+};
+use tokio_stream::wrappers::ReceiverStream;
+use uuid::Uuid;
+
 
 const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -65,7 +51,7 @@ impl ClientState {
 }
 
 pub struct SseState {
-    sessions: HashMap<String, mpsc::Sender<sse::Event>>,
+    sessions: HashMap<String, mpsc::Sender<Event>>,
     hb_interval: Duration,
     client_timeout: Duration,
     mcp_handler: Arc<dyn McpHandler>,
@@ -96,7 +82,7 @@ impl SseState {
     }
 
     fn heartbeat(&mut self, ctx: &mut ActorContext<Self>) {
-        ctx.run_interval(self.hb_interval, |act, ctx_inner| {
+        ctx.run_interval(self.hb_interval, |act, _ctx_inner| {
             let mut dead_sessions = Vec::new();
             for (id, client_sender) in &act.sessions {
                 if client_sender.is_closed() {
@@ -111,7 +97,7 @@ impl SseState {
         });
     }
 
-    fn add_session(&mut self, id: String, sender: mpsc::Sender<sse::Event>) {
+    fn add_session(&mut self, id: String, sender: mpsc::Sender<Event>) {
         info!("Adding new SSE session: {}", id);
         self.sessions.insert(id, sender);
     }
@@ -164,11 +150,11 @@ impl Actor for SseState {
 }
 
 pub async fn sse_handler(
-    req: HttpRequest,
+    _req: HttpRequest,
     state: Data<Arc<TokioMutex<SseState>>>,
 ) -> Result<HttpResponse, ActixError> {
     info!("Handling new SSE connection request");
-    let sse_state = state.get_ref().clone();
+    let sse_state = state.as_ref().clone();
     let (tx, rx) = mpsc::channel(100);
     let session_id = Uuid::new_v4().to_string();
 
@@ -176,12 +162,12 @@ pub async fn sse_handler(
 
     info!("SSE connection established for session {}", session_id);
 
-    use actix_web::web::Bytes;
 
     let stream = ReceiverStream::new(rx).map(|event| {
         // Convert SSE Event to Bytes for streaming
-        let event_str = format!("data: SSE event\n\n");
-        Ok::<_, ActixError>(Bytes::from(event_str))
+        let mut buffer = BytesMut::new();
+        let _ = event.write(&mut buffer);
+        Ok::<_, ActixError>(buffer.freeze())
     });
 
     Ok(HttpResponse::Ok()
@@ -202,4 +188,5 @@ pub fn configure_sse_service(cfg: &mut web::ServiceConfig, sse_state: Data<Arc<T
             .route(web::get().to(sse_handler))
     );
     info!("Generic SSE service configured at /events.");
-} 
+}
+*/

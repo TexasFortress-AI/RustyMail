@@ -494,7 +494,7 @@ impl AiService {
             "I can help you with your emails. You can ask me about your inbox, unread messages, or search for specific emails.".to_string()
         }
     }
-    
+
     // Generate mock email data for testing
     #[allow(dead_code)]
     fn generate_mock_email_data(&self) -> EmailData {
@@ -935,32 +935,32 @@ impl AiService {
                         .and_then(|i| i.as_u64())
                         .map(|i| i.to_string())
                         .unwrap_or_else(|| "0".to_string());
-    
+
                     let subject = email.get("subject")
                         .and_then(|s| s.as_str())
                         .unwrap_or("(No subject)")
                         .to_string();
-    
+
                     let from = email.get("from_address")
                         .and_then(|f| f.as_str())
                         .unwrap_or("Unknown")
                         .to_string();
-    
+
                     let date = email.get("date")
                         .and_then(|d| d.as_str())
                         .or_else(|| email.get("internal_date").and_then(|d| d.as_str()))
                         .unwrap_or("Unknown date")
                         .to_string();
-    
+
                     let flags = email.get("flags")
                         .and_then(|f| f.as_array())
                         .map(|arr| arr.iter()
                             .filter_map(|v| v.as_str())
                             .collect::<Vec<_>>())
                         .unwrap_or_default();
-    
+
                     let is_read = flags.iter().any(|f| f.contains("Seen"));
-    
+
                     // Extract snippet from body or preview
                     let snippet = email.get("body_preview")
                         .or_else(|| email.get("snippet"))
@@ -969,7 +969,7 @@ impl AiService {
                         .chars()
                         .take(150)
                         .collect::<String>();
-    
+
                     email_messages.push(EmailMessage {
                         id,
                         subject,
@@ -979,7 +979,7 @@ impl AiService {
                         is_read,
                     });
                 }
-    
+
                 let mut context = format!("You have {} total emails in your inbox.\n", total_count.unwrap_or(0));
                 if !email_messages.is_empty() {
                     context.push_str(&format!("Here are the {} most recent emails:\n", email_messages.len()));
@@ -1114,14 +1114,14 @@ impl AiService {
     async fn cleanup_old_conversations(&self, conversations: &mut HashMap<String, Conversation>) {
         let now = chrono::Utc::now();
         let mut to_remove = Vec::new();
-        
+
         // Find conversations older than 24 hours
         for (id, convo) in conversations.iter() {
             if (now - convo.last_activity).num_hours() > 24 {
                 to_remove.push(id.clone());
             }
         }
-        
+
         // Remove old conversations
         for id in to_remove {
             conversations.remove(&id);

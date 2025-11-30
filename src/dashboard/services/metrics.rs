@@ -11,8 +11,6 @@ use sysinfo::{System, RefreshKind, CpuRefreshKind, MemoryRefreshKind};
 use log::{debug, info};
 use crate::dashboard::api::models::{DashboardStats, SystemHealth, SystemStatus};
 use std::collections::VecDeque;
-use crate::dashboard::services::DashboardState;
-use actix_web::web;
 
 // Store for metrics data
 #[derive(Debug)]

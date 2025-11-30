@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::sync::RwLock;
-use log::{debug, error, info, warn};
+use log::{debug, error, info};
 use thiserror::Error;
 
 #[derive(Error, Debug)]

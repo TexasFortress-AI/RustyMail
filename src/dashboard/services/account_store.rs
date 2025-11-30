@@ -4,12 +4,11 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use std::path::{Path, PathBuf};
-use std::fs;
 use std::io::Write;
 use tokio::fs as async_fs;
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
-use log::{info, debug, error, warn};
+use log::{info, debug, error};
 use thiserror::Error;
 
 #[derive(Error, Debug)]

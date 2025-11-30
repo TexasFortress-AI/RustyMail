@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 use serde_json::Value;
-use crate::mcp::{McpPortState, JsonRpcRequest, JsonRpcResponse};
+use crate::mcp::{McpPortState};
 #[cfg(test)] // Only import mockall for tests
 use mockall::automock;
 

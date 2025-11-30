@@ -18,7 +18,7 @@ use tokio::sync::Mutex as TokioMutex;
 use crate::{ // Group crate imports
     api::{
         auth::{ApiKeyStore, ApiScope, simple_validate_api_key},
-        errors::{ApiError, success_response, paginated_response}, // Use new error module
+        errors::{ApiError}, // Use new error module
     },
     config::Settings,
     // dashboard::api::errors::ApiError as DashboardApiError, // Now handled in errors.rs

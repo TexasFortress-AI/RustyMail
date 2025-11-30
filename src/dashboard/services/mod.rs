@@ -41,6 +41,7 @@ pub mod outbox_queue;
 pub mod outbox_worker;
 pub mod smtp;
 pub mod sync;
+pub mod jobs;
 
 // Define or import error types if they exist
 #[derive(Error, Debug)] pub enum MetricsError { #[error("Metrics collection failed: {0}")] CollectionFailed(String), #[error("Metrics storage error: {0}")] StorageError(String) }
@@ -68,6 +69,7 @@ pub use outbox_queue::{OutboxQueueService, OutboxQueueItem, OutboxStatus};
 pub use outbox_worker::{OutboxWorker};
 pub use smtp::{SmtpService, SendEmailRequest, SendEmailResponse, SmtpError};
 pub use sync::{SyncService};
+pub use jobs::{JobRecord, JobStatus};
 
 // Import the types that were causing privacy issues directly from their source
 // Removed unresolved ImapConfiguration import
@@ -80,6 +82,7 @@ use crate::dashboard::api::sse::SseManager;
 // Removed unused ImapClient import
 // use crate::imap::client::ImapClient;
 // Corrected factory path
+use dashmap::DashMap;
 use reqwest::Client;
 // Added missing imports
 use std::time::Duration;
@@ -106,6 +109,7 @@ pub struct DashboardState {
     pub config: web::Data<Settings>,
     pub imap_session_factory: CloneableImapSessionFactory,
     pub connection_pool: Arc<ConnectionPool>,
+    pub jobs: Arc<DashMap<String, JobRecord>>,
 }
 
 // Initialize the services
@@ -275,5 +279,6 @@ pub async fn init(
         config, // Pass the web::Data<Settings>
         imap_session_factory,
         connection_pool,
+        jobs: Arc::new(DashMap::new()),
     })
 }

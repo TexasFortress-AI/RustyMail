@@ -2,9 +2,11 @@
 // High-level MCP tools for AI-first email management
 // Exposes only 10-12 tools to reduce context pollution
 
+use crate::dashboard::DashboardState;
 use serde_json::{json, Value};
 use log::{debug, error};
-use crate::dashboard::services::DashboardState;
+use crate::dashboard::services::jobs::{JobRecord, JobStatus};
+use uuid::Uuid;
 
 /// Get high-level MCP tools in JSON-RPC format
 /// Returns only the essential tools for AI agents (browsing, drafting, configuration)
@@ -164,13 +166,9 @@ pub fn get_mcp_high_level_tools_jsonrpc_format() -> Vec<Value> {
                         "type": "string",
                         "description": "Folder to search in (optional, searches all if not provided)"
                     },
-                    "subject": {
+                    "query": {
                         "type": "string",
-                        "description": "Search by subject (partial match)"
-                    },
-                    "from_address": {
-                        "type": "string",
-                        "description": "Search by sender email address"
+                        "description": "Search query text (e.g., 'subject:hello', 'from:user@example.com')"
                     },
                     "limit": {
                         "type": "integer",
@@ -265,11 +263,24 @@ pub fn get_mcp_high_level_tools_jsonrpc_format() -> Vec<Value> {
                 "required": ["provider", "model_name"]
             }
         }),
+            json!({
+            "name": "get_workflow_status",
+            "description": "Get the status of a background workflow job",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "jobId": {
+                        "type": "string",
+                        "description": "The ID of the job to check"
+                    }
+                },
+                "required": ["jobId"]
+            }
+        }),
+
     ]
 }
 
-/// Execute a high-level MCP tool
-/// Routes tool calls to appropriate handlers
 pub async fn execute_high_level_tool(
     state: &DashboardState,
     tool_name: &str,
@@ -287,8 +298,10 @@ pub async fn execute_high_level_tool(
         }
         "set_drafting_model" => {
             handle_set_drafting_model(state, arguments).await
+        },
+        "get_workflow_status" => {
+            handle_get_workflow_status(state, arguments).await
         }
-
         // Browsing tools (delegate to existing handlers)
         "list_accounts" |
         "list_folders_hierarchical" |
@@ -465,41 +478,51 @@ async fn handle_set_drafting_model(state: &DashboardState, arguments: Value) -> 
     }
 }
 
-// === Agentic Tool Handlers ===
-
-async fn handle_process_email_instructions(state: &DashboardState, arguments: Value) -> Value {
-    use crate::dashboard::services::ai::agent_executor::AgentExecutor;
-
-    let pool = match state.cache_service.db_pool.as_ref() {
-        Some(p) => p,
+async fn handle_get_workflow_status(state: &DashboardState, arguments: Value) -> Value {
+    let job_id = match arguments.get("jobId").and_then(|v| v.as_str()) {
+        Some(id) => id,
         None => return json!({
             "success": false,
-            "error": "Database not initialized"
+            "error": "Missing required parameter: jobId"
         }),
+    };
+
+    match state.jobs.get(job_id) {
+        Some(job) => json!({
+            "success": true,
+            "data": &*job
+        }),
+        None => json!({
+            "success": false,
+            "error": "Job not found"
+        }),
+    }
+}
+async fn handle_process_email_instructions(state: &DashboardState, arguments: Value) -> Value {
+    use std::time::Instant;
+    use crate::dashboard::services::ai::agent_executor::AgentExecutor;
+
+    let job_id = Uuid::new_v4().to_string();
+
+    let pool = match state.cache_service.db_pool.as_ref() {
+        Some(p) => p.clone(),
+        None => return json!({ "success": false, "error": "Database not initialized" }),
     };
 
     let instruction = match arguments.get("instruction").and_then(|v| v.as_str()) {
-        Some(i) => i,
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: instruction"
-        }),
+        Some(i) => i.to_string(),
+        None => return json!({ "success": false, "error": "Missing required parameter: instruction" }),
     };
 
     let account_id = match arguments.get("account_id").and_then(|v| v.as_str()) {
-        Some(a) => a,
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: account_id"
-        }),
+        Some(a) => a.to_string(),
+        None => return json!({ "success": false, "error": "Missing required parameter: account_id" }),
     };
 
     debug!("Processing email instruction for account {}: {}", account_id, instruction);
 
-    // Get all low-level MCP tools for the sub-agent
     let low_level_tools = crate::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
 
-    // Also include drafting tools so the sub-agent can draft emails
     let drafting_tools = vec![
         json!({
             "name": "draft_reply",
@@ -531,33 +554,39 @@ async fn handle_process_email_instructions(state: &DashboardState, arguments: Va
         }),
     ];
 
-    // Combine all available tools
     let mut all_tools = low_level_tools;
     all_tools.extend(drafting_tools);
 
-    // Execute with agent executor, passing account_id for context
-    let executor = AgentExecutor::new();
-    match executor.execute_with_tools(pool, state, instruction, Some(account_id), all_tools).await {
-        Ok(result) => {
-            json!({
-                "success": result.success,
-                "data": {
-                    "response": result.final_response,
-                    "actions": result.actions_taken,
-                    "iterations": result.iterations,
-                    "error": result.error
-                }
-            })
-        }
-        Err(e) => {
-            error!("Failed to execute email instructions: {}", e);
-            json!({
-                "success": false,
-                "error": format!("Failed to execute: {}", e)
-            })
-        }
-    }
+    let state_clone = state.clone();
+    let job_id_clone = job_id.clone();
+
+    let job_record = JobRecord {
+        job_id: job_id.clone(),
+        status: JobStatus::Running,
+        started_at: Instant::now(),
+    };
+    state.jobs.insert(job_id.clone(), job_record);
+
+    tokio::spawn(async move {
+        let executor = AgentExecutor::new();
+        let result = executor.execute_with_tools(&pool, &state_clone, &instruction, Some(&account_id), all_tools).await;
+
+        let final_status = match result {
+            Ok(r) if r.success => JobStatus::Completed(json!(r)),
+            Ok(r) => JobStatus::Failed(r.error.unwrap_or_else(|| "Agent failed without a specific error message".to_string())),
+            Err(e) => JobStatus::Failed(e.to_string()),
+        };
+
+        state_clone.jobs.entry(job_id_clone).and_modify(|record| {
+            record.status = final_status;
+        });
+    });
+
+    json!({ "success": true, "status": "started", "jobId": job_id })
 }
+
+// === Agentic Tool Handlers ===
+
 
 async fn handle_draft_reply(state: &DashboardState, arguments: Value) -> Value {
     use crate::dashboard::services::ai::email_drafter::{EmailDrafter, DraftReplyRequest};
@@ -685,7 +714,6 @@ async fn handle_draft_reply(state: &DashboardState, arguments: Value) -> Value {
         }
     }
 }
-
 async fn handle_draft_email(state: &DashboardState, arguments: Value) -> Value {
     use crate::dashboard::services::ai::email_drafter::{EmailDrafter, DraftEmailRequest};
 

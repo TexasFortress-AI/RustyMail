@@ -7,7 +7,7 @@ use actix_web::{web, App, HttpServer};
 use actix_cors::Cors;
 use rustymail::config::Settings;
 // Remove direct ImapClient import if only used for connect check, keep if factory needs it explicitly
-// use rustymail::imap::ImapClient; 
+// use rustymail::imap::ImapClient;
 use rustymail::api::rest::{AppState, configure_rest_service};
 use rustymail::api::auth::ApiKeyStore;
 use std::sync::Arc;
@@ -25,7 +25,7 @@ use rustymail::dashboard::api::SseManager;
 use rustymail::api::openapi_docs;
 // --- Add imports for factory ---
 use rustymail::imap::client::ImapClient; // Needed for the factory closure
-// --- End imports for factory --- 
+// --- End imports for factory ---
 // Remove non-existent imports
 // use rustymail::mcp::adapters::stdio::run_stdio_handler;
 // use rustymail::mcp::handler::JsonRpcHandler;
@@ -165,10 +165,10 @@ async fn main() -> std::io::Result<()> {
     // let tool_registry_rest = create_mcp_tool_registry(imap_client_rest.clone());
     // info!("MCP Tool Registry created.");
 
-    // --- Create MCP Handler --- 
+    // --- Create MCP Handler ---
     // TODO: Implement SdkMcpAdapter::new properly
     let mcp_handler: Arc<dyn McpHandler> = Arc::new(
-        SdkMcpAdapter::new_placeholder()
+        SdkMcpAdapter::new(imap_session_factory.clone())
             .expect("SdkMcpAdapter initialization failed")
     );
     info!("MCP Handler (SdkMcpAdapter) created.");
@@ -190,7 +190,7 @@ async fn main() -> std::io::Result<()> {
     };
     info!("Application state initialized.");
 
-    // --- Dashboard Setup (remains largely the same, but might need factory later) --- 
+    // --- Dashboard Setup (remains largely the same, but might need factory later) ---
     let config = web::Data::new(settings.clone());
     info!("Dashboard configuration initialized.");
 
@@ -274,7 +274,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(web::Data::new(sse_manager.clone()))      // Dashboard SSE Manager
             .wrap(cors)
             .wrap(actix_web::middleware::Logger::default())
-            .wrap(dashboard::api::middleware::Metrics) 
+            .wrap(dashboard::api::middleware::Metrics)
             // Configure routes
             .configure(configure_rest_service)                // RustyMail REST API
             .configure(openapi_docs::configure_openapi)       // OpenAPI/Swagger documentation
@@ -289,13 +289,13 @@ async fn main() -> std::io::Result<()> {
                     let static_path = std::path::Path::new(path_str);
                     if static_path.exists() {
                         info!("Serving dashboard static files from: {}", path_str);
-                        let owned_path_str_for_handler = path_str.clone(); 
+                        let owned_path_str_for_handler = path_str.clone();
                         app = app.service(
                             actix_files::Files::new("/dashboard", static_path)
                                 .index_file("index.html")
                                 .default_handler(
-                                    web::get().to(move || { 
-                                        let path_for_async = owned_path_str_for_handler.clone(); 
+                                    web::get().to(move || {
+                                        let path_for_async = owned_path_str_for_handler.clone();
                                         async move {
                                             actix_files::NamedFile::open_async(format!("{}/index.html", path_for_async)).await
                                         }
@@ -318,7 +318,7 @@ async fn main() -> std::io::Result<()> {
     .workers(1)  // TEMPORARY: Use single worker to debug memory leak
     .run();
 
-    // Spawn the Dashboard SSE broadcast task 
+    // Spawn the Dashboard SSE broadcast task
     info!("Spawning Dashboard SSE broadcast task...");
     tokio::spawn(async move {
         sse_manager_clone_for_task.start_stats_broadcast(dashboard_state_clone_for_task).await;
@@ -327,4 +327,5 @@ async fn main() -> std::io::Result<()> {
     // Await the server
     info!("Server run loop starting.");
     server.await
-} 
+}
+

@@ -7,83 +7,40 @@
 ///
 /// This binary acts as a protocol translation layer between line-oriented JSON-RPC-over-stdin/stdout
 /// and HTTP-based JSON-RPC calls to the RustyMail MCP backend server.
-///
-/// Usage:
-///   rustymail-mcp-stdio [OPTIONS]
-///
-/// Options:
-///   --backend-url <URL>  Backend MCP server URL (from MCP_BACKEND_URL env var)
-///   --timeout <SECONDS>  Request timeout in seconds (default: 30)
-///   --help              Show this help message
-///
-/// Environment variables:
-///   MCP_BACKEND_URL     Backend MCP server URL (overrides default)
-///   MCP_TIMEOUT         Request timeout in seconds
-
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Cli {
+    /// Backend MCP server URL.
+    #[arg(long, env = "MCP_BACKEND_URL")]
+    backend_url: String,
+
+    /// Request timeout in seconds.
+    #[arg(long, env = "MCP_TIMEOUT", default_value = "30")]
+    timeout: u64,
+
+    /// Path to the configuration file.
+    #[arg(short, long)]
+    config: Option<String>,
+}
 
 #[tokio::main]
 async fn main() {
-    // Parse command-line arguments FIRST
-    let args: Vec<String> = std::env::args().collect();
-    let mut backend_url: Option<String> = None;
-    let mut timeout_secs: Option<u64> = None;
-
-    // Parse command-line arguments
-    let mut i = 1;
-    while i < args.len() {
-        match args[i].as_str() {
-            "--backend-url" => {
-                if i + 1 < args.len() {
-                    backend_url = Some(args[i + 1].clone());
-                    i += 2;
-                } else {
-                    eprintln!("Error: --backend-url requires a value");
-                    std::process::exit(1);
-                }
-            }
-            "--timeout" => {
-                if i + 1 < args.len() {
-                    timeout_secs = match args[i + 1].parse::<u64>() {
-                        Ok(t) => Some(t),
-                        Err(_) => {
-                            eprintln!("Error: --timeout must be a number");
-                            std::process::exit(1);
-                        }
-                    };
-                    i += 2;
-                } else {
-                    eprintln!("Error: --timeout requires a value");
-                    std::process::exit(1);
-                }
-            }
-            "--help" => {
-                print_help();
-                std::process::exit(0);
-            }
-            arg => {
-                eprintln!("Error: Unknown argument: {}", arg);
-                print_help();
-                std::process::exit(1);
-            }
-        }
-    }
-
-    // Now read environment variables as defaults if not set via command-line
-    let backend_url = backend_url.or_else(|| std::env::var("MCP_BACKEND_URL").ok())
-        .expect("MCP_BACKEND_URL must be set via environment variable or --backend-url flag");
-    let timeout_secs = timeout_secs.or_else(|| {
-        std::env::var("MCP_TIMEOUT").ok().and_then(|s| s.parse::<u64>().ok())
-    }).unwrap_or(30); // Default to 30 seconds if neither env var nor flag is set
+    let cli = Cli::parse();
 
     eprintln!("MCP stdio proxy starting...");
-    eprintln!("Backend URL: {}", backend_url);
-    eprintln!("Timeout: {}s", timeout_secs);
+    eprintln!("Backend URL: {}", cli.backend_url);
+    eprintln!("Timeout: {}s", cli.timeout);
+    if let Some(config_path) = &cli.config {
+        eprintln!("Config file: {}", config_path);
+    }
 
     // Create HTTP client with timeout
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(timeout_secs))
+        .timeout(std::time::Duration::from_secs(cli.timeout))
         .build()
         .expect("Failed to create HTTP client");
 
@@ -126,7 +83,7 @@ async fn main() {
                         }
 
                         // Forward request to backend
-                        match client.post(&backend_url).json(&request).send().await {
+                        match client.post(&cli.backend_url).json(&request).send().await {
                             Ok(response) => {
                                 let status = response.status();
 
@@ -209,26 +166,4 @@ async fn write_response(stdout: &mut tokio::io::Stdout, response: &str) {
     if let Err(e) = stdout.flush().await {
         eprintln!("Error flushing stdout: {}", e);
     }
-}
-
-/// Print help message
-fn print_help() {
-    println!("MCP stdio proxy - JSON-RPC proxy for RustyMail MCP backend");
-    println!();
-    println!("Usage:");
-    println!("  rustymail-mcp-stdio [OPTIONS]");
-    println!();
-    println!("Options:");
-    println!("  --backend-url <URL>  Backend MCP server URL (from MCP_BACKEND_URL env var)");
-    println!("  --timeout <SECONDS>  Request timeout in seconds (default: 30)");
-    println!("  --help              Show this help message");
-    println!();
-    println!("Environment variables:");
-    println!("  MCP_BACKEND_URL     Backend MCP server URL (overrides default)");
-    println!("  MCP_TIMEOUT         Request timeout in seconds");
-    println!();
-    println!("Protocol:");
-    println!("  Reads line-delimited JSON-RPC requests from stdin");
-    println!("  Writes line-delimited JSON-RPC responses to stdout");
-    println!("  Logs errors and warnings to stderr");
 }

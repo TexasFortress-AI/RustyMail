@@ -935,73 +935,73 @@ impl CacheService {
 
     /// Search cached emails for a specific account
     pub async fn search_cached_emails_for_account(&self, folder_name: &str, query: &str, limit: usize, account_id: &str) -> Result<Vec<CachedEmail>, CacheError> {
-        let folder = match self.get_folder_from_cache_for_account(folder_name, account_id).await {
-            Some(f) => f,
-            None => return Ok(Vec::new()),
-        };
-
         let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
-
         let search_pattern = format!("%{}%", query);
 
-        let emails = sqlx::query_as::<_, (
-            i64, i64, i64, Option<String>, Option<String>, Option<String>, Option<String>,
-            String, String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>,
-            String, Option<String>, Option<String>, DateTime<Utc>
-        )>(
+        let mut qb = sqlx::QueryBuilder::new(
             r#"
             SELECT DISTINCT e.id, e.folder_id, e.uid, e.message_id, e.subject, e.from_address, e.from_name,
                    e.to_addresses, e.cc_addresses, e.date, e.internal_date, e.size,
                    e.flags, e.body_text, e.body_html, e.cached_at
             FROM emails e
-            LEFT JOIN attachment_metadata a ON e.message_id = a.message_id AND a.account_email = ?
-            WHERE e.folder_id = ?
-            AND (e.subject LIKE ? OR e.from_address LIKE ? OR e.from_name LIKE ?
-                 OR e.body_text LIKE ? OR e.body_html LIKE ? OR a.filename LIKE ?)
-            ORDER BY COALESCE(e.date, e.internal_date) DESC
-            LIMIT ?
+            LEFT JOIN attachment_metadata a ON e.message_id = a.message_id AND a.account_email =
             "#
-        )
-        .bind(account_id)
-        .bind(folder.id)
-        .bind(&search_pattern)
-        .bind(&search_pattern)
-        .bind(&search_pattern)
-        .bind(&search_pattern)
-        .bind(&search_pattern)
-        .bind(&search_pattern)
-        .bind(limit as i64)
-        .fetch_all(pool)
-        .await?;
+        );
+        qb.push_bind(account_id);
+        qb.push(r#" WHERE (e.subject LIKE "#);
+        qb.push_bind(&search_pattern);
+        qb.push(r#" OR e.from_address LIKE "#);
+        qb.push_bind(&search_pattern);
+        qb.push(r#" OR e.from_name LIKE "#);
+        qb.push_bind(&search_pattern);
+        qb.push(r#" OR e.body_text LIKE "#);
+        qb.push_bind(&search_pattern);
+        qb.push(r#" OR e.body_html LIKE "#);
+        qb.push_bind(&search_pattern);
+        qb.push(r#" OR a.filename LIKE "#);
+        qb.push_bind(&search_pattern);
+        qb.push(r#") "#);
+
+        if !folder_name.is_empty() {
+            let folder = match self.get_folder_from_cache_for_account(folder_name, account_id).await {
+                Some(f) => f,
+                None => return Ok(Vec::new()),
+            };
+            qb.push(" AND e.folder_id = ");
+            qb.push_bind(folder.id);
+        }
+
+        qb.push(r#" ORDER BY COALESCE(e.date, e.internal_date) DESC LIMIT "#);
+        qb.push_bind(limit as i64);
+
+        let rows = qb.build().fetch_all(pool).await?;
 
         let mut cached_emails = Vec::new();
-        for (id, folder_id, uid, message_id, subject, from_address, from_name,
-             to_json, cc_json, date, internal_date, size, flags_json,
-             body_text, body_html, cached_at) in emails {
+        for row in rows {
+            let to_addresses_str: String = row.get("to_addresses");
+            let cc_addresses_str: String = row.get("cc_addresses");
+            let flags_str: String = row.get("flags");
 
-            let to_addresses: Vec<String> = serde_json::from_str(&to_json).unwrap_or_default();
-            let cc_addresses: Vec<String> = serde_json::from_str(&cc_json).unwrap_or_default();
-            let flags: Vec<String> = serde_json::from_str(&flags_json).unwrap_or_default();
-
-            cached_emails.push(CachedEmail {
-                id,
-                folder_id,
-                uid: uid as u32,
-                message_id,
-                subject,
-                from_address,
-                from_name,
-                to_addresses,
-                cc_addresses,
-                date,
-                internal_date,
-                size,
-                flags,
-                body_text,
-                body_html,
-                cached_at,
-                has_attachments: false, // Not checking attachments in search
-            });
+            let cached_email = CachedEmail {
+                id: row.get("id"),
+                folder_id: row.get("folder_id"),
+                uid: row.get::<i64, _>("uid") as u32,
+                message_id: row.get("message_id"),
+                subject: row.get("subject"),
+                from_address: row.get("from_address"),
+                from_name: row.get("from_name"),
+                to_addresses: serde_json::from_str(&to_addresses_str).unwrap_or_default(),
+                cc_addresses: serde_json::from_str(&cc_addresses_str).unwrap_or_default(),
+                date: row.get("date"),
+                internal_date: row.get("internal_date"),
+                size: row.get("size"),
+                flags: serde_json::from_str(&flags_str).unwrap_or_default(),
+                body_text: row.get("body_text"),
+                body_html: row.get("body_html"),
+                cached_at: row.get("cached_at"),
+                has_attachments: false, // This was already the case
+            };
+            cached_emails.push(cached_email);
         }
 
         Ok(cached_emails)

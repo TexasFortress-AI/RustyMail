@@ -209,7 +209,7 @@ impl OutboxWorker {
         drop(account_service);
 
         // Create IMAP session for this specific account
-        let mut session = self.imap_factory.create_session_for_account(&account).await?;
+        let session = self.imap_factory.create_session_for_account(&account).await?;
 
         // Select folder
         session.select_folder(folder).await?;
@@ -235,7 +235,7 @@ impl OutboxWorker {
         drop(account_service);
 
         // Create IMAP session for this specific account
-        let mut session = self.imap_factory.create_session_for_account(&account).await?;
+        let session = self.imap_factory.create_session_for_account(&account).await?;
 
         // Select Outbox folder
         session.select_folder("INBOX.Outbox").await?;

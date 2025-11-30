@@ -24,11 +24,13 @@ use std::convert::TryInto;
 
 // Use our MCP types
 use crate::mcp::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError, McpHandler};
-use crate::mcp_port::{McpTool, create_mcp_tool_registry};
+use crate::mcp_port::{create_mcp_tool_registry};
 
 // Import session types
 use tokio::sync::mpsc::UnboundedSender;
 use crate::imap::error::ImapError;
+
+
 
 // --- RustyMail Service Implementation ---
 #[derive(Clone)]
@@ -40,6 +42,9 @@ pub struct RustyMailService {
     // Tool registry containing all our MCP tools
     pub tool_registry: crate::mcp_port::McpToolRegistry,
 }
+
+
+
 
 impl RustyMailService {
     pub fn new(session_factory: CloneableImapSessionFactory) -> Self {
@@ -169,19 +174,8 @@ impl SdkMcpAdapter {
         Ok(Self { service })
     }
 
-    /// Temporary constructor that creates a new adapter with a placeholder factory
-    /// until the proper factory can be injected
-    pub fn new_placeholder() -> Result<Self, Box<dyn std::error::Error>> {
-        info!("Initializing SdkMcpAdapter with placeholder factory...");
-        // This is a placeholder. In production, a real factory should be provided.
-        let factory = CloneableImapSessionFactory::new(
-            Box::new(|| Box::pin(async {
-                Err(ImapError::Connection("Placeholder factory - not implemented".to_string()))
-            }))
-        );
-        let service = Arc::new(RustyMailService::new(factory));
-        Ok(Self { service })
-    }
+
+
 }
 
 #[async_trait]
