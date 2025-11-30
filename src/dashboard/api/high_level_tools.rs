@@ -263,18 +263,47 @@ pub fn get_mcp_high_level_tools_jsonrpc_format() -> Vec<Value> {
                 "required": ["provider", "model_name"]
             }
         }),
-            json!({
-            "name": "get_workflow_status",
-            "description": "Get the status of a background workflow job",
+        // === Job Management Tools (3) ===
+        json!({
+            "name": "list_jobs",
+            "description": "List all background jobs with their current status. Use this to discover job IDs for polling.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "jobId": {
+                    "status_filter": {
+                        "type": "string",
+                        "description": "Optional filter: 'running', 'completed', or 'failed'"
+                    }
+                },
+                "required": []
+            }
+        }),
+        json!({
+            "name": "get_job_status",
+            "description": "Get the status of a specific background job by ID",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "job_id": {
                         "type": "string",
                         "description": "The ID of the job to check"
                     }
                 },
-                "required": ["jobId"]
+                "required": ["job_id"]
+            }
+        }),
+        json!({
+            "name": "cancel_job",
+            "description": "Cancel a running background job and return its last status",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "job_id": {
+                        "type": "string",
+                        "description": "The ID of the job to cancel"
+                    }
+                },
+                "required": ["job_id"]
             }
         }),
 
@@ -299,8 +328,15 @@ pub async fn execute_high_level_tool(
         "set_drafting_model" => {
             handle_set_drafting_model(state, arguments).await
         },
-        "get_workflow_status" => {
-            handle_get_workflow_status(state, arguments).await
+        // Job management tools
+        "list_jobs" => {
+            handle_list_jobs(state, arguments).await
+        }
+        "get_job_status" => {
+            handle_get_job_status(state, arguments).await
+        }
+        "cancel_job" => {
+            handle_cancel_job(state, arguments).await
         }
         // Browsing tools (delegate to existing handlers)
         "list_accounts" |
@@ -478,20 +514,91 @@ async fn handle_set_drafting_model(state: &DashboardState, arguments: Value) -> 
     }
 }
 
-async fn handle_get_workflow_status(state: &DashboardState, arguments: Value) -> Value {
-    let job_id = match arguments.get("jobId").and_then(|v| v.as_str()) {
+// === Job Management Tool Handlers ===
+
+async fn handle_list_jobs(state: &DashboardState, arguments: Value) -> Value {
+    let status_filter = arguments.get("status_filter").and_then(|v| v.as_str());
+
+    let jobs: Vec<_> = state.jobs.iter()
+        .filter(|entry| {
+            match status_filter {
+                Some("running") => matches!(entry.value().status, JobStatus::Running),
+                Some("completed") => matches!(entry.value().status, JobStatus::Completed(_)),
+                Some("failed") => matches!(entry.value().status, JobStatus::Failed(_)),
+                _ => true, // No filter, return all
+            }
+        })
+        .map(|entry| {
+            let job = entry.value();
+            json!({
+                "job_id": job.job_id,
+                "status": &job.status,
+                "elapsed_seconds": job.started_at.elapsed().as_secs()
+            })
+        })
+        .collect();
+
+    json!({
+        "success": true,
+        "data": {
+            "jobs": jobs,
+            "total": jobs.len()
+        }
+    })
+}
+
+async fn handle_get_job_status(state: &DashboardState, arguments: Value) -> Value {
+    let job_id = match arguments.get("job_id").and_then(|v| v.as_str()) {
         Some(id) => id,
         None => return json!({
             "success": false,
-            "error": "Missing required parameter: jobId"
+            "error": "Missing required parameter: job_id"
         }),
     };
 
     match state.jobs.get(job_id) {
         Some(job) => json!({
             "success": true,
-            "data": &*job
+            "data": {
+                "job_id": job.job_id,
+                "status": &job.status,
+                "elapsed_seconds": job.started_at.elapsed().as_secs()
+            }
         }),
+        None => json!({
+            "success": false,
+            "error": "Job not found"
+        }),
+    }
+}
+
+async fn handle_cancel_job(state: &DashboardState, arguments: Value) -> Value {
+    let job_id = match arguments.get("job_id").and_then(|v| v.as_str()) {
+        Some(id) => id,
+        None => return json!({
+            "success": false,
+            "error": "Missing required parameter: job_id"
+        }),
+    };
+
+    // Remove the job and get its last status
+    match state.jobs.remove(job_id) {
+        Some((_, job)) => {
+            let was_running = matches!(job.status, JobStatus::Running);
+            json!({
+                "success": true,
+                "data": {
+                    "job_id": job.job_id,
+                    "last_status": &job.status,
+                    "was_running": was_running,
+                    "message": if was_running {
+                        "Job cancelled (note: async task may still complete in background)"
+                    } else {
+                        "Job removed from job list"
+                    }
+                }
+            })
+        },
         None => json!({
             "success": false,
             "error": "Job not found"

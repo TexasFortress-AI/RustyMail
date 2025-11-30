@@ -11,8 +11,17 @@ use crate::dashboard::services::DashboardState;
 use super::model_config::{get_model_config, ModelConfiguration};
 use super::tool_converter::{mcp_to_ollama_tools, parse_ollama_tool_call};
 
-/// Maximum iterations to prevent infinite loops
-const MAX_ITERATIONS: usize = 10;
+/// Default maximum iterations to prevent infinite loops
+/// Can be overridden via AGENT_MAX_ITERATIONS environment variable
+const DEFAULT_MAX_ITERATIONS: usize = 1000;
+
+/// Get max iterations from environment or use default
+fn get_max_iterations() -> usize {
+    std::env::var("AGENT_MAX_ITERATIONS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_MAX_ITERATIONS)
+}
 
 /// Agent execution result
 #[derive(Debug, Serialize, Deserialize)]
@@ -85,8 +94,9 @@ impl AgentExecutor {
         loop {
             iteration += 1;
 
-            if iteration > MAX_ITERATIONS {
-                warn!("Reached maximum iterations ({})", MAX_ITERATIONS);
+            let max_iterations = get_max_iterations();
+            if iteration > max_iterations {
+                warn!("Reached maximum iterations ({})", max_iterations);
                 return Ok(AgentResult {
                     success: false,
                     final_response: "Task exceeded maximum iterations".to_string(),
