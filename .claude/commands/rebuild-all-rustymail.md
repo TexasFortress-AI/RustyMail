@@ -83,21 +83,19 @@ echo "All build artifacts cleaned!"
 ### 3. BUILD EVERYTHING (Debug + Release + Tests)
 
 ```bash
-# Build backend in DEBUG mode
-echo "Building backend (debug)..."
-cargo build --bin rustymail-server
+# Build ALL binaries in DEBUG mode
+echo "Building all binaries (debug)..."
+cargo build
 
-# Build backend in RELEASE mode
-echo "Building backend (release)..."
-cargo build --release --bin rustymail-server
+# Build ALL binaries in RELEASE mode
+echo "Building all binaries (release)..."
+cargo build --release
 
-# Build MCP stdio adapter in DEBUG mode
-echo "Building MCP stdio (debug)..."
-cargo build --bin rustymail-mcp-stdio
-
-# Build MCP stdio adapter in RELEASE mode
-echo "Building MCP stdio (release)..."
-cargo build --release --bin rustymail-mcp-stdio
+# This builds:
+# - rustymail-server (main backend server)
+# - rustymail-mcp-stdio (thin MCP stdio proxy)
+# - rustymail-mcp-stdio-high-level (high-level MCP stdio proxy)
+# - rustymail-sync (separate sync process for memory reclamation)
 
 # Build ALL tests (don't run yet, just compile)
 echo "Building tests..."
@@ -135,7 +133,7 @@ echo "✅ All tests passed!"
 mkdir -p logs
 
 # Start all services with PM2 (reads ports from .env)
-pm2 start ecosystem.config.js
+pm2 start frontend/rustymail-app-main/ecosystem.config.cjs
 
 # Save PM2 process list
 pm2 save
@@ -219,13 +217,20 @@ pm2 resurrect
 - **Port**: `DASHBOARD_PORT` from `.env`
 - **API URL**: Proxies to backend via `VITE_API_URL`
 
-### MCP Stdio Adapter
-- **Binary**: `target/release/rustymail-mcp-stdio`
-- **Purpose**: Thin proxy for MCP protocol over stdio
+### MCP Stdio Adapters
+- **Binary**: `target/release/rustymail-mcp-stdio` (thin proxy)
+- **Binary**: `target/release/rustymail-mcp-stdio-high-level` (high-level proxy)
+- **Purpose**: MCP protocol adapters over stdio for Claude Code integration
 - **Config**: Inherits environment from parent process
 
+### Sync Process
+- **Binary**: `target/release/rustymail-sync`
+- **Purpose**: Standalone sync process for memory reclamation
+- **How it works**: Main server spawns this binary periodically. When it exits, OS reclaims ALL memory.
+- **Config**: Reads `CACHE_DATABASE_URL` from environment, uses `data/.sync.lock` for single-instance locking
+
 ### PM2 Configuration
-- **File**: `ecosystem.config.js`
+- **File**: `frontend/rustymail-app-main/ecosystem.config.cjs`
 - **No hardcoded ports**: Relies on apps reading from `.env`
 - **Logs**: `logs/backend-*.log`, `logs/frontend-*.log`
 - **Auto-restart**: Up to 10 restarts, minimum 10s uptime
