@@ -2536,6 +2536,7 @@ pub async fn execute_mcp_tool_inner(
                     let job = entry.value();
                     serde_json::json!({
                         "job_id": job.job_id,
+                        "instruction": job.instruction,
                         "status": &job.status,
                         "elapsed_seconds": job.started_at.elapsed().as_secs()
                     })
@@ -2566,6 +2567,7 @@ pub async fn execute_mcp_tool_inner(
                     "success": true,
                     "data": {
                         "job_id": job.job_id,
+                        "instruction": job.instruction,
                         "status": &job.status,
                         "elapsed_seconds": job.started_at.elapsed().as_secs()
                     },

@@ -22,6 +22,7 @@ pub struct JobRecord {
     pub job_id: String,
     pub status: JobStatus,
     pub started_at: Instant,
+    pub instruction: Option<String>,
 }
 
 // Custom Serialize implementation for JobRecord to control output
@@ -31,9 +32,10 @@ impl Serialize for JobRecord {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("JobRecord", 2)?;
+        let mut state = serializer.serialize_struct("JobRecord", 3)?;
         state.serialize_field("job_id", &self.job_id)?;
         state.serialize_field("status", &self.status)?;
+        state.serialize_field("instruction", &self.instruction)?;
         state.end()
     }
 }

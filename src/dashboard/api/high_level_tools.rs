@@ -532,6 +532,7 @@ async fn handle_list_jobs(state: &DashboardState, arguments: Value) -> Value {
             let job = entry.value();
             json!({
                 "job_id": job.job_id,
+                "instruction": job.instruction,
                 "status": &job.status,
                 "elapsed_seconds": job.started_at.elapsed().as_secs()
             })
@@ -561,6 +562,7 @@ async fn handle_get_job_status(state: &DashboardState, arguments: Value) -> Valu
             "success": true,
             "data": {
                 "job_id": job.job_id,
+                "instruction": job.instruction,
                 "status": &job.status,
                 "elapsed_seconds": job.started_at.elapsed().as_secs()
             }
@@ -671,10 +673,15 @@ async fn handle_process_email_instructions(state: &DashboardState, arguments: Va
         job_id: job_id.clone(),
         status: JobStatus::Running,
         started_at: Instant::now(),
+        instruction: Some(instruction.clone()),
     };
     state.jobs.insert(job_id.clone(), job_record);
 
-    tokio::spawn(async move {
+    // Spawn the job with panic handling
+    let state_for_panic = state.clone();
+    let job_id_for_panic = job_id.clone();
+
+    let handle = tokio::spawn(async move {
         let executor = AgentExecutor::new();
         let result = executor.execute_with_tools(&pool, &state_clone, &instruction, Some(&account_id), all_tools).await;
 
@@ -687,6 +694,23 @@ async fn handle_process_email_instructions(state: &DashboardState, arguments: Va
         state_clone.jobs.entry(job_id_clone).and_modify(|record| {
             record.status = final_status;
         });
+    });
+
+    // Monitor the spawned task for panics
+    tokio::spawn(async move {
+        if let Err(join_error) = handle.await {
+            let error_msg = if join_error.is_panic() {
+                "Job task panicked unexpectedly".to_string()
+            } else if join_error.is_cancelled() {
+                "Job task was cancelled".to_string()
+            } else {
+                format!("Job task failed: {}", join_error)
+            };
+            error!("Job {} failed: {}", job_id_for_panic, error_msg);
+            state_for_panic.jobs.entry(job_id_for_panic).and_modify(|record| {
+                record.status = JobStatus::Failed(error_msg);
+            });
+        }
     });
 
     json!({ "success": true, "status": "started", "jobId": job_id })

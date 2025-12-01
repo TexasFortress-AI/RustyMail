@@ -21,7 +21,7 @@ use std::task::{Context, Poll};
 use uuid::Uuid;
 use actix_web::web::Bytes;
 
-use crate::dashboard::services::{DashboardState, JobRecord, JobStatus};
+use crate::dashboard::services::DashboardState;
 
 
 
@@ -291,50 +291,27 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, va
             }
 
 
+                // process_email_instructions is handled by execute_high_level_tool
+                // which manages its own background job. Just delegate to it directly.
                 if tool_name == "process_email_instructions" {
-                let job_id = Uuid::new_v4().to_string();
-                let state_clone = state.clone();
-                let job_id_for_response = job_id.clone();
-
-                tokio::spawn(async move {
-                    let job_record = JobRecord {
-                        job_id: job_id.clone(),
-                        status: JobStatus::Running,
-                        started_at: Instant::now(),
-                    };
-                    state_clone.jobs.insert(job_id.clone(), job_record);
-
                     let result = crate::dashboard::api::high_level_tools::execute_high_level_tool(
-                        state_clone.as_ref(),
+                        state.as_ref(),
                         "process_email_instructions",
-                        tool_params.clone(),
+                        tool_params.clone()
                     ).await;
 
-                    let final_status = match result.get("success").and_then(|v| v.as_bool()) {
-                        Some(true) => JobStatus::Completed(result.get("data").cloned().unwrap_or(json!(null))),
-                        _ => JobStatus::Failed(result.get("error").and_then(|v| v.as_str()).unwrap_or("Unknown error").to_string()),
-                    };
-
-                    if let Some(mut job) = state_clone.jobs.get_mut(&job_id) {
-                        job.status = final_status;
-                    }
-                });
-
-                let response = json!({
-                    "jsonrpc": "2.0",
-                    "id": request_id,
-                    "result": {
-                        "content": [{
-                            "type": "text",
-                            "text": json!({
-                                "status": "started",
-                                "jobId": job_id_for_response
-                            }).to_string()
-                        }]
-                    }
-                });
-                return Some(response);
-            }
+                    let response = json!({
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "result": {
+                            "content": [{
+                                "type": "text",
+                                "text": serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string())
+                            }]
+                        }
+                    });
+                    return Some(response);
+                }
 
 
             // Call the appropriate tool execution logic based on variant
