@@ -41,7 +41,56 @@ export interface DraftReplyResponse {
   error?: string;
 }
 
+export interface SuggestInstructionsRequest {
+  subject: string;
+  from: string;
+  body_preview: string;
+}
+
+export interface SuggestInstructionsResponse {
+  success: boolean;
+  instruction?: string;
+  error?: string;
+}
+
 export const emailsApi = {
+  // Suggest reply instructions based on email content
+  suggestReplyInstructions: async (request: SuggestInstructionsRequest): Promise<SuggestInstructionsResponse> => {
+    const url = `${API_BASE}/chatbot/query`;
+
+    const prompt = `Based on this email, suggest a brief instruction (1-2 sentences) for how to reply. Just provide the instruction, nothing else.
+
+From: ${request.from}
+Subject: ${request.subject}
+Body preview: ${request.body_preview.substring(0, 500)}`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': API_KEY,
+        },
+        body: JSON.stringify({
+          query: prompt,
+          enabled_tools: [], // No tools needed, just text generation
+        }),
+      });
+
+      if (!response.ok) {
+        return { success: false, error: 'Failed to generate suggestion' };
+      }
+
+      const data = await response.json();
+      return {
+        success: true,
+        instruction: data.text || 'Write a professional reply',
+      };
+    } catch {
+      return { success: false, error: 'Failed to generate suggestion' };
+    }
+  },
+
   // Draft a reply email using AI
   draftReply: async (request: DraftReplyRequest): Promise<DraftReplyResponse> => {
     const url = `${API_BASE}/mcp/execute?variant=high-level`;
@@ -55,10 +104,10 @@ export const emailsApi = {
       body: JSON.stringify({
         tool: 'draft_reply',
         parameters: {
-          email_uid: request.email_uid.toString(),
+          email_uid: request.email_uid,
           folder: request.folder,
           account_id: request.account_id,
-          instructions: request.instructions,
+          instruction: request.instructions,
         },
       }),
     });

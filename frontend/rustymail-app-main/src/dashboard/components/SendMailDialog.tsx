@@ -53,6 +53,8 @@ export function SendMailDialog({
   const [sending, setSending] = useState(false);
   const [sendingPhase, setSendingPhase] = useState<'idle' | 'preparing' | 'sending'>('idle');
   const [drafting, setDrafting] = useState(false);
+  const [aiInstructions, setAiInstructions] = useState('');
+  const [loadingInstructions, setLoadingInstructions] = useState(false);
 
   const [formData, setFormData] = useState<SendEmailRequest>({
     to: [],
@@ -107,6 +109,7 @@ export function SendMailDialog({
       setToInput('');
       setCcInput('');
       setBccInput('');
+      setAiInstructions('');
       setFormData({
         to: [],
         cc: [],
@@ -117,6 +120,35 @@ export function SendMailDialog({
       });
     }
   }, [open, mode, originalEmail]);
+
+  // Fetch AI-generated instructions when dialog opens in reply mode
+  useEffect(() => {
+    if (open && mode === 'reply' && originalEmail && emailContext) {
+      const fetchInstructions = async () => {
+        setLoadingInstructions(true);
+        setAiInstructions('');
+        try {
+          const result = await emailsApi.suggestReplyInstructions({
+            subject: originalEmail.subject || '',
+            from: originalEmail.from_name || originalEmail.from_address || 'Unknown',
+            body_preview: originalEmail.body_text || '',
+          });
+          if (result.success && result.instruction) {
+            setAiInstructions(result.instruction);
+          } else {
+            setAiInstructions('Write a professional reply');
+          }
+        } catch {
+          setAiInstructions('Write a professional reply');
+        } finally {
+          setLoadingInstructions(false);
+        }
+      };
+      fetchInstructions();
+    } else if (!open) {
+      setAiInstructions('');
+    }
+  }, [open, mode, originalEmail, emailContext]);
 
   // Handle AI draft for reply
   const handleAiDraft = async () => {
@@ -140,6 +172,7 @@ export function SendMailDialog({
         email_uid: emailContext.uid,
         folder: emailContext.folder,
         account_id: accountEmail,
+        instructions: aiInstructions || undefined,
       });
 
       if (response.success && response.data?.draft) {
@@ -340,6 +373,28 @@ export function SendMailDialog({
                 required
               />
             </div>
+
+            {mode === 'reply' && emailContext && (
+              <div className="space-y-2">
+                <Label htmlFor="aiInstructions" className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4" />
+                  AI Instructions
+                  {loadingInstructions && (
+                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
+                  )}
+                </Label>
+                <Input
+                  id="aiInstructions"
+                  value={aiInstructions}
+                  onChange={(e) => setAiInstructions(e.target.value)}
+                  placeholder={loadingInstructions ? 'Generating suggestion...' : 'e.g., Politely decline, Accept and ask about timeline...'}
+                  disabled={loadingInstructions}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Edit these instructions to customize how the AI drafts your reply
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="body">Message *</Label>
