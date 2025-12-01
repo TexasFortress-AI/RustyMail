@@ -218,6 +218,11 @@ impl OutboxWorker {
         let flags = vec!["\\Seen".to_string()];
         session.append(folder, &item.raw_email_bytes, &flags).await?;
 
+        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        if let Err(e) = session.logout().await {
+            warn!("Failed to logout IMAP session: {}", e);
+        }
+
         info!("Saved email to {} folder for account {}", folder, item.account_email);
         Ok(())
     }
@@ -256,6 +261,11 @@ impl OutboxWorker {
 
         // Delete the messages (mark as deleted + expunge)
         session.delete_messages(&uids).await?;
+
+        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        if let Err(e) = session.logout().await {
+            warn!("Failed to logout IMAP session: {}", e);
+        }
 
         info!("Removed email from Outbox folder for account {}", item.account_email);
         Ok(())
@@ -377,6 +387,11 @@ impl OutboxWorker {
                         warn!("Failed to invalidate Outbox cache after cleanup for {}: {}", account_email, e);
                     }
                 }
+            }
+
+            // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+            if let Err(e) = session.logout().await {
+                warn!("Failed to logout IMAP session for {}: {}", account_email, e);
             }
         }
 

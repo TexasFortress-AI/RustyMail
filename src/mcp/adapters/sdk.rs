@@ -11,7 +11,7 @@ use crate::prelude::CloneableImapSessionFactory;
 use std::collections::HashMap;
 use tokio::sync::Mutex as TokioMutex;
 use serde_json::{Value, json};
-use log::{debug, error, info};
+use log::{debug, error, info, warn};
 
 // Import RMCP SDK types
 use rmcp::{
@@ -71,8 +71,8 @@ impl RustyMailService {
 
         // Create IMAP session
         let session_result = self.session_factory.create_session().await;
-        let session = match session_result {
-            Ok(client) => client.session_arc(),
+        let client = match session_result {
+            Ok(c) => c,
             Err(imap_err) => {
                 error!("Failed to create IMAP session for tool '{}': {:?}", tool_name, imap_err);
                 return Err(ErrorData::new(
@@ -82,11 +82,17 @@ impl RustyMailService {
                 ));
             }
         };
+        let session = client.session_arc();
 
         // Execute the tool
         let mut state_guard = self.port_state.lock().await;
         let result = tool.execute(session, &mut state_guard, params.unwrap_or(Value::Null)).await;
         drop(state_guard);
+
+        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        if let Err(e) = client.logout().await {
+            warn!("Failed to logout IMAP session after tool execution: {}", e);
+        }
 
         match result {
             Ok(value) => {

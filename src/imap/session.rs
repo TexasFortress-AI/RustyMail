@@ -152,8 +152,10 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
     }
 
     async fn logout(&self) -> Result<(), ImapError> {
+        info!("IMAP logout called - releasing session resources");
         let mut session_guard = self.session.lock().await;
         session_guard.logout().await.map_err(ImapError::from)?;
+        info!("IMAP logout completed successfully");
         Ok(())
     }
 

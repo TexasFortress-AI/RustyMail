@@ -303,6 +303,36 @@ impl ConnectionPool {
         Ok(conn_id)
     }
 
+    /// Remove a connection from the pool with proper cleanup (logout)
+    /// This ensures the IMAP session's BytePool buffers are released
+    async fn remove_connection_with_logout(&self, conn_id: &Uuid) {
+        if let Some((_, conn)) = self.connections.remove(conn_id) {
+            // Attempt to logout to properly release async_imap's BytePool buffers
+            if let Err(e) = conn.client.logout().await {
+                debug!("Logout failed for connection {} during cleanup (may already be disconnected): {}", conn_id, e);
+            } else {
+                debug!("Successfully logged out connection {} during cleanup", conn_id);
+            }
+        }
+    }
+
+    /// Remove multiple connections with proper cleanup (spawns tasks for parallel logout)
+    fn remove_connections_with_logout(&self, conn_ids: Vec<Uuid>) {
+        for conn_id in conn_ids {
+            if let Some((_, conn)) = self.connections.remove(&conn_id) {
+                // Spawn logout task to avoid blocking the maintenance loop
+                tokio::spawn(async move {
+                    if let Err(e) = conn.client.logout().await {
+                        debug!("Logout failed for connection {} during cleanup: {}", conn_id, e);
+                    } else {
+                        debug!("Successfully logged out connection {} during cleanup", conn_id);
+                    }
+                    // Connection is dropped here, releasing the BytePool
+                });
+            }
+        }
+    }
+
     /// Acquire a session handle from the pool (optimized for high concurrency)
     pub async fn acquire(self: Arc<Self>) -> Result<SessionHandle, PoolError> {
         use tokio::time::{timeout, Instant};
@@ -329,9 +359,15 @@ impl ConnectionPool {
                     debug!("Acquired connection {} from pool (fast path)", conn_id);
                     return Ok(SessionHandle::new(conn_id, client, Arc::clone(&self)));
                 } else {
-                    // Remove expired/unhealthy connection
-                    self.connections.remove(&conn_id);
-                    debug!("Removed expired/unhealthy connection {}", conn_id);
+                    // Remove expired/unhealthy connection with logout (non-blocking)
+                    if let Some((_, conn)) = self.connections.remove(&conn_id) {
+                        debug!("Removed expired/unhealthy connection {}, spawning logout task", conn_id);
+                        tokio::spawn(async move {
+                            if let Err(e) = conn.client.logout().await {
+                                debug!("Logout failed for expired connection {}: {}", conn_id, e);
+                            }
+                        });
+                    }
                 }
             }
         }
@@ -435,10 +471,10 @@ impl ConnectionPool {
                 }
             }
 
-            // Clean up expired connections (lock-free operations)
-            for id in expired_ids {
-                self.connections.remove(&id);
-                debug!("Removed expired connection {}", id);
+            // Clean up expired connections with proper logout
+            if !expired_ids.is_empty() {
+                debug!("Cleaning up {} expired connections with logout", expired_ids.len());
+                self.remove_connections_with_logout(expired_ids);
             }
 
             // Periodically rebuild the available queue to remove stale IDs
@@ -545,8 +581,8 @@ impl ConnectionPool {
             }
         }
 
-        // Remove the old connection
-        self.connections.remove(&connection_id);
+        // Remove the old connection with proper logout
+        self.remove_connection_with_logout(&connection_id).await;
 
         // Try to create a new connection
         let max_retries = 3;
@@ -657,12 +693,10 @@ impl ConnectionPool {
             }
         }
 
-        // Remove unhealthy connections (lock-free operations)
-        for id in to_remove {
-            self.connections.remove(&id);
-            // Note: ArrayQueue doesn't have retain, but stale IDs
-            // will be filtered out naturally during acquisition
-            info!("Cleaned up disconnected session {}", id);
+        // Remove unhealthy connections with proper logout
+        if !to_remove.is_empty() {
+            info!("Cleaning up {} unhealthy connections with logout", to_remove.len());
+            self.remove_connections_with_logout(to_remove);
         }
     }
 

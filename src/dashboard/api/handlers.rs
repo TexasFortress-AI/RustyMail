@@ -3404,6 +3404,11 @@ pub async fn delete_email(
     session.delete_messages(&request.uids).await
         .map_err(|e| ApiError::InternalError(format!("Failed to delete messages: {}", e)))?;
 
+    // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+    if let Err(e) = session.logout().await {
+        warn!("Failed to logout IMAP session: {}", e);
+    }
+
     info!("Successfully deleted {} email(s) from {}", request.uids.len(), request.folder);
 
     // Remove deleted emails from cache

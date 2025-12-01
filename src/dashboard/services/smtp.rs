@@ -285,7 +285,7 @@ impl SmtpService {
             // Try to append to the folder (folder should already exist from account validation)
             log::info!("Attempting IMAP APPEND to folder '{}'", folder_name);
             let flags: Vec<String> = vec![];
-            match session.append(folder_name, email_bytes, &flags).await {
+            let result = match session.append(folder_name, email_bytes, &flags).await {
                 Ok(_) => {
                     log::info!("Successfully saved email to folder: {}", folder_name);
                     Ok(())
@@ -336,7 +336,14 @@ impl SmtpService {
                         )))
                     }
                 }
+            };
+
+            // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+            if let Err(e) = session.logout().await {
+                log::warn!("Failed to logout IMAP session: {}", e);
             }
+
+            result
         }).await;
 
         // Handle timeout result
@@ -391,6 +398,10 @@ impl SmtpService {
             match session.append(folder, email_bytes, &flags).await {
                 Ok(_) => {
                     log::info!("Successfully saved email to Outbox folder: {}", folder);
+                    // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+                    if let Err(e) = session.logout().await {
+                        log::warn!("Failed to logout IMAP session: {}", e);
+                    }
                     return Ok(());
                 }
                 Err(e) => {
@@ -398,6 +409,11 @@ impl SmtpService {
                     last_error = Some(e);
                 }
             }
+        }
+
+        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        if let Err(e) = session.logout().await {
+            log::warn!("Failed to logout IMAP session: {}", e);
         }
 
         // If all folders failed, return the last error
@@ -460,6 +476,10 @@ impl SmtpService {
                                 match session.delete_messages(&uids).await {
                                     Ok(_) => {
                                         log::info!("Successfully deleted {} message(s) from Outbox folder: {}", uids.len(), folder);
+                                        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+                                        if let Err(e) = session.logout().await {
+                                            log::warn!("Failed to logout IMAP session: {}", e);
+                                        }
                                         return Ok(());
                                     }
                                     Err(e) => {
@@ -482,6 +502,11 @@ impl SmtpService {
                     last_error = Some(e);
                 }
             }
+        }
+
+        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        if let Err(e) = session.logout().await {
+            log::warn!("Failed to logout IMAP session: {}", e);
         }
 
         // If we couldn't delete from any folder, log warning but don't fail
@@ -530,6 +555,10 @@ impl SmtpService {
             match session.append(folder, &email_bytes, &flags).await {
                 Ok(_) => {
                     log::info!("Successfully saved sent email to folder: {}", folder);
+                    // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+                    if let Err(e) = session.logout().await {
+                        log::warn!("Failed to logout IMAP session: {}", e);
+                    }
                     return Ok(());
                 }
                 Err(e) => {
@@ -537,6 +566,11 @@ impl SmtpService {
                     last_error = Some(e);
                 }
             }
+        }
+
+        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        if let Err(e) = session.logout().await {
+            log::warn!("Failed to logout IMAP session: {}", e);
         }
 
         // If all folders failed, return the last error
@@ -767,7 +801,7 @@ impl SmtpService {
             let drafts_folder = "INBOX.Drafts";
             let flags = vec!["\\Draft".to_string()];
 
-            match session.append(drafts_folder, email_bytes, &flags).await {
+            let result = match session.append(drafts_folder, email_bytes, &flags).await {
                 Ok(_) => {
                     log::info!("Successfully saved draft to {}", drafts_folder);
                     Ok(())
@@ -801,7 +835,14 @@ impl SmtpService {
                         )))
                     }
                 }
+            };
+
+            // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+            if let Err(e) = session.logout().await {
+                log::warn!("Failed to logout IMAP session: {}", e);
             }
+
+            result
         }).await;
 
         match result {
