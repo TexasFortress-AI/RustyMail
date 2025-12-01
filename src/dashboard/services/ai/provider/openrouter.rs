@@ -12,10 +12,10 @@ use log::{debug, warn, error};
 use crate::api::errors::ApiError as RestApiError;
 use super::{AiProvider, AiChatMessage, get_ai_request_timeout, get_ai_generation_timeout}; // Import trait, common message struct, and timeout helpers
 
-// Get OpenRouter API base URL from environment
+// Get OpenRouter API base URL from environment or use default
 fn get_base_url() -> String {
     std::env::var("OPENROUTER_BASE_URL")
-        .expect("OPENROUTER_BASE_URL environment variable must be set")
+        .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string())
 }
 
 const DEFAULT_OPENROUTER_MODEL: &str = "deepseek/deepseek-coder-v2-lite-instruct";
