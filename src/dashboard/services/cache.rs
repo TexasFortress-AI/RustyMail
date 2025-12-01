@@ -313,8 +313,22 @@ impl CacheService {
             let decoded_subject = envelope.subject.as_ref()
                 .map(|s| crate::utils::decode_mime_header(s));
 
+            // Parse envelope date string to DateTime<Utc>
+            let parsed_date = envelope.date.as_ref().and_then(|date_str| {
+                // Try common email date formats
+                chrono::DateTime::parse_from_rfc2822(date_str)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .ok()
+                    .or_else(|| {
+                        // Fallback: try RFC3339
+                        chrono::DateTime::parse_from_rfc3339(date_str)
+                            .map(|dt| dt.with_timezone(&Utc))
+                            .ok()
+                    })
+            });
+
             (envelope.message_id.clone(), decoded_subject,
-             Some(from_str), from_name_str, to_vec, cc_vec, None::<chrono::DateTime<chrono::Utc>>)
+             Some(from_str), from_name_str, to_vec, cc_vec, parsed_date)
         } else {
             (None, None, None, None, Vec::new(), Vec::new(), None)
         };
