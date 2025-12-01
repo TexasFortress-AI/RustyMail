@@ -72,6 +72,7 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
     let cache_config = CacheConfig {
         database_url: db_url.clone(),
         max_memory_items: 100,
+        max_folder_items: 50,
         max_cache_size_mb: 100,
         max_email_age_days: 30,
         sync_interval_seconds: 300,
@@ -170,6 +171,8 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
         config,
         imap_session_factory,
         connection_pool,
+        jobs: std::sync::Arc::new(dashmap::DashMap::new()),
+        job_persistence: None,
     })
 }
 

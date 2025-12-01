@@ -56,6 +56,7 @@ mod multi_account_sync_tests {
         let cache_config = CacheConfig {
             database_url: TEST_DB_PATH.to_string(),
             max_memory_items: 100,
+            max_folder_items: 50,
             max_cache_size_mb: 100,
             max_email_age_days: 30,
             sync_interval_seconds: 300,

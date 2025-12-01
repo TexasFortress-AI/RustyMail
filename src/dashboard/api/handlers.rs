@@ -3048,6 +3048,104 @@ pub async fn set_ai_model(
     }
 }
 
+// Request types for model configuration endpoints
+#[derive(Debug, Deserialize)]
+pub struct SetModelConfigRequest {
+    pub role: String,
+    pub provider: String,
+    pub model_name: String,
+    pub base_url: Option<String>,
+    pub api_key: Option<String>,
+}
+
+// Handler for getting all model configurations (tool-calling, drafting)
+pub async fn get_model_configs(
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling GET /api/dashboard/ai/model-configs");
+
+    let pool = match state.cache_service.db_pool.as_ref() {
+        Some(p) => p,
+        None => return Err(ApiError::InternalError("Database not initialized".to_string())),
+    };
+
+    use crate::dashboard::services::ai::model_config;
+
+    match model_config::get_all_model_configs(pool).await {
+        Ok(configs) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "configs": configs
+        }))),
+        Err(e) => {
+            error!("Failed to get model configurations: {:?}", e);
+            Err(ApiError::InternalError(format!("Failed to get model configurations: {:?}", e)))
+        }
+    }
+}
+
+// Handler for setting a model configuration
+pub async fn set_model_config(
+    req: web::Json<SetModelConfigRequest>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling POST /api/dashboard/ai/model-configs with role: {}", req.role);
+
+    let pool = match state.cache_service.db_pool.as_ref() {
+        Some(p) => p,
+        None => return Err(ApiError::InternalError("Database not initialized".to_string())),
+    };
+
+    use crate::dashboard::services::ai::model_config::{ModelConfiguration, set_model_config as save_model_config};
+
+    let mut config = ModelConfiguration::new(&req.role, &req.provider, &req.model_name);
+
+    if let Some(ref base_url) = req.base_url {
+        config = config.with_base_url(base_url);
+    }
+
+    if let Some(ref api_key) = req.api_key {
+        config = config.with_api_key(api_key);
+    }
+
+    match save_model_config(pool, &config).await {
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": format!("Successfully set {} model configuration", req.role),
+            "config": config
+        }))),
+        Err(e) => {
+            error!("Failed to set model configuration: {:?}", e);
+            Err(ApiError::InternalError(format!("Failed to set model configuration: {:?}", e)))
+        }
+    }
+}
+
+// Handler for getting models for a specific provider
+pub async fn get_models_for_provider(
+    query: web::Query<GetModelsForProviderQuery>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling GET /api/dashboard/ai/models-for-provider?provider={}", query.provider);
+
+    // Get available models from the specified provider
+    let available_models = match state.ai_service.get_available_models_for_provider(&query.provider).await {
+        Ok(models) => models,
+        Err(e) => {
+            warn!("Failed to fetch models from provider {}: {:?}", query.provider, e);
+            // Return empty list if API call fails
+            vec![]
+        }
+    };
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "provider": query.provider,
+        "available_models": available_models
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GetModelsForProviderQuery {
+    pub provider: String,
+}
+
 /// Trigger an email sync using the separate sync process.
 /// This spawns the rustymail-sync binary which exits after sync, ensuring memory is returned to OS.
 ///

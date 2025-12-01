@@ -757,6 +757,22 @@ impl ProviderManager {
         }
     }
 
+    // Get available models for a specific provider by name
+    pub async fn get_available_models_for_provider(&self, provider_name: &str) -> Result<Vec<String>, RestApiError> {
+        let providers = self.providers.read().await;
+
+        match providers.get(provider_name) {
+            Some(provider) => {
+                provider.get_available_models().await
+            },
+            None => {
+                Err(RestApiError::UnprocessableEntity {
+                    message: format!("Provider '{}' not found", provider_name)
+                })
+            }
+        }
+    }
+
     // Update all provider models to use their first available model
     pub async fn update_models_from_api(&mut self) -> Result<(), RestApiError> {
         let mut updated_configs = Vec::new();

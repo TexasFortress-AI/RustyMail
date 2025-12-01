@@ -214,6 +214,40 @@ export const apiClient = {
   getMcpTools: async (variant: 'low-level' | 'high-level'): Promise<{ tools: McpTool[] }> => {
     return await apiRequest<{ tools: McpTool[] }>(`${API_BASE}/mcp/tools?variant=${variant}`);
   },
+
+  // AI Model Configurations (for tool-calling and drafting models)
+  getModelConfigs: async (): Promise<{
+    configs: Array<{
+      role: string;
+      provider: string;
+      model_name: string;
+      base_url: string | null;
+      api_key: string | null;
+      additional_config: string | null;
+    }>;
+  }> => {
+    return await apiRequest<any>(`${API_BASE}/ai/model-configs`);
+  },
+
+  setModelConfig: async (config: {
+    role: string;
+    provider: string;
+    model_name: string;
+    base_url?: string;
+    api_key?: string;
+  }): Promise<{ message: string }> => {
+    return await apiRequest<any>(`${API_BASE}/ai/model-configs`, {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
+  },
+
+  getModelsForProvider: async (provider: string): Promise<{
+    provider: string;
+    available_models: string[];
+  }> => {
+    return await apiRequest<any>(`${API_BASE}/ai/models-for-provider?provider=${provider}`);
+  },
 };
 
 // Initialize EventSource for SSE

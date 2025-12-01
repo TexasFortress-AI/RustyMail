@@ -16,6 +16,7 @@ import EmailBody from './EmailBody';
 import EmailList, { EmailContext } from './EmailList';
 import { AccountListPanel } from './AccountListPanel';
 import { AccountFormDialog } from './AccountFormDialog';
+import ModelsPanel from './ModelsPanel';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Account } from '@/types';
 import { useAccount } from '@/contexts/AccountContext';
@@ -278,9 +279,10 @@ const Dashboard: React.FC = () => {
         data-testid="dashboard-container"
       >
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
-          <TabsList className="grid w-full max-w-xl grid-cols-3 mb-4">
+          <TabsList className="grid w-full max-w-2xl grid-cols-4 mb-4">
             <TabsTrigger value="email">Email</TabsTrigger>
             <TabsTrigger value="accounts">Accounts</TabsTrigger>
+            <TabsTrigger value="models">Models</TabsTrigger>
             <TabsTrigger value="system">System</TabsTrigger>
           </TabsList>
 
@@ -403,6 +405,11 @@ const Dashboard: React.FC = () => {
                 }}
               />
             </div>
+          </TabsContent>
+
+          {/* Models Tab */}
+          <TabsContent value="models" className="flex-1 flex flex-col min-h-0 mt-0 data-[state=inactive]:hidden">
+            <ModelsPanel />
           </TabsContent>
 
           {/* System Tab */}

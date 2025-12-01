@@ -32,6 +32,7 @@ async fn test_ai_service_mock_response_simple() {
         model_override: None,
         current_folder: None,
         account_id: None,
+        enabled_tools: None,
     };
 
     // Mock service will generate a response (may try MCP calls but will fail gracefully)

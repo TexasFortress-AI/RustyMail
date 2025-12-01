@@ -4,7 +4,7 @@
 
 use crate::dashboard::DashboardState;
 use serde_json::{json, Value};
-use log::{debug, error};
+use log::{debug, error, warn};
 use crate::dashboard::services::jobs::{JobRecord, JobStatus};
 use uuid::Uuid;
 
@@ -677,6 +677,15 @@ async fn handle_process_email_instructions(state: &DashboardState, arguments: Va
     };
     state.jobs.insert(job_id.clone(), job_record);
 
+    // Persist job to database for restart survival
+    if let Some(ref job_persistence) = state.job_persistence {
+        use crate::dashboard::services::jobs::PersistedJob;
+        let persisted = PersistedJob::new_resumable(job_id.clone(), Some(instruction.clone()));
+        if let Err(e) = job_persistence.create_job(&persisted).await {
+            warn!("Failed to persist job {}: {}", job_id, e);
+        }
+    }
+
     // Spawn the job with panic handling
     let state_for_panic = state.clone();
     let job_id_for_panic = job_id.clone();
@@ -685,15 +694,38 @@ async fn handle_process_email_instructions(state: &DashboardState, arguments: Va
         let executor = AgentExecutor::new();
         let result = executor.execute_with_tools(&pool, &state_clone, &instruction, Some(&account_id), all_tools).await;
 
-        let final_status = match result {
+        let final_status = match &result {
             Ok(r) if r.success => JobStatus::Completed(json!(r)),
-            Ok(r) => JobStatus::Failed(r.error.unwrap_or_else(|| "Agent failed without a specific error message".to_string())),
+            Ok(r) => JobStatus::Failed(r.error.clone().unwrap_or_else(|| "Agent failed without a specific error message".to_string())),
             Err(e) => JobStatus::Failed(e.to_string()),
         };
 
-        state_clone.jobs.entry(job_id_clone).and_modify(|record| {
+        // Update in-memory state
+        state_clone.jobs.entry(job_id_clone.clone()).and_modify(|record| {
             record.status = final_status;
         });
+
+        // Update persistent storage
+        if let Some(ref job_persistence) = state_clone.job_persistence {
+            match &result {
+                Ok(r) if r.success => {
+                    if let Err(e) = job_persistence.complete_job(&job_id_clone, &json!(r)).await {
+                        warn!("Failed to persist job completion {}: {}", job_id_clone, e);
+                    }
+                }
+                Ok(r) => {
+                    let error = r.error.clone().unwrap_or_else(|| "Agent failed".to_string());
+                    if let Err(e) = job_persistence.fail_job(&job_id_clone, &error).await {
+                        warn!("Failed to persist job failure {}: {}", job_id_clone, e);
+                    }
+                }
+                Err(e) => {
+                    if let Err(pe) = job_persistence.fail_job(&job_id_clone, &e.to_string()).await {
+                        warn!("Failed to persist job failure {}: {}", job_id_clone, pe);
+                    }
+                }
+            }
+        }
     });
 
     // Monitor the spawned task for panics
@@ -707,9 +739,16 @@ async fn handle_process_email_instructions(state: &DashboardState, arguments: Va
                 format!("Job task failed: {}", join_error)
             };
             error!("Job {} failed: {}", job_id_for_panic, error_msg);
-            state_for_panic.jobs.entry(job_id_for_panic).and_modify(|record| {
-                record.status = JobStatus::Failed(error_msg);
+            state_for_panic.jobs.entry(job_id_for_panic.clone()).and_modify(|record| {
+                record.status = JobStatus::Failed(error_msg.clone());
             });
+
+            // Persist the failure
+            if let Some(ref job_persistence) = state_for_panic.job_persistence {
+                if let Err(e) = job_persistence.fail_job(&job_id_for_panic, &error_msg).await {
+                    warn!("Failed to persist job panic failure {}: {}", job_id_for_panic, e);
+                }
+            }
         }
     });
 

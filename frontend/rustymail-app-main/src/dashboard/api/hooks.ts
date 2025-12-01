@@ -132,3 +132,48 @@ export function useMcpTools(variant: 'low-level' | 'high-level') {
     retry: false,
   });
 }
+
+// Hook for fetching AI model configurations (tool-calling and drafting)
+export function useModelConfigs() {
+  return useQuery({
+    queryKey: ['modelConfigs'],
+    queryFn: async () => {
+      return apiClient.getModelConfigs();
+    },
+    retry: false,
+  });
+}
+
+// Hook for setting AI model configuration
+export function useSetModelConfig() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (config: {
+      role: string;
+      provider: string;
+      model_name: string;
+      base_url?: string;
+      api_key?: string;
+    }) => {
+      return apiClient.setModelConfig(config);
+    },
+    onSuccess: () => {
+      // Invalidate and refetch model configs
+      queryClient.invalidateQueries({ queryKey: ['modelConfigs'] });
+    },
+  });
+}
+
+// Hook for fetching models for a specific provider
+export function useModelsForProvider(provider: string | null) {
+  return useQuery({
+    queryKey: ['modelsForProvider', provider],
+    queryFn: async () => {
+      if (!provider) return { provider: '', available_models: [] };
+      return apiClient.getModelsForProvider(provider);
+    },
+    enabled: !!provider,
+    retry: false,
+  });
+}

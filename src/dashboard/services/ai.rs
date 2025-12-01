@@ -526,6 +526,10 @@ impl AiService {
         self.provider_manager.get_available_models().await
     }
 
+    pub async fn get_available_models_for_provider(&self, provider_name: &str) -> Result<Vec<String>, ApiError> {
+        self.provider_manager.get_available_models_for_provider(provider_name).await
+    }
+
     /// Set the email service for fetching real emails
     pub fn set_email_service(&mut self, email_service: Arc<super::email::EmailService>) {
         self.email_service = Some(email_service);

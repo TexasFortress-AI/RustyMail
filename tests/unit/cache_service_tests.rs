@@ -16,6 +16,7 @@ fn create_test_config(test_name: &str) -> CacheConfig {
     CacheConfig {
         database_url: db_path,
         max_memory_items: 100,
+        max_folder_items: 50,
         max_cache_size_mb: 100,
         max_email_age_days: 30,
         sync_interval_seconds: 300,

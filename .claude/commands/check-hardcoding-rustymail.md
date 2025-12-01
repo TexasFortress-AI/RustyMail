@@ -15,7 +15,7 @@ Steps:
 5. Verify no hardcoded values remain after fixes
 6. Remember that variables used in the code must be defined in the .env.example file. For example, according to the .env file, it's "OLLAMA_BASE_URL", not "OLLAMA_API_BASE". Don't just make it up off the top of your head -- find the correct variable in .env.example and use that same variable name in the code so they always match.
 
-Environment values to check and fix:
+Some environment values to check and fix:
 - Ports: 9437, 9438, 9439
 - API keys: test-rustymail-key-2024
 - Hosts: 0.0.0.0, localhost
@@ -31,5 +31,7 @@ NOT acceptable (MUST BE FIXED):
 - Fallback values in || operators → REMOVE the fallback
 - Default values in code → REMOVE and require env var
 - Hardcoded strings in source files → REPLACE with env var reads
+
+Important: If there are any other hardcoded values in the software (that do not appear in the .env.example file), they must be fixed as well. Search the codebase for any hardcoded values, make sure they have corresponding environment variables, and remove the hardcoded values.
 
 After fixing, rebuild and test to ensure the application properly requires environment variables.

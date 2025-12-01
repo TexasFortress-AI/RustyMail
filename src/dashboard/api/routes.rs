@@ -31,6 +31,10 @@ pub fn configure_routes() -> Scope {
         // AI model management endpoints
         .route("/ai/models", web::get().to(handlers::get_ai_models))
         .route("/ai/models/set", web::post().to(handlers::set_ai_model))
+        // AI model configuration endpoints (for tool-calling and drafting models)
+        .route("/ai/model-configs", web::get().to(handlers::get_model_configs))
+        .route("/ai/model-configs", web::post().to(handlers::set_model_config))
+        .route("/ai/models-for-provider", web::get().to(handlers::get_models_for_provider))
         // Email sync endpoints
         .route("/sync/trigger", web::post().to(handlers::trigger_email_sync))
         .route("/sync/status", web::get().to(handlers::get_sync_status))

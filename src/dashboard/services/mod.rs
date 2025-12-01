@@ -110,6 +110,7 @@ pub struct DashboardState {
     pub imap_session_factory: CloneableImapSessionFactory,
     pub connection_pool: Arc<ConnectionPool>,
     pub jobs: Arc<DashMap<String, JobRecord>>,
+    pub job_persistence: Option<Arc<jobs::JobPersistenceService>>,
 }
 
 // Initialize the services
@@ -260,6 +261,38 @@ pub async fn init(
             .with_connection_pool(Arc::clone(&connection_pool))
     );
 
+    // Initialize job persistence service
+    let job_persistence = Arc::new(jobs::JobPersistenceService::new(account_db_pool.clone()));
+
+    // On startup, mark non-resumable interrupted jobs as failed and clean up old jobs
+    if let Err(e) = job_persistence.mark_interrupted_jobs_failed().await {
+        warn!("Failed to mark interrupted jobs as failed: {}", e);
+    }
+    if let Err(e) = job_persistence.cleanup_old_jobs(30).await {
+        warn!("Failed to clean up old jobs: {}", e);
+    }
+
+    // Load resumable jobs into memory
+    let jobs_map = Arc::new(DashMap::new());
+    match job_persistence.get_resumable_jobs().await {
+        Ok(resumable_jobs) => {
+            for persisted in resumable_jobs {
+                info!("Found resumable job: {} - {}", persisted.job_id, persisted.instruction.as_deref().unwrap_or(""));
+                // Create in-memory record for resumable jobs
+                let job_record = JobRecord {
+                    job_id: persisted.job_id.clone(),
+                    status: jobs::JobStatus::Running,
+                    started_at: std::time::Instant::now(),
+                    instruction: persisted.instruction,
+                };
+                jobs_map.insert(persisted.job_id, job_record);
+            }
+        }
+        Err(e) => {
+            warn!("Failed to load resumable jobs: {}", e);
+        }
+    }
+
     info!("Dashboard services initialized.");
 
     Data::new(DashboardState {
@@ -279,6 +312,7 @@ pub async fn init(
         config, // Pass the web::Data<Settings>
         imap_session_factory,
         connection_pool,
-        jobs: Arc::new(DashMap::new()),
+        jobs: jobs_map,
+        job_persistence: Some(job_persistence),
     })
 }
