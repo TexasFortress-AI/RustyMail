@@ -126,6 +126,11 @@ native-tls = "0.2"
 # Optional profiling dependencies
 dhat = { version = "0.3", optional = true }
 
+# jemalloc allocator for better memory management (releases memory back to OS)
+# Only enabled on non-Windows targets
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.6"
+
 [dev-dependencies]
 # Remove reqwest native-tls feature if not needed
 reqwest = { version = "0.12", features = ["json", "stream"] }

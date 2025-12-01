@@ -31,6 +31,13 @@ use rustymail::imap::client::ImapClient; // Needed for the factory closure
 // use rustymail::mcp::handler::JsonRpcHandler;
 use rustymail::prelude::*; // Import many common types
 
+// Use jemalloc as the global allocator for better memory management
+// jemalloc releases memory back to the OS, unlike the default system allocator
+// This prevents memory bloat from IMAP session BytePools being held by the allocator
+#[cfg(all(not(target_env = "msvc"), not(feature = "dhat-heap")))]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 // Enable DHAT heap profiler when compiled with --features dhat-heap
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -48,6 +55,10 @@ async fn main() -> std::io::Result<()> {
     // Initialize logger
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
     info!("Starting RustyMail server...");
+
+    // Log allocator info
+    #[cfg(all(not(target_env = "msvc"), not(feature = "dhat-heap")))]
+    info!("Using jemalloc allocator for better memory management");
 
     // Load configuration
     info!("Loading configuration...");
