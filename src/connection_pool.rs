@@ -54,12 +54,12 @@ pub struct PoolConfig {
 impl Default for PoolConfig {
     fn default() -> Self {
         Self {
-            min_connections: 20,  // Increased for high-concurrency scenarios
-            max_connections: 100,
-            idle_timeout: Duration::from_secs(300),      // 5 minutes
+            min_connections: 5,  // Reduced to limit memory usage
+            max_connections: 50, // Reduced to limit memory growth
+            idle_timeout: Duration::from_secs(60),      // 1 minute - recycle idle connections faster
             health_check_interval: Duration::from_secs(30),
             acquire_timeout: Duration::from_secs(5),     // Reduced for faster failures under load
-            max_session_duration: Duration::from_secs(3600), // 1 hour
+            max_session_duration: Duration::from_secs(300), // 5 minutes - force connection recycling
             max_concurrent_creations: 10, // Prevent connection creation storms
         }
     }
@@ -728,6 +728,6 @@ mod tests {
         let pool = ConnectionPool::new(factory, config);
 
         let stats = pool.stats().await;
-        assert_eq!(stats.max_connections, 100);
+        assert_eq!(stats.max_connections, 50);  // Updated to match new memory-optimized default
     }
 }

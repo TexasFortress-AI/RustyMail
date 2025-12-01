@@ -112,9 +112,9 @@ impl Default for CacheConfig {
     fn default() -> Self {
         Self {
             database_url: "sqlite:data/email_cache.db".to_string(),
-            max_memory_items: 1000,
-            max_folder_items: 100,
-            max_cache_size_mb: 1000,
+            max_memory_items: 200,   // Reduced from 1000 to limit memory usage
+            max_folder_items: 50,    // Reduced from 100
+            max_cache_size_mb: 500,  // Reduced from 1000
             max_email_age_days: 30,
             sync_interval_seconds: 300,
         }

@@ -349,6 +349,8 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
                   ALLOWED_ATTR: showImages ? ['href', 'target', 'rel', 'src', 'alt', 'width', 'height', 'style', 'class'] : ['href', 'target', 'rel', 'class'],
                   ALLOW_DATA_ATTR: false,
                   ADD_ATTR: ['target'],
+                  ADD_DATA_URI_TAGS: showImages ? ['img'] : [],
+                  ADD_URI_SAFE_ATTR: showImages ? ['src'] : [],
                   FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
                   FORBID_ATTR: ['onerror', 'onload', 'onclick'],
                   transformTags: {
@@ -370,6 +372,17 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
                             class: 'inline-block px-2 py-1 text-xs bg-gray-200 rounded'
                           },
                           text: '[Image blocked]'
+                        };
+                      }
+                      // Handle cid: URIs (embedded images) - not yet supported
+                      const src = attribs.src || '';
+                      if (src.startsWith('cid:')) {
+                        return {
+                          tagName: 'span',
+                          attribs: {
+                            class: 'inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded border border-yellow-300'
+                          },
+                          text: '[Embedded image]'
                         };
                       }
                       return { tagName, attribs };
