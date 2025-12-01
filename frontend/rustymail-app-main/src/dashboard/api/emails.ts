@@ -25,7 +25,52 @@ export interface SendEmailResponse {
   message: string;
 }
 
+export interface DraftReplyRequest {
+  email_uid: number;
+  folder: string;
+  account_id: string;
+  instructions?: string;
+}
+
+export interface DraftReplyResponse {
+  success: boolean;
+  data?: {
+    draft: string;
+    saved_to?: string;
+  };
+  error?: string;
+}
+
 export const emailsApi = {
+  // Draft a reply email using AI
+  draftReply: async (request: DraftReplyRequest): Promise<DraftReplyResponse> => {
+    const url = `${API_BASE}/mcp/execute?variant=high-level`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': API_KEY,
+      },
+      body: JSON.stringify({
+        tool: 'draft_reply',
+        parameters: {
+          email_uid: request.email_uid.toString(),
+          folder: request.folder,
+          account_id: request.account_id,
+          instructions: request.instructions,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to draft reply: ${response.status} ${errorText}`);
+    }
+
+    return response.json();
+  },
+
   sendEmail: async (
     request: SendEmailRequest,
     accountEmail?: string

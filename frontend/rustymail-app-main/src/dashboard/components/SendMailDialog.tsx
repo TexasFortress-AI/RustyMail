@@ -18,7 +18,7 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Textarea } from '../../components/ui/textarea';
 import { useToast } from '../../components/ui/use-toast';
-import { Loader2, Send } from 'lucide-react';
+import { Loader2, Send, Sparkles } from 'lucide-react';
 
 interface SendMailDialogProps {
   open: boolean;
@@ -33,6 +33,11 @@ interface SendMailDialogProps {
     to_addresses: string[];
     body_text: string | null;
   };
+  // Context needed for AI draft functionality
+  emailContext?: {
+    uid: number;
+    folder: string;
+  };
 }
 
 export function SendMailDialog({
@@ -42,10 +47,12 @@ export function SendMailDialog({
   onSuccess,
   mode = 'compose',
   originalEmail,
+  emailContext,
 }: SendMailDialogProps) {
   const { toast } = useToast();
   const [sending, setSending] = useState(false);
   const [sendingPhase, setSendingPhase] = useState<'idle' | 'preparing' | 'sending'>('idle');
+  const [drafting, setDrafting] = useState(false);
 
   const [formData, setFormData] = useState<SendEmailRequest>({
     to: [],
@@ -110,6 +117,57 @@ export function SendMailDialog({
       });
     }
   }, [open, mode, originalEmail]);
+
+  // Handle AI draft for reply
+  const handleAiDraft = async () => {
+    if (!emailContext || !accountEmail) {
+      toast({
+        title: 'Cannot Draft',
+        description: 'Email context is required for AI drafting',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setDrafting(true);
+    try {
+      toast({
+        title: 'Drafting Reply',
+        description: 'AI is generating a reply...',
+      });
+
+      const response = await emailsApi.draftReply({
+        email_uid: emailContext.uid,
+        folder: emailContext.folder,
+        account_id: accountEmail,
+      });
+
+      if (response.success && response.data?.draft) {
+        // Update the body with the AI draft, keeping the original message quote
+        const originalQuote = formData.body;
+        setFormData(prev => ({
+          ...prev,
+          body: response.data!.draft + originalQuote,
+        }));
+
+        toast({
+          title: 'Draft Ready',
+          description: 'AI has drafted a reply for you',
+        });
+      } else {
+        throw new Error(response.error || 'Failed to generate draft');
+      }
+    } catch (error) {
+      console.error('AI draft failed:', error);
+      toast({
+        title: 'Draft Failed',
+        description: error instanceof Error ? error.message : 'Failed to generate AI draft',
+        variant: 'destructive',
+      });
+    } finally {
+      setDrafting(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -303,11 +361,31 @@ export function SendMailDialog({
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              disabled={sending}
+              disabled={sending || drafting}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={sending}>
+            {mode === 'reply' && emailContext && (
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleAiDraft}
+                disabled={sending || drafting}
+              >
+                {drafting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Drafting...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Draft with AI
+                  </>
+                )}
+              </Button>
+            )}
+            <Button type="submit" disabled={sending || drafting}>
               {sending ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />

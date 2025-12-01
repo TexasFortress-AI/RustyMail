@@ -38,6 +38,7 @@ pub struct CreateAccountRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateAccountRequest {
+    #[serde(alias = "account_name")]
     pub display_name: Option<String>,
     pub email_address: Option<String>,
     pub provider_type: Option<String>,
@@ -297,8 +298,11 @@ pub async fn update_account(
     if let Some(user) = &req.imap_user {
         account.imap_user = user.clone();
     }
+    // Only update password if provided and non-empty
     if let Some(pass) = &req.imap_pass {
-        account.imap_pass = pass.clone();
+        if !pass.is_empty() {
+            account.imap_pass = pass.clone();
+        }
     }
     if let Some(use_tls) = req.imap_use_tls {
         account.imap_use_tls = use_tls;
@@ -312,8 +316,11 @@ pub async fn update_account(
     if let Some(smtp_user) = &req.smtp_user {
         account.smtp_user = Some(smtp_user.clone());
     }
+    // Only update SMTP password if provided and non-empty
     if let Some(smtp_pass) = &req.smtp_pass {
-        account.smtp_pass = Some(smtp_pass.clone());
+        if !smtp_pass.is_empty() {
+            account.smtp_pass = Some(smtp_pass.clone());
+        }
     }
     if let Some(smtp_tls) = req.smtp_use_tls {
         account.smtp_use_tls = Some(smtp_tls);

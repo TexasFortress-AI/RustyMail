@@ -16,6 +16,7 @@ import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
 import { EmailContext } from './EmailList';
 import DOMPurify from 'dompurify';
 import './EmailBody.css';
+import { SendMailDialog } from './SendMailDialog';
 
 interface SanitizeOptions {
   showImages: boolean;
@@ -121,6 +122,22 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
   const [loadingAttachments, setLoadingAttachments] = useState(false);
   const [viewMode, setViewMode] = useState<'html' | 'text'>('html');
   const [showImages, setShowImages] = useState(false);
+
+  // Compose dialog state
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeMode, setComposeMode] = useState<'compose' | 'reply' | 'forward'>('compose');
+
+  const handleReply = () => {
+    if (!email) return;
+    setComposeMode('reply');
+    setComposeOpen(true);
+  };
+
+  const handleForward = () => {
+    if (!email) return;
+    setComposeMode('forward');
+    setComposeOpen(true);
+  };
 
   useEffect(() => {
     setShowImages(false);
@@ -343,6 +360,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
               variant="outline"
               disabled={!email}
               title="Reply to this email"
+              onClick={handleReply}
             >
               <Reply className="h-4 w-4 mr-1" />
               Reply
@@ -352,6 +370,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
               variant="outline"
               disabled={!email}
               title="Forward this email"
+              onClick={handleForward}
             >
               <Forward className="h-4 w-4 mr-1" />
               Forward
@@ -480,6 +499,25 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
           </div>
         ) : null}
       </CardContent>
+
+      {/* Compose Email Dialog */}
+      <SendMailDialog
+        open={composeOpen}
+        onOpenChange={setComposeOpen}
+        accountEmail={currentAccount?.email_address}
+        mode={composeMode}
+        originalEmail={email ? {
+          subject: email.subject,
+          from_address: email.from_address,
+          from_name: email.from_name,
+          to_addresses: email.to_addresses,
+          body_text: email.body_text,
+        } : undefined}
+        emailContext={email && selectedEmailContext ? {
+          uid: email.uid,
+          folder: currentFolder,
+        } : undefined}
+      />
     </Card>
   );
 };

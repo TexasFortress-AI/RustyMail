@@ -29,8 +29,19 @@ export function AccountProvider({ children }: { children: ReactNode }) {
       const accountsList = await accountsApi.listAccounts();
       setAccounts(accountsList);
 
-      // If no current account, try localStorage first, then fall back to default
-      if (!currentAccount && accountsList.length > 0) {
+      // If current account exists, update it from refreshed list (to get name changes, etc.)
+      if (currentAccount) {
+        const updatedCurrentAccount = accountsList.find((a) => a.id === currentAccount.id);
+        if (updatedCurrentAccount) {
+          setCurrentAccount(updatedCurrentAccount);
+        } else {
+          // Current account was deleted, switch to default or first active
+          const defaultAccount = accountsList.find((a) => a.is_default && a.is_active);
+          const firstActive = accountsList.find((a) => a.is_active);
+          setCurrentAccount(defaultAccount || firstActive || accountsList[0] || null);
+        }
+      } else if (accountsList.length > 0) {
+        // No current account, try localStorage first, then fall back to default
         const savedAccountId = localStorage.getItem('rustymail_current_account_id');
         let accountToSet: Account | null = null;
 
