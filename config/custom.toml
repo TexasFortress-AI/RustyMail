@@ -1,6 +1,6 @@
 
-interface = "mcp_stdio" # Override interface
-[imap]
-user = "custom_user" # Override user
+interface = "rest"
+imap_user = "custom_user"
 [rest]
-port = 9090 # Override port
+host = "127.0.0.1"
+port = 9090

@@ -76,8 +76,7 @@ impl Settings {
             // Default interface value
             .set_default("interface", "rest")?
             
-            // IMAP defaults
-            .set_default("imap_host", "localhost")?
+            // IMAP defaults - imap_port has a sensible default, but host requires env var
             .set_default("imap_port", 993)?
             
             // REST defaults
@@ -208,7 +207,8 @@ impl Default for Settings {
         Self {
             interface: InterfaceType::Rest,
             log: LogConfig::default(),
-            imap_host: "localhost".to_string(),
+            imap_host: std::env::var("IMAP_HOST")
+                .expect("IMAP_HOST environment variable must be set"),
             imap_port: 993,
             imap_user: String::new(),
             imap_pass: String::new(),

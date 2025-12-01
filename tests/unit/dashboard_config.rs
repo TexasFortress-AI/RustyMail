@@ -10,8 +10,21 @@ mod tests {
     use rustymail::config::Settings;
     use tempfile::TempDir;
 
+    /// Set up required environment variables for tests
+    fn setup_test_env() {
+        std::env::set_var("REST_HOST", "127.0.0.1");
+        std::env::set_var("REST_PORT", "9437");
+        std::env::set_var("SSE_HOST", "127.0.0.1");
+        std::env::set_var("SSE_PORT", "9438");
+        std::env::set_var("DASHBOARD_PORT", "9439");
+        std::env::set_var("RUSTYMAIL_API_KEY", "test-rustymail-key-2024");
+        std::env::set_var("IMAP_HOST", "localhost");
+        std::env::set_var("IMAP_PORT", "143");
+    }
+
     #[tokio::test]
     async fn test_config_service_initialization() {
+        setup_test_env();
         let settings = Settings::default();
         let config_service = ConfigService::with_settings(settings.clone(), None);
 
@@ -23,6 +36,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_imap_config() {
+        setup_test_env();
         let settings = Settings::default();
         let config_service = ConfigService::with_settings(settings, None);
 
@@ -46,6 +60,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_rest_config() {
+        setup_test_env();
         let settings = Settings::default();
         let config_service = ConfigService::with_settings(settings, None);
 
@@ -69,6 +84,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_update_dashboard_config() {
+        setup_test_env();
         let settings = Settings::default();
         let config_service = ConfigService::with_settings(settings, None);
 
@@ -92,6 +108,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_config_validation() {
+        setup_test_env();
         let settings = Settings::default();
         let config_service = ConfigService::with_settings(settings.clone(), None);
 
@@ -115,6 +132,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_port_validation() {
+        setup_test_env();
         let settings = Settings::default();
         let config_service = ConfigService::with_settings(settings, None);
 
@@ -132,6 +150,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_empty_host_validation() {
+        setup_test_env();
         let settings = Settings::default();
         let config_service = ConfigService::with_settings(settings, None);
 
@@ -149,6 +168,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_invalid_dashboard_path() {
+        setup_test_env();
         let settings = Settings::default();
         let config_service = ConfigService::with_settings(settings, None);
 
@@ -165,6 +185,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_config_persistence() {
+        setup_test_env();
         // Create a temporary directory for testing
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("test_config.toml");

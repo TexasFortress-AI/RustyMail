@@ -12,7 +12,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use clap::Parser;
 
 #[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
+#[command(version, about = "MCP stdio proxy - forwards JSON-RPC over stdin/stdout to HTTP backend", long_about = None)]
 struct Cli {
     /// Backend MCP server URL.
     #[arg(long, env = "MCP_BACKEND_URL")]

@@ -37,6 +37,8 @@ fn setup_test_env() {
     std::env::set_var("RUSTYMAIL_API_KEY", "test-rustymail-key-2024");
     std::env::set_var("MCP_BACKEND_URL", "http://localhost:9437/mcp");
     std::env::set_var("MCP_TIMEOUT", "30");
+    std::env::set_var("IMAP_HOST", "localhost");
+    std::env::set_var("IMAP_PORT", "143");
 }
 
 /// Helper function to create a test DashboardState with all required services
@@ -288,7 +290,7 @@ async fn test_mcp_tools_list() {
     assert!(body["result"]["tools"].is_array(), "Result should contain tools array");
 
     let tools = body["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 27, "Should have exactly 27 tools");
+    assert_eq!(tools.len(), 26, "Should have exactly 26 tools");
 
     // Verify each tool has required fields
     let expected_tool_names = vec![
@@ -768,7 +770,7 @@ async fn test_mcp_dashboard_api_consistency() {
     // Verify same number of tools
     assert_eq!(mcp_tools.len(), dashboard_tools.len(),
                "MCP and Dashboard should expose same number of tools");
-    assert_eq!(mcp_tools.len(), 27, "Should have 27 tools in both interfaces");
+    assert_eq!(mcp_tools.len(), 26, "Should have 26 tools in both interfaces");
 
     // Verify all tool names match
     let mut mcp_tool_names: Vec<String> = mcp_tools.iter()

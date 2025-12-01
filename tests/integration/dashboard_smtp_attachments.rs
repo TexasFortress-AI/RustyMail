@@ -35,6 +35,8 @@ fn setup_test_env() {
     std::env::set_var("SSE_PORT", "9438");
     std::env::set_var("DASHBOARD_PORT", "9439");
     std::env::set_var("RUSTYMAIL_API_KEY", "test-rustymail-key-2024");
+    std::env::set_var("IMAP_HOST", "localhost");
+    std::env::set_var("IMAP_PORT", "143");
 }
 
 /// Helper function to create a test DashboardState with all required services

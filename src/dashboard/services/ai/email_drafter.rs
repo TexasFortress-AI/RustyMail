@@ -138,7 +138,12 @@ Draft email body:"#,
         config: &ModelConfiguration,
         prompt: &str,
     ) -> Result<String, ApiError> {
-        let base_url = config.base_url.as_deref().unwrap_or("http://localhost:11434");
+        let base_url = config.base_url.as_deref()
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("OLLAMA_BASE_URL").ok())
+            .ok_or_else(|| ApiError::BadRequest {
+                message: "OLLAMA_BASE_URL environment variable or base_url config must be set".to_string(),
+            })?;
         let url = format!("{}/v1/chat/completions", base_url);
 
         debug!("Calling Ollama API at {} with model {}", url, config.model_name);
@@ -210,7 +215,12 @@ Draft email body:"#,
         config: &ModelConfiguration,
         prompt: &str,
     ) -> Result<String, ApiError> {
-        let base_url = config.base_url.as_deref().unwrap_or("https://api.openai.com/v1");
+        let base_url = config.base_url.as_deref()
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("OPENAI_BASE_URL").ok())
+            .ok_or_else(|| ApiError::BadRequest {
+                message: "OPENAI_BASE_URL environment variable or base_url config must be set".to_string(),
+            })?;
         let url = format!("{}/chat/completions", base_url);
 
         let api_key = config.api_key.as_deref().ok_or_else(|| {

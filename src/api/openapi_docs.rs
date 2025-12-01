@@ -13,6 +13,11 @@ use serde_json::json;
 
 /// Generate the OpenAPI specification in JSON format
 pub fn generate_openapi_spec() -> serde_json::Value {
+    // Build server URL from environment variables
+    let host = std::env::var("REST_HOST").unwrap_or_else(|_| "localhost".to_string());
+    let port = std::env::var("REST_PORT").unwrap_or_else(|_| "9437".to_string());
+    let local_server_url = format!("http://{}:{}", host, port);
+
     json!({
         "openapi": "3.0.3",
         "info": {
@@ -30,7 +35,7 @@ pub fn generate_openapi_spec() -> serde_json::Value {
         },
         "servers": [
             {
-                "url": "http://localhost:8080",
+                "url": local_server_url,
                 "description": "Local development server"
             },
             {

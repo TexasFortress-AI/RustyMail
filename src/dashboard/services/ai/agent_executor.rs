@@ -203,7 +203,13 @@ impl AgentExecutor {
         messages: &[Value],
         tools: &[Value],
     ) -> Result<Value, ApiError> {
-        let base_url = config.base_url.as_deref().unwrap_or("http://localhost:11434");
+        let base_url = config.base_url.as_deref()
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var("OLLAMA_BASE_URL").ok())
+            .ok_or_else(|| ApiError::BadRequest {
+                message: "OLLAMA_BASE_URL environment variable or base_url config must be set".to_string(),
+            })?;
+        let base_url = base_url.as_str();
         let url = format!("{}/v1/chat/completions", base_url);
 
         debug!("Calling Ollama at {} with model {} and {} tools", url, config.model_name, tools.len());

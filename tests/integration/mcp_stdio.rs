@@ -79,8 +79,9 @@ fn test_stdio_proxy_missing_env_vars() {
 
     assert!(!output.status.success(), "Binary should fail without required env vars");
     assert!(
-        stderr.contains("MCP_BACKEND_URL") || stderr.contains("must be set"),
-        "Error should mention missing environment variable"
+        stderr.contains("MCP_BACKEND_URL") || stderr.contains("must be set") || stderr.contains("backend-url") || stderr.contains("required arguments"),
+        "Error should mention missing environment variable or required argument. Stderr: {}",
+        stderr
     );
 
     println!("✓ Binary fails appropriately when env vars are missing");

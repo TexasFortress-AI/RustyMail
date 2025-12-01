@@ -206,7 +206,9 @@ impl AiService {
             mock_mode: !has_real_provider, // Set mock mode if no real providers
             http_client: Client::new(),
             mcp_base_url: format!(
-                "http://localhost:{}/api",
+                "http://{}:{}/api",
+                std::env::var("REST_HOST")
+                    .expect("REST_HOST environment variable must be set"),
                 std::env::var("REST_PORT")
                     .expect("REST_PORT environment variable must be set")
             ),
