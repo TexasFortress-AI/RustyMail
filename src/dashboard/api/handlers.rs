@@ -2518,6 +2518,106 @@ pub async fn execute_mcp_tool_inner(
                 }
             }
         }
+        // === Job Management Tools ===
+        "list_jobs" => {
+            use crate::dashboard::services::jobs::JobStatus;
+            let status_filter = params.get("status_filter").and_then(|v| v.as_str());
+
+            let jobs: Vec<_> = state.jobs.iter()
+                .filter(|entry| {
+                    match status_filter {
+                        Some("running") => matches!(entry.value().status, JobStatus::Running),
+                        Some("completed") => matches!(entry.value().status, JobStatus::Completed(_)),
+                        Some("failed") => matches!(entry.value().status, JobStatus::Failed(_)),
+                        _ => true, // No filter, return all
+                    }
+                })
+                .map(|entry| {
+                    let job = entry.value();
+                    serde_json::json!({
+                        "job_id": job.job_id,
+                        "status": &job.status,
+                        "elapsed_seconds": job.started_at.elapsed().as_secs()
+                    })
+                })
+                .collect();
+
+            serde_json::json!({
+                "success": true,
+                "data": {
+                    "jobs": jobs,
+                    "total": jobs.len()
+                },
+                "tool": tool_name
+            })
+        }
+        "get_job_status" => {
+            let job_id = match params.get("job_id").and_then(|v| v.as_str()) {
+                Some(id) => id,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing required parameter: job_id",
+                    "tool": tool_name
+                }),
+            };
+
+            match state.jobs.get(job_id) {
+                Some(job) => serde_json::json!({
+                    "success": true,
+                    "data": {
+                        "job_id": job.job_id,
+                        "status": &job.status,
+                        "elapsed_seconds": job.started_at.elapsed().as_secs()
+                    },
+                    "tool": tool_name
+                }),
+                None => serde_json::json!({
+                    "success": false,
+                    "error": format!("Job not found: {}", job_id),
+                    "tool": tool_name
+                }),
+            }
+        }
+        "cancel_job" => {
+            use crate::dashboard::services::jobs::JobStatus;
+            let job_id = match params.get("job_id").and_then(|v| v.as_str()) {
+                Some(id) => id,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Missing required parameter: job_id",
+                    "tool": tool_name
+                }),
+            };
+
+            // Get current status before removal
+            let job_info = state.jobs.get(job_id).map(|job| {
+                let was_running = matches!(job.status, JobStatus::Running);
+                serde_json::json!({
+                    "job_id": job.job_id,
+                    "status": &job.status,
+                    "was_running": was_running,
+                    "elapsed_seconds": job.started_at.elapsed().as_secs()
+                })
+            });
+
+            match job_info {
+                Some(info) => {
+                    // Remove the job from the map
+                    state.jobs.remove(job_id);
+                    serde_json::json!({
+                        "success": true,
+                        "message": "Job cancelled",
+                        "data": info,
+                        "tool": tool_name
+                    })
+                }
+                None => serde_json::json!({
+                    "success": false,
+                    "error": format!("Job not found: {}", job_id),
+                    "tool": tool_name
+                }),
+            }
+        }
         _ => {
             // For other tools not yet implemented
             serde_json::json!({

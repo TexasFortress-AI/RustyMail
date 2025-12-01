@@ -17,6 +17,62 @@ import { EmailContext } from './EmailList';
 import DOMPurify from 'dompurify';
 import './EmailBody.css';
 
+// Helper function to sanitize HTML with image handling
+const sanitizeEmailHtml = (html: string, showImages: boolean): string => {
+  // Configure DOMPurify hooks for image handling
+  DOMPurify.removeAllHooks();
+
+  if (!showImages) {
+    // When images are blocked, replace img tags with placeholder text
+    DOMPurify.addHook('uponSanitizeElement', (node, data) => {
+      if (data.tagName === 'img') {
+        const placeholder = document.createElement('span');
+        placeholder.className = 'inline-block px-2 py-1 text-xs bg-gray-200 text-gray-600 rounded';
+        placeholder.textContent = '[Image blocked]';
+        node.parentNode?.replaceChild(placeholder, node);
+      }
+    });
+  } else {
+    // When images are shown, handle cid: URIs
+    DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+      if (node.tagName === 'IMG') {
+        const src = node.getAttribute('src') || '';
+        if (src.startsWith('cid:')) {
+          // Replace cid: images with placeholder
+          const placeholder = document.createElement('span');
+          placeholder.className = 'inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded border border-yellow-300';
+          placeholder.textContent = '[Embedded image]';
+          node.parentNode?.replaceChild(placeholder, node);
+        }
+      }
+    });
+  }
+
+  // Make links open in new tab
+  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
+    if (node.tagName === 'A') {
+      node.setAttribute('target', '_blank');
+      node.setAttribute('rel', 'noopener noreferrer');
+    }
+  });
+
+  const config: DOMPurify.Config = {
+    ALLOWED_TAGS: [
+      'p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li', 'blockquote',
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'pre', 'code', 'table', 'thead',
+      'tbody', 'tr', 'th', 'td', 'img', 'hr', 'div', 'span', 'font', 'center', 'b', 'i'
+    ],
+    ALLOWED_ATTR: showImages
+      ? ['href', 'target', 'rel', 'src', 'alt', 'width', 'height', 'style', 'class', 'align', 'valign', 'bgcolor', 'color', 'size', 'face', 'border', 'cellpadding', 'cellspacing']
+      : ['href', 'target', 'rel', 'class', 'align', 'valign', 'bgcolor', 'color', 'size', 'face', 'border', 'cellpadding', 'cellspacing'],
+    ALLOW_DATA_ATTR: false,
+    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'style'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
+  };
+
+  return DOMPurify.sanitize(html, config);
+};
+
 interface Email {
   id: number;
   uid: number;
@@ -340,55 +396,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
             <div
               className="email-html-content"
               dangerouslySetInnerHTML={{
-                __html: DOMPurify.sanitize(email.body_html, {
-                  ALLOWED_TAGS: [
-                    'p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li', 'blockquote',
-                    'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'pre', 'code', 'table', 'thead',
-                    'tbody', 'tr', 'th', 'td', 'img', 'hr', 'div', 'span'
-                  ],
-                  ALLOWED_ATTR: showImages ? ['href', 'target', 'rel', 'src', 'alt', 'width', 'height', 'style', 'class'] : ['href', 'target', 'rel', 'class'],
-                  ALLOW_DATA_ATTR: false,
-                  ADD_ATTR: ['target'],
-                  ADD_DATA_URI_TAGS: showImages ? ['img'] : [],
-                  ADD_URI_SAFE_ATTR: showImages ? ['src'] : [],
-                  FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input'],
-                  FORBID_ATTR: ['onerror', 'onload', 'onclick'],
-                  transformTags: {
-                    'a': (tagName, attribs) => {
-                      return {
-                        tagName: 'a',
-                        attribs: {
-                          ...attribs,
-                          target: '_blank',
-                          rel: 'noopener noreferrer'
-                        }
-                      };
-                    },
-                    'img': (tagName, attribs) => {
-                      if (!showImages) {
-                        return {
-                          tagName: 'span',
-                          attribs: {
-                            class: 'inline-block px-2 py-1 text-xs bg-gray-200 rounded'
-                          },
-                          text: '[Image blocked]'
-                        };
-                      }
-                      // Handle cid: URIs (embedded images) - not yet supported
-                      const src = attribs.src || '';
-                      if (src.startsWith('cid:')) {
-                        return {
-                          tagName: 'span',
-                          attribs: {
-                            class: 'inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded border border-yellow-300'
-                          },
-                          text: '[Embedded image]'
-                        };
-                      }
-                      return { tagName, attribs };
-                    }
-                  }
-                })
+                __html: sanitizeEmailHtml(email.body_html, showImages)
               }}
             />
           ) : (
