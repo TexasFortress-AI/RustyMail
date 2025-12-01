@@ -60,6 +60,7 @@ async fn test_ai_service_conversation_id_tracking() {
         model_override: None,
         current_folder: None,
         account_id: None,
+        enabled_tools: None,
     };
 
     let response = service.process_query(query).await;
@@ -79,6 +80,7 @@ async fn test_ai_service_accepts_account_context() {
         model_override: None,
         current_folder: Some("INBOX".to_string()),
         account_id: Some("test@example.com".to_string()),
+        enabled_tools: None,
     };
 
     // Service should accept the query with account context
@@ -289,6 +291,7 @@ async fn test_ai_service_provider_override() {
         model_override: None,
         current_folder: None,
         account_id: None,
+        enabled_tools: None,
     };
 
     let response = service.process_query(query).await;
@@ -307,6 +310,7 @@ async fn test_ai_service_model_override() {
         model_override: Some("custom-model".to_string()),
         current_folder: None,
         account_id: None,
+        enabled_tools: None,
     };
 
     let response = service.process_query(query).await;
@@ -325,6 +329,7 @@ async fn test_ai_service_followup_suggestions() {
         model_override: None,
         current_folder: None,
         account_id: None,
+        enabled_tools: None,
     };
 
     let response = service.process_query(query).await.unwrap();
@@ -376,6 +381,7 @@ async fn test_ai_service_auto_conversation_id() {
         model_override: None,
         current_folder: None,
         account_id: None,
+        enabled_tools: None,
     };
 
     let response = service.process_query(query).await.unwrap();

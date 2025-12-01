@@ -124,6 +124,7 @@ This shouldn't parse."#;
             model_override: None,
             current_folder: Some("INBOX".to_string()),
             account_id: Some("test@example.com".to_string()),
+            enabled_tools: None,
         };
 
         // Verify account_id is set correctly

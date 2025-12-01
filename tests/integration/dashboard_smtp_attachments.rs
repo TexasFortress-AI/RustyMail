@@ -90,7 +90,7 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
     let account_service = Arc::new(TokioMutex::new(account_service_temp));
 
     // Create mock IMAP session factory
-    let mock_factory: rustymail::imap::session::ImapClientFactory = Box::new(|| {
+    let mock_factory: rustymail::imap::ImapSessionFactory = Box::new(|| {
         Box::pin(async {
             Err(rustymail::imap::ImapError::Connection("Mock IMAP client".to_string()))
         })
