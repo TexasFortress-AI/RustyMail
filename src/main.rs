@@ -222,9 +222,11 @@ async fn main() -> std::io::Result<()> {
     // Start background metrics collection task (pass only connection pool to avoid circular reference)
     dashboard_state.metrics_service.start_background_collection(Arc::clone(&dashboard_state.connection_pool));
 
-    // Start background email sync task
-    Arc::clone(&dashboard_state.sync_service).start_background_sync();
-    info!("Background email sync task started");
+    // Start sync process spawner instead of in-process sync
+    // This runs sync in a separate process that exits after each cycle,
+    // ensuring memory is fully reclaimed by the OS
+    start_sync_process_spawner();
+    info!("Sync process spawner started");
 
     // Start outbox worker for asynchronous email sending
     let outbox_worker = Arc::new(rustymail::dashboard::services::OutboxWorker::new(
@@ -346,3 +348,42 @@ async fn main() -> std::io::Result<()> {
     server.await
 }
 
+/// Start a background task that spawns the sync process periodically.
+/// The sync process runs in a separate process that exits after each sync cycle,
+/// ensuring all memory allocated during sync is returned to the OS.
+fn start_sync_process_spawner() {
+    use std::time::Duration;
+
+    let sync_interval: u64 = std::env::var("SYNC_INTERVAL_SECONDS")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(300); // Default: 5 minutes
+
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(sync_interval));
+        interval.tick().await; // Skip first immediate tick
+
+        loop {
+            interval.tick().await;
+
+            // Find the sync binary - check multiple locations
+            let sync_binary = if std::path::Path::new("./target/release/rustymail-sync").exists() {
+                "./target/release/rustymail-sync"
+            } else if std::path::Path::new("./rustymail-sync").exists() {
+                "./rustymail-sync"
+            } else {
+                // Try to find it in PATH
+                "rustymail-sync"
+            };
+
+            match std::process::Command::new(sync_binary).spawn() {
+                Ok(child) => {
+                    info!("Spawned sync process (pid: {:?})", child.id());
+                }
+                Err(e) => {
+                    error!("Failed to spawn sync process '{}': {}", sync_binary, e);
+                }
+            }
+        }
+    });
+}

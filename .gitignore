@@ -101,3 +101,5 @@ frontend/rustymail-app-main/config/accounts_connection_status.json
 **/accounts_connection_status.json
 test_data/*_accounts_connection_status.json
 
+# Sync process lock file (runtime state)
+data/.sync.lock
