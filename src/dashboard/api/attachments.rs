@@ -38,6 +38,13 @@ pub struct AttachmentPathParams {
     pub filename: String,
 }
 
+/// Path parameters for inline attachment download by Content-ID
+#[derive(Debug, Deserialize)]
+pub struct InlineAttachmentPathParams {
+    pub message_id: String,
+    pub content_id: String,
+}
+
 /// Response for listing attachments
 #[derive(Debug, Serialize)]
 pub struct ListAttachmentsResponse {
@@ -220,4 +227,49 @@ pub async fn download_attachments_zip(
     // Serve the ZIP file
     NamedFile::open(&result_path)
         .map_err(|e| ApiError::InternalError(format!("Failed to open ZIP file: {}", e)))
+}
+
+/// Handler for downloading an inline attachment by Content-ID
+/// GET /api/attachments/{message_id}/inline/{content_id}
+/// This is used to serve images referenced by cid: URIs in HTML emails
+pub async fn download_inline_attachment(
+    path: web::Path<InlineAttachmentPathParams>,
+    query: web::Query<serde_json::Value>,
+    state: web::Data<DashboardState>,
+    _req: HttpRequest,
+) -> Result<NamedFile, ApiError> {
+    debug!("Handling GET /api/attachments/{}/inline/{}", path.message_id, path.content_id);
+
+    // Get account_id from query parameters
+    let account_id = query.get("account_id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| ApiError::BadRequest("account_id parameter required".to_string()))?;
+
+    // Get database pool
+    let db_pool = state.cache_service.db_pool.as_ref()
+        .ok_or_else(|| ApiError::InternalError("Database not available".to_string()))?;
+
+    // Get attachment by Content-ID
+    let attachment = attachment_storage::get_attachment_by_content_id(
+        db_pool,
+        account_id,
+        &path.message_id,
+        &path.content_id,
+    )
+    .await
+    .map_err(|e| ApiError::InternalError(format!("Failed to get attachment: {}", e)))?
+    .ok_or_else(|| ApiError::NotFound(format!("Inline attachment with Content-ID '{}' not found", path.content_id)))?;
+
+    // Get the file path
+    let file_path = PathBuf::from(&attachment.storage_path);
+
+    if !file_path.exists() {
+        return Err(ApiError::NotFound(format!("Inline attachment file not found on disk: {}", path.content_id)));
+    }
+
+    info!("Serving inline attachment: {} (Content-ID: {})", attachment.filename, path.content_id);
+
+    // Serve the file
+    NamedFile::open(&file_path)
+        .map_err(|e| ApiError::InternalError(format!("Failed to open attachment: {}", e)))
 }

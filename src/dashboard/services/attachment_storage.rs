@@ -32,6 +32,7 @@ pub struct AttachmentInfo {
     pub filename: String,
     pub size_bytes: i64,
     pub content_type: Option<String>,
+    pub content_id: Option<String>,
     pub downloaded_at: DateTime<Utc>,
     pub storage_path: String,
 }
@@ -121,17 +122,19 @@ pub async fn save_attachment(
 
     let size_bytes = mime_part.body.len() as i64;
     let content_type = Some(mime_part.content_type.mime_type());
+    let content_id = mime_part.content_id.clone();
     let relative_path = storage_path.to_string_lossy().to_string();
 
     // Insert metadata into database
     sqlx::query(
         r#"
         INSERT INTO attachment_metadata
-            (message_id, account_email, filename, size_bytes, content_type, storage_path)
-        VALUES (?, ?, ?, ?, ?, ?)
+            (message_id, account_email, filename, size_bytes, content_type, content_id, storage_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(message_id, account_email, filename) DO UPDATE SET
             size_bytes = excluded.size_bytes,
             content_type = excluded.content_type,
+            content_id = excluded.content_id,
             storage_path = excluded.storage_path,
             downloaded_at = CURRENT_TIMESTAMP
         "#
@@ -141,16 +144,18 @@ pub async fn save_attachment(
     .bind(&filename)
     .bind(size_bytes)
     .bind(&content_type)
+    .bind(&content_id)
     .bind(&relative_path)
     .execute(pool)
     .await?;
 
-    info!("Saved attachment metadata for {} (message: {})", filename, message_id);
+    info!("Saved attachment metadata for {} (message: {}, content_id: {:?})", filename, message_id, content_id);
 
     Ok(AttachmentInfo {
         filename,
         size_bytes,
         content_type,
+        content_id,
         downloaded_at: Utc::now(),
         storage_path: relative_path,
     })
@@ -162,9 +167,9 @@ pub async fn get_attachments_metadata(
     account: &str,
     message_id: &str,
 ) -> Result<Vec<AttachmentInfo>, AttachmentError> {
-    let attachments = sqlx::query_as::<_, (String, i64, Option<String>, DateTime<Utc>, String)>(
+    let attachments = sqlx::query_as::<_, (String, i64, Option<String>, Option<String>, DateTime<Utc>, String)>(
         r#"
-        SELECT filename, size_bytes, content_type, downloaded_at, storage_path
+        SELECT filename, size_bytes, content_type, content_id, downloaded_at, storage_path
         FROM attachment_metadata
         WHERE message_id = ? AND account_email = ?
         ORDER BY downloaded_at ASC
@@ -177,14 +182,54 @@ pub async fn get_attachments_metadata(
 
     Ok(attachments
         .into_iter()
-        .map(|(filename, size_bytes, content_type, downloaded_at, storage_path)| AttachmentInfo {
+        .map(|(filename, size_bytes, content_type, content_id, downloaded_at, storage_path)| AttachmentInfo {
             filename,
             size_bytes,
             content_type,
+            content_id,
             downloaded_at,
             storage_path,
         })
         .collect())
+}
+
+/// Get an inline attachment by Content-ID
+pub async fn get_attachment_by_content_id(
+    pool: &SqlitePool,
+    account: &str,
+    message_id: &str,
+    content_id: &str,
+) -> Result<Option<AttachmentInfo>, AttachmentError> {
+    // Normalize content_id by removing angle brackets if present
+    let normalized_cid = content_id
+        .trim_start_matches('<')
+        .trim_end_matches('>');
+
+    let attachment = sqlx::query_as::<_, (String, i64, Option<String>, Option<String>, DateTime<Utc>, String)>(
+        r#"
+        SELECT filename, size_bytes, content_type, content_id, downloaded_at, storage_path
+        FROM attachment_metadata
+        WHERE message_id = ? AND account_email = ?
+          AND (content_id = ? OR content_id = ? OR content_id = ?)
+        LIMIT 1
+        "#
+    )
+    .bind(message_id)
+    .bind(account)
+    .bind(content_id) // Try exact match
+    .bind(normalized_cid) // Try without brackets
+    .bind(format!("<{}>", normalized_cid)) // Try with brackets
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(attachment.map(|(filename, size_bytes, content_type, content_id, downloaded_at, storage_path)| AttachmentInfo {
+        filename,
+        size_bytes,
+        content_type,
+        content_id,
+        downloaded_at,
+        storage_path,
+    }))
 }
 
 /// Delete all attachments for an email

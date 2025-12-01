@@ -62,6 +62,7 @@ pub fn configure_routes() -> Scope {
         // Attachment management endpoints
         .route("/attachments/list", web::get().to(attachments::list_attachments))
         .route("/attachments/{message_id}/zip", web::get().to(attachments::download_attachments_zip))
+        .route("/attachments/{message_id}/inline/{content_id}", web::get().to(attachments::download_inline_attachment))
         .route("/attachments/{message_id}/{filename}", web::get().to(attachments::download_attachment))
 }
 

@@ -17,8 +17,16 @@ import { EmailContext } from './EmailList';
 import DOMPurify from 'dompurify';
 import './EmailBody.css';
 
+interface SanitizeOptions {
+  showImages: boolean;
+  messageId?: string;
+  accountId?: string;
+}
+
 // Helper function to sanitize HTML with image handling
-const sanitizeEmailHtml = (html: string, showImages: boolean): string => {
+const sanitizeEmailHtml = (html: string, options: SanitizeOptions): string => {
+  const { showImages, messageId, accountId } = options;
+
   // Configure DOMPurify hooks for image handling
   DOMPurify.removeAllHooks();
 
@@ -33,16 +41,25 @@ const sanitizeEmailHtml = (html: string, showImages: boolean): string => {
       }
     });
   } else {
-    // When images are shown, handle cid: URIs
+    // When images are shown, handle cid: URIs by rewriting to backend endpoint
     DOMPurify.addHook('afterSanitizeAttributes', (node) => {
       if (node.tagName === 'IMG') {
         const src = node.getAttribute('src') || '';
         if (src.startsWith('cid:')) {
-          // Replace cid: images with placeholder
-          const placeholder = document.createElement('span');
-          placeholder.className = 'inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded border border-yellow-300';
-          placeholder.textContent = '[Embedded image]';
-          node.parentNode?.replaceChild(placeholder, node);
+          // Extract the Content-ID (remove 'cid:' prefix)
+          const contentId = src.substring(4);
+
+          if (messageId && accountId) {
+            // Rewrite to backend inline attachment endpoint
+            const inlineUrl = `${API_BASE_URL}/dashboard/attachments/${encodeURIComponent(messageId)}/inline/${encodeURIComponent(contentId)}?account_id=${encodeURIComponent(accountId)}`;
+            node.setAttribute('src', inlineUrl);
+          } else {
+            // Fallback: show placeholder if we don't have message context
+            const placeholder = document.createElement('span');
+            placeholder.className = 'inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded border border-yellow-300';
+            placeholder.textContent = '[Embedded image]';
+            node.parentNode?.replaceChild(placeholder, node);
+          }
         }
       }
     });
@@ -56,7 +73,7 @@ const sanitizeEmailHtml = (html: string, showImages: boolean): string => {
     }
   });
 
-  const config: DOMPurify.Config = {
+  const purifyConfig: DOMPurify.Config = {
     ALLOWED_TAGS: [
       'p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li', 'blockquote',
       'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'pre', 'code', 'table', 'thead',
@@ -70,7 +87,7 @@ const sanitizeEmailHtml = (html: string, showImages: boolean): string => {
     FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
   };
 
-  return DOMPurify.sanitize(html, config);
+  return DOMPurify.sanitize(html, purifyConfig);
 };
 
 interface Email {
@@ -396,7 +413,11 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
             <div
               className="email-html-content"
               dangerouslySetInnerHTML={{
-                __html: sanitizeEmailHtml(email.body_html, showImages)
+                __html: sanitizeEmailHtml(email.body_html, {
+                  showImages,
+                  messageId: email.message_id || undefined,
+                  accountId: currentAccount?.id
+                })
               }}
             />
           ) : (
