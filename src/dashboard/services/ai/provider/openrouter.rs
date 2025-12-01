@@ -10,7 +10,7 @@ use reqwest::{Client, header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT
 use serde::{Serialize, Deserialize};
 use log::{debug, warn, error};
 use crate::api::errors::ApiError as RestApiError;
-use super::{AiProvider, AiChatMessage}; // Import trait and common message struct
+use super::{AiProvider, AiChatMessage, get_ai_request_timeout, get_ai_generation_timeout}; // Import trait, common message struct, and timeout helpers
 
 // Get OpenRouter API base URL from environment
 fn get_base_url() -> String {
@@ -102,7 +102,7 @@ impl AiProvider for OpenRouterAdapter {
             .get(&models_url)
             .headers(self.common_headers.clone())
             .header(AUTHORIZATION, format!("Bearer {}", self.api_key))
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(get_ai_request_timeout())
             .send()
             .await
             .map_err(|e| RestApiError::ServiceUnavailable { service: format!("OpenRouter models: {}", e) })?;
@@ -149,7 +149,7 @@ impl AiProvider for OpenRouterAdapter {
             // Set authorization header
             .header(AUTHORIZATION, format!("Bearer {}", self.api_key))
             .json(&request_payload)
-            .timeout(std::time::Duration::from_secs(60)) // Slightly longer timeout maybe?
+            .timeout(get_ai_generation_timeout()) // Longer timeout for generation
             .send()
             .await
             .map_err(|e| RestApiError::ServiceUnavailable { service: format!("OpenRouter: {}", e) })?;

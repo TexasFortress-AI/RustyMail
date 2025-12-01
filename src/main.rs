@@ -161,22 +161,14 @@ async fn main() -> std::io::Result<()> {
         }
     }
 
-    let pool_config = PoolConfig {
-        min_connections: 5,
-        max_connections: 50,
-        idle_timeout: Duration::from_secs(300), // 5 minutes
-        health_check_interval: Duration::from_secs(60), // 1 minute
-        acquire_timeout: Duration::from_secs(10),
-        max_session_duration: Duration::from_secs(3600), // 1 hour
-        max_concurrent_creations: 10,
-    };
+    let pool_config = PoolConfig::default();
 
     let connection_factory = Arc::new(ImapConnectionFactory {
         session_factory: imap_session_factory.clone(),
     });
 
-    let connection_pool = ConnectionPool::new(connection_factory, pool_config);
-    info!("Connection Pool created with min={}, max={} connections", 5, 50);
+    let connection_pool = ConnectionPool::new(connection_factory, pool_config.clone());
+    info!("Connection Pool created with min={}, max={} connections", pool_config.min_connections, pool_config.max_connections);
 
     // --- Create Tool Registry (REMOVED) ---
     // let tool_registry_rest = create_mcp_tool_registry(imap_client_rest.clone());

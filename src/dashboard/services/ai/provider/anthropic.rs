@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Serialize, Deserialize};
 use log::{debug, warn, error};
-use super::{AiProvider, AiChatMessage}; // Import trait and common message struct
+use super::{AiProvider, AiChatMessage, get_ai_request_timeout}; // Import trait, common message struct, and timeout helper
 use crate::api::errors::ApiError as RestApiError;
 
 // Get Anthropic API base URL from environment or use default
@@ -122,7 +122,7 @@ impl AiProvider for AnthropicAdapter {
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
             .json(&request_payload)
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(get_ai_request_timeout())
             .send()
             .await
             .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Anthropic: {}", e) })?;

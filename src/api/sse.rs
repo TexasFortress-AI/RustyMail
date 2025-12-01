@@ -35,8 +35,23 @@ use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
 
-const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
-const CLIENT_TIMEOUT: Duration = Duration::from_secs(10);
+fn get_heartbeat_interval() -> Duration {
+    Duration::from_secs(
+        std::env::var("SSE_HEARTBEAT_INTERVAL_SECONDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5)
+    )
+}
+
+fn get_client_timeout() -> Duration {
+    Duration::from_secs(
+        std::env::var("SSE_CLIENT_TIMEOUT_SECONDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10)
+    )
+}
 
 #[derive(Debug, Clone)]
 pub struct ClientState {
@@ -74,8 +89,8 @@ impl SseState {
     pub fn new(mcp_handler: Arc<dyn McpHandler>, port_state: Arc<TokioMutex<McpPortState>>) -> Self {
         SseState {
             sessions: HashMap::new(),
-            hb_interval: HEARTBEAT_INTERVAL,
-            client_timeout: CLIENT_TIMEOUT,
+            hb_interval: get_heartbeat_interval(),
+            client_timeout: get_client_timeout(),
             mcp_handler,
             port_state,
         }

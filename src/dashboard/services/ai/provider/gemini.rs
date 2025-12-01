@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Serialize, Deserialize};
 use log::{debug, warn, error};
-use super::{AiProvider, AiChatMessage};
+use super::{AiProvider, AiChatMessage, get_ai_request_timeout};
 use crate::api::errors::ApiError as RestApiError;
 
 // Get Gemini API base URL from environment or use default
@@ -118,7 +118,7 @@ impl AiProvider for GeminiAdapter {
 
         let response = self.http_client
             .get(&models_url)
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(get_ai_request_timeout())
             .send()
             .await
             .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Gemini models: {}", e) })?;
@@ -177,7 +177,7 @@ impl AiProvider for GeminiAdapter {
         let response = self.http_client
             .post(&url)
             .json(&request_payload)
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(get_ai_request_timeout())
             .send()
             .await
             .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Gemini: {}", e) })?;

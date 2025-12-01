@@ -6,6 +6,27 @@
 use async_trait::async_trait;
 use serde::{Serialize, Deserialize};
 use crate::api::errors::ApiError as RestApiError;
+use std::time::Duration;
+
+/// Get the standard AI request timeout from environment variable or use default (30 seconds)
+pub fn get_ai_request_timeout() -> Duration {
+    Duration::from_secs(
+        std::env::var("AI_REQUEST_TIMEOUT_SECONDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(30)
+    )
+}
+
+/// Get the AI generation timeout from environment variable or use default (120 seconds)
+pub fn get_ai_generation_timeout() -> Duration {
+    Duration::from_secs(
+        std::env::var("AI_GENERATION_TIMEOUT_SECONDS")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(120)
+    )
+}
 
 pub mod openai;
 pub mod openrouter;

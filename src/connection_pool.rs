@@ -55,12 +55,38 @@ impl Default for PoolConfig {
     fn default() -> Self {
         Self {
             min_connections: 5,  // Reduced to limit memory usage
-            max_connections: 50, // Reduced to limit memory growth
-            idle_timeout: Duration::from_secs(60),      // 1 minute - recycle idle connections faster
-            health_check_interval: Duration::from_secs(30),
-            acquire_timeout: Duration::from_secs(5),     // Reduced for faster failures under load
-            max_session_duration: Duration::from_secs(300), // 5 minutes - force connection recycling
-            max_concurrent_creations: 10, // Prevent connection creation storms
+            max_connections: std::env::var("MAX_CONNECTIONS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(50),
+            idle_timeout: Duration::from_secs(
+                std::env::var("POOL_IDLE_TIMEOUT_SECONDS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(60)
+            ),
+            health_check_interval: Duration::from_secs(
+                std::env::var("POOL_HEALTH_CHECK_INTERVAL_SECONDS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(30)
+            ),
+            acquire_timeout: Duration::from_secs(
+                std::env::var("POOL_ACQUIRE_TIMEOUT_SECONDS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(5)
+            ),
+            max_session_duration: Duration::from_secs(
+                std::env::var("POOL_MAX_SESSION_DURATION_SECONDS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(300)
+            ),
+            max_concurrent_creations: std::env::var("POOL_MAX_CONCURRENT_CREATIONS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10),
         }
     }
 }

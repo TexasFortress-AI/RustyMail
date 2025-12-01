@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Serialize, Deserialize};
 use log::{debug, warn, error};
-use super::{AiProvider, AiChatMessage}; // Import trait and common message struct
+use super::{AiProvider, AiChatMessage, get_ai_request_timeout, get_ai_generation_timeout}; // Import trait, common message struct, and timeout helpers
 use crate::api::errors::ApiError as RestApiError;
 
 // Default Ollama model
@@ -81,7 +81,7 @@ impl AiProvider for OllamaAdapter {
         let response = self.http_client
             .get(&url)
             .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(get_ai_request_timeout())
             .send()
             .await
             .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Ollama models: {}", e) })?;
@@ -127,7 +127,7 @@ impl AiProvider for OllamaAdapter {
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&request_payload)
-            .timeout(std::time::Duration::from_secs(60)) // Ollama might be slower
+            .timeout(get_ai_generation_timeout()) // Ollama might be slower, use longer timeout
             .send()
             .await
             .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Ollama: {}", e) })?;

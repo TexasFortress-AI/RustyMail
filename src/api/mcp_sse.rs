@@ -68,8 +68,18 @@ impl McpSseState {
     pub fn new(mcp_handler: Arc<dyn McpHandler>, port_state: Arc<TokioMutex<McpPortState>>) -> Self {
         McpSseState {
             sessions: HashMap::new(),
-            hb_interval: Duration::from_secs(5),
-            client_timeout: Duration::from_secs(15),
+            hb_interval: Duration::from_secs(
+                std::env::var("SSE_HEARTBEAT_INTERVAL_SECONDS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(5)
+            ),
+            client_timeout: Duration::from_secs(
+                std::env::var("SSE_CLIENT_TIMEOUT_SECONDS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(15)
+            ),
             mcp_handler,
             port_state,
         }

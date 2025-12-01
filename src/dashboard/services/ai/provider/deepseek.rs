@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Serialize, Deserialize};
 use log::{debug, warn, error};
-use super::{AiProvider, AiChatMessage};
+use super::{AiProvider, AiChatMessage, get_ai_request_timeout};
 use crate::api::errors::ApiError as RestApiError;
 
 // Get DeepSeek API base URL from environment or use default
@@ -85,7 +85,7 @@ impl AiProvider for DeepSeekAdapter {
         let response = self.http_client
             .get(&models_url)
             .bearer_auth(&self.api_key)
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(get_ai_request_timeout())
             .send()
             .await
             .map_err(|e| RestApiError::ServiceUnavailable { service: format!("DeepSeek models: {}", e) })?;
@@ -131,7 +131,7 @@ impl AiProvider for DeepSeekAdapter {
             .post(&url)
             .bearer_auth(&self.api_key)
             .json(&request_payload)
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(get_ai_request_timeout())
             .send()
             .await
             .map_err(|e| RestApiError::ServiceUnavailable { service: format!("DeepSeek: {}", e) })?;

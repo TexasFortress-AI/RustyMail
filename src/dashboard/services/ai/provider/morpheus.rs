@@ -10,7 +10,7 @@ use reqwest::Client;
 use serde::{Serialize, Deserialize};
 use serde_json;
 use log::{debug, warn, error};
-use super::{AiProvider, AiChatMessage}; // Import trait and common message struct
+use super::{AiProvider, AiChatMessage, get_ai_request_timeout}; // Import trait, common message struct, and timeout helper
 use crate::api::errors::ApiError as RestApiError;
 
 // Get Morpheus API base URL from environment or use default
@@ -94,7 +94,7 @@ impl AiProvider for MorpheusAdapter {
         let response = self.http_client
             .get(&models_url)
             .bearer_auth(&self.api_key)
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(get_ai_request_timeout())
             .send()
             .await
             .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Morpheus models: {}", e) })?;
@@ -160,7 +160,7 @@ impl AiProvider for MorpheusAdapter {
             .post(&url)
             .bearer_auth(&self.api_key)
             .json(&request_payload)
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(get_ai_request_timeout())
             .send()
             .await
             .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Morpheus: {}", e) })?;

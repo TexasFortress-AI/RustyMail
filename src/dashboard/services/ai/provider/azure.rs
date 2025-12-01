@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Serialize, Deserialize};
 use log::{debug, warn, error};
-use super::{AiProvider, AiChatMessage};
+use super::{AiProvider, AiChatMessage, get_ai_request_timeout};
 use crate::api::errors::ApiError as RestApiError;
 
 const DEFAULT_AZURE_API_VERSION: &str = "2024-10-01";
@@ -106,7 +106,7 @@ impl AiProvider for AzureOpenAIAdapter {
             .post(&url)
             .header("api-key", &self.api_key)
             .json(&request_payload)
-            .timeout(std::time::Duration::from_secs(30))
+            .timeout(get_ai_request_timeout())
             .send()
             .await
             .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Azure OpenAI: {}", e) })?;
