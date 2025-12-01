@@ -130,6 +130,7 @@ dhat = { version = "0.3", optional = true }
 # Only enabled on non-Windows targets
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
 tikv-jemallocator = "0.6"
+mimalloc = { version = "0.1", optional = true }
 
 [dev-dependencies]
 # Remove reqwest native-tls feature if not needed
@@ -161,6 +162,10 @@ integration_tests = []
 live_tests = []
 # Feature flag for heap profiling with DHAT
 dhat-heap = ["dep:dhat"]
+# Feature flag to use system allocator instead of jemalloc (for testing memory behavior)
+system-alloc = []
+# Feature flag to use mimalloc instead of jemalloc
+mimalloc-alloc = ["mimalloc"]
 
 [lib]
 name = "rustymail"

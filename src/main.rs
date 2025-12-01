@@ -34,9 +34,15 @@ use rustymail::prelude::*; // Import many common types
 // Use jemalloc as the global allocator for better memory management
 // jemalloc releases memory back to the OS, unlike the default system allocator
 // This prevents memory bloat from IMAP session BytePools being held by the allocator
-#[cfg(all(not(target_env = "msvc"), not(feature = "dhat-heap")))]
+// NOTE: Can be disabled with --features system-alloc or --features mimalloc-alloc for testing
+#[cfg(all(not(target_env = "msvc"), not(feature = "dhat-heap"), not(feature = "system-alloc"), not(feature = "mimalloc-alloc")))]
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
+// Use mimalloc allocator (known for better memory return to OS on macOS)
+#[cfg(feature = "mimalloc-alloc")]
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 // Enable DHAT heap profiler when compiled with --features dhat-heap
 #[cfg(feature = "dhat-heap")]
