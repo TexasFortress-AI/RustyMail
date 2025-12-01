@@ -2631,9 +2631,17 @@ pub async fn execute_mcp_tool_inner(
     result
 }
 
+// Query parameter for MCP tool variant
+#[derive(Debug, Deserialize)]
+pub struct McpExecuteQuery {
+    #[serde(default)]
+    pub variant: String,
+}
+
 // HTTP Handler for executing MCP tools - wraps execute_mcp_tool_inner
 pub async fn execute_mcp_tool(
     state: web::Data<DashboardState>,
+    query: web::Query<McpExecuteQuery>,
     req: web::Json<serde_json::Value>,
 ) -> Result<impl Responder, ApiError> {
     let tool_name = req.get("tool")
@@ -2644,8 +2652,15 @@ pub async fn execute_mcp_tool(
         .cloned()
         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
-    // Call the inner function to get the result
-    let result = execute_mcp_tool_inner(state.get_ref(), tool_name, params).await;
+    // Check if this is a high-level tool request
+    let result = if query.variant == "high-level" {
+        // Route to high-level tools handler
+        use crate::dashboard::api::high_level_tools;
+        high_level_tools::execute_high_level_tool(state.get_ref(), tool_name, params).await
+    } else {
+        // Call the standard MCP tool handler
+        execute_mcp_tool_inner(state.get_ref(), tool_name, params).await
+    };
 
     Ok(HttpResponse::Ok().json(result))
 }

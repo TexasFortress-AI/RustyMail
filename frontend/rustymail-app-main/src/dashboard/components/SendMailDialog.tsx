@@ -3,7 +3,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { emailsApi, SendEmailRequest } from '../api/emails';
 import {
   Dialog,
@@ -121,9 +121,13 @@ export function SendMailDialog({
     }
   }, [open, mode, originalEmail]);
 
-  // Fetch AI-generated instructions when dialog opens in reply mode
+  // Track if we've already fetched instructions for this dialog session
+  const hasFetchedInstructions = useRef(false);
+
+  // Fetch AI-generated instructions when dialog opens in reply mode (only once per open)
   useEffect(() => {
-    if (open && mode === 'reply' && originalEmail && emailContext) {
+    if (open && mode === 'reply' && originalEmail && emailContext && !hasFetchedInstructions.current) {
+      hasFetchedInstructions.current = true;
       const fetchInstructions = async () => {
         setLoadingInstructions(true);
         setAiInstructions('');
@@ -134,7 +138,10 @@ export function SendMailDialog({
             body_preview: originalEmail.body_text || '',
           });
           if (result.success && result.instruction) {
-            setAiInstructions(result.instruction);
+            // Strip any provider/model prefix like "[Provider: xxx, Model: xxx]"
+            let instruction = result.instruction;
+            instruction = instruction.replace(/^\[Provider:.*?\]\s*/i, '');
+            setAiInstructions(instruction);
           } else {
             setAiInstructions('Write a professional reply');
           }
@@ -147,8 +154,9 @@ export function SendMailDialog({
       fetchInstructions();
     } else if (!open) {
       setAiInstructions('');
+      hasFetchedInstructions.current = false; // Reset for next open
     }
-  }, [open, mode, originalEmail, emailContext]);
+  }, [open, mode]);
 
   // Handle AI draft for reply
   const handleAiDraft = async () => {
@@ -168,12 +176,21 @@ export function SendMailDialog({
         description: 'AI is generating a reply...',
       });
 
+      console.log('[SendMailDialog] Drafting reply with:', {
+        email_uid: emailContext.uid,
+        folder: emailContext.folder,
+        account_id: accountEmail,
+        instructions: aiInstructions || undefined,
+      });
+
       const response = await emailsApi.draftReply({
         email_uid: emailContext.uid,
         folder: emailContext.folder,
         account_id: accountEmail,
         instructions: aiInstructions || undefined,
       });
+
+      console.log('[SendMailDialog] Draft response:', response);
 
       if (response.success && response.data?.draft) {
         // Update the body with the AI draft, keeping the original message quote
@@ -188,7 +205,9 @@ export function SendMailDialog({
           description: 'AI has drafted a reply for you',
         });
       } else {
-        throw new Error(response.error || 'Failed to generate draft');
+        // Log full response for debugging
+        console.error('[SendMailDialog] Draft failed, full response:', JSON.stringify(response, null, 2));
+        throw new Error(response.error || `Failed to generate draft: ${JSON.stringify(response)}`);
       }
     } catch (error) {
       console.error('AI draft failed:', error);
