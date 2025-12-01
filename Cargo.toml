@@ -118,7 +118,7 @@ reqwest = { version = "0.12", features = ["json"] }
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", branch = "main", features = ["server"] } # Use the MCP SDK
 rmcp-macros = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", branch = "main" } # MCP macros
 async-native-tls = "0.5.0"
-tracing = "0.1.41"
+tracing = "0.1.43"
 
 tokio-native-tls = "0.3.0"
 native-tls = "0.2"
