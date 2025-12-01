@@ -3046,40 +3046,107 @@ pub async fn set_ai_model(
     }
 }
 
-/// Trigger a full email sync
+/// Trigger an email sync using the separate sync process.
+/// This spawns the rustymail-sync binary which exits after sync, ensuring memory is returned to OS.
+///
+/// Query parameters:
+///   - account_id: Optional email address to sync only one account
+///   - folder: Optional folder name to sync only one folder (requires account_id)
+///
+/// If a sync is already running (exit code 2), returns success with status "in_progress".
 pub async fn trigger_email_sync(
     state: Data<DashboardState>,
     query: web::Query<serde_json::Value>,
 ) -> Result<impl Responder, ApiError> {
-    // Get account ID from query parameters or use default
+    // Extract optional account and folder from query params
     let account_id = match get_account_id_to_use(&query.0, &state).await {
-        Ok(id) => id,
-        Err(e) => {
-            error!("Failed to determine account for sync: {}", e);
-            return Err(e);
-        }
+        Ok(id) => Some(id),
+        Err(_) => None, // No account specified, will sync all
+    };
+    let folder = query.get("folder").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+    let mode_desc = match (&account_id, &folder) {
+        (Some(acc), Some(f)) => format!("account {} folder {}", acc, f),
+        (Some(acc), None) => format!("account {}", acc),
+        (None, _) => "all accounts".to_string(),
+    };
+    info!("Triggering email sync via separate process for {}", mode_desc);
+
+    // Find the sync binary - check multiple locations
+    let sync_binary = if std::path::Path::new("./target/release/rustymail-sync").exists() {
+        "./target/release/rustymail-sync"
+    } else if std::path::Path::new("./target/debug/rustymail-sync").exists() {
+        "./target/debug/rustymail-sync"
+    } else if std::path::Path::new("./rustymail-sync").exists() {
+        "./rustymail-sync"
+    } else {
+        "rustymail-sync"
     };
 
-    info!("Triggering full email sync for all folders for account: {}", account_id);
+    // Build command with optional arguments
+    let mut cmd = std::process::Command::new(sync_binary);
+    if let Some(ref acc) = account_id {
+        cmd.arg("--account").arg(acc);
+    }
+    if let Some(ref f) = folder {
+        cmd.arg("--folder").arg(f);
+    }
 
-    // Clone the sync service Arc and account_id to move into the async task
-    let sync_service = state.sync_service.clone();
-    let account_id_for_task = account_id.clone();
+    // Spawn the sync process and wait for it to complete (or detect already running)
+    match cmd.spawn() {
+        Ok(mut child) => {
+            let pid = child.id();
+            info!("Spawned sync process (pid: {})", pid);
 
-    // Spawn the sync task in the background
-    tokio::spawn(async move {
-        // Use sync_all_folders which dynamically fetches folder list from IMAP
-        match sync_service.sync_all_folders(&account_id_for_task).await {
-            Ok(()) => info!("All folder syncs completed successfully for account {}", account_id_for_task),
-            Err(e) => error!("Sync failed for account {}: {}", account_id_for_task, e),
+            // Wait briefly to see if it exits immediately with "already running" code
+            std::thread::sleep(std::time::Duration::from_millis(100));
+
+            match child.try_wait() {
+                Ok(Some(status)) => {
+                    // Process exited already
+                    if status.code() == Some(2) {
+                        // Exit code 2 = already running
+                        info!("Sync process reports another sync is already in progress");
+                        Ok(HttpResponse::Ok().json(serde_json::json!({
+                            "message": "Email sync is already in progress",
+                            "status": "in_progress"
+                        })))
+                    } else if status.success() {
+                        // Completed very quickly (unlikely but possible for empty sync)
+                        Ok(HttpResponse::Ok().json(serde_json::json!({
+                            "message": format!("Email sync completed for {}", mode_desc),
+                            "status": "completed"
+                        })))
+                    } else {
+                        // Some other error
+                        error!("Sync process exited with error code: {:?}", status.code());
+                        Err(ApiError::InternalError(format!("Sync process failed with exit code: {:?}", status.code())))
+                    }
+                }
+                Ok(None) => {
+                    // Still running - this is the normal case
+                    Ok(HttpResponse::Ok().json(serde_json::json!({
+                        "message": format!("Email sync started for {}", mode_desc),
+                        "status": "syncing",
+                        "pid": pid
+                    })))
+                }
+                Err(e) => {
+                    error!("Failed to check sync process status: {}", e);
+                    // Assume it's running
+                    Ok(HttpResponse::Ok().json(serde_json::json!({
+                        "message": format!("Email sync started for {}", mode_desc),
+                        "status": "syncing",
+                        "pid": pid
+                    })))
+                }
+            }
         }
-    });
-
-    Ok(HttpResponse::Ok().json(serde_json::json!({
-        "message": format!("Email sync started in background for all folders for account {}", account_id),
-        "status": "syncing",
-        "account_id": account_id
-    })))
+        Err(e) => {
+            error!("Failed to spawn sync process '{}': {}", sync_binary, e);
+            Err(ApiError::InternalError(format!("Failed to start sync process: {}", e)))
+        }
+    }
 }
 
 /// Get the current sync status

@@ -9,7 +9,15 @@
 //! When the process exits, the OS reclaims ALL memory, solving the memory growth issue
 //! where allocators hold freed memory for reuse.
 //!
-//! Usage: rustymail-sync [--database-url <URL>]
+//! Usage:
+//!   rustymail-sync                              # Sync all accounts and folders
+//!   rustymail-sync --account <email>            # Sync all folders for one account
+//!   rustymail-sync --account <email> --folder <name>  # Sync one folder for one account
+//!
+//! Exit codes:
+//!   0 - Success
+//!   1 - Error
+//!   2 - Another sync is already running (not an error, just informational)
 //!
 //! The main server spawns this binary periodically. SQLite is the communication channel.
 
@@ -30,6 +38,14 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 struct Cli {
     #[arg(long, env = "CACHE_DATABASE_URL", default_value = "sqlite:data/email_cache.db")]
     database_url: String,
+
+    /// Sync only this specific account (email address)
+    #[arg(long)]
+    account: Option<String>,
+
+    /// Sync only this specific folder (requires --account)
+    #[arg(long)]
+    folder: Option<String>,
 }
 
 /// Account row from database
@@ -59,9 +75,16 @@ fn process_exists(_pid: u32) -> bool {
     false
 }
 
+/// Result of trying to acquire a lock
+enum LockResult {
+    Acquired(File),
+    AlreadyRunning(u32),  // Contains PID of running process
+    Error(String),
+}
+
 /// Acquire a lock file with crash recovery.
 /// Returns the lock file handle on success.
-fn acquire_lock() -> Result<File, String> {
+fn acquire_lock() -> LockResult {
     let lock_path = "data/.sync.lock";
 
     // Check for existing lock
@@ -69,23 +92,27 @@ fn acquire_lock() -> Result<File, String> {
         if let Ok(pid) = contents.trim().parse::<u32>() {
             // Check if process is still running
             if process_exists(pid) {
-                return Err(format!("Another sync is already running (pid: {})", pid));
+                return LockResult::AlreadyRunning(pid);
             }
             // Stale lock - process crashed, remove it
             info!("Removing stale lock from crashed process {}", pid);
             if let Err(e) = std::fs::remove_file(lock_path) {
-                return Err(format!("Failed to remove stale lock: {}", e));
+                return LockResult::Error(format!("Failed to remove stale lock: {}", e));
             }
         }
     }
 
     // Create new lock with our PID
-    let mut file = File::create(lock_path)
-        .map_err(|e| format!("Failed to create lock file: {}", e))?;
-    write!(file, "{}", std::process::id())
-        .map_err(|e| format!("Failed to write PID to lock file: {}", e))?;
+    let file = match File::create(lock_path) {
+        Ok(f) => f,
+        Err(e) => return LockResult::Error(format!("Failed to create lock file: {}", e)),
+    };
+    let mut file = file;
+    if let Err(e) = write!(file, "{}", std::process::id()) {
+        return LockResult::Error(format!("Failed to write PID to lock file: {}", e));
+    }
 
-    Ok(file)
+    LockResult::Acquired(file)
 }
 
 /// Remove the lock file on exit
@@ -103,14 +130,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let cli = Cli::parse();
 
-    info!("Starting email sync process (pid: {})", std::process::id());
+    // Validate args: --folder requires --account
+    if cli.folder.is_some() && cli.account.is_none() {
+        error!("--folder requires --account to be specified");
+        std::process::exit(1);
+    }
+
+    let mode_desc = match (&cli.account, &cli.folder) {
+        (Some(acc), Some(folder)) => format!("account {} folder {}", acc, folder),
+        (Some(acc), None) => format!("account {}", acc),
+        (None, _) => "all accounts".to_string(),
+    };
+    info!("Starting email sync process (pid: {}) for {}", std::process::id(), mode_desc);
 
     // Acquire lock with crash recovery
     let _lock = match acquire_lock() {
-        Ok(f) => f,
-        Err(e) => {
-            info!("{}", e);
-            return Ok(());
+        LockResult::Acquired(f) => f,
+        LockResult::AlreadyRunning(pid) => {
+            info!("Another sync is already running (pid: {})", pid);
+            // Exit with code 2 to indicate "already running" (not an error)
+            std::process::exit(2);
+        }
+        LockResult::Error(e) => {
+            error!("Failed to acquire lock: {}", e);
+            std::process::exit(1);
         }
     };
 
@@ -128,17 +171,33 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = SqlitePool::connect(&cli.database_url).await?;
     info!("Connected to database: {}", cli.database_url);
 
-    // Read active accounts
-    let rows = sqlx::query(
-        r#"
-        SELECT email_address, imap_host, imap_port, imap_user, imap_pass, imap_use_tls
-        FROM accounts WHERE is_active = 1
-        "#
-    )
-    .fetch_all(&pool)
-    .await?;
+    // Build query based on whether we're filtering by account
+    let rows = if let Some(ref account_filter) = cli.account {
+        sqlx::query(
+            r#"
+            SELECT email_address, imap_host, imap_port, imap_user, imap_pass, imap_use_tls
+            FROM accounts WHERE is_active = 1 AND email_address = ?
+            "#
+        )
+        .bind(account_filter)
+        .fetch_all(&pool)
+        .await?
+    } else {
+        sqlx::query(
+            r#"
+            SELECT email_address, imap_host, imap_port, imap_user, imap_pass, imap_use_tls
+            FROM accounts WHERE is_active = 1
+            "#
+        )
+        .fetch_all(&pool)
+        .await?
+    };
 
     if rows.is_empty() {
+        if cli.account.is_some() {
+            error!("Account not found or not active: {:?}", cli.account);
+            std::process::exit(1);
+        }
         info!("No active accounts found, exiting");
         return Ok(());
     }
@@ -154,11 +213,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }).collect();
 
-    info!("Found {} active accounts to sync", accounts.len());
+    info!("Found {} account(s) to sync", accounts.len());
 
-    // Sync each account
+    // Sync each account (or single account if filtered)
     for account in accounts {
-        if let Err(e) = sync_account(&pool, &account).await {
+        if let Err(e) = sync_account(&pool, &account, cli.folder.as_deref()).await {
             error!("Failed to sync {}: {}", account.email_address, e);
         }
     }
@@ -167,9 +226,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Sync all folders for a single account
-async fn sync_account(pool: &SqlitePool, account: &AccountRow) -> Result<(), Box<dyn std::error::Error>> {
-    info!("Syncing account: {}", account.email_address);
+/// Sync folders for a single account
+/// If folder_filter is Some, only sync that specific folder
+async fn sync_account(pool: &SqlitePool, account: &AccountRow, folder_filter: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+    let mode = match folder_filter {
+        Some(f) => format!("folder {}", f),
+        None => "all folders".to_string(),
+    };
+    info!("Syncing account: {} ({})", account.email_address, mode);
 
     // Create IMAP session
     let client = rustymail::imap::client::ImapClient::<rustymail::imap::session::AsyncImapSessionWrapper>::connect(
@@ -181,15 +245,22 @@ async fn sync_account(pool: &SqlitePool, account: &AccountRow) -> Result<(), Box
 
     info!("Connected to IMAP server {} for {}", account.imap_host, account.email_address);
 
-    // List folders
-    let folders = client.list_folders().await?;
-    info!("Found {} folders for {}", folders.len(), account.email_address);
+    // Determine which folders to sync
+    let folders_to_sync: Vec<String> = if let Some(folder) = folder_filter {
+        // Single folder mode
+        vec![folder.to_string()]
+    } else {
+        // All folders mode - list from IMAP
+        let folders = client.list_folders().await?;
+        info!("Found {} folders for {}", folders.len(), account.email_address);
+        folders
+    };
 
     // Sync each folder
-    for folder in &folders {
+    for folder in &folders_to_sync {
         if let Err(e) = sync_folder(pool, &client, &account.email_address, folder).await {
             warn!("Failed to sync folder {} for {}: {}", folder, account.email_address, e);
-            // Continue with other folders
+            // Continue with other folders (only relevant in all-folders mode)
         }
     }
 
