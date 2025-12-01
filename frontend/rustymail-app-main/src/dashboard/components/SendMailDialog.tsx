@@ -77,49 +77,59 @@ export function SendMailDialog({
     }
   }, [open]);
 
-  // Prefill form based on mode and originalEmail
+  // Track if we've already prefilled the form for this dialog session
+  const hasPrefilled = useRef(false);
+
+  // Prefill form based on mode and originalEmail (only once per dialog open)
   useEffect(() => {
-    if (open && originalEmail) {
-      if (mode === 'reply') {
-        // Reply: Set TO to original sender
-        setToInput(originalEmail.from_address || '');
-        // Prefix subject with Re: if not already present
-        const subject = originalEmail.subject || '';
-        const newSubject = subject.toLowerCase().startsWith('re:') ? subject : `Re: ${subject}`;
-        setFormData(prev => ({
-          ...prev,
-          subject: newSubject,
-          body: `\n\n-------- Original Message --------\nFrom: ${originalEmail.from_name || originalEmail.from_address || 'Unknown'}\nSubject: ${originalEmail.subject || '(No subject)'}\n\n${originalEmail.body_text || ''}`
-        }));
-      } else if (mode === 'forward') {
-        // Forward: Clear TO, prefix subject with Fwd:
+    if (open && !hasPrefilled.current) {
+      hasPrefilled.current = true;
+
+      if (originalEmail) {
+        if (mode === 'reply') {
+          // Reply: Set TO to original sender
+          setToInput(originalEmail.from_address || '');
+          // Prefix subject with Re: if not already present
+          const subject = originalEmail.subject || '';
+          const newSubject = subject.toLowerCase().startsWith('re:') ? subject : `Re: ${subject}`;
+          setFormData(prev => ({
+            ...prev,
+            subject: newSubject,
+            body: `\n\n-------- Original Message --------\nFrom: ${originalEmail.from_name || originalEmail.from_address || 'Unknown'}\nSubject: ${originalEmail.subject || '(No subject)'}\n\n${originalEmail.body_text || ''}`
+          }));
+        } else if (mode === 'forward') {
+          // Forward: Clear TO, prefix subject with Fwd:
+          setToInput('');
+          const subject = originalEmail.subject || '';
+          const newSubject = subject.toLowerCase().startsWith('fwd:') || subject.toLowerCase().startsWith('fw:')
+            ? subject
+            : `Fwd: ${subject}`;
+          setFormData(prev => ({
+            ...prev,
+            subject: newSubject,
+            body: `\n\n-------- Forwarded Message --------\nFrom: ${originalEmail.from_name || originalEmail.from_address || 'Unknown'}\nTo: ${originalEmail.to_addresses.join(', ')}\nSubject: ${originalEmail.subject || '(No subject)'}\n\n${originalEmail.body_text || ''}`
+          }));
+        }
+      } else if (mode === 'compose') {
+        // Reset form for new compose
         setToInput('');
-        const subject = originalEmail.subject || '';
-        const newSubject = subject.toLowerCase().startsWith('fwd:') || subject.toLowerCase().startsWith('fw:')
-          ? subject
-          : `Fwd: ${subject}`;
-        setFormData(prev => ({
-          ...prev,
-          subject: newSubject,
-          body: `\n\n-------- Forwarded Message --------\nFrom: ${originalEmail.from_name || originalEmail.from_address || 'Unknown'}\nTo: ${originalEmail.to_addresses.join(', ')}\nSubject: ${originalEmail.subject || '(No subject)'}\n\n${originalEmail.body_text || ''}`
-        }));
+        setCcInput('');
+        setBccInput('');
+        setAiInstructions('');
+        setFormData({
+          to: [],
+          cc: [],
+          bcc: [],
+          subject: '',
+          body: '',
+          body_html: undefined,
+        });
       }
-    } else if (open && mode === 'compose') {
-      // Reset form for new compose
-      setToInput('');
-      setCcInput('');
-      setBccInput('');
-      setAiInstructions('');
-      setFormData({
-        to: [],
-        cc: [],
-        bcc: [],
-        subject: '',
-        body: '',
-        body_html: undefined,
-      });
+    } else if (!open) {
+      // Reset the prefill flag when dialog closes
+      hasPrefilled.current = false;
     }
-  }, [open, mode, originalEmail]);
+  }, [open, mode]);
 
   // Track if we've already fetched instructions for this dialog session
   const hasFetchedInstructions = useRef(false);
@@ -195,10 +205,20 @@ export function SendMailDialog({
       if (response.success && response.data?.draft) {
         // Update the body with the AI draft, keeping the original message quote
         const originalQuote = formData.body;
-        setFormData(prev => ({
-          ...prev,
-          body: response.data!.draft + originalQuote,
-        }));
+        const newBody = response.data.draft + '\n\n' + originalQuote;
+        console.log('[SendMailDialog] Draft text:', response.data.draft);
+        console.log('[SendMailDialog] Original quote:', originalQuote);
+        console.log('[SendMailDialog] New body will be:', newBody);
+
+        setFormData(prev => {
+          console.log('[SendMailDialog] Previous formData:', prev);
+          const updated = {
+            ...prev,
+            body: newBody,
+          };
+          console.log('[SendMailDialog] Updated formData:', updated);
+          return updated;
+        });
 
         toast({
           title: 'Draft Ready',

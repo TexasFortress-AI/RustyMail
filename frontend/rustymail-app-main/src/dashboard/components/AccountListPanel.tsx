@@ -3,7 +3,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Account } from '../../types';
 import { accountsApi } from '../api/accounts';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
@@ -12,6 +12,7 @@ import { Badge } from '../../components/ui/badge';
 import { Skeleton } from '../../components/ui/skeleton';
 import { useToast } from '../../components/ui/use-toast';
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
+import { useAccount } from '../../contexts/AccountContext';
 import {
   Mail,
   Plus,
@@ -42,32 +43,10 @@ export function AccountListPanel({
   onEditAccount,
   onAccountSwitch,
 }: AccountListPanelProps) {
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { accounts, loading, refreshAccounts } = useAccount();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [accountToDelete, setAccountToDelete] = useState<Account | null>(null);
   const { toast } = useToast();
-
-  const loadAccounts = async () => {
-    try {
-      setLoading(true);
-      const accountsList = await accountsApi.listAccounts();
-      setAccounts(accountsList);
-    } catch (error) {
-      console.error('Failed to load accounts:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load accounts',
-        variant: 'destructive',
-      });
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadAccounts();
-  }, []);
 
   const handleSetDefault = async (account: Account) => {
     if (account.is_default) return;
@@ -78,7 +57,7 @@ export function AccountListPanel({
         title: 'Success',
         description: `${account.account_name} is now the default account`,
       });
-      await loadAccounts();
+      await refreshAccounts();
     } catch (error) {
       console.error('Failed to set default account:', error);
       toast({
@@ -100,7 +79,7 @@ export function AccountListPanel({
       });
       setDeleteDialogOpen(false);
       setAccountToDelete(null);
-      await loadAccounts();
+      await refreshAccounts();
     } catch (error) {
       console.error('Failed to delete account:', error);
       toast({
