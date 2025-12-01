@@ -177,3 +177,63 @@ export function useModelsForProvider(provider: string | null) {
     retry: false,
   });
 }
+
+// Hook for fetching jobs list
+export function useJobs(params?: { status?: string; limit?: number }) {
+  return useQuery({
+    queryKey: ['jobs', params?.status, params?.limit],
+    queryFn: async () => {
+      return apiClient.getJobs(params);
+    },
+    refetchInterval: 5000, // Refresh every 5 seconds to show job progress
+    retry: false,
+  });
+}
+
+// Hook for fetching a single job
+export function useJob(jobId: string | null) {
+  return useQuery({
+    queryKey: ['job', jobId],
+    queryFn: async () => {
+      if (!jobId) return null;
+      return apiClient.getJob(jobId);
+    },
+    enabled: !!jobId,
+    refetchInterval: 2000, // Refresh quickly while viewing a specific job
+    retry: false,
+  });
+}
+
+// Hook for cancelling a job
+export function useCancelJob() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (jobId: string) => {
+      return apiClient.cancelJob(jobId);
+    },
+    onSuccess: () => {
+      // Invalidate jobs list to refresh status
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+  });
+}
+
+// Hook for starting a process_email_instructions job
+export function useStartProcessEmailsJob() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (params: {
+      instruction: string;
+      account_id: string;
+      folder?: string;
+    }) => {
+      return apiClient.startProcessEmailsJob(params);
+    },
+    onSuccess: () => {
+      // Invalidate jobs list to show the new job
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+  });
+}

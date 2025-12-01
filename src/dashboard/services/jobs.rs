@@ -405,4 +405,88 @@ impl JobPersistenceService {
 
         Ok(updated)
     }
+
+    /// Get all jobs with optional status filter, ordered by started_at descending
+    pub async fn get_all_jobs(&self, status_filter: Option<&str>, limit: Option<i64>) -> Result<Vec<PersistedJob>, String> {
+        let limit_val = limit.unwrap_or(100);
+
+        let rows = if let Some(status) = status_filter {
+            sqlx::query_as::<_, (String, Option<String>, String, Option<String>, Option<String>, String, String, Option<String>, bool, Option<String>, i32, i32)>(
+                r#"
+                SELECT job_id, instruction, status, result_data, error_message,
+                       started_at, updated_at, completed_at, resumable, resume_checkpoint,
+                       retry_count, max_retries
+                FROM background_jobs
+                WHERE status = ?
+                ORDER BY started_at DESC
+                LIMIT ?
+                "#
+            )
+            .bind(status)
+            .bind(limit_val)
+            .fetch_all(&self.pool)
+            .await
+        } else {
+            sqlx::query_as::<_, (String, Option<String>, String, Option<String>, Option<String>, String, String, Option<String>, bool, Option<String>, i32, i32)>(
+                r#"
+                SELECT job_id, instruction, status, result_data, error_message,
+                       started_at, updated_at, completed_at, resumable, resume_checkpoint,
+                       retry_count, max_retries
+                FROM background_jobs
+                ORDER BY started_at DESC
+                LIMIT ?
+                "#
+            )
+            .bind(limit_val)
+            .fetch_all(&self.pool)
+            .await
+        };
+
+        let rows = rows.map_err(|e| format!("Database error: {}", e))?;
+
+        let jobs: Vec<PersistedJob> = rows.into_iter().map(|(job_id, instruction, status, result_data, error_message, started_at, updated_at, completed_at, resumable, resume_checkpoint, retry_count, max_retries)| {
+            PersistedJob {
+                job_id,
+                instruction,
+                status,
+                result_data,
+                error_message,
+                started_at: DateTime::parse_from_rfc3339(&started_at).map(|dt| dt.with_timezone(&Utc)).unwrap_or_else(|_| Utc::now()),
+                updated_at: DateTime::parse_from_rfc3339(&updated_at).map(|dt| dt.with_timezone(&Utc)).unwrap_or_else(|_| Utc::now()),
+                completed_at: completed_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+                resumable,
+                resume_checkpoint,
+                retry_count,
+                max_retries,
+            }
+        }).collect();
+
+        Ok(jobs)
+    }
+
+    /// Cancel a job by updating its status
+    pub async fn cancel_job(&self, job_id: &str) -> Result<bool, String> {
+        debug!("Cancelling job: {}", job_id);
+
+        let result = sqlx::query(
+            r#"
+            UPDATE background_jobs
+            SET status = 'cancelled', completed_at = CURRENT_TIMESTAMP, error_message = 'Cancelled by user'
+            WHERE job_id = ? AND status = 'running'
+            "#
+        )
+        .bind(job_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("Database error: {}", e))?;
+
+        let updated = result.rows_affected() > 0;
+        if updated {
+            info!("Cancelled job: {}", job_id);
+        } else {
+            debug!("Job {} was not running or not found", job_id);
+        }
+
+        Ok(updated)
+    }
 }

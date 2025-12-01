@@ -3589,3 +3589,165 @@ pub async fn delete_email(
         "folder": request.folder
     })))
 }
+
+// ============================================================================
+// Jobs API Handlers
+// ============================================================================
+
+/// Query parameters for listing jobs
+#[derive(Debug, Deserialize)]
+pub struct JobsQueryParams {
+    pub status: Option<String>,
+    pub limit: Option<i64>,
+}
+
+/// Get all background jobs
+pub async fn get_jobs(
+    query: web::Query<JobsQueryParams>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling GET /api/dashboard/jobs with query: {:?}", query);
+
+    // First try to get jobs from persistence service if available
+    if let Some(ref persistence) = state.job_persistence {
+        let jobs = persistence.get_all_jobs(query.status.as_deref(), query.limit)
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Failed to get jobs: {}", e)))?;
+
+        return Ok(HttpResponse::Ok().json(serde_json::json!({
+            "jobs": jobs,
+            "source": "database"
+        })));
+    }
+
+    // Fall back to in-memory jobs
+    let jobs: Vec<_> = state.jobs.iter()
+        .filter(|entry| {
+            if let Some(ref status_filter) = query.status {
+                match (&entry.status, status_filter.as_str()) {
+                    (crate::dashboard::services::jobs::JobStatus::Running, "running") => true,
+                    (crate::dashboard::services::jobs::JobStatus::Completed(_), "completed") => true,
+                    (crate::dashboard::services::jobs::JobStatus::Failed(_), "failed") => true,
+                    _ => false,
+                }
+            } else {
+                true
+            }
+        })
+        .take(query.limit.unwrap_or(100) as usize)
+        .map(|entry| entry.value().clone())
+        .collect();
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "jobs": jobs,
+        "source": "memory"
+    })))
+}
+
+/// Get a specific job by ID
+pub async fn get_job(
+    path: web::Path<String>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    let job_id = path.into_inner();
+    debug!("Handling GET /api/dashboard/jobs/{}", job_id);
+
+    // First try persistence service
+    if let Some(ref persistence) = state.job_persistence {
+        if let Some(job) = persistence.get_job(&job_id)
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Failed to get job: {}", e)))?
+        {
+            return Ok(HttpResponse::Ok().json(job));
+        }
+    }
+
+    // Fall back to in-memory
+    if let Some(entry) = state.jobs.get(&job_id) {
+        return Ok(HttpResponse::Ok().json(entry.value().clone()));
+    }
+
+    Err(ApiError::NotFound(format!("Job {} not found", job_id)))
+}
+
+/// Cancel a running job
+#[derive(Debug, Deserialize)]
+pub struct CancelJobRequest {
+    pub job_id: String,
+}
+
+pub async fn cancel_job(
+    req: web::Json<CancelJobRequest>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    info!("Handling POST /api/dashboard/jobs/cancel for job: {}", req.job_id);
+
+    // Update in database if persistence is enabled
+    if let Some(ref persistence) = state.job_persistence {
+        let cancelled = persistence.cancel_job(&req.job_id)
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Failed to cancel job: {}", e)))?;
+
+        if !cancelled {
+            return Err(ApiError::BadRequest(format!("Job {} is not running or not found", req.job_id)));
+        }
+    }
+
+    // Update in-memory state
+    if let Some(mut entry) = state.jobs.get_mut(&req.job_id) {
+        if matches!(entry.status, crate::dashboard::services::jobs::JobStatus::Running) {
+            entry.status = crate::dashboard::services::jobs::JobStatus::Failed("Cancelled by user".to_string());
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "success": true,
+        "job_id": req.job_id,
+        "message": "Job cancelled successfully"
+    })))
+}
+
+/// Request body for starting a process_email_instructions job
+#[derive(Debug, Deserialize)]
+pub struct StartProcessEmailInstructionsRequest {
+    pub instruction: String,
+    pub account_id: String,
+    pub folder: Option<String>,
+}
+
+/// Start a new process_email_instructions job
+pub async fn start_process_email_instructions(
+    req: web::Json<StartProcessEmailInstructionsRequest>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    info!("Handling POST /api/dashboard/jobs/process-emails with instruction: {} for account: {}",
+          req.instruction, req.account_id);
+
+    let folder = req.folder.clone().unwrap_or_else(|| "INBOX".to_string());
+
+    // Build the arguments for the high-level tool
+    let arguments = serde_json::json!({
+        "instruction": req.instruction,
+        "account_id": req.account_id,
+        "folder": folder
+    });
+
+    // Call the high-level tool which internally handles job creation and spawning
+    let result = crate::dashboard::api::high_level_tools::handle_process_email_instructions(
+        &state,
+        arguments,
+    ).await;
+
+    // The result contains success and job_id fields
+    if result.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+        let job_id = result.get("job_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+        Ok(HttpResponse::Accepted().json(serde_json::json!({
+            "job_id": job_id,
+            "status": "running",
+            "message": "Job started successfully"
+        })))
+    } else {
+        let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+        Err(ApiError::BadRequest(error.to_string()))
+    }
+}

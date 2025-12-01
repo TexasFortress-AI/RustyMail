@@ -248,6 +248,64 @@ export const apiClient = {
   }> => {
     return await apiRequest<any>(`${API_BASE}/ai/models-for-provider?provider=${provider}`);
   },
+
+  // Jobs Management
+  getJobs: async (params?: { status?: string; limit?: number }): Promise<{
+    jobs: Array<{
+      job_id: string;
+      instruction: string | null;
+      status: string;
+      result_data: string | null;
+      error_message: string | null;
+      started_at: string;
+      updated_at: string;
+      completed_at: string | null;
+      resumable: boolean;
+      retry_count: number;
+      max_retries: number;
+    }>;
+    source: string;
+  }> => {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.append('status', params.status);
+    if (params?.limit) searchParams.append('limit', params.limit.toString());
+    const queryString = searchParams.toString();
+    return await apiRequest<any>(`${API_BASE}/jobs${queryString ? `?${queryString}` : ''}`);
+  },
+
+  getJob: async (jobId: string): Promise<{
+    job_id: string;
+    instruction: string | null;
+    status: string;
+    result_data: string | null;
+    error_message: string | null;
+    started_at: string;
+    updated_at: string;
+    completed_at: string | null;
+    resumable: boolean;
+    retry_count: number;
+    max_retries: number;
+  }> => {
+    return await apiRequest<any>(`${API_BASE}/jobs/${jobId}`);
+  },
+
+  cancelJob: async (jobId: string): Promise<{ success: boolean; job_id: string; message: string }> => {
+    return await apiRequest<any>(`${API_BASE}/jobs/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ job_id: jobId }),
+    });
+  },
+
+  startProcessEmailsJob: async (params: {
+    instruction: string;
+    account_id: string;
+    folder?: string;
+  }): Promise<{ job_id: string; status: string; message: string }> => {
+    return await apiRequest<any>(`${API_BASE}/jobs/process-emails`, {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
 };
 
 // Initialize EventSource for SSE

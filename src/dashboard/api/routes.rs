@@ -68,6 +68,11 @@ pub fn configure_routes() -> Scope {
         .route("/attachments/{message_id}/zip", web::get().to(attachments::download_attachments_zip))
         .route("/attachments/{message_id}/inline/{content_id}", web::get().to(attachments::download_inline_attachment))
         .route("/attachments/{message_id}/{filename}", web::get().to(attachments::download_attachment))
+        // Jobs management endpoints
+        .route("/jobs", web::get().to(handlers::get_jobs))
+        .route("/jobs/{job_id}", web::get().to(handlers::get_job))
+        .route("/jobs/cancel", web::post().to(handlers::cancel_job))
+        .route("/jobs/process-emails", web::post().to(handlers::start_process_email_instructions))
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {

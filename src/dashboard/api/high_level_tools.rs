@@ -607,7 +607,9 @@ async fn handle_cancel_job(state: &DashboardState, arguments: Value) -> Value {
         }),
     }
 }
-async fn handle_process_email_instructions(state: &DashboardState, arguments: Value) -> Value {
+/// Starts a background job to process email instructions using the AI agent
+/// Returns immediately with a job_id that can be polled for status
+pub async fn handle_process_email_instructions(state: &DashboardState, arguments: Value) -> Value {
     use std::time::Instant;
     use crate::dashboard::services::ai::agent_executor::AgentExecutor;
 
