@@ -11,6 +11,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/ca
 import { useAccount } from '../../contexts/AccountContext';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
+import { Input } from '../../components/ui/input';
 import {
   Select,
   SelectContent,
@@ -18,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { RefreshCw, Mail, ChevronLeft, ChevronRight, X, ChevronsLeft, ChevronsRight, Paperclip, Download, PenSquare, Trash2, FolderOpen } from 'lucide-react';
+import { RefreshCw, Mail, ChevronLeft, ChevronRight, X, ChevronsLeft, ChevronsRight, Paperclip, Download, PenSquare, Trash2, FolderOpen, Search } from 'lucide-react';
 import { format } from 'date-fns';
 import { useToast } from '../../hooks/use-toast';
 import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
@@ -119,15 +120,34 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
   const [composeMode, setComposeMode] = useState<'compose' | 'reply' | 'forward'>('compose');
   const [composeOriginalEmail, setComposeOriginalEmail] = useState<Email | null>(null);
   const [folderMovePopup, setFolderMovePopup] = useState<{email: Email, x: number, y: number} | null>(null);
+  const [searchVisible, setSearchVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const pageSize = 20;
 
-  // Reset to page 1 when folder or account changes
+  // Reset to page 1 and clear search when folder or account changes
   useEffect(() => {
     setCurrentPage(1);
     setSelectedEmail(null);
+    setSearchQuery('');
+    setSearchVisible(false);
     onEmailSelect?.(undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFolder, currentAccount?.id]);
+
+  // Toggle search visibility - clear search when hiding
+  const toggleSearch = () => {
+    if (searchVisible) {
+      setSearchQuery('');
+      setCurrentPage(1);
+    }
+    setSearchVisible(!searchVisible);
+  };
+
+  // Clear search and reset
+  const clearSearch = () => {
+    setSearchQuery('');
+    setCurrentPage(1);
+  };
 
   const { data, isLoading, error, refetch, isFetching } = useQuery<EmailListResponse>({
     queryKey: ['emails', currentAccount?.id, currentFolder, currentPage],
@@ -509,7 +529,31 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, isFetching, currentPage, currentAccount?.id, currentFolder]);
 
-  const totalPages = Math.ceil((data?.count || 0) / pageSize);
+  // Filter emails based on search query (client-side filtering)
+  const filteredEmails = React.useMemo(() => {
+    if (!data?.emails || !searchQuery.trim()) {
+      return data?.emails || [];
+    }
+    const query = searchQuery.toLowerCase();
+    return data.emails.filter(email => {
+      const subject = (email.subject || '').toLowerCase();
+      const from = (email.from_name || email.from_address || '').toLowerCase();
+      const to = (email.to_addresses || []).join(' ').toLowerCase();
+      const body = (email.body_text || '').toLowerCase();
+      return subject.includes(query) || from.includes(query) || to.includes(query) || body.includes(query);
+    });
+  }, [data?.emails, searchQuery]);
+
+  // When searching, pagination is based on filtered results
+  const displayedCount = searchQuery.trim() ? filteredEmails.length : (data?.count || 0);
+  const totalPages = Math.ceil(displayedCount / pageSize);
+
+  // Reset to page 1 when search query changes
+  useEffect(() => {
+    if (searchQuery) {
+      setCurrentPage(1);
+    }
+  }, [searchQuery]);
 
   const formatFolderName = (folder: string): string => {
     // Special case for INBOX
@@ -617,6 +661,14 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
         </CardTitle>
         <div className="flex gap-2">
           <Button
+            onClick={toggleSearch}
+            size="sm"
+            variant={searchVisible ? "secondary" : "outline"}
+            title={searchVisible ? "Hide search" : "Search emails"}
+          >
+            <Search className="h-4 w-4" />
+          </Button>
+          <Button
             onClick={() => {
               console.log('[EmailList] Compose button clicked');
               setHasUserInteracted(true);
@@ -639,6 +691,37 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
           </Button>
         </div>
       </CardHeader>
+
+      {/* Search Input */}
+      {searchVisible && (
+        <div className="px-6 pb-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              type="text"
+              placeholder="Search by subject, sender, recipient, or content..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-9 pr-9"
+              autoFocus
+            />
+            {searchQuery && (
+              <button
+                onClick={clearSearch}
+                className="absolute right-3 top-1/2 -translate-y-1/2 p-0.5 hover:bg-muted rounded"
+                title="Clear search"
+              >
+                <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+              </button>
+            )}
+          </div>
+          {searchQuery && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Found {filteredEmails.length} matching email{filteredEmails.length !== 1 ? 's' : ''}
+            </p>
+          )}
+        </div>
+      )}
       <CardContent className="flex-1 flex flex-col overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center p-8">
@@ -648,7 +731,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
           <>
             <div className="flex-1 overflow-y-auto min-h-0">
               <div className="space-y-2">
-                {data?.emails.map((email, arrayIndex) => {
+                {filteredEmails.map((email, arrayIndex) => {
                   const offset = (currentPage - 1) * pageSize;
                   const emailIndex = offset + arrayIndex;
                   return (
