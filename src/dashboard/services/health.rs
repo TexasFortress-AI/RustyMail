@@ -125,8 +125,14 @@ pub struct HealthService {
 
 impl HealthService {
     pub fn new() -> Self {
-        let mut system = System::new_all();
-        system.refresh_all();
+        // IMPORTANT: Use new_with_specifics instead of new_all() to avoid memory leak
+        // System::new_all() collects process info for ALL system processes, which
+        // causes the sysinfo crate to leak memory on macOS. We only need CPU and memory.
+        let refresh_kind = RefreshKind::new()
+            .with_cpu(CpuRefreshKind::everything())
+            .with_memory(MemoryRefreshKind::everything());
+        let mut system = System::new_with_specifics(refresh_kind);
+        system.refresh_specifics(refresh_kind);
 
         Self {
             components: Arc::new(RwLock::new(HashMap::new())),
