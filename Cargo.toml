@@ -16,7 +16,7 @@ async-imap = "0.8.0"
 
 rustls = "0.23"
 # Add back rustls-pki-types, likely needed
-rustls-pki-types = "1.1"
+rustls-pki-types = "1.13"
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
 
@@ -118,7 +118,7 @@ reqwest = { version = "0.12", features = ["json"] }
 rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", branch = "main", features = ["server"] } # Use the MCP SDK
 rmcp-macros = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", branch = "main" } # MCP macros
 async-native-tls = "0.5.0"
-tracing = "0.1.41"
+tracing = "0.1.43"
 
 tokio-native-tls = "0.3.0"
 native-tls = "0.2"
