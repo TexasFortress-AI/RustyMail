@@ -236,10 +236,11 @@ impl AccountService {
         }
 
         // Fetch accounts from database (using raw query to avoid compile-time checks)
+        // Note: email_address is the primary key, no separate id column exists
         let rows = sqlx::query(
             r#"
             SELECT
-                id, display_name, email_address, provider_type,
+                display_name, email_address, provider_type,
                 imap_host, imap_port, imap_user, imap_pass, imap_use_tls,
                 smtp_host, smtp_port, smtp_user, smtp_pass,
                 smtp_use_tls, smtp_use_starttls,
@@ -262,7 +263,6 @@ impl AccountService {
         let mut default_account_id: Option<String> = None;
 
         for row in rows {
-            let _id: i64 = row.get("id");
             let display_name: String = row.get("display_name");
             let email_address: String = row.get("email_address");
             let provider_type: Option<String> = row.get("provider_type");
