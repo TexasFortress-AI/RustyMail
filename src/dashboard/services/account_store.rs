@@ -4,12 +4,12 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use std::path::{Path, PathBuf};
-use std::io::Write;
 use tokio::fs as async_fs;
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
-use log::{info, debug, error};
+use log::{info, debug, warn};
 use thiserror::Error;
+use super::encryption::CredentialEncryption;
 
 #[derive(Error, Debug)]
 pub enum AccountStoreError {
@@ -25,6 +25,8 @@ pub enum AccountStoreError {
     DuplicateAccount(String),
     #[error("Store operation failed: {0}")]
     OperationFailed(String),
+    #[error("Encryption error: {0}")]
+    EncryptionError(#[from] super::encryption::EncryptionError),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,13 +91,21 @@ impl Default for AccountsConfig {
 
 pub struct AccountStore {
     config_path: PathBuf,
+    encryption: CredentialEncryption,
 }
 
 impl AccountStore {
     /// Create a new AccountStore with the given config file path
     pub fn new<P: AsRef<Path>>(config_path: P) -> Self {
+        let encryption = CredentialEncryption::new();
+        if encryption.is_enabled() {
+            info!("AccountStore initialized with credential encryption enabled");
+        } else {
+            warn!("AccountStore initialized WITHOUT credential encryption - set ENCRYPTION_MASTER_KEY to enable");
+        }
         Self {
             config_path: config_path.as_ref().to_path_buf(),
+            encryption,
         }
     }
 
@@ -128,27 +138,56 @@ impl AccountStore {
         Ok(())
     }
 
-    /// Load accounts configuration from file
+    /// Load accounts configuration from file, decrypting passwords
     pub async fn load_config(&self) -> Result<AccountsConfig, AccountStoreError> {
         debug!("Loading accounts config from: {:?}", self.config_path);
 
         let contents = async_fs::read_to_string(&self.config_path).await?;
-        let config: AccountsConfig = serde_json::from_str(&contents)?;
+        let mut config: AccountsConfig = serde_json::from_str(&contents)?;
+
+        // Decrypt passwords for all accounts
+        for account in &mut config.accounts {
+            // Decrypt IMAP password
+            if !account.imap.password.is_empty() {
+                account.imap.password = self.encryption.decrypt(&account.imap.password)?;
+            }
+            // Decrypt SMTP password if present
+            if let Some(smtp) = &mut account.smtp {
+                if !smtp.password.is_empty() {
+                    smtp.password = self.encryption.decrypt(&smtp.password)?;
+                }
+            }
+        }
 
         debug!("Loaded {} accounts from config", config.accounts.len());
         Ok(config)
     }
 
-    /// Save accounts configuration to file (atomic write)
+    /// Save accounts configuration to file (atomic write), encrypting passwords
     async fn save_config(&self, config: &AccountsConfig) -> Result<(), AccountStoreError> {
         debug!("Saving accounts config to: {:?}", self.config_path);
 
+        // Clone config and encrypt passwords before saving
+        let mut encrypted_config = config.clone();
+        for account in &mut encrypted_config.accounts {
+            // Encrypt IMAP password (skip if already encrypted or empty)
+            if !account.imap.password.is_empty() && !account.imap.password.starts_with("ENC:") {
+                account.imap.password = self.encryption.encrypt(&account.imap.password)?;
+            }
+            // Encrypt SMTP password if present
+            if let Some(smtp) = &mut account.smtp {
+                if !smtp.password.is_empty() && !smtp.password.starts_with("ENC:") {
+                    smtp.password = self.encryption.encrypt(&smtp.password)?;
+                }
+            }
+        }
+
         // Serialize to JSON with pretty printing
-        let json = serde_json::to_string_pretty(config)?;
+        let json = serde_json::to_string_pretty(&encrypted_config)?;
 
         // Write to temporary file first (atomic write)
         let temp_path = self.config_path.with_extension("tmp");
-        let mut file = async_fs::File::create(&temp_path).await?;
+        let _file = async_fs::File::create(&temp_path).await?;
         async_fs::write(&temp_path, json.as_bytes()).await?;
 
         // Set restrictive permissions on temp file
@@ -164,7 +203,8 @@ impl AccountStore {
         // Atomic rename
         async_fs::rename(&temp_path, &self.config_path).await?;
 
-        info!("Saved {} accounts to config", config.accounts.len());
+        info!("Saved {} accounts to config (credentials encrypted: {})",
+            config.accounts.len(), self.encryption.is_enabled());
         Ok(())
     }
 

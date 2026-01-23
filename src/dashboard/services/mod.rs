@@ -25,6 +25,7 @@ use sqlx::SqlitePool;
 pub mod account;
 pub mod account_store;
 pub mod ai;
+pub mod encryption;
 pub mod attachment_storage;
 pub mod autodiscovery;
 pub mod cache;
@@ -70,6 +71,7 @@ pub use outbox_worker::{OutboxWorker};
 pub use smtp::{SmtpService, SendEmailRequest, SendEmailResponse, SmtpError};
 pub use sync::{SyncService};
 pub use jobs::{JobRecord, JobStatus};
+pub use encryption::{CredentialEncryption, EncryptionError};
 
 // Import the types that were causing privacy issues directly from their source
 // Removed unresolved ImapConfiguration import

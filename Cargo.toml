@@ -84,6 +84,10 @@ base64 = "0.21"
 dashmap = "5.5"
 crossbeam = "0.8"
 
+# Encryption for credential storage
+aes-gcm = "0.10"
+hex = "0.4"
+
 # OpenAPI documentation
 utoipa = { version = "5", features = ["actix_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "8", features = ["actix-web"] }
