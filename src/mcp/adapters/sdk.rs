@@ -156,12 +156,14 @@ impl ServerHandler for RustyMailService {
                 output_schema: None,
                 icons: None,
                 annotations: None,
+                meta: None,
             }
         }).collect();
 
         Ok(ListToolsResult {
             tools: items,
             next_cursor: None,
+            meta: None,
         })
     }
 }

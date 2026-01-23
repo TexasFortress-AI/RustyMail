@@ -119,8 +119,9 @@ quick-xml = { version = "0.36", features = ["serialize"] } # Mozilla Autoconfig 
 lazy_static = "1.4"
 rand = "0.8" # For random number generation in example metrics
 reqwest = { version = "0.12", features = ["json"] }
-rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", branch = "main", features = ["server"] } # Use the MCP SDK
-rmcp-macros = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", branch = "main" } # MCP macros
+# MCP SDK - pinned to specific commit for supply chain security (see docs/dependency-pins.md)
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", rev = "e623f2acabd53e51a978d160f955c315bc16c220", features = ["server"] }
+rmcp-macros = { git = "https://github.com/modelcontextprotocol/rust-sdk.git", rev = "e623f2acabd53e51a978d160f955c315bc16c220" }
 async-native-tls = "0.5.0"
 tracing = "0.1.41"
 
