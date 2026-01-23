@@ -787,18 +787,28 @@ async fn test_rate_limiting_validators_exist() {
     println!("  NOTE: Integration with REST/MCP routes to be verified in Task 28");
 }
 
-/// Test rate limit response headers (placeholder for Task 28)
+/// Test rate limit response headers are present (Task 28)
 #[tokio::test]
 #[serial]
-async fn test_rate_limit_headers_baseline() {
+async fn test_rate_limit_headers_present() {
+    use rustymail::api::rate_limit::{RateLimitConfig, RateLimitMiddleware};
+
     setup_test_env();
-    println!("=== SECURITY TEST: Rate Limit Headers (Baseline) ===");
+    println!("=== SECURITY TEST: Rate Limit Headers Present ===");
 
     let dashboard_state = create_test_dashboard_state("rate_limit_headers").await;
+
+    // Configure rate limiting with high limit so we don't hit 429
+    let rate_limit_config = RateLimitConfig {
+        per_ip_per_minute: 1000,
+        per_ip_per_hour: 10000,
+        whitelist_ips: vec![],
+    };
 
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
+            .wrap(RateLimitMiddleware::new(rate_limit_config))
             .route("/api/health", web::get().to(|| async { "ok" }))
     ).await;
 
@@ -808,29 +818,74 @@ async fn test_rate_limit_headers_baseline() {
 
     let resp = test::call_service(&app, req).await;
 
-    // Check for rate limit headers
-    let has_ratelimit_limit = resp.headers().contains_key("X-RateLimit-Limit");
-    let has_ratelimit_remaining = resp.headers().contains_key("X-RateLimit-Remaining");
+    // Verify rate limit headers are present
+    assert!(resp.headers().contains_key("x-ratelimit-limit"),
+        "X-RateLimit-Limit header should be present");
+    assert!(resp.headers().contains_key("x-ratelimit-remaining"),
+        "X-RateLimit-Remaining header should be present");
+    assert!(resp.headers().contains_key("x-ratelimit-reset"),
+        "X-RateLimit-Reset header should be present");
 
-    if has_ratelimit_limit && has_ratelimit_remaining {
-        println!("  Rate limit headers present");
-    } else {
-        println!("  BASELINE: Rate limit headers not present (to be added in Task 28)");
-    }
+    println!("  X-RateLimit-Limit: {:?}", resp.headers().get("x-ratelimit-limit"));
+    println!("  X-RateLimit-Remaining: {:?}", resp.headers().get("x-ratelimit-remaining"));
+    println!("  X-RateLimit-Reset: {:?}", resp.headers().get("x-ratelimit-reset"));
+    println!("  Rate limit headers correctly present on all responses");
 }
 
-/// Test 429 response when rate limit exceeded (placeholder for Task 28)
+/// Test 429 response when rate limit exceeded (Task 28)
 #[tokio::test]
 #[serial]
 async fn test_rate_limit_429_response() {
+    use rustymail::api::rate_limit::{RateLimitConfig, RateLimitMiddleware};
+
     setup_test_env();
     println!("=== SECURITY TEST: Rate Limit 429 Response ===");
 
-    // This test would need to make many rapid requests to trigger rate limiting
-    // For now, document that this behavior needs to be verified
+    let dashboard_state = create_test_dashboard_state("rate_limit_429").await;
 
-    println!("  NOTE: Rate limit 429 response testing to be implemented in Task 28");
-    println!("  Test should verify that exceeding rate limits returns HTTP 429");
+    // Configure very low rate limit to trigger 429
+    let rate_limit_config = RateLimitConfig {
+        per_ip_per_minute: 2,  // Only allow 2 requests per minute
+        per_ip_per_hour: 100,
+        whitelist_ips: vec![],
+    };
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .wrap(RateLimitMiddleware::new(rate_limit_config))
+            .route("/api/health", web::get().to(|| async { "ok" }))
+    ).await;
+
+    // First two requests should succeed
+    for i in 0..2 {
+        let req = test::TestRequest::get()
+            .uri("/api/health")
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        assert_eq!(resp.status(), StatusCode::OK,
+            "Request {} should succeed", i + 1);
+    }
+
+    // Third request should get 429
+    let req = test::TestRequest::get()
+        .uri("/api/health")
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+
+    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS,
+        "Request 3 should return 429 Too Many Requests");
+
+    // Verify response includes proper headers
+    assert!(resp.headers().contains_key("retry-after"),
+        "429 response should include Retry-After header");
+    assert_eq!(resp.headers().get("x-ratelimit-remaining").map(|v| v.to_str().ok()).flatten(),
+        Some("0"), "X-RateLimit-Remaining should be 0");
+
+    println!("  First 2 requests succeeded (within limit)");
+    println!("  Third request correctly returned 429 Too Many Requests");
+    println!("  Retry-After header: {:?}", resp.headers().get("retry-after"));
+    println!("  Rate limiting correctly rejects requests over limit");
 }
 
 // ============================================================================

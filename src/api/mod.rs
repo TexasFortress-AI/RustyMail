@@ -9,6 +9,7 @@
 pub mod auth;
 pub mod errors;  // New comprehensive error module
 pub mod openapi_docs;  // OpenAPI documentation
+pub mod rate_limit;  // Rate limiting middleware
 pub mod rest;
 pub mod validation;
 // pub mod sse;

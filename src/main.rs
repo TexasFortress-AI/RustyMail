@@ -10,6 +10,7 @@ use rustymail::config::Settings;
 // use rustymail::imap::ImapClient;
 use rustymail::api::rest::{AppState, configure_rest_service};
 use rustymail::api::auth::ApiKeyStore;
+use rustymail::api::rate_limit::{RateLimitConfig, RateLimitMiddleware};
 use std::sync::Arc;
 use dotenvy::dotenv;
 use log::{info, error, warn};
@@ -267,6 +268,12 @@ async fn main() -> std::io::Result<()> {
     let dashboard_state_clone_for_task = dashboard_state.clone();
 
     let server = HttpServer::new(move || {
+        // Configure rate limiting from environment variables
+        let rate_limit_config = RateLimitConfig::from_env();
+        info!("Rate limiting configured: {} req/min, {} req/hour per IP",
+            rate_limit_config.per_ip_per_minute,
+            rate_limit_config.per_ip_per_hour);
+
         // Configure CORS with secure whitelist-based approach
         let allowed_origins_str = std::env::var("ALLOWED_ORIGINS")
             .unwrap_or_else(|_| {
@@ -311,6 +318,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(config.clone())                             // Dashboard config
             .app_data(dashboard_state.clone())                  // Dashboard state
             .app_data(web::Data::new(sse_manager.clone()))      // Dashboard SSE Manager
+            .wrap(RateLimitMiddleware::new(rate_limit_config.clone()))
             .wrap(cors)
             .wrap(actix_web::middleware::Logger::default())
             .wrap(dashboard::api::middleware::Metrics)

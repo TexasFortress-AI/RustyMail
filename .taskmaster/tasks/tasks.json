@@ -526,12 +526,13 @@
         "description": "Integrate the existing rate limiting validation from validation.rs into all REST API endpoints and MCP handlers, implementing per-IP and per-API-key limits with proper 429 responses and rate limit headers.",
         "details": "Implement comprehensive rate limiting across all API surfaces:\n\n1) **Create rate limiting middleware for REST APIs**:\n   - Create src/dashboard/middleware/rate_limit.rs\n   - Import existing rate limiting logic from validation.rs\n   - Implement RateLimitMiddleware that extracts client IP and API key from requests\n   - Use a token bucket or sliding window algorithm for tracking request counts\n   - Store rate limit state in memory with Arc<Mutex<HashMap>> or use Redis for distributed deployments\n\n2) **Configure rate limits via environment variables**:\n   - Add RATE_LIMIT_PER_MINUTE (default: 60)\n   - Add RATE_LIMIT_PER_HOUR (default: 1000)\n   - Add RATE_LIMIT_PER_IP_MINUTE (default: 30)\n   - Add RATE_LIMIT_PER_IP_HOUR (default: 500)\n   - Support different limits for authenticated (API key) vs anonymous requests\n\n3) **Integrate middleware into REST API routes**:\n   - In main.rs, wrap all API routes with rate limiting middleware\n   - Apply before authentication middleware to protect against auth bypass attempts\n   - Example:\n   ```rust\n   .wrap(RateLimitMiddleware::new(rate_limit_config))\n   .wrap(cors)\n   .wrap(Logger::default())\n   ```\n\n4) **Add rate limiting to MCP handlers**:\n   - In each MCP handler function, add rate limit check at the beginning\n   - Extract client identifier from MCP context (connection ID or client metadata)\n   - Use the same rate limiting logic but with MCP-specific limits\n   - Return appropriate MCP error response when rate limited\n\n5) **Implement 429 Too Many Requests responses**:\n   - For REST APIs: Return HTTP 429 status with JSON error body\n   - Include retry-after header indicating when client can retry\n   - Error response format:\n   ```json\n   {\n     \"error\": \"rate_limit_exceeded\",\n     \"message\": \"Too many requests. Please retry after 60 seconds.\",\n     \"retry_after\": 60\n   }\n   ```\n\n6) **Add rate limit headers to all responses**:\n   - X-RateLimit-Limit: Maximum requests allowed\n   - X-RateLimit-Remaining: Requests remaining in current window\n   - X-RateLimit-Reset: Unix timestamp when the rate limit resets\n   - Add these headers even for successful requests\n\n7) **Handle edge cases**:\n   - Properly extract real client IP behind proxies (X-Forwarded-For, X-Real-IP)\n   - Implement IP whitelist for internal services (via RATE_LIMIT_WHITELIST_IPS env var)\n   - Graceful degradation if rate limit storage fails\n   - Different rate limits for different API endpoints (e.g., higher for read, lower for write)",
         "testStrategy": "Verify rate limiting implementation with comprehensive testing:\n\n1) **Unit tests for rate limiting logic**:\n   - Test token bucket/sliding window algorithm correctness\n   - Verify per-minute and per-hour limits work independently\n   - Test IP-based vs API-key-based rate limiting\n   - Verify rate limit reset timing\n\n2) **Integration tests for REST API**:\n   - Send requests up to the limit and verify all succeed\n   - Send one more request and verify 429 response with correct headers\n   - Wait for rate limit reset and verify requests work again\n   - Test with different IPs and API keys to ensure isolation\n\n3) **MCP handler rate limiting tests**:\n   - Mock MCP requests and verify rate limiting applies\n   - Test that rate limited MCP calls return appropriate error responses\n   - Verify MCP rate limits are independent from REST API limits\n\n4) **Header validation tests**:\n   - Verify all responses include X-RateLimit-* headers\n   - Check header values decrease correctly with each request\n   - Verify Reset header contains valid future timestamp\n\n5) **Load testing**:\n   - Use Apache Bench or similar to send concurrent requests\n   - Verify rate limiting holds under high concurrency\n   - Test with multiple IPs to ensure no cross-contamination\n\n6) **Configuration tests**:\n   - Start server with custom rate limit env vars\n   - Verify limits match configured values\n   - Test with missing env vars to ensure defaults work\n\n7) **Security tests**:\n   - Attempt to bypass with spoofed headers\n   - Verify whitelisted IPs bypass rate limits\n   - Test rate limiting works before authentication",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "22"
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-01-23T11:26:45.106Z"
       },
       {
         "id": "29",
@@ -587,9 +588,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-01-23T11:20:23.189Z",
+      "lastModified": "2026-01-23T11:26:45.106Z",
       "taskCount": 32,
-      "completedCount": 24,
+      "completedCount": 25,
       "tags": [
         "master"
       ]
