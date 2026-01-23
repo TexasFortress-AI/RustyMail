@@ -174,32 +174,48 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
 // CORS Configuration Tests (for Task 22)
 // ============================================================================
 
-/// Test that CORS allows requests from any origin
+/// Helper function to create a CORS middleware with the secure whitelist approach
+/// matching the production configuration in main.rs
+fn create_secure_cors(allowed_origins: &[&str]) -> actix_cors::Cors {
+    let mut cors = actix_cors::Cors::default()
+        .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+        .allowed_headers(vec![
+            header::CONTENT_TYPE,
+            header::AUTHORIZATION,
+            header::ACCEPT,
+            header::ORIGIN,
+        ])
+        .supports_credentials()
+        .max_age(3600);
+
+    for origin in allowed_origins {
+        cors = cors.allowed_origin(origin);
+    }
+
+    cors
+}
+
+/// Test that CORS blocks requests from non-whitelisted origins
 ///
-/// BASELINE TEST: This documents INSECURE behavior that will be fixed in Task 22.
-/// After Task 22, this test should be updated to verify that only configured
-/// origins are allowed.
+/// SECURE TEST: Verifies that Task 22 fix correctly blocks unauthorized origins.
+/// External origins not in ALLOWED_ORIGINS should not receive CORS headers.
 #[tokio::test]
 #[serial]
-async fn test_cors_allows_any_origin_baseline() {
+async fn test_cors_blocks_unauthorized_origins() {
     setup_test_env();
-    println!("=== SECURITY TEST: CORS Any Origin (Baseline - Documents Insecure Behavior) ===");
+    println!("=== SECURITY TEST: CORS Blocks Unauthorized Origins ===");
 
-    let dashboard_state = create_test_dashboard_state("cors_any_origin").await;
+    let dashboard_state = create_test_dashboard_state("cors_blocked").await;
 
+    // Configure CORS with only localhost allowed (matching production config)
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .wrap(
-                actix_cors::Cors::default()
-                    .allow_any_origin()
-                    .allow_any_method()
-                    .allow_any_header()
-            )
+            .wrap(create_secure_cors(&["http://localhost:9439", "http://127.0.0.1:9439"]))
             .route("/api/health", web::get().to(|| async { "ok" }))
     ).await;
 
-    // Test with external origin - CURRENTLY ALLOWED (insecure)
+    // Test with external origin - should NOT receive CORS headers
     let req = test::TestRequest::get()
         .uri("/api/health")
         .insert_header((header::ORIGIN, "https://evil.example.com"))
@@ -207,52 +223,114 @@ async fn test_cors_allows_any_origin_baseline() {
 
     let resp = test::call_service(&app, req).await;
 
-    // BASELINE: Currently this passes (insecure behavior)
-    // After Task 22, this should return 403 or not include CORS headers
-    assert_eq!(resp.status(), StatusCode::OK);
-
-    // Check that CORS headers allow the evil origin (insecure)
+    // The request itself succeeds but CORS headers should not be present
+    // This means browser-based requests from evil.example.com would fail
     let cors_origin = resp.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN);
-    assert!(cors_origin.is_some(), "BASELINE: CORS currently allows any origin");
+    assert!(cors_origin.is_none(), "External origin should NOT receive CORS headers");
 
-    println!("  BASELINE: External origin currently allowed (INSECURE - to be fixed in Task 22)");
+    println!("  External origin correctly blocked (no CORS headers)");
 }
 
-/// Test CORS preflight OPTIONS request handling
+/// Test that CORS allows requests from whitelisted origins
 #[tokio::test]
 #[serial]
-async fn test_cors_preflight_options() {
+async fn test_cors_allows_configured_origins() {
     setup_test_env();
-    println!("=== SECURITY TEST: CORS Preflight OPTIONS ===");
+    println!("=== SECURITY TEST: CORS Allows Configured Origins ===");
+
+    let dashboard_state = create_test_dashboard_state("cors_allowed").await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .wrap(create_secure_cors(&["http://localhost:9439", "http://127.0.0.1:9439"]))
+            .route("/api/health", web::get().to(|| async { "ok" }))
+    ).await;
+
+    // Test with allowed localhost origin
+    let req = test::TestRequest::get()
+        .uri("/api/health")
+        .insert_header((header::ORIGIN, "http://localhost:9439"))
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // CORS headers should be present for allowed origin
+    let cors_origin = resp.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN);
+    assert!(cors_origin.is_some(), "Allowed origin should receive CORS headers");
+    assert_eq!(cors_origin.unwrap().to_str().unwrap(), "http://localhost:9439");
+
+    println!("  Configured origin correctly allowed");
+}
+
+/// Test CORS preflight OPTIONS request handling for allowed origins
+#[tokio::test]
+#[serial]
+async fn test_cors_preflight_options_allowed() {
+    setup_test_env();
+    println!("=== SECURITY TEST: CORS Preflight OPTIONS (Allowed Origin) ===");
 
     let dashboard_state = create_test_dashboard_state("cors_preflight").await;
 
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .wrap(
-                actix_cors::Cors::default()
-                    .allow_any_origin()
-                    .allow_any_method()
-                    .allow_any_header()
-            )
+            .wrap(create_secure_cors(&["http://localhost:9439"]))
             .route("/api/test", web::post().to(|| async { "ok" }))
     ).await;
 
-    // Test preflight request
+    // Test preflight request from allowed origin
     let req = test::TestRequest::with_uri("/api/test")
         .method(actix_web::http::Method::OPTIONS)
-        .insert_header((header::ORIGIN, "https://example.com"))
+        .insert_header((header::ORIGIN, "http://localhost:9439"))
         .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "POST"))
         .insert_header((header::ACCESS_CONTROL_REQUEST_HEADERS, "content-type"))
         .to_request();
 
     let resp = test::call_service(&app, req).await;
 
-    // Preflight should succeed
+    // Preflight should succeed for allowed origin
     assert!(resp.status().is_success() || resp.status() == StatusCode::NO_CONTENT);
 
-    println!("  Preflight OPTIONS request handled");
+    // Should have CORS headers
+    let cors_origin = resp.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN);
+    assert!(cors_origin.is_some(), "Preflight from allowed origin should have CORS headers");
+
+    println!("  Preflight OPTIONS request handled for allowed origin");
+}
+
+/// Test CORS preflight OPTIONS request handling for blocked origins
+#[tokio::test]
+#[serial]
+async fn test_cors_preflight_options_blocked() {
+    setup_test_env();
+    println!("=== SECURITY TEST: CORS Preflight OPTIONS (Blocked Origin) ===");
+
+    let dashboard_state = create_test_dashboard_state("cors_preflight_blocked").await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .wrap(create_secure_cors(&["http://localhost:9439"]))
+            .route("/api/test", web::post().to(|| async { "ok" }))
+    ).await;
+
+    // Test preflight request from non-allowed origin
+    let req = test::TestRequest::with_uri("/api/test")
+        .method(actix_web::http::Method::OPTIONS)
+        .insert_header((header::ORIGIN, "https://evil.example.com"))
+        .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+        .insert_header((header::ACCESS_CONTROL_REQUEST_HEADERS, "content-type"))
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    // Preflight may succeed but should not have CORS headers for blocked origin
+    let cors_origin = resp.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN);
+    assert!(cors_origin.is_none(), "Preflight from blocked origin should NOT have CORS headers");
+
+    println!("  Preflight OPTIONS correctly blocked for unauthorized origin");
 }
 
 // ============================================================================
@@ -761,9 +839,10 @@ async fn test_security_baseline_summary() {
     println!("SECURITY BASELINE SUMMARY");
     println!("========================================\n");
 
-    println!("Task 22 (CORS):");
-    println!("  - Current: allow_any_origin() - INSECURE");
-    println!("  - Fix: Whitelist specific origins via ALLOWED_ORIGINS env var\n");
+    println!("Task 22 (CORS): FIXED");
+    println!("  - Implemented: Whitelist via ALLOWED_ORIGINS env var");
+    println!("  - Default: localhost:9439 and 127.0.0.1:9439 for development");
+    println!("  - Supports credentials, specific methods/headers\n");
 
     println!("Task 23 (Origin Validation):");
     println!("  - Current: Substring match with contains() - INSECURE");

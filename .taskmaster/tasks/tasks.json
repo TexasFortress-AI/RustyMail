@@ -440,12 +440,13 @@
         "description": "Replace the permissive CORS configuration that allows any origin, method, and header with a secure whitelist-based approach using environment variables to prevent CSRF attacks.",
         "details": "Update the CORS configuration in src/main.rs (lines 270-277) to implement a secure origin whitelist:\n\n1) Add a new environment variable ALLOWED_ORIGINS that accepts a comma-separated list of allowed origins (e.g., \"http://localhost:3000,https://dashboard.example.com\")\n\n2) Replace the current permissive configuration:\n   ```rust\n   Cors::default()\n       .allow_any_origin()\n       .allow_any_method()\n       .allow_any_header()\n   ```\n\n3) With a secure configuration:\n   ```rust\n   let allowed_origins = std::env::var(\"ALLOWED_ORIGINS\")\n       .unwrap_or_else(|_| \"http://localhost:3000\".to_string())\n       .split(',')\n       .map(|s| s.trim().to_string())\n       .collect::<Vec<String>>();\n   \n   let cors = Cors::default()\n       .allowed_origins(\n           allowed_origins\n               .iter()\n               .map(|origin| origin.parse::<HeaderValue>().unwrap())\n               .collect::<Vec<_>>()\n               .as_slice()\n       )\n       .allowed_methods(vec![\"GET\", \"POST\", \"PUT\", \"DELETE\", \"OPTIONS\"])\n       .allowed_headers(vec![\n           header::CONTENT_TYPE,\n           header::AUTHORIZATION,\n           header::ACCEPT,\n       ])\n       .supports_credentials()\n       .max_age(3600);\n   ```\n\n4) Update the .env.example file to include the new ALLOWED_ORIGINS variable with sensible defaults\n\n5) Add validation to ensure at least one origin is configured and that origins are valid URLs\n\n6) Consider adding a warning log if ALLOWED_ORIGINS is not set, defaulting to localhost only for development safety\n\n7) Ensure the CORS middleware properly handles preflight OPTIONS requests\n\n8) Update any deployment documentation to specify the ALLOWED_ORIGINS configuration requirement",
         "testStrategy": "Verify the CORS fix by:\n\n1) Start the server without ALLOWED_ORIGINS set and confirm it defaults to localhost:3000 only\n2) Set ALLOWED_ORIGINS=\"http://localhost:3000,http://localhost:5173\" and restart the server\n3) Test that requests from allowed origins work correctly:\n   - Make API calls from http://localhost:3000 and verify they succeed\n   - Make API calls from http://localhost:5173 and verify they succeed\n4) Test that requests from non-allowed origins are blocked:\n   - Use curl or a browser from http://localhost:8080 and verify CORS error\n   - Try making requests from https://evil.com and confirm they're rejected\n5) Verify preflight OPTIONS requests are handled correctly for allowed origins\n6) Test with credentials (cookies/auth headers) to ensure supports_credentials() works\n7) Check server logs for appropriate warnings when ALLOWED_ORIGINS is not configured\n8) Verify that malformed origins in ALLOWED_ORIGINS cause server startup to fail with clear error message",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "32"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-01-23T10:44:12.311Z"
       },
       {
         "id": "23",
@@ -582,9 +583,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-01-23T10:36:09.813Z",
+      "lastModified": "2026-01-23T10:44:12.312Z",
       "taskCount": 32,
-      "completedCount": 19,
+      "completedCount": 20,
       "tags": [
         "master"
       ]

@@ -267,12 +267,40 @@ async fn main() -> std::io::Result<()> {
     let dashboard_state_clone_for_task = dashboard_state.clone();
 
     let server = HttpServer::new(move || {
-        // Configure CORS
-        let cors = Cors::default()
-            .allow_any_origin()
-            .allow_any_method()
-            .allow_any_header()
+        // Configure CORS with secure whitelist-based approach
+        let allowed_origins_str = std::env::var("ALLOWED_ORIGINS")
+            .unwrap_or_else(|_| {
+                warn!("ALLOWED_ORIGINS not set, defaulting to localhost:9439 only for development safety");
+                "http://localhost:9439,http://127.0.0.1:9439".to_string()
+            });
+
+        let allowed_origins: Vec<String> = allowed_origins_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        if allowed_origins.is_empty() {
+            warn!("No valid ALLOWED_ORIGINS configured, CORS will reject all cross-origin requests");
+        }
+
+        // Build CORS configuration with specific allowed origins
+        let mut cors = Cors::default()
+            .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+            .allowed_headers(vec![
+                actix_web::http::header::CONTENT_TYPE,
+                actix_web::http::header::AUTHORIZATION,
+                actix_web::http::header::ACCEPT,
+                actix_web::http::header::ORIGIN,
+            ])
+            .allowed_header("X-Api-Key")
+            .supports_credentials()
             .max_age(3600);
+
+        // Add each allowed origin
+        for origin in &allowed_origins {
+            cors = cors.allowed_origin(origin);
+        }
 
         let mut app = App::new()
             // --- Register updated state ---
