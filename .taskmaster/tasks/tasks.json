@@ -2,7 +2,7 @@
   "master": {
     "tasks": [
       {
-        "id": 1,
+        "id": "1",
         "title": "Create database migration for AI model configurations",
         "description": "Add ai_model_configurations table to store tool-calling and drafting model settings",
         "details": "Create migrations/004_create_ai_model_config.sql with table schema for role, provider, model_name, base_url, api_key, additional_config. Include default entries for qwen2.5:7b (tool-calling) and llama3.3:70b (drafting)",
@@ -10,89 +10,110 @@
         "status": "done",
         "dependencies": [],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 4,
+        "recommendedSubtasks": 5,
+        "expansionPrompt": "Break down the systematic removal of imap-types dependency: 1) Remove from Cargo.toml, 2) Find and eliminate all imap-types imports across 80+ Rust files, 3) Replace imap-types types with async-imap equivalents in client.rs and session.rs, 4) Update type conversions and error handling, 5) Verify compilation succeeds"
       },
       {
-        "id": 2,
+        "id": "2",
         "title": "Create model configuration service module",
         "description": "Implement model_config.rs for managing AI model configurations in database",
         "details": "Create src/dashboard/services/ai/model_config.rs with ModelConfiguration struct, get_model_config(), set_model_config(), and database CRUD operations. Support both 'tool_calling' and 'drafting' roles.",
         "testStrategy": "",
         "status": "done",
         "dependencies": [
-          1
+          "1"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 3,
+        "recommendedSubtasks": 4,
+        "expansionPrompt": "Address specific compilation errors: 1) Fix missing lifetime specifier in api/sse.rs Context type around line 80-90, 2) Add missing validate_api_key function in api/rest.rs (referenced but not implemented), 3) Add missing Mutex import in imap/session.rs, 4) Run cargo check to verify all fixes"
       },
       {
-        "id": 3,
+        "id": "3",
         "title": "Create high-level tools definitions module",
         "description": "Implement high_level_tools.rs with tool definitions and routing",
         "details": "Create src/dashboard/api/high_level_tools.rs with get_mcp_high_level_tools_jsonrpc_format() returning 10-12 tool definitions: process_email_instructions, draft_reply, draft_email, list_accounts, list_folders_hierarchical, list_cached_emails, get_email_by_uid, search_cached_emails, get_folder_stats, get_model_configurations, set_tool_calling_model, set_drafting_model. Include execute_high_level_tool() router function.",
         "testStrategy": "",
         "status": "done",
         "dependencies": [
-          2
+          "2"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 6,
+        "recommendedSubtasks": 7,
+        "expansionPrompt": "Refactor IMAP client architecture: 1) Update client.rs to use only async-imap types, 2) Remove dual-library type conversion functions, 3) Standardize AsyncImapSessionWrapper pattern in session.rs, 4) Update connection handling in client.rs lines 90-155, 5) Map async-imap errors to domain errors, 6) Update all IMAP operations to use async-imap exclusively, 7) Test connection lifecycle and operations"
       },
       {
-        "id": 4,
+        "id": "4",
         "title": "Implement model configuration MCP tools",
         "description": "Create handlers for get_model_configurations, set_tool_calling_model, set_drafting_model",
         "details": "Implement the three configuration tools that read/write to ai_model_configurations table. Validate model configurations and test connectivity before saving.",
         "testStrategy": "",
         "status": "done",
         "dependencies": [
-          2,
-          3
+          "2",
+          "3"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 7,
+        "recommendedSubtasks": 8,
+        "expansionPrompt": "Design atomic IMAP command sequences: 1) Research IMAP atomic operation patterns, 2) Implement SELECT-COPY-STORE-EXPUNGE sequence for moves, 3) Add transaction-like error handling with rollback, 4) Track folder selection state in AsyncImapSessionWrapper, 5) Implement operation state management, 6) Add concurrent access protection, 7) Create atomic operation tests, 8) Verify ACID properties in error scenarios"
       },
       {
-        "id": 5,
+        "id": "5",
         "title": "Wire up browsing tools to high-level variant",
         "description": "Connect existing read-only browsing tools to high-level tool router",
         "details": "Reuse existing handlers for list_accounts, list_folders_hierarchical, list_cached_emails, get_email_by_uid, search_cached_emails, get_folder_stats. Add routing logic in execute_high_level_tool() to call these handlers.",
         "testStrategy": "",
         "status": "done",
         "dependencies": [
-          3
+          "3"
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 5,
+        "recommendedSubtasks": 6,
+        "expansionPrompt": "Implement comprehensive error system: 1) Define error code ranges (-32700 to -32099) following JSON-RPC 2.0 spec, 2) Create error mapping from async-imap errors to JSON-RPC codes, 3) Implement consistent error response format across REST/MCP interfaces, 4) Add structured error details with operation context, 5) Update existing error handling in rest.rs and mcp modules, 6) Test error propagation through all interface layers"
       },
       {
-        "id": 6,
+        "id": "6",
         "title": "Create email drafter service",
         "description": "Implement email_drafter.rs for generating email drafts using configured model",
         "details": "Create src/dashboard/services/ai/email_drafter.rs with EmailDrafter struct, draft_reply() and draft_email() methods. Use model_config to get drafting model settings, call Ollama API to generate text. Include context from original email for replies.",
         "testStrategy": "",
         "status": "done",
         "dependencies": [
-          2
+          "2"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 8,
+        "recommendedSubtasks": 10,
+        "expansionPrompt": "Implement comprehensive IMAP operations: 1) Complete folder listing with hierarchical structure, 2) Implement server-side search using async-imap search methods, 3) Add message fetching with MIME part handling, 4) Complete atomic move operations with guarantees, 5) Implement delete operations with proper flag handling, 6) Add EXPUNGE operations, 7) Create integration tests for each operation, 8) Test with multiple IMAP server types (Gmail, Outlook), 9) Optimize for performance requirements (<500ms folder list, <200ms email fetch), 10) Add comprehensive error handling for each operation"
       },
       {
-        "id": 7,
+        "id": "7",
         "title": "Implement draft_reply and draft_email tools",
         "description": "Create MCP tool handlers for email drafting",
         "details": "Implement handlers that fetch email content, construct prompts, call EmailDrafter service, and return formatted draft text. Handle errors gracefully.",
         "testStrategy": "",
         "status": "done",
         "dependencies": [
-          6
+          "6"
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 7,
+        "recommendedSubtasks": 8,
+        "expansionPrompt": "Build robust connection management: 1) Design connection pool using Arc<TokioMutex<>> pattern, 2) Implement session lifecycle tracking and cleanup, 3) Add connection health checking mechanisms, 4) Implement automatic reconnection logic, 5) Add session timeout handling, 6) Support concurrent session handling up to 100+ connections, 7) Create connection leak prevention, 8) Add performance monitoring and load testing for concurrent connections"
       },
       {
-        "id": 8,
+        "id": "8",
         "title": "Create MCP to Ollama tool converter",
         "description": "Implement tool_converter.rs for converting MCP tool schemas to Ollama format",
         "details": "Create src/dashboard/services/ai/tool_converter.rs with mcp_to_ollama_tools() function. Convert MCP JSON Schema inputSchema to Ollama's tool format. Handle type conversions and required fields.",
@@ -100,68 +121,83 @@
         "status": "done",
         "dependencies": [],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 6,
+        "recommendedSubtasks": 7,
+        "expansionPrompt": "Replace custom MCP implementation with official SDK: 1) Remove custom MCP transport implementations in legacy.rs, 2) Integrate rmcp dependency from rust-sdk (already in Cargo.toml), 3) Study official SDK patterns and API, 4) Update service definitions using SDK tooling, 5) Migrate stdio transport to use SDK patterns, 6) Migrate SSE transport to use SDK patterns, 7) Ensure backward compatibility with existing MCP clients and test integration"
       },
       {
-        "id": 9,
+        "id": "9",
         "title": "Create agent executor with Ollama tool calling",
         "description": "Implement agent_executor.rs for running sub-agent with iterative tool calling",
         "details": "Create src/dashboard/services/ai/agent_executor.rs with AgentExecutor struct and execute_with_tools() method. Implement iterative loop: send instruction with tools to Ollama, handle tool_calls response, execute requested tools using existing handlers, send results back, repeat until completion. Aggregate results and return formatted response with actions_taken list.",
         "testStrategy": "",
         "status": "done",
         "dependencies": [
-          8
+          "8"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 6,
+        "recommendedSubtasks": 8,
+        "expansionPrompt": "Finish REST API development: 1) Complete remaining REST endpoints for folder operations, 2) Implement email search, fetch, move, and delete endpoints, 3) Add API key authentication middleware (validate_api_key function missing), 4) Add request validation and rate limiting, 5) Implement proper HTTP status codes following REST conventions, 6) Create comprehensive OpenAPI/Swagger documentation, 7) Add end-to-end tests for all endpoints, 8) Performance test under load conditions"
       },
       {
-        "id": 10,
+        "id": "10",
         "title": "Implement process_email_instructions tool",
         "description": "Create MCP tool handler for complex email workflow execution",
         "details": "Implement handler that takes natural language instruction, gets tool-calling model config, converts all low-level MCP tools to Ollama format, calls AgentExecutor, formats result. Include logic to detect when user feedback is needed and return questions in JSON format.",
         "testStrategy": "",
         "status": "done",
         "dependencies": [
-          9
+          "9"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 5,
+        "recommendedSubtasks": 6,
+        "expansionPrompt": "Complete dashboard backend functionality: 1) Complete metrics collection service using sysinfo crate, 2) Implement client management service for tracking active connections, 3) Add configuration service for runtime settings, 4) Create SSE event broadcasting system for real-time updates, 5) Implement system health monitoring, 6) Test metrics accuracy and SSE broadcasting with multiple clients"
       },
       {
-        "id": 11,
+        "id": "11",
         "title": "Add high-level variant support to MCP HTTP backend",
         "description": "Modify mcp_http.rs to support ?variant=high-level query parameter",
         "details": "Update tools/list handler to check for variant parameter and return high-level tools when variant=high-level. Update tools/call handler to route to execute_high_level_tool() for high-level variant. Store variant in session data.",
         "testStrategy": "",
         "status": "done",
         "dependencies": [
-          3,
-          10
+          "3",
+          "10"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 4,
+        "recommendedSubtasks": 5,
+        "expansionPrompt": "Complete frontend integration: 1) Build React frontend using Vite in frontend/rustymail-app-main/ directory, 2) Configure build output for production, 3) Integrate static files with Actix backend using actix-files middleware, 4) Configure SSE EventSource connections for real-time updates, 5) Test frontend build process and backend integration across different browsers"
       },
       {
-        "id": 12,
+        "id": "12",
         "title": "Create high-level MCP stdio binary",
         "description": "Create rustymail-mcp-stdio-high-level binary",
         "details": "Create src/bin/mcp_stdio_high_level.rs that connects to backend with ?variant=high-level parameter. Can be copy of mcp_stdio.rs with modified default URL, or same binary with --mode flag. Add binary to Cargo.toml.",
         "testStrategy": "",
         "status": "done",
         "dependencies": [
-          11
+          "11"
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 5,
+        "recommendedSubtasks": 6,
+        "expansionPrompt": "Complete SSE implementation: 1) Finish SSE implementation in dashboard/api/sse.rs, 2) Add event broadcasting for metrics updates and client connections, 3) Implement proper SSE connection lifecycle management, 4) Add event filtering and subscription management, 5) Ensure browser reconnection handling, 6) Test SSE stability under network conditions and with multiple concurrent clients"
       },
       {
-        "id": 13,
+        "id": "13",
         "title": "Test high-level MCP variant with Claude Desktop",
         "description": "Integration testing of complete high-level tool flow",
         "status": "pending",
         "dependencies": [
-          12
+          "12"
         ],
         "priority": "medium",
         "details": "Configure Claude Desktop to use rustymail-mcp-stdio-high-level binary. Migration 004 (ai_model_configurations table) has been applied with default models: qwen2.5:7b for tool_calling and llama3.3:70b for drafting. Test workflow: 1) Use set_tool_calling_model and set_drafting_model tools to configure actual models instead of defaults, 2) Test browsing tools (list_accounts, list_folders_hierarchical, get_email_by_uid), 3) Test configuration tools (get_model_configurations), 4) Test drafting tools (draft_reply, draft_email), 5) Test process_email_instructions with simple workflows. Verify tool count is ~12 instead of 26+. Process_email_instructions tool should now work properly after database migration fix.",
@@ -174,7 +210,8 @@
             "dependencies": [],
             "details": "Update Claude Desktop configuration to point to target/release/rustymail-mcp-stdio-high-level binary. Ensure server is running on configured port. Verify Claude Desktop shows ~12 tools available instead of 26+.",
             "status": "pending",
-            "testStrategy": "Check Claude Desktop shows correct tool count and can connect to MCP server"
+            "testStrategy": "Check Claude Desktop shows correct tool count and can connect to MCP server",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -185,7 +222,8 @@
             ],
             "details": "Migration 004 created default configurations (qwen2.5:7b for tool_calling, llama3.3:70b for drafting). Use the MCP configuration tools to set actual models the user wants to use. Test get_model_configurations to verify settings are saved correctly.",
             "status": "pending",
-            "testStrategy": "Verify model configurations are saved and retrieved correctly from ai_model_configurations table"
+            "testStrategy": "Verify model configurations are saved and retrieved correctly from ai_model_configurations table",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -196,7 +234,8 @@
             ],
             "details": "Verify all browsing tools work correctly with high-level MCP variant. Test that these tools provide the same functionality as the low-level variant but through the simplified interface.",
             "status": "pending",
-            "testStrategy": "Execute each browsing tool and verify expected data structure and content returned"
+            "testStrategy": "Execute each browsing tool and verify expected data structure and content returned",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -207,7 +246,8 @@
             ],
             "details": "Verify AI-powered drafting tools work with the configured drafting model from step 2. Test that drafts are generated with appropriate quality and relevance to input context.",
             "status": "pending",
-            "testStrategy": "Generate sample drafts and verify they are contextually appropriate and well-formatted"
+            "testStrategy": "Generate sample drafts and verify they are contextually appropriate and well-formatted",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -219,43 +259,53 @@
             ],
             "details": "Test process_email_instructions with simple workflows like 'list unread emails in INBOX' or 'show folder statistics'. Should now work correctly after ai_model_configurations table migration fix. Verify the tool uses other available tools to complete the workflow.",
             "status": "pending",
-            "testStrategy": "Execute simple instructions and verify workflow completion without database errors"
+            "testStrategy": "Execute simple instructions and verify workflow completion without database errors",
+            "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 3,
+        "recommendedSubtasks": 4,
+        "expansionPrompt": "Initialize AI integration framework: 1) Add RIG dependency to Cargo.toml, 2) Configure OpenAI and OpenRouter providers in dashboard/services/ai/ modules, 3) Set up LLM model selection and API key management, 4) Create provider abstraction layer and test connectivity with configured providers"
       },
       {
-        "id": 14,
+        "id": "14",
         "title": "Create WebUI settings page for AI model configuration",
         "description": "Add /settings/ai-models page to dashboard",
         "details": "Create UI for configuring tool-calling and drafting models. Include provider dropdown, model name input with autocomplete, base URL input, API key input, test connection button, save button. Display current configurations. Wire up to backend API endpoints.",
         "testStrategy": "",
         "status": "deferred",
         "dependencies": [
-          4
+          "4"
         ],
         "priority": "low",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 6,
+        "recommendedSubtasks": 7,
+        "expansionPrompt": "Build NLP to MCP pipeline: 1) Design natural language processing pipeline using RIG, 2) Create prompt templates for common email operations ('show unread emails', 'emails from sender', 'move emails to folder'), 3) Implement intent recognition and mapping to MCP method calls, 4) Add conversation context tracking for follow-up queries, 5) Create query parsing and validation, 6) Test natural language understanding with various query formats, 7) Verify correct MCP operation mapping and context maintenance"
       },
       {
-        "id": 15,
+        "id": "15",
         "title": "Document high-level MCP variant in README",
         "description": "Add documentation for new high-level variant",
         "details": "Update README with: explanation of two variants, configuration examples for both, tool list comparison, when to use each variant, model configuration instructions.",
         "testStrategy": "",
         "status": "done",
         "dependencies": [
-          13
+          "13"
         ],
         "priority": "low",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 4,
+        "recommendedSubtasks": 5,
+        "expansionPrompt": "Complete chatbot interface: 1) Extend existing ChatbotPanel.tsx component with full conversation interface, 2) Add message history and conversation state management, 3) Implement typing indicators and response streaming, 4) Connect to backend AI service via SSE or WebSocket, 5) Add conversation export and history features, and test UI responsiveness"
       },
       {
-        "id": 16,
+        "id": "16",
         "title": "Fix compose dialog appearing on hard refresh",
         "description": "Prevent the SendMailDialog from automatically opening when the web UI is hard-refreshed (F5 or Ctrl+F5)",
         "status": "done",
         "dependencies": [
-          4
+          "4"
         ],
         "priority": "medium",
         "details": "SPECIFIC BUG IDENTIFIED: The dialog is appearing on page load with `data-state=\"open\"` in the DOM. The `composeDialogOpen` state is correctly initialized as `false` in EmailList.tsx:71, but something is triggering it to become `true` during component mount. Debug logging has been added at EmailList.tsx:74-76 to track state changes. The visual confusion is compounded by placeholder text in input fields (recipient@example.com, cc@example.com, etc.) that appears gray but looks like actual values. ROOT CAUSE INVESTIGATION NEEDED: 1) Trace what's calling setComposeDialogOpen(true) during initialization - check browser dev tools console for debug logs, 2) Verify if any useEffect hooks or props are triggering dialog open on mount, 3) Check if Radix UI Dialog component has any default behavior causing auto-open, 4) Investigate if URL parameters, localStorage, or sessionStorage are influencing initial state, 5) Ensure the Dialog component's `open` prop is properly controlled by the `composeDialogOpen` state variable",
@@ -268,7 +318,8 @@
             "dependencies": [],
             "details": "Add console.log statements at all locations where setComposeDialogOpen is called, including stack traces. Log component mount/unmount cycles and prop changes. Add logging in useEffect hooks that might influence dialog state. Check EmailList.tsx:162 (handleComposeRequest) and EmailList.tsx:590 (Compose button click) for unexpected calls.",
             "status": "done",
-            "testStrategy": "Open browser dev tools console, perform hard refresh, and verify detailed logs show exact sequence of state changes and what triggers dialog opening"
+            "testStrategy": "Open browser dev tools console, perform hard refresh, and verify detailed logs show exact sequence of state changes and what triggers dialog opening",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -279,7 +330,8 @@
             ],
             "details": "Examine the Dialog component in components/ui/dialog.tsx and its usage in SendMailDialog.tsx:211. Verify the `open` prop is properly bound to composeDialogOpen state. Check if DialogPrimitive.Root has any default state that could cause auto-opening. Review Radix UI documentation for known hydration or SSR issues that might cause initial open state.",
             "status": "done",
-            "testStrategy": "Test with different initial values for the open prop and verify the Dialog component respects the controlled state properly"
+            "testStrategy": "Test with different initial values for the open prop and verify the Dialog component respects the controlled state properly",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -291,7 +343,8 @@
             ],
             "details": "Add a useEffect hook in EmailList component that detects if the page was loaded fresh (hard refresh) vs navigated to. Use performance.navigation.type or window.performance.getEntriesByType('navigation') to detect refresh. Set a flag to prevent dialog from opening on fresh page loads. Ensure this doesn't interfere with legitimate compose dialog triggers.",
             "status": "done",
-            "testStrategy": "Test hard refresh (F5/Ctrl+F5) vs normal navigation and verify dialog only opens when explicitly triggered by user actions"
+            "testStrategy": "Test hard refresh (F5/Ctrl+F5) vs normal navigation and verify dialog only opens when explicitly triggered by user actions",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -300,117 +353,129 @@
             "dependencies": [],
             "details": "Modify placeholder text in SendMailDialog.tsx:235, 250, 261 to be more obviously placeholders. Consider using lighter gray color, italic styling, or different placeholder text that's clearly not a real email address. Update CSS classes if needed to make placeholders more visually distinct from user input.",
             "status": "done",
-            "testStrategy": "Verify placeholder text is clearly distinguishable from actual input values and doesn't contribute to the perception that fields are pre-filled"
+            "testStrategy": "Verify placeholder text is clearly distinguishable from actual input values and doesn't contribute to the perception that fields are pre-filled",
+            "parentId": "undefined"
           }
-        ]
+        ],
+        "complexity": 8,
+        "recommendedSubtasks": 12,
+        "expansionPrompt": "Implement full testing strategy: 1) Create unit tests for all IMAP operations using mock servers, 2) Set up mock IMAP server infrastructure, 3) Implement integration tests using real IMAP adapters for Gmail, 4) Add integration tests for Outlook servers, 5) Add integration tests for standard IMAP servers, 6) Create end-to-end tests covering complete user workflows through REST interface, 7) Create end-to-end tests for MCP interface workflows, 8) Set up performance benchmarks for concurrent connection handling, 9) Achieve >90% code coverage across all modules, 10) Test all error scenarios and edge cases, 11) Implement performance tests meeting requirements (<500ms folder list, <200ms email fetch, 100+ concurrent connections), 12) Set up continuous testing infrastructure"
       },
       {
-        "id": 17,
+        "id": "17",
         "title": "Fix email body rendering issues - HTML/image artifacts showing as raw text instead of being properly rendered",
         "description": "Fix the frontend EmailBody component to properly render HTML content and display images/links correctly instead of showing raw text",
         "details": "The current implementation in EmailBody.tsx:303 only displays the plain text body (email.body_text) using whitespace-pre-wrap styling, which causes HTML content and embedded images to appear as raw text/artifacts. The fix involves: 1) Check if email.html_body is available from the backend (already stored in cache.rs and available via the REST API), 2) Modify the EmailBody component to conditionally render HTML content using dangerouslySetInnerHTML when HTML is available, with proper sanitization, 3) Add CSS styles to handle image display, link styling, and proper HTML formatting, 4) Implement a toggle between HTML and plain text views for user preference, 5) Add security measures to sanitize HTML content before rendering to prevent XSS attacks, 6) Update the email fetching logic to include html_body field in the API response. The backend already stores both text_body and html_body in the database (migrations/001_create_schema.sql:101-102) and the IMAP parsing extracts both via mail_parser (imap/types.rs:737-738).",
         "testStrategy": "Test by: 1) Sending HTML emails with embedded images and links to test accounts, 2) Verify HTML content renders properly with images displayed and links clickable, 3) Test the plain text fallback when no HTML is available, 4) Verify HTML/plain text toggle functionality works, 5) Test with malicious HTML content to ensure sanitization prevents XSS, 6) Test responsive display on different screen sizes, 7) Verify that emails without HTML content still display plain text correctly, 8) Test performance with large HTML emails containing multiple images",
         "status": "done",
         "dependencies": [
-          4
+          "4"
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 5,
+        "recommendedSubtasks": 6,
+        "expansionPrompt": "Set up automated development pipeline: 1) Configure GitHub Actions or similar CI/CD system, 2) Set up automated testing on multiple Rust versions and platforms, 3) Add security scanning and dependency vulnerability checks, 4) Configure automated releases with proper semantic versioning, 5) Add Docker image building and container registry publishing, 6) Test CI/CD pipeline with pull requests and verify deployment automation"
       },
       {
-        "id": 18,
+        "id": "18",
         "title": "Add 'Show Images' button to email viewer for privacy protection",
         "description": "Implement a privacy-focused image loading control in the email viewer with an optional button similar to Thunderbird, where images are blocked by default to prevent tracking.",
         "details": "Based on the current EmailBody.tsx implementation that only displays plain text (line 303 uses whitespace-pre-wrap on email.body_text), add image privacy controls when displaying HTML emails: 1) Add a state variable `showImages` (default false) to control image display, 2) When rendering HTML content using email.html_body (which is already available from the backend as seen in cache.rs), implement a two-stage rendering approach: first render HTML with all img src attributes stripped/blocked, 3) Add a 'Show Images' button (using existing Button component and Eye/EyeOff icons from lucide-react) that appears when HTML content contains images, 4) When clicked, re-render the HTML with images enabled, 5) Use DOMParser to safely detect and modify img tags before dangerouslySetInnerHTML rendering, 6) Add user preference persistence via localStorage to remember the choice per sender/domain, 7) Style the button consistently with existing Reply/Forward buttons in the header area (lines 262-284), 8) Ensure the feature works with the existing HTML/text toggle functionality mentioned in Task 17",
         "testStrategy": "Test by: 1) Sending HTML emails with embedded images and tracking pixels to test accounts, 2) Verify images are blocked by default and 'Show Images' button appears, 3) Test button functionality enables images properly, 4) Test localStorage persistence remembers preference, 5) Verify no external requests are made when images are blocked (check network tab), 6) Test with various email clients (Gmail, Outlook, etc.) to ensure compatibility, 7) Test the feature works alongside Task 17's HTML rendering improvements, 8) Verify button styling matches existing UI components",
         "status": "done",
         "dependencies": [
-          17
+          "17"
         ],
         "priority": "medium",
-        "subtasks": []
+        "subtasks": [],
+        "complexity": 3,
+        "recommendedSubtasks": 4,
+        "expansionPrompt": "Complete deployment resources: 1) Create deployment guides for standalone binary, Docker, and Kubernetes, 2) Document all configuration options and environment variables, 3) Create deployment scripts and Docker Compose files, 4) Add monitoring, logging configuration examples, and security best practices documentation"
       },
       {
-        "id": 19,
+        "id": "19",
         "title": "Add tabs to MCP Email Tools widget in web UI - one tab for low-level MCP tools, another tab for high-level AI-powered MCP tools",
         "description": "Enhance the existing McpTools component to display two separate tabs: one showing all the existing low-level MCP tools and another showing the high-level AI-powered MCP tools",
         "details": "Modify the existing McpTools.tsx component (src/dashboard/components/McpTools.tsx) to use Radix UI Tabs component from components/ui/tabs.tsx. The component should: 1) Import and use Tabs, TabsList, TabsTrigger, and TabsContent from '../ui/tabs', 2) Create two tab triggers: 'Low-Level Tools' and 'AI Tools', 3) Move existing tool fetching and display logic into the 'Low-Level Tools' tab content, 4) Add a new API endpoint fetch to get high-level tools from the backend endpoint '/dashboard/mcp/high-level-tools' (which needs to be implemented to call get_mcp_high_level_tools_jsonrpc_format() from high_level_tools.rs), 5) Display the high-level tools in the 'AI Tools' tab with the same UI pattern as existing tools, 6) Maintain all existing functionality including parameter auto-filling, execution, and result display for both tool types, 7) Update the header to show total tools from both tabs, 8) Ensure proper state management so expanding/collapsing tools, parameters, and results work independently between tabs. The backend route handler should call execute_high_level_tool() for AI tool executions and existing execute_mcp_tool_inner() for low-level tools.",
         "testStrategy": "Test by: 1) Verifying both tabs are visible and clickable in the MCP Tools widget, 2) Confirming the 'Low-Level Tools' tab shows existing tools with unchanged functionality, 3) Verifying the 'AI Tools' tab displays the 12 high-level tools (process_email_instructions, draft_reply, draft_email, list_accounts, etc.), 4) Testing parameter auto-filling works in both tabs based on current email context, 5) Testing tool execution works correctly for both low-level and high-level tools with proper API routing, 6) Verifying results display properly in both tabs, 7) Testing tab switching preserves expanded tool states and parameter values, 8) Confirming the total tool count in header updates correctly when switching tabs",
         "status": "done",
         "dependencies": [
-          3,
-          5
+          "3",
+          "5"
         ],
         "priority": "medium",
         "subtasks": []
       },
       {
-        "id": 20,
+        "id": "20",
         "title": "Add MCP server enable/disable controls to Email Assistant chatbot widget",
         "description": "Implement checkboxes/dropdown controls in ChatbotPanel to enable/disable individual MCP servers (low-level and high-level) for the AI assistant to use during conversations.",
         "details": "Based on the current ChatbotPanel.tsx (lines 334-677) and McpTools.tsx components, add MCP server configuration controls to the chatbot: 1) Add a settings dropdown menu next to the debug toggle button in the ChatbotPanel header (around line 364), 2) Create a new state for tracking enabled/disabled MCP servers with localStorage persistence similar to debugMode (line 72-74), 3) Add a collapsible settings panel that shows two sections: 'Low-Level Tools' and 'High-Level AI Tools', 4) For low-level tools, fetch from existing '/dashboard/mcp/tools' endpoint (line 98 in McpTools.tsx), 5) For high-level tools, create new endpoint '/dashboard/mcp/high-level-tools' that calls get_mcp_high_level_tools_jsonrpc_format() from high_level_tools.rs:11, 6) Display each tool as a checkbox with the tool name and description, allowing users to individually enable/disable tools, 7) Pass the enabled tools list to the chatbot query (in the ChatbotQuery interface) so the backend can filter available tools during AI conversations, 8) Use consistent UI patterns from the existing codebase: Radix UI components (checkbox.tsx, collapsible.tsx), similar styling to the debug panel (lines 549-644), and localStorage persistence pattern.",
         "testStrategy": "Test by: 1) Verifying the settings dropdown appears in the chatbot header and is functional, 2) Confirming both low-level and high-level tools are fetched and displayed correctly with checkboxes, 3) Testing that individual tool enable/disable states persist across browser sessions via localStorage, 4) Verifying the enabled tools list is correctly passed to chatbot queries and affects AI responses, 5) Testing the UI responsiveness and proper styling consistency with existing components, 6) Ensuring the new high-level tools endpoint returns the expected tool definitions from the backend.",
         "status": "done",
         "dependencies": [
-          19
+          "19"
         ],
         "priority": "medium",
         "subtasks": []
       },
       {
-        "id": 21,
+        "id": "21",
         "title": "Disable thinking mode in Qwen3 model by setting enable_thinking=False in Ollama provider configuration",
         "description": "Modify Ollama provider to support additional_config parameters and update Qwen3 model configuration to disable thinking mode for faster response times.",
         "details": "Update the Ollama provider implementation to read and apply additional_config parameters from the ai_model_configurations table: 1) Modify OllamaChatRequest struct in src/dashboard/services/ai/provider/ollama.rs to include optional additional parameters field, 2) Update OllamaAdapter::generate_response() method to fetch model configuration using get_model_config() and parse additional_config JSON to extract provider-specific parameters, 3) Add logic to merge additional_config parameters into the Ollama API request payload, 4) Use set_model_config() to update the Qwen3 model configuration with additional_config JSON: {\"enable_thinking\": false}, 5) Test that the parameter is properly passed to Ollama API and that thinking blocks are no longer generated in responses. The additional_config field should be parsed as JSON and merged into the request body sent to Ollama's /v1/chat/completions endpoint.",
         "testStrategy": "Test by: 1) Verifying that the Ollama provider properly reads additional_config from database and parses JSON parameters, 2) Confirming that enable_thinking=false parameter is included in API requests to Ollama for Qwen3 model, 3) Testing that Qwen3 responses no longer contain <think> blocks and show improved response speed, 4) Verifying that other models without this configuration continue to work normally, 5) Testing configuration updates through MCP tools to ensure the additional_config field can be modified and persisted correctly.",
         "status": "pending",
         "dependencies": [
-          2,
-          4
+          "2",
+          "4"
         ],
         "priority": "medium",
         "subtasks": []
       },
       {
-        "id": 22,
+        "id": "22",
         "title": "Fix permissive CORS configuration in main.rs",
         "description": "Replace the permissive CORS configuration that allows any origin, method, and header with a secure whitelist-based approach using environment variables to prevent CSRF attacks.",
         "details": "Update the CORS configuration in src/main.rs (lines 270-277) to implement a secure origin whitelist:\n\n1) Add a new environment variable ALLOWED_ORIGINS that accepts a comma-separated list of allowed origins (e.g., \"http://localhost:3000,https://dashboard.example.com\")\n\n2) Replace the current permissive configuration:\n   ```rust\n   Cors::default()\n       .allow_any_origin()\n       .allow_any_method()\n       .allow_any_header()\n   ```\n\n3) With a secure configuration:\n   ```rust\n   let allowed_origins = std::env::var(\"ALLOWED_ORIGINS\")\n       .unwrap_or_else(|_| \"http://localhost:3000\".to_string())\n       .split(',')\n       .map(|s| s.trim().to_string())\n       .collect::<Vec<String>>();\n   \n   let cors = Cors::default()\n       .allowed_origins(\n           allowed_origins\n               .iter()\n               .map(|origin| origin.parse::<HeaderValue>().unwrap())\n               .collect::<Vec<_>>()\n               .as_slice()\n       )\n       .allowed_methods(vec![\"GET\", \"POST\", \"PUT\", \"DELETE\", \"OPTIONS\"])\n       .allowed_headers(vec![\n           header::CONTENT_TYPE,\n           header::AUTHORIZATION,\n           header::ACCEPT,\n       ])\n       .supports_credentials()\n       .max_age(3600);\n   ```\n\n4) Update the .env.example file to include the new ALLOWED_ORIGINS variable with sensible defaults\n\n5) Add validation to ensure at least one origin is configured and that origins are valid URLs\n\n6) Consider adding a warning log if ALLOWED_ORIGINS is not set, defaulting to localhost only for development safety\n\n7) Ensure the CORS middleware properly handles preflight OPTIONS requests\n\n8) Update any deployment documentation to specify the ALLOWED_ORIGINS configuration requirement",
         "testStrategy": "Verify the CORS fix by:\n\n1) Start the server without ALLOWED_ORIGINS set and confirm it defaults to localhost:3000 only\n2) Set ALLOWED_ORIGINS=\"http://localhost:3000,http://localhost:5173\" and restart the server\n3) Test that requests from allowed origins work correctly:\n   - Make API calls from http://localhost:3000 and verify they succeed\n   - Make API calls from http://localhost:5173 and verify they succeed\n4) Test that requests from non-allowed origins are blocked:\n   - Use curl or a browser from http://localhost:8080 and verify CORS error\n   - Try making requests from https://evil.com and confirm they're rejected\n5) Verify preflight OPTIONS requests are handled correctly for allowed origins\n6) Test with credentials (cookies/auth headers) to ensure supports_credentials() works\n7) Check server logs for appropriate warnings when ALLOWED_ORIGINS is not configured\n8) Verify that malformed origins in ALLOWED_ORIGINS cause server startup to fail with clear error message",
         "status": "pending",
-        "dependencies": [],
+        "dependencies": [
+          "32"
+        ],
         "priority": "high",
         "subtasks": []
       },
       {
-        "id": 23,
+        "id": "23",
         "title": "Fix origin validation bypass in MCP HTTP backend",
         "description": "Fix critical security vulnerability in src/api/mcp_http.rs (lines 171-189) where origin validation accepts any domain containing 'localhost' and allows requests with no Origin header, enabling CSRF attacks.",
         "details": "Update the origin validation logic in src/api/mcp_http.rs to implement secure origin checking:\n\n1) **Fix substring matching vulnerability** (line ~175-180):\n   - Replace the current logic that accepts any origin containing 'localhost' (e.g., evil.localhost.com)\n   - Implement exact string matching for allowed origins\n   - Use a whitelist approach with full origin strings including protocol and port\n\n2) **Require Origin header on all requests**:\n   - Remove the logic that allows requests with missing Origin headers\n   - Return 403 Forbidden for requests without Origin header\n   - Add proper error message: \"Origin header required\"\n\n3) **Implement secure origin validation**:\n   ```rust\n   // Add at top of file\n   use std::env;\n   \n   // In the origin validation section\n   let allowed_origins = env::var(\"ALLOWED_MCP_ORIGINS\")\n       .unwrap_or_else(|_| \"http://localhost:3000\".to_string())\n       .split(',')\n       .map(|s| s.trim().to_string())\n       .collect::<Vec<String>>();\n   \n   // Validate origin\n   if let Some(origin) = req.headers().get(\"Origin\") {\n       let origin_str = origin.to_str().unwrap_or(\"\");\n       if !allowed_origins.contains(&origin_str.to_string()) {\n           return Ok(Response::builder()\n               .status(StatusCode::FORBIDDEN)\n               .body(Body::from(\"Origin not allowed\"))\n               .unwrap());\n       }\n   } else {\n       return Ok(Response::builder()\n           .status(StatusCode::FORBIDDEN)\n           .body(Body::from(\"Origin header required\"))\n           .unwrap());\n   }\n   ```\n\n4) **Add environment variable configuration**:\n   - Support ALLOWED_MCP_ORIGINS environment variable\n   - Accept comma-separated list of full origins (e.g., \"http://localhost:3000,http://localhost:5173,https://app.example.com\")\n   - Default to \"http://localhost:3000\" if not set\n\n5) **Update CORS headers in response**:\n   - Set Access-Control-Allow-Origin to the specific requesting origin (not \"*\")\n   - Only set it if the origin is in the allowed list\n\n6) **Consider preflight requests**:\n   - Ensure OPTIONS requests also validate origins\n   - Return appropriate CORS headers only for allowed origins",
         "testStrategy": "Verify the security fix with comprehensive testing:\n\n1) **Test substring matching fix**:\n   - Send request with Origin: http://evil.localhost.com - should be rejected (403)\n   - Send request with Origin: http://localhost.attacker.com - should be rejected (403)\n   - Send request with Origin: http://localhost:3000 - should be allowed (200)\n\n2) **Test missing Origin header enforcement**:\n   - Use curl without Origin header: `curl http://localhost:8080/mcp/tools/list` - should be rejected (403)\n   - Use curl with valid Origin: `curl -H \"Origin: http://localhost:3000\" http://localhost:8080/mcp/tools/list` - should work\n\n3) **Test environment variable configuration**:\n   - Set ALLOWED_MCP_ORIGINS=\"http://localhost:3000,http://localhost:5173\"\n   - Verify requests from localhost:3000 work\n   - Verify requests from localhost:5173 work\n   - Verify requests from localhost:8080 are rejected\n\n4) **Test exact matching with ports**:\n   - Origin: http://localhost:3000 with ALLOWED_MCP_ORIGINS=\"http://localhost:3001\" - should fail\n   - Origin: http://localhost:3001 with ALLOWED_MCP_ORIGINS=\"http://localhost:3001\" - should work\n\n5) **Test CORS response headers**:\n   - Verify Access-Control-Allow-Origin is set to the specific origin (not \"*\")\n   - Verify it's only set when origin is allowed\n\n6) **Test preflight OPTIONS requests**:\n   - Send OPTIONS request with valid origin - should return proper CORS headers\n   - Send OPTIONS request with invalid origin - should be rejected",
         "status": "pending",
         "dependencies": [
-          22
+          "22"
         ],
         "priority": "high",
         "subtasks": []
       },
       {
-        "id": 24,
+        "id": "24",
         "title": "Remove hardcoded test credentials and require configured API keys",
         "description": "Remove all hardcoded test API keys and credentials from the codebase, require explicit configuration of all API keys, add key expiration support, and update documentation for secure key generation.",
         "details": "Fix critical security vulnerabilities in API key management by removing all hardcoded credentials and test keys:\n\n1) **Remove hardcoded test key initialization in src/api/auth.rs**:\n   - Delete or comment out the ApiKeyStore::init_with_defaults() method that seeds a test key with Admin scope at startup\n   - Ensure no API keys are automatically created when the application starts\n   - Modify the initialization logic to require explicit key configuration through environment variables or secure configuration files\n\n2) **Remove test credentials from .env.example**:\n   - Remove the line `RUSTYMAIL_API_KEY=test-rustymail-key-2024` from .env.example\n   - Replace with a placeholder like `RUSTYMAIL_API_KEY=your-secure-api-key-here`\n   - Add comments explaining that users must generate their own secure API keys\n\n3) **Implement API key expiration support**:\n   - Add an `expires_at` field to the API key storage structure (likely in ApiKeyStore)\n   - Modify the key validation logic to check expiration timestamps\n   - Return 401 Unauthorized for expired keys with appropriate error messages\n   - Consider adding a configurable default expiration period (e.g., 90 days)\n\n4) **Remove any hardcoded IMAP credentials**:\n   - Search the codebase for any hardcoded IMAP usernames, passwords, or server configurations\n   - Ensure all IMAP credentials must be provided through secure configuration\n   - Update any test configurations to use environment variables instead\n\n5) **Add secure key generation documentation**:\n   - Create a new section in the README or a separate SECURITY.md file\n   - Document how to generate cryptographically secure API keys (e.g., using openssl rand -hex 32)\n   - Explain the importance of key rotation and expiration\n   - Provide examples of secure key storage practices\n   - Document the required scopes and permissions for different API operations\n\n6) **Update application startup logic**:\n   - Add validation to ensure required API keys are configured before the application starts\n   - Provide clear error messages if required keys are missing\n   - Consider implementing a setup wizard or initialization script for first-time configuration",
         "testStrategy": "Verify the security improvements with comprehensive testing:\n\n1) **Test removal of hardcoded keys**:\n   - Start the application with a clean environment (no API keys configured)\n   - Verify the application refuses to start or enters a safe mode without any pre-configured keys\n   - Confirm no test keys are accessible through the API\n\n2) **Test API key expiration**:\n   - Create an API key with a short expiration time (e.g., 1 minute in the future)\n   - Make successful API calls with the key\n   - Wait for the key to expire\n   - Verify subsequent API calls return 401 Unauthorized with an \"expired key\" error message\n\n3) **Test IMAP credential requirements**:\n   - Attempt to use IMAP functionality without configuring credentials\n   - Verify appropriate error messages are returned\n   - Configure valid IMAP credentials through environment variables\n   - Confirm IMAP functionality works correctly with configured credentials\n\n4) **Test .env.example changes**:\n   - Copy .env.example to .env\n   - Verify the application doesn't start with placeholder values\n   - Replace placeholders with valid keys and confirm successful startup\n\n5) **Security audit**:\n   - Search the entire codebase for strings like \"test\", \"default\", \"admin\" in authentication contexts\n   - Verify no hardcoded credentials remain in any source files\n   - Check that all authentication-related configuration comes from environment variables or secure config files\n\n6) **Documentation verification**:\n   - Follow the new secure key generation documentation to create API keys\n   - Verify the generated keys work correctly with the application\n   - Confirm all security best practices are clearly explained",
         "status": "pending",
         "dependencies": [
-          22,
-          23
+          "22",
+          "23"
         ],
         "priority": "high",
         "subtasks": []
       },
       {
-        "id": 25,
+        "id": "25",
         "title": "Add API-key and scope validation to all MCP endpoints",
         "description": "Implement mandatory API-key validation middleware for all MCP routes in mcp_http.rs with per-tool scope requirements and proper error responses for authentication/authorization failures.",
         "details": "Modify src/api/mcp_http.rs to add comprehensive security to mcp_post_handler and mcp_get_handler which currently rely only on weak origin checks:\n\n1) Create a new middleware module src/api/auth/api_key_middleware.rs with:\n   - ApiKey struct containing key, scopes, and metadata\n   - validate_api_key() function that checks against a database table or config file\n   - extract_api_key_from_request() to get key from Authorization header (Bearer token) or X-API-Key header\n   - ApiKeyMiddleware that intercepts all MCP requests before handlers\n\n2) Define scope requirements for each MCP tool:\n   - Low-level tools: email:read, email:write, folder:read, etc.\n   - High-level tools: ai:execute, model:configure, email:draft\n   - Create a tool_scopes mapping in high_level_tools.rs and regular tools module\n\n3) Update mcp_post_handler and mcp_get_handler:\n   - Remove or supplement weak origin check with API key validation\n   - Extract requested tool from the JSON-RPC request\n   - Look up required scopes for the tool\n   - Validate API key has all required scopes\n   - Pass validated API key context to downstream handlers\n\n4) Implement proper error responses:\n   - 401 Unauthorized for missing or invalid API keys\n   - 403 Forbidden for valid key but insufficient scopes\n   - Include WWW-Authenticate header with realm=\"MCP API\"\n   - Return JSON-RPC error format with descriptive messages\n\n5) Create database schema for API keys:\n   ```sql\n   CREATE TABLE api_keys (\n     id SERIAL PRIMARY KEY,\n     key_hash VARCHAR(255) UNIQUE NOT NULL,\n     name VARCHAR(255),\n     scopes TEXT[], -- Array of scope strings\n     created_at TIMESTAMP DEFAULT NOW(),\n     last_used_at TIMESTAMP,\n     is_active BOOLEAN DEFAULT true\n   );\n   ```\n\n6) Add configuration for API key validation:\n   - Environment variable to enable/disable in development\n   - Option to load keys from config file for testing\n   - Rate limiting per API key to prevent abuse",
@@ -425,7 +490,7 @@
         "subtasks": []
       },
       {
-        "id": 26,
+        "id": "26",
         "title": "Implement encryption for stored credentials",
         "description": "Add encryption at rest for all sensitive credentials including IMAP/SMTP passwords in database and JSON config files, with support for application-level encryption or external KMS integration.",
         "details": "Implement a comprehensive encryption solution for all stored credentials:\n\n1) Create encryption module at src/dashboard/services/security/encryption.rs:\n   - Define CredentialEncryption trait with encrypt() and decrypt() methods\n   - Implement ApplicationLevelEncryption using AES-256-GCM with master key from ENCRYPTION_MASTER_KEY env var\n   - Implement KmsEncryption for AWS KMS/Azure Key Vault integration (configurable via ENCRYPTION_PROVIDER env var)\n   - Add EncryptionService that selects provider based on configuration\n\n2) Update database schema with migration 005_add_credential_encryption.sql:\n   ```sql\n   ALTER TABLE email_accounts \n   ADD COLUMN password_encrypted BYTEA,\n   ADD COLUMN encryption_metadata JSONB;\n   \n   ALTER TABLE ai_model_configurations\n   ADD COLUMN api_key_encrypted BYTEA,\n   ADD COLUMN encryption_metadata JSONB;\n   ```\n\n3) Modify src/dashboard/models/email_account.rs:\n   - Add password_encrypted and encryption_metadata fields\n   - Update create() and update() methods to encrypt password before storage\n   - Modify get_password() to decrypt on retrieval\n   - Keep backward compatibility during migration\n\n4) Update src/dashboard/models/ai_model_configuration.rs similarly for api_key field\n\n5) Create migration script src/dashboard/services/security/migrate_credentials.rs:\n   - Scan all email_accounts and ai_model_configurations records\n   - For each plaintext credential, encrypt and store in new columns\n   - Verify decryption works correctly\n   - Once verified, null out plaintext columns\n\n6) Update JSON config handling in src/config/mod.rs:\n   - Detect plaintext credentials in config files\n   - Encrypt and rewrite config with encrypted values\n   - Add encryption_metadata to track encryption method\n\n7) Add key rotation support:\n   - Implement rotate_encryption_key() method\n   - Re-encrypt all credentials with new key\n   - Update encryption_metadata with rotation timestamp",
@@ -438,78 +503,91 @@
         "subtasks": []
       },
       {
-        "id": 27,
+        "id": "27",
         "title": "Fix path traversal vulnerability in attachment_storage.rs",
         "description": "Implement secure path canonicalization and containment checks in attachment_storage.rs to prevent directory traversal attacks via malicious file paths or symlinks.",
         "details": "Fix the path traversal vulnerability in attachment_storage.rs by implementing comprehensive path security measures:\n\n1) **Add path canonicalization**:\n   - Import std::fs::canonicalize() to resolve all symbolic links and relative path components\n   - Before any file operation, canonicalize both the requested path and the storage root directory\n   - Handle canonicalization errors gracefully (non-existent paths, permission issues)\n\n2) **Implement strict containment validation**:\n   - Create a validate_path_containment() function that:\n     - Canonicalizes the requested file path\n     - Canonicalizes the attachments storage root directory\n     - Uses path.starts_with() to ensure the resolved path is within the storage root\n     - Returns Result<PathBuf, SecurityError> with the safe canonicalized path or error\n   \n3) **Update all file operations**:\n   - Modify save_attachment(), get_attachment(), delete_attachment() to use validate_path_containment()\n   - Replace current basic path component checks with the new validation\n   - Ensure all Path/PathBuf constructions go through validation before use\n\n4) **Handle edge cases**:\n   - Reject null bytes in filenames\n   - Validate against Windows reserved names (CON, PRN, AUX, etc.) if cross-platform\n   - Handle Unicode normalization attacks (different representations of same character)\n   - Prevent TOCTOU attacks by using the validated canonical path for operations\n\n5) **Example implementation**:\n   ```rust\n   use std::path::{Path, PathBuf};\n   use std::fs;\n   \n   #[derive(Debug, thiserror::Error)]\n   enum PathSecurityError {\n       #[error(\"Path traversal attempt detected\")]\n       PathTraversal,\n       #[error(\"Invalid path: {0}\")]\n       InvalidPath(String),\n       #[error(\"Canonicalization failed: {0}\")]\n       CanonicalizationError(#[from] std::io::Error),\n   }\n   \n   fn validate_path_containment(\n       storage_root: &Path,\n       requested_path: &Path\n   ) -> Result<PathBuf, PathSecurityError> {\n       // Canonicalize the storage root\n       let canonical_root = fs::canonicalize(storage_root)?;\n       \n       // Construct full path and canonicalize\n       let full_path = storage_root.join(requested_path);\n       let canonical_path = fs::canonicalize(&full_path)\n           .or_else(|_| {\n               // If file doesn't exist, canonicalize parent and append filename\n               let parent = full_path.parent()\n                   .ok_or_else(|| PathSecurityError::InvalidPath(\"No parent directory\".into()))?;\n               let filename = full_path.file_name()\n                   .ok_or_else(|| PathSecurityError::InvalidPath(\"No filename\".into()))?;\n               \n               let canonical_parent = fs::canonicalize(parent)?;\n               Ok(canonical_parent.join(filename))\n           })?;\n       \n       // Verify the canonical path is within the storage root\n       if !canonical_path.starts_with(&canonical_root) {\n           return Err(PathSecurityError::PathTraversal);\n       }\n       \n       Ok(canonical_path)\n   }\n   ```\n\n6) **Add security logging**:\n   - Log all path traversal attempts with source IP/user info\n   - Include the malicious path in logs for security monitoring\n   - Consider rate limiting after multiple traversal attempts",
         "testStrategy": "Verify the path traversal fix with comprehensive security testing:\n\n1) **Unit tests for path validation**:\n   - Test basic traversal attempts: \"../../../etc/passwd\", \"..\\\\..\\\\windows\\\\system32\"\n   - Test encoded traversals: \"%2e%2e%2f\", \"..%252f\", \"%c0%ae%c0%ae/\"\n   - Test symlink traversal: create symlink pointing outside storage, verify rejection\n   - Test absolute paths: \"/etc/passwd\", \"C:\\\\Windows\\\\System32\"\n   - Test null bytes: \"file.txt\\x00.pdf\"\n   - Test Unicode tricks: \"ﬁle.txt\" (ligature), different normalization forms\n\n2) **Integration tests**:\n   - Create test storage directory with known structure\n   - Attempt to save files with malicious paths, verify all are rejected\n   - Test legitimate nested paths work correctly: \"user123/2024/invoice.pdf\"\n   - Verify error messages don't leak system paths\n\n3) **Edge case testing**:\n   - Test very long paths (near filesystem limits)\n   - Test special filenames: \".\", \"..\", \"~\", \"$file\"\n   - Test Windows reserved names: \"CON\", \"PRN\", \"AUX\", \"NUL\"\n   - Test case sensitivity issues on case-insensitive filesystems\n\n4) **TOCTOU race condition test**:\n   - Create a legitimate file\n   - In parallel thread, try to replace it with symlink during validation\n   - Verify the operation uses the validated canonical path\n\n5) **Performance testing**:\n   - Measure overhead of canonicalization on typical operations\n   - Test with deeply nested directory structures\n   - Ensure no significant performance regression\n\n6) **Security audit checklist**:\n   - Verify all file operations use validate_path_containment()\n   - Check no direct Path construction from user input\n   - Confirm error messages don't reveal system structure\n   - Review logs for attempted traversals during testing",
         "status": "pending",
-        "dependencies": [],
+        "dependencies": [
+          "32"
+        ],
         "priority": "medium",
         "subtasks": []
       },
       {
-        "id": 28,
+        "id": "28",
         "title": "Wire rate limiting into REST and MCP API paths",
         "description": "Integrate the existing rate limiting validation from validation.rs into all REST API endpoints and MCP handlers, implementing per-IP and per-API-key limits with proper 429 responses and rate limit headers.",
         "details": "Implement comprehensive rate limiting across all API surfaces:\n\n1) **Create rate limiting middleware for REST APIs**:\n   - Create src/dashboard/middleware/rate_limit.rs\n   - Import existing rate limiting logic from validation.rs\n   - Implement RateLimitMiddleware that extracts client IP and API key from requests\n   - Use a token bucket or sliding window algorithm for tracking request counts\n   - Store rate limit state in memory with Arc<Mutex<HashMap>> or use Redis for distributed deployments\n\n2) **Configure rate limits via environment variables**:\n   - Add RATE_LIMIT_PER_MINUTE (default: 60)\n   - Add RATE_LIMIT_PER_HOUR (default: 1000)\n   - Add RATE_LIMIT_PER_IP_MINUTE (default: 30)\n   - Add RATE_LIMIT_PER_IP_HOUR (default: 500)\n   - Support different limits for authenticated (API key) vs anonymous requests\n\n3) **Integrate middleware into REST API routes**:\n   - In main.rs, wrap all API routes with rate limiting middleware\n   - Apply before authentication middleware to protect against auth bypass attempts\n   - Example:\n   ```rust\n   .wrap(RateLimitMiddleware::new(rate_limit_config))\n   .wrap(cors)\n   .wrap(Logger::default())\n   ```\n\n4) **Add rate limiting to MCP handlers**:\n   - In each MCP handler function, add rate limit check at the beginning\n   - Extract client identifier from MCP context (connection ID or client metadata)\n   - Use the same rate limiting logic but with MCP-specific limits\n   - Return appropriate MCP error response when rate limited\n\n5) **Implement 429 Too Many Requests responses**:\n   - For REST APIs: Return HTTP 429 status with JSON error body\n   - Include retry-after header indicating when client can retry\n   - Error response format:\n   ```json\n   {\n     \"error\": \"rate_limit_exceeded\",\n     \"message\": \"Too many requests. Please retry after 60 seconds.\",\n     \"retry_after\": 60\n   }\n   ```\n\n6) **Add rate limit headers to all responses**:\n   - X-RateLimit-Limit: Maximum requests allowed\n   - X-RateLimit-Remaining: Requests remaining in current window\n   - X-RateLimit-Reset: Unix timestamp when the rate limit resets\n   - Add these headers even for successful requests\n\n7) **Handle edge cases**:\n   - Properly extract real client IP behind proxies (X-Forwarded-For, X-Real-IP)\n   - Implement IP whitelist for internal services (via RATE_LIMIT_WHITELIST_IPS env var)\n   - Graceful degradation if rate limit storage fails\n   - Different rate limits for different API endpoints (e.g., higher for read, lower for write)",
         "testStrategy": "Verify rate limiting implementation with comprehensive testing:\n\n1) **Unit tests for rate limiting logic**:\n   - Test token bucket/sliding window algorithm correctness\n   - Verify per-minute and per-hour limits work independently\n   - Test IP-based vs API-key-based rate limiting\n   - Verify rate limit reset timing\n\n2) **Integration tests for REST API**:\n   - Send requests up to the limit and verify all succeed\n   - Send one more request and verify 429 response with correct headers\n   - Wait for rate limit reset and verify requests work again\n   - Test with different IPs and API keys to ensure isolation\n\n3) **MCP handler rate limiting tests**:\n   - Mock MCP requests and verify rate limiting applies\n   - Test that rate limited MCP calls return appropriate error responses\n   - Verify MCP rate limits are independent from REST API limits\n\n4) **Header validation tests**:\n   - Verify all responses include X-RateLimit-* headers\n   - Check header values decrease correctly with each request\n   - Verify Reset header contains valid future timestamp\n\n5) **Load testing**:\n   - Use Apache Bench or similar to send concurrent requests\n   - Verify rate limiting holds under high concurrency\n   - Test with multiple IPs to ensure no cross-contamination\n\n6) **Configuration tests**:\n   - Start server with custom rate limit env vars\n   - Verify limits match configured values\n   - Test with missing env vars to ensure defaults work\n\n7) **Security tests**:\n   - Attempt to bypass with spoofed headers\n   - Verify whitelisted IPs bypass rate limits\n   - Test rate limiting works before authentication",
         "status": "pending",
         "dependencies": [
-          22
+          "22"
         ],
         "priority": "medium",
         "subtasks": []
       },
       {
-        "id": 29,
+        "id": "29",
         "title": "Pin git dependencies to specific commit SHAs",
         "description": "Update Cargo.toml to pin all git dependencies (including rmcp crate) to specific commit SHAs to prevent supply chain attacks, document the pinned versions, and establish a periodic review process for dependency updates.",
         "details": "Implement secure dependency pinning to protect against supply chain attacks by ensuring all git dependencies reference immutable commit SHAs:\n\n1) **Audit current git dependencies in Cargo.toml**:\n   - Search for all dependencies using git = \"...\" syntax\n   - Identify the rmcp crate and any other git-based dependencies\n   - For each dependency, determine the current branch/tag being tracked\n   - Clone each repository and identify the exact commit SHA currently in use\n\n2) **Pin dependencies to specific commit SHAs**:\n   - Replace branch/tag references with rev = \"SHA\" for each git dependency\n   - Example transformation:\n     ```toml\n     # Before (vulnerable to upstream changes):\n     rmcp = { git = \"https://github.com/example/rmcp\", branch = \"main\" }\n     \n     # After (pinned to specific commit):\n     rmcp = { git = \"https://github.com/example/rmcp\", rev = \"a1b2c3d4e5f6...\" }\n     ```\n   - Run `cargo update` to ensure the lock file reflects the pinned versions\n   - Verify the application builds and tests pass with pinned dependencies\n\n3) **Document pinned dependencies**:\n   - Create docs/dependency-pins.md with a table documenting:\n     - Dependency name\n     - Repository URL\n     - Pinned commit SHA\n     - Commit date and author\n     - Version/tag the commit corresponds to (if any)\n     - Brief description of why this specific commit was chosen\n     - Last review date\n   - Add comments in Cargo.toml above each pinned dependency explaining the version\n\n4) **Establish review process**:\n   - Create .github/workflows/dependency-review.yml for monthly automated checks:\n     ```yaml\n     name: Dependency Review\n     on:\n       schedule:\n         - cron: '0 0 1 * *'  # Monthly on the 1st\n       workflow_dispatch:\n     \n     jobs:\n       review-git-deps:\n         runs-on: ubuntu-latest\n         steps:\n           - uses: actions/checkout@v3\n           - name: Check for updates\n             run: |\n               # Script to check each pinned repo for new commits\n               # Create issues for dependencies with updates available\n     ```\n   - Add a SECURITY.md section on dependency update procedures\n   - Document the review checklist:\n     - Check upstream repository for security advisories\n     - Review commit history since pinned version\n     - Test updates in isolated environment\n     - Update both Cargo.toml and docs/dependency-pins.md\n\n5) **Add CI validation**:\n   - Create a GitHub Action that fails if any git dependencies lack rev pins\n   - Add pre-commit hook to warn developers about unpinned dependencies\n   - Include dependency pinning in security audit checklist",
         "testStrategy": "Verify the dependency pinning implementation with comprehensive testing:\n\n1) **Validate all git dependencies are pinned**:\n   - Parse Cargo.toml and verify every git dependency has a `rev` field\n   - Ensure no git dependencies use `branch`, `tag`, or default to HEAD\n   - Run `cargo tree` to confirm resolved dependencies match pinned SHAs\n\n2) **Test build reproducibility**:\n   - Delete Cargo.lock and run `cargo build` on different machines\n   - Verify the exact same dependency versions are resolved\n   - Compare checksums of built artifacts to ensure deterministic builds\n\n3) **Verify documentation completeness**:\n   - Check docs/dependency-pins.md exists and contains all git dependencies\n   - Validate each entry has all required fields (SHA, date, reason, etc.)\n   - Cross-reference Cargo.toml pins with documentation\n\n4) **Test automated review process**:\n   - Manually trigger the dependency review workflow\n   - Verify it correctly identifies outdated dependencies\n   - Confirm it creates GitHub issues with appropriate labels and details\n   - Test the workflow with a intentionally outdated test dependency\n\n5) **Security validation**:\n   - Attempt to modify a git dependency to use a branch reference\n   - Verify CI pipeline fails with clear error message\n   - Test pre-commit hook warns about unpinned dependencies\n   - Simulate a supply chain attack by creating a malicious fork and verify pinning prevents it\n\n6) **Integration testing**:\n   - Run full test suite with pinned dependencies\n   - Deploy to staging environment and verify functionality\n   - Monitor for any performance or compatibility issues\n   - Test rollback procedure if a pinned dependency causes issues",
         "status": "pending",
-        "dependencies": [],
+        "dependencies": [
+          "32"
+        ],
         "priority": "low",
         "subtasks": []
       },
       {
-        "id": 30,
+        "id": "30",
         "title": "Reduce unwrap/expect usage in request handlers",
         "description": "Replace 599 unwrap/expect calls in request handlers with proper Result handling and error responses, focusing on handlers that process external input to prevent panics from unexpected data.",
         "details": "Systematically eliminate panic-inducing unwrap/expect calls from request handlers to improve application stability and security:\n\n1) **Audit and prioritize unwrap/expect usage**:\n   - Run `rg -c \"\\.unwrap\\(\\)|\\.expect\\(\" src/` to get current count and locations\n   - Focus on high-risk areas: src/api/, src/dashboard/handlers/, and MCP handlers\n   - Prioritize handlers that process external input: API endpoints, form submissions, file uploads\n   - Create a tracking spreadsheet with file, line number, risk level, and replacement strategy\n\n2) **Define proper error types**:\n   - Create src/errors/handler_errors.rs with custom error types:\n   ```rust\n   #[derive(Debug, thiserror::Error)]\n   pub enum HandlerError {\n       #[error(\"Invalid input: {0}\")]\n       InvalidInput(String),\n       #[error(\"Database error: {0}\")]\n       Database(#[from] sqlx::Error),\n       #[error(\"Serialization error: {0}\")]\n       Serialization(#[from] serde_json::Error),\n       #[error(\"IO error: {0}\")]\n       Io(#[from] std::io::Error),\n       #[error(\"Authentication failed\")]\n       Unauthorized,\n       #[error(\"Resource not found\")]\n       NotFound,\n   }\n   ```\n   - Implement ResponseError trait for automatic HTTP response conversion\n\n3) **Replace unwrap/expect in API handlers**:\n   - Convert unwrap() to ? operator where possible\n   - Replace expect() with map_err() to provide context:\n   ```rust\n   // Before\n   let user_id = req.param(\"id\").unwrap().parse::<i32>().unwrap();\n   \n   // After\n   let user_id = req.param(\"id\")\n       .ok_or(HandlerError::InvalidInput(\"Missing user ID\".into()))?\n       .parse::<i32>()\n       .map_err(|_| HandlerError::InvalidInput(\"Invalid user ID format\".into()))?;\n   ```\n\n4) **Handle JSON parsing safely**:\n   - Replace serde_json::from_str().unwrap() with proper error handling:\n   ```rust\n   // Before\n   let config: Config = serde_json::from_str(&body).unwrap();\n   \n   // After\n   let config: Config = serde_json::from_str(&body)\n       .map_err(|e| HandlerError::InvalidInput(format!(\"Invalid JSON: {}\", e)))?;\n   ```\n\n5) **Fix database query handling**:\n   - Replace query unwraps with proper Result propagation:\n   ```rust\n   // Before\n   let user = sqlx::query_as!(User, \"SELECT * FROM users WHERE id = $1\", id)\n       .fetch_one(&pool)\n       .await\n       .unwrap();\n   \n   // After\n   let user = sqlx::query_as!(User, \"SELECT * FROM users WHERE id = $1\", id)\n       .fetch_one(&pool)\n       .await\n       .map_err(|e| match e {\n           sqlx::Error::RowNotFound => HandlerError::NotFound,\n           _ => HandlerError::Database(e),\n       })?;\n   ```\n\n6) **Update MCP handlers**:\n   - Focus on mcp_http.rs handlers that process tool calls\n   - Replace unwrap in JSON-RPC parsing and response building\n   - Add proper error responses following JSON-RPC error format\n\n7) **Implement error response middleware**:\n   - Create middleware to convert HandlerError to appropriate HTTP responses\n   - Include error details in development, sanitized messages in production\n   - Add request ID for error tracking",
         "testStrategy": "Verify the unwrap/expect reduction with comprehensive testing:\n\n1) **Static analysis verification**:\n   - Run `rg -c \"\\.unwrap\\(\\)|\\.expect\\(\" src/api/ src/dashboard/handlers/` before and after\n   - Verify significant reduction in count (target: 80%+ reduction in these directories)\n   - Use clippy with `#![warn(clippy::unwrap_used, clippy::expect_used)]` on modified files\n\n2) **Unit tests for error handling**:\n   - Test each HandlerError variant converts to correct HTTP status code\n   - Verify error messages are properly formatted and sanitized\n   - Test error context preservation through map_err chains\n\n3) **Integration tests for API endpoints**:\n   - Send malformed JSON to endpoints, verify 400 Bad Request responses\n   - Test with invalid IDs, verify 404 Not Found responses\n   - Send requests missing required fields, verify descriptive error messages\n   - Test database connection failures return 500 Internal Server Error\n\n4) **Panic testing**:\n   - Set up panic hook to log and alert on any remaining panics\n   - Run fuzzing tests on API endpoints with random/malformed input\n   - Monitor application logs during testing for any panic messages\n\n5) **Load testing for stability**:\n   - Run load tests with mix of valid and invalid requests\n   - Verify no panics occur under high load with bad input\n   - Check error rates remain consistent without crashes",
         "status": "pending",
         "dependencies": [
-          25
+          "25"
         ],
         "priority": "low",
         "subtasks": []
       },
       {
-        "id": 31,
+        "id": "31",
         "title": "Replace unsafe process checks in sync.rs",
         "description": "Replace unsafe blocks used for process state checking in sync.rs with safe Rust alternatives using proper synchronization primitives, documenting any truly necessary unsafe code with safety invariants.",
         "details": "Eliminate unsafe code in sync.rs by implementing safe alternatives for process state checking:\n\n1) **Audit current unsafe usage in sync.rs**:\n   - Identify all unsafe blocks and their purposes (likely checking process states, shared memory access, or FFI calls)\n   - Document what each unsafe block is trying to achieve\n   - Determine if the unsafe code is for performance, FFI, or working around Rust's safety checks\n   - Create a list of safety invariants that the current code assumes\n\n2) **Replace with safe synchronization primitives**:\n   - For shared state access, use Arc<Mutex<T>> or Arc<RwLock<T>> instead of raw pointers\n   - For atomic operations, use std::sync::atomic types (AtomicBool, AtomicUsize, etc.)\n   - For cross-thread communication, use channels (mpsc, crossbeam) instead of shared memory\n   - For process state tracking, consider using a state machine pattern with enums\n\n3) **Implement safe process state management**:\n   ```rust\n   use std::sync::{Arc, RwLock};\n   use std::sync::atomic::{AtomicBool, Ordering};\n   \n   #[derive(Debug, Clone)]\n   enum ProcessState {\n       Idle,\n       Running { pid: u32 },\n       Completed { exit_code: i32 },\n       Failed { error: String },\n   }\n   \n   struct ProcessManager {\n       state: Arc<RwLock<ProcessState>>,\n       is_active: Arc<AtomicBool>,\n   }\n   \n   impl ProcessManager {\n       fn check_state(&self) -> ProcessState {\n           self.state.read().unwrap().clone()\n       }\n       \n       fn update_state(&self, new_state: ProcessState) {\n           *self.state.write().unwrap() = new_state;\n       }\n   }\n   ```\n\n4) **Handle truly necessary unsafe code**:\n   - If interfacing with C libraries or system calls, wrap unsafe code in safe abstractions\n   - Document safety invariants with comments explaining:\n     - What assumptions the unsafe code makes\n     - What conditions must be met for the code to be safe\n     - Why safe alternatives cannot be used\n   - Example documentation:\n   ```rust\n   // SAFETY: The pointer `ptr` is guaranteed to be valid and aligned because:\n   // 1. It comes from a Box allocation which ensures proper alignment\n   // 2. We hold an exclusive lock preventing concurrent access\n   // 3. The lifetime 'a ensures the data outlives this function\n   unsafe {\n       // Minimal unsafe code here\n   }\n   ```\n\n5) **Create safe abstractions for system interactions**:\n   - If checking process status via system calls, use nix or libc crates with safe wrappers\n   - Implement error handling for all system operations\n   - Example safe wrapper:\n   ```rust\n   use nix::sys::wait::{waitpid, WaitStatus};\n   use nix::unistd::Pid;\n   \n   fn check_process_status(pid: i32) -> Result<ProcessStatus, Error> {\n       match waitpid(Pid::from_raw(pid), None) {\n           Ok(WaitStatus::Exited(_, code)) => Ok(ProcessStatus::Exited(code)),\n           Ok(WaitStatus::Signaled(_, sig, _)) => Ok(ProcessStatus::Signaled(sig)),\n           Ok(_) => Ok(ProcessStatus::Running),\n           Err(e) => Err(Error::SystemError(e)),\n       }\n   }\n   ```\n\n6) **Refactor concurrent access patterns**:\n   - Replace manual memory synchronization with channels or actors\n   - Use parking_lot for performance-critical locks if needed\n   - Implement timeout mechanisms to prevent deadlocks",
         "testStrategy": "Verify the unsafe code replacement with comprehensive testing:\n\n1) **Static analysis verification**:\n   - Run `grep -n \"unsafe\" src/sync.rs` before and after changes\n   - Verify significant reduction in unsafe blocks (target: 90%+ reduction)\n   - Use `cargo clippy` with pedantic lints to catch potential issues\n   - Run `cargo miri test` if applicable to detect undefined behavior\n\n2) **Unit tests for process state management**:\n   - Test concurrent access to process state from multiple threads\n   - Verify no data races occur under high contention\n   - Test state transitions are atomic and consistent\n   - Example test:\n   ```rust\n   #[test]\n   fn test_concurrent_state_updates() {\n       let manager = Arc::new(ProcessManager::new());\n       let handles: Vec<_> = (0..100).map(|i| {\n           let mgr = manager.clone();\n           thread::spawn(move || {\n               mgr.update_state(ProcessState::Running { pid: i });\n           })\n       }).collect();\n       \n       for handle in handles {\n           handle.join().unwrap();\n       }\n       \n       // Verify final state is valid\n   }\n   ```\n\n3) **Integration tests for process synchronization**:\n   - Spawn actual child processes and verify state tracking\n   - Test edge cases: process crashes, signals, zombie processes\n   - Verify no resource leaks occur over many iterations\n   - Test timeout handling and cleanup\n\n4) **Performance benchmarks**:\n   - Compare performance before and after unsafe removal\n   - Ensure synchronization overhead is acceptable\n   - Use criterion.rs for micro-benchmarks of critical paths\n   - Target: Less than 10% performance regression\n\n5) **Safety documentation review**:\n   - For any remaining unsafe blocks, verify comprehensive safety comments\n   - Ensure all invariants are documented and testable\n   - Review with another developer familiar with unsafe Rust\n\n6) **Stress testing**:\n   - Run the sync module under heavy load for extended periods\n   - Use tools like ThreadSanitizer to detect race conditions\n   - Monitor for panics, deadlocks, or resource exhaustion",
         "status": "pending",
         "dependencies": [
-          30
+          "30"
         ],
         "priority": "low",
         "subtasks": []
+      },
+      {
+        "id": "32",
+        "title": "Add comprehensive test coverage for security-affected areas",
+        "description": "Create extensive test suite covering all security-critical functionality including CORS, origin validation, API authentication, path traversal, and rate limiting before implementing security fixes.",
+        "details": "Create a comprehensive security test suite in tests/integration/security_tests.rs that establishes baseline behavior for all security-critical areas. This must be completed before any security hardening begins.\n\n**1. CORS Configuration Tests (for Task 22):**\n```rust\n#[cfg(test)]\nmod cors_tests {\n    use actix_web::{test, App, http::header};\n    \n    #[actix_web::test]\n    async fn test_cors_blocks_unauthorized_origins() {\n        // Test that requests from non-whitelisted origins are blocked\n        let app = test::init_service(create_app()).await;\n        let req = test::TestRequest::get()\n            .uri(\"/api/emails\")\n            .header(header::ORIGIN, \"https://evil.com\")\n            .to_request();\n        let resp = test::call_service(&app, req).await;\n        // Initially may pass (document current behavior)\n    }\n    \n    #[actix_web::test]\n    async fn test_cors_allows_configured_origins() {\n        // Test that ALLOWED_ORIGINS are properly accepted\n        std::env::set_var(\"ALLOWED_ORIGINS\", \"http://localhost:3000,http://localhost:5173\");\n        // Test requests from these origins succeed\n    }\n    \n    #[actix_web::test]\n    async fn test_preflight_options_requests() {\n        // Test OPTIONS preflight requests work correctly\n        // Check Access-Control headers in response\n    }\n    \n    #[actix_web::test]\n    async fn test_cors_credentials_mode() {\n        // Test Access-Control-Allow-Credentials header\n    }\n}\n```\n\n**2. Origin Validation Tests (for Task 23):**\n```rust\nmod origin_validation_tests {\n    #[actix_web::test]\n    async fn test_exact_origin_matching() {\n        // Test that \"evil.localhost.com\" doesn't match \"localhost.com\"\n        // Test substring matching is rejected\n    }\n    \n    #[actix_web::test]\n    async fn test_missing_origin_header() {\n        // Test requests without Origin header\n        // Document current behavior (may currently pass)\n    }\n    \n    #[actix_web::test]\n    async fn test_spoofed_origin_patterns() {\n        // Test various spoofing attempts:\n        // - \"localhost.evil.com\"\n        // - \"localhost.com.evil.com\"\n        // - \"localhost:3000.evil.com\"\n    }\n    \n    #[actix_web::test]\n    async fn test_port_number_validation() {\n        // Test that port numbers are validated\n        // \"localhost:3000\" != \"localhost:3001\"\n    }\n}\n```\n\n**3. API Key Authentication Tests (for Tasks 24, 25):**\n```rust\nmod api_auth_tests {\n    #[actix_web::test]\n    async fn test_mcp_endpoints_require_api_key() {\n        // Test all MCP endpoints reject requests without API key\n        let endpoints = vec![\n            \"/mcp/tools\",\n            \"/mcp/tools/list_emails/run\",\n            \"/mcp/tools/get_email/run\",\n            // ... all MCP endpoints\n        ];\n        \n        for endpoint in endpoints {\n            let req = test::TestRequest::post()\n                .uri(endpoint)\n                .to_request();\n            let resp = test::call_service(&app, req).await;\n            // Document current behavior\n        }\n    }\n    \n    #[actix_web::test]\n    async fn test_api_key_scope_enforcement() {\n        // Test that API keys with limited scopes are properly restricted\n        // Test read-only keys can't write\n        // Test MCP-only keys can't access REST endpoints\n    }\n    \n    #[actix_web::test]\n    async fn test_invalid_api_key_rejection() {\n        // Test expired keys, malformed keys, non-existent keys\n    }\n    \n    #[actix_web::test]\n    async fn test_no_test_credentials_seeded() {\n        // Verify database doesn't contain default test API keys\n        // Check for common test patterns: \"test\", \"demo\", \"example\"\n    }\n}\n```\n\n**4. Path Traversal Tests (for Task 27):**\n```rust\nmod path_traversal_tests {\n    #[actix_web::test]\n    async fn test_directory_traversal_patterns() {\n        // Test various traversal attempts:\n        let patterns = vec![\n            \"../../../etc/passwd\",\n            \"..\\\\..\\\\windows\\\\system32\",\n            \"%2e%2e%2f\",\n            \"..%252f\",\n            \"%c0%ae%c0%ae/\",\n            \"....//\",\n            \"..;/\",\n        ];\n        \n        for pattern in patterns {\n            // Test attachment download/upload with malicious paths\n            // Document current behavior\n        }\n    }\n    \n    #[actix_web::test]\n    async fn test_symlink_escape_attempts() {\n        // Create symlink pointing outside storage directory\n        // Test that following symlinks is blocked\n    }\n    \n    #[actix_web::test]\n    async fn test_path_canonicalization() {\n        // Test that paths are properly canonicalized\n        // Test relative paths are resolved\n    }\n    \n    #[actix_web::test]\n    async fn test_storage_directory_containment() {\n        // Verify all file operations stay within designated directory\n    }\n}\n```\n\n**5. Rate Limiting Tests (for Task 28):**\n```rust\nmod rate_limiting_tests {\n    #[actix_web::test]\n    async fn test_rest_api_rate_limits() {\n        // Test rate limiting on REST endpoints\n        // Make requests exceeding limit\n        // Verify 429 response\n    }\n    \n    #[actix_web::test]\n    async fn test_mcp_api_rate_limits() {\n        // Test rate limiting on MCP endpoints\n        // Ensure MCP routes are also protected\n    }\n    \n    #[actix_web::test]\n    async fn test_rate_limit_headers() {\n        // Check for X-RateLimit-Limit header\n        // Check for X-RateLimit-Remaining header\n        // Check for X-RateLimit-Reset header\n    }\n    \n    #[actix_web::test]\n    async fn test_rate_limit_429_response() {\n        // Verify proper 429 Too Many Requests response\n        // Check Retry-After header\n    }\n}\n```\n\n**Implementation Guidelines:**\n- Each test should first document CURRENT behavior (even if insecure)\n- Add clear comments indicating expected vs actual behavior\n- Tests should be designed to pass with current code\n- As security fixes are implemented, update tests to verify secure behavior\n- Use test fixtures and helper functions to reduce duplication\n- Include both positive and negative test cases\n- Test edge cases and boundary conditions",
+        "testStrategy": "Verify comprehensive test coverage implementation:\n\n1. **Test File Creation:**\n   - Confirm tests/integration/security_tests.rs is created\n   - Verify all five test modules are present\n   - Check that tests compile without errors\n\n2. **CORS Tests Validation:**\n   - Run CORS tests and document current permissive behavior\n   - Verify tests check origin validation, preflight, and credentials\n   - Confirm tests are ready to validate Task 22 fixes\n\n3. **Origin Validation Tests:**\n   - Run origin tests documenting current behavior\n   - Verify exact matching tests (not substring)\n   - Confirm spoofing patterns are tested\n\n4. **API Authentication Tests:**\n   - Run auth tests on all MCP endpoints\n   - Document which endpoints currently lack authentication\n   - Verify scope enforcement tests are present\n\n5. **Path Traversal Tests:**\n   - Run traversal tests with various attack patterns\n   - Document current vulnerability status\n   - Verify symlink and canonicalization tests work\n\n6. **Rate Limiting Tests:**\n   - Run rate limit tests on both REST and MCP routes\n   - Document current rate limiting status\n   - Verify 429 response and header tests\n\n7. **Test Execution:**\n   ```bash\n   cargo test --test security_tests -- --nocapture\n   ```\n   - All tests should run (may fail documenting insecure behavior)\n   - Generate test report showing coverage gaps\n\n8. **Documentation Review:**\n   - Each test should have clear comments\n   - Current vs expected behavior documented\n   - Ready for updates as security fixes are applied",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-01-23T10:36:09.813Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-10-18T00:12:50.065Z",
-      "taskCount": 87,
-      "completedCount": 87,
+      "lastModified": "2026-01-23T10:36:09.813Z",
+      "taskCount": 32,
+      "completedCount": 19,
       "tags": [
         "master"
-      ],
-      "created": "2025-10-18T12:29:46.283Z",
-      "description": "Tasks for master context",
-      "updated": "2026-01-23T09:37:01.387Z"
+      ]
     }
   }
 }

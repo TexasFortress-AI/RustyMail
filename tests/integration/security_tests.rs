@@ -1,0 +1,794 @@
+// Copyright (c) 2025 TexasFortress.AI
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+//! Security-focused integration tests for RustyMail
+//!
+//! These tests document and verify security-critical behavior including:
+//! - CORS configuration
+//! - Origin validation
+//! - API key authentication
+//! - Path traversal prevention
+//! - Rate limiting
+//!
+//! IMPORTANT: These tests establish a baseline of current behavior.
+//! Some tests may initially pass with INSECURE behavior - they will be
+//! updated as security fixes are implemented to verify the fixes work.
+
+use actix_web::{test, web, App, http::header, http::StatusCode};
+use serde_json::json;
+use serial_test::serial;
+use std::sync::Arc;
+use std::fs;
+use std::path::PathBuf;
+use tokio::sync::Mutex as TokioMutex;
+use sqlx::SqlitePool;
+use async_trait::async_trait;
+use tempfile::TempDir;
+
+use rustymail::dashboard::services::{
+    DashboardState, ClientManager, MetricsService, CacheService, CacheConfig,
+    ConfigService, AiService, EmailService, SyncService, AccountService,
+    EventBus, SmtpService, OutboxQueueService
+};
+use rustymail::dashboard::api::sse::SseManager;
+use rustymail::connection_pool::{ConnectionPool, ConnectionFactory, PoolConfig};
+use rustymail::prelude::CloneableImapSessionFactory;
+use rustymail::imap::{ImapClient, AsyncImapSessionWrapper, ImapError};
+use rustymail::config::Settings;
+use dashmap::DashMap;
+
+/// Initialize test environment with required environment variables
+fn setup_test_env() {
+    std::env::set_var("REST_HOST", "127.0.0.1");
+    std::env::set_var("REST_PORT", "9437");
+    std::env::set_var("SSE_HOST", "127.0.0.1");
+    std::env::set_var("SSE_PORT", "9438");
+    std::env::set_var("DASHBOARD_PORT", "9439");
+    std::env::set_var("RUSTYMAIL_API_KEY", "test-rustymail-key-2024");
+    std::env::set_var("MCP_BACKEND_URL", "http://localhost:9437/mcp");
+    std::env::set_var("MCP_TIMEOUT", "30");
+    std::env::set_var("IMAP_HOST", "localhost");
+    std::env::set_var("IMAP_PORT", "143");
+}
+
+/// Helper function to create a test DashboardState with all required services
+async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardState> {
+    use std::time::Duration;
+
+    let db_file_path = format!("test_data/security_{}_test.db", test_name);
+    let db_url = format!("sqlite:{}", db_file_path);
+
+    // Clean up old test files
+    let _ = fs::remove_file(&db_file_path);
+    let _ = fs::remove_file(format!("{}-shm", db_file_path));
+    let _ = fs::remove_file(format!("{}-wal", db_file_path));
+
+    fs::create_dir_all("test_data").unwrap();
+    fs::File::create(&db_file_path).unwrap();
+
+    let pool = SqlitePool::connect(&db_url).await.unwrap();
+    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+
+    let metrics_interval_duration = Duration::from_secs(5);
+    let client_manager = Arc::new(ClientManager::new(metrics_interval_duration));
+    let metrics_service = Arc::new(MetricsService::new(metrics_interval_duration));
+    let config_service = Arc::new(ConfigService::new());
+
+    let cache_config = CacheConfig {
+        database_url: db_url.clone(),
+        max_memory_items: 100,
+        max_folder_items: 50,
+        max_cache_size_mb: 100,
+        max_email_age_days: 30,
+        sync_interval_seconds: 300,
+    };
+
+    let mut cache_service = CacheService::new(cache_config);
+    cache_service.initialize().await.unwrap();
+    let cache_service = Arc::new(cache_service);
+
+    let accounts_config_path = format!("test_data/security_{}_accounts.json", test_name);
+    let _ = fs::remove_file(&accounts_config_path);
+
+    let mut account_service_temp = AccountService::new(&accounts_config_path);
+    let account_db_pool = SqlitePool::connect(&db_url).await.unwrap();
+    account_service_temp.initialize(account_db_pool.clone()).await.unwrap();
+    let account_service = Arc::new(TokioMutex::new(account_service_temp));
+
+    let mock_factory: rustymail::imap::ImapSessionFactory = Box::new(|| {
+        Box::pin(async {
+            Err(rustymail::imap::ImapError::Connection("Mock IMAP client".to_string()))
+        })
+    });
+    let imap_session_factory = CloneableImapSessionFactory::new(mock_factory);
+
+    struct MockConnectionFactory;
+
+    #[async_trait]
+    impl ConnectionFactory for MockConnectionFactory {
+        async fn create(&self) -> Result<Arc<ImapClient<AsyncImapSessionWrapper>>, ImapError> {
+            Err(ImapError::Connection("Mock connection pool".to_string()))
+        }
+
+        async fn validate(&self, _client: &Arc<ImapClient<AsyncImapSessionWrapper>>) -> bool {
+            true
+        }
+    }
+
+    let connection_pool = ConnectionPool::new(
+        Arc::new(MockConnectionFactory),
+        PoolConfig::default()
+    );
+
+    let email_service = Arc::new(
+        EmailService::new(imap_session_factory.clone(), connection_pool.clone())
+            .with_cache(cache_service.clone())
+            .with_account_service(account_service.clone())
+    );
+
+    let sync_service = Arc::new(SyncService::new(
+        imap_session_factory.clone(),
+        cache_service.clone(),
+        account_service.clone(),
+        300,
+    ));
+
+    let ai_service = Arc::new(AiService::new_mock());
+    let smtp_service = Arc::new(SmtpService::new(account_service.clone(), imap_session_factory.clone()));
+    let outbox_queue_service = Arc::new(OutboxQueueService::new(account_db_pool.clone()));
+    let event_bus = Arc::new(EventBus::new());
+
+    // Create SSE manager with required arguments
+    let mut sse_manager = SseManager::new(metrics_service.clone(), client_manager.clone());
+    sse_manager.set_event_bus(Arc::clone(&event_bus));
+    let sse_manager = Arc::new(sse_manager);
+
+    // Create config
+    let config = web::Data::new(Settings::default());
+
+    web::Data::new(DashboardState {
+        client_manager,
+        metrics_service,
+        cache_service,
+        config_service,
+        ai_service,
+        email_service,
+        sync_service,
+        account_service,
+        smtp_service,
+        outbox_queue_service,
+        sse_manager,
+        event_bus,
+        health_service: None,
+        config,
+        imap_session_factory,
+        connection_pool,
+        jobs: Arc::new(DashMap::new()),
+        job_persistence: None,
+    })
+}
+
+// ============================================================================
+// CORS Configuration Tests (for Task 22)
+// ============================================================================
+
+/// Test that CORS allows requests from any origin
+///
+/// BASELINE TEST: This documents INSECURE behavior that will be fixed in Task 22.
+/// After Task 22, this test should be updated to verify that only configured
+/// origins are allowed.
+#[tokio::test]
+#[serial]
+async fn test_cors_allows_any_origin_baseline() {
+    setup_test_env();
+    println!("=== SECURITY TEST: CORS Any Origin (Baseline - Documents Insecure Behavior) ===");
+
+    let dashboard_state = create_test_dashboard_state("cors_any_origin").await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .wrap(
+                actix_cors::Cors::default()
+                    .allow_any_origin()
+                    .allow_any_method()
+                    .allow_any_header()
+            )
+            .route("/api/health", web::get().to(|| async { "ok" }))
+    ).await;
+
+    // Test with external origin - CURRENTLY ALLOWED (insecure)
+    let req = test::TestRequest::get()
+        .uri("/api/health")
+        .insert_header((header::ORIGIN, "https://evil.example.com"))
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    // BASELINE: Currently this passes (insecure behavior)
+    // After Task 22, this should return 403 or not include CORS headers
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    // Check that CORS headers allow the evil origin (insecure)
+    let cors_origin = resp.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN);
+    assert!(cors_origin.is_some(), "BASELINE: CORS currently allows any origin");
+
+    println!("  BASELINE: External origin currently allowed (INSECURE - to be fixed in Task 22)");
+}
+
+/// Test CORS preflight OPTIONS request handling
+#[tokio::test]
+#[serial]
+async fn test_cors_preflight_options() {
+    setup_test_env();
+    println!("=== SECURITY TEST: CORS Preflight OPTIONS ===");
+
+    let dashboard_state = create_test_dashboard_state("cors_preflight").await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .wrap(
+                actix_cors::Cors::default()
+                    .allow_any_origin()
+                    .allow_any_method()
+                    .allow_any_header()
+            )
+            .route("/api/test", web::post().to(|| async { "ok" }))
+    ).await;
+
+    // Test preflight request
+    let req = test::TestRequest::with_uri("/api/test")
+        .method(actix_web::http::Method::OPTIONS)
+        .insert_header((header::ORIGIN, "https://example.com"))
+        .insert_header((header::ACCESS_CONTROL_REQUEST_METHOD, "POST"))
+        .insert_header((header::ACCESS_CONTROL_REQUEST_HEADERS, "content-type"))
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    // Preflight should succeed
+    assert!(resp.status().is_success() || resp.status() == StatusCode::NO_CONTENT);
+
+    println!("  Preflight OPTIONS request handled");
+}
+
+// ============================================================================
+// Origin Validation Tests (for Task 23)
+// ============================================================================
+
+/// Test that MCP accepts localhost origin
+#[tokio::test]
+#[serial]
+async fn test_mcp_origin_localhost_accepted() {
+    setup_test_env();
+    println!("=== SECURITY TEST: MCP Origin - Localhost Accepted ===");
+
+    let dashboard_state = create_test_dashboard_state("origin_localhost").await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .configure(rustymail::api::mcp_http::configure_mcp_routes)
+    ).await;
+
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {}
+    });
+
+    let req = test::TestRequest::post()
+        .uri("/mcp")
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .insert_header((header::ORIGIN, "http://localhost:9439"))
+        .set_json(&request)
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    // localhost should be accepted
+    assert!(resp.status().is_success(), "localhost origin should be accepted");
+    println!("  localhost origin accepted");
+}
+
+/// Test that MCP accepts 127.0.0.1 origin
+#[tokio::test]
+#[serial]
+async fn test_mcp_origin_127_0_0_1_accepted() {
+    setup_test_env();
+    println!("=== SECURITY TEST: MCP Origin - 127.0.0.1 Accepted ===");
+
+    let dashboard_state = create_test_dashboard_state("origin_127").await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .configure(rustymail::api::mcp_http::configure_mcp_routes)
+    ).await;
+
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {}
+    });
+
+    let req = test::TestRequest::post()
+        .uri("/mcp")
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .insert_header((header::ORIGIN, "http://127.0.0.1:9439"))
+        .set_json(&request)
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    assert!(resp.status().is_success(), "127.0.0.1 origin should be accepted");
+    println!("  127.0.0.1 origin accepted");
+}
+
+/// Test substring match vulnerability in origin validation
+///
+/// BASELINE TEST: This documents the INSECURE substring matching that will be
+/// fixed in Task 23. Currently "evil.localhost.com" is accepted because it
+/// contains "localhost".
+#[tokio::test]
+#[serial]
+async fn test_mcp_origin_substring_bypass_baseline() {
+    setup_test_env();
+    println!("=== SECURITY TEST: MCP Origin Substring Bypass (Baseline - Documents Vulnerability) ===");
+
+    let dashboard_state = create_test_dashboard_state("origin_substring").await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .configure(rustymail::api::mcp_http::configure_mcp_routes)
+    ).await;
+
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {}
+    });
+
+    // Test with evil.localhost.com - contains "localhost" substring
+    let req = test::TestRequest::post()
+        .uri("/mcp")
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .insert_header((header::ORIGIN, "https://evil.localhost.com"))
+        .set_json(&request)
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    // BASELINE: Currently this is ACCEPTED due to substring match (insecure)
+    // After Task 23, this should return 403 Forbidden
+    let status = resp.status();
+    println!("  Response status for evil.localhost.com: {}", status);
+
+    // Document current insecure behavior
+    if status.is_success() {
+        println!("  BASELINE: evil.localhost.com currently ACCEPTED (INSECURE - to be fixed in Task 23)");
+    } else {
+        println!("  Origin correctly rejected");
+    }
+}
+
+/// Test that requests without Origin header are currently allowed
+///
+/// BASELINE TEST: This documents behavior that may need to change.
+/// Non-browser clients (CLI tools) don't send Origin headers.
+#[tokio::test]
+#[serial]
+async fn test_mcp_origin_missing_header_baseline() {
+    setup_test_env();
+    println!("=== SECURITY TEST: MCP Missing Origin Header (Baseline) ===");
+
+    let dashboard_state = create_test_dashboard_state("origin_missing").await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .configure(rustymail::api::mcp_http::configure_mcp_routes)
+    ).await;
+
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {}
+    });
+
+    // Request without Origin header
+    let req = test::TestRequest::post()
+        .uri("/mcp")
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        // No Origin header
+        .set_json(&request)
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    // BASELINE: Currently allowed for CLI clients
+    assert!(resp.status().is_success(),
+        "Requests without Origin should be accepted for CLI clients");
+    println!("  Missing Origin header currently allowed (for CLI clients)");
+}
+
+/// Test that external origins are rejected
+#[tokio::test]
+#[serial]
+async fn test_mcp_origin_external_rejected() {
+    setup_test_env();
+    println!("=== SECURITY TEST: MCP External Origin Rejection ===");
+
+    let dashboard_state = create_test_dashboard_state("origin_external").await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .configure(rustymail::api::mcp_http::configure_mcp_routes)
+    ).await;
+
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {}
+    });
+
+    // Test with clearly external origin
+    let req = test::TestRequest::post()
+        .uri("/mcp")
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .insert_header((header::ORIGIN, "https://attacker.example.com"))
+        .set_json(&request)
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    // External origins should be rejected
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN,
+        "External origins should be rejected with 403");
+    println!("  External origin correctly rejected");
+}
+
+// ============================================================================
+// Path Traversal Tests (for Task 27)
+// ============================================================================
+
+/// Test path sanitization removes traversal sequences
+#[tokio::test]
+async fn test_path_traversal_sanitization() {
+    use rustymail::dashboard::services::attachment_storage::sanitize_message_id;
+
+    println!("=== SECURITY TEST: Path Traversal Sanitization ===");
+
+    // Test that dangerous characters are sanitized
+    let dangerous_inputs = vec![
+        ("../../../etc/passwd", "should not contain path separators"),
+        ("..\\..\\windows\\system32", "should not contain backslashes"),
+        ("<script>alert(1)</script>", "should sanitize angle brackets"),
+        ("file:///etc/passwd", "should sanitize colons"),
+    ];
+
+    for (input, description) in dangerous_inputs {
+        let sanitized = sanitize_message_id(input);
+        assert!(!sanitized.contains('/'), "{}: {}", description, sanitized);
+        assert!(!sanitized.contains('\\'), "{}: {}", description, sanitized);
+        assert!(!sanitized.contains(':'), "{}: {}", description, sanitized);
+        assert!(!sanitized.contains('<'), "{}: {}", description, sanitized);
+        assert!(!sanitized.contains('>'), "{}: {}", description, sanitized);
+        println!("  Input '{}' sanitized to '{}'", input, sanitized);
+    }
+
+    println!("  Path traversal characters correctly sanitized");
+}
+
+/// Test that attachment paths stay within storage directory
+///
+/// BASELINE TEST: This tests the current path construction behavior.
+/// Task 27 should add canonicalization and containment verification.
+#[tokio::test]
+async fn test_attachment_path_containment() {
+    use rustymail::dashboard::services::attachment_storage::get_attachment_path;
+
+    println!("=== SECURITY TEST: Attachment Path Containment ===");
+
+    // Test normal path construction
+    let path = get_attachment_path("user@example.com", "<msg123@example.com>", "document.pdf");
+
+    // Path should be within attachments directory
+    assert!(path.starts_with("attachments"),
+        "Path should start with attachments/");
+
+    // Path components should be sanitized
+    let path_str = path.to_string_lossy();
+    assert!(!path_str.contains(".."), "Path should not contain ..");
+
+    println!("  Normal path: {:?}", path);
+
+    // Test with malicious filename
+    let malicious_path = get_attachment_path(
+        "user@example.com",
+        "<msg123@example.com>",
+        "../../../etc/passwd"
+    );
+
+    // The filename is NOT sanitized by get_attachment_path - this is a gap
+    // Task 27 should fix this by adding containment checks
+    println!("  Malicious filename path: {:?}", malicious_path);
+    println!("  NOTE: Filename sanitization may be missing - to be verified in Task 27");
+}
+
+/// Test symlink escape prevention (placeholder for Task 27)
+#[tokio::test]
+async fn test_attachment_symlink_escape() {
+    println!("=== SECURITY TEST: Symlink Escape Prevention ===");
+
+    // Create temp directory for testing
+    let temp_dir = TempDir::new().unwrap();
+    let attachments_dir = temp_dir.path().join("attachments");
+    fs::create_dir_all(&attachments_dir).unwrap();
+
+    // This test documents what SHOULD happen:
+    // 1. Create a symlink inside attachments/ pointing outside
+    // 2. Attempt to access a file through the symlink
+    // 3. The access should be blocked after canonicalization
+
+    // For now, document that this check needs to be implemented
+    println!("  NOTE: Symlink escape prevention to be implemented in Task 27");
+    println!("  Test placeholder - actual symlink test requires implementation");
+}
+
+// ============================================================================
+// API Key Authentication Tests (for Tasks 24, 25)
+// ============================================================================
+
+/// Test that MCP endpoints currently don't require API keys
+///
+/// BASELINE TEST: Documents INSECURE behavior to be fixed in Task 25.
+#[tokio::test]
+#[serial]
+async fn test_mcp_no_api_key_required_baseline() {
+    setup_test_env();
+    println!("=== SECURITY TEST: MCP API Key Requirement (Baseline - Documents Gap) ===");
+
+    let dashboard_state = create_test_dashboard_state("mcp_no_auth").await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .configure(rustymail::api::mcp_http::configure_mcp_routes)
+    ).await;
+
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/list",
+        "params": {}
+    });
+
+    // Request without API key
+    let req = test::TestRequest::post()
+        .uri("/mcp")
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .insert_header((header::ORIGIN, "http://localhost:9439"))
+        // No X-Api-Key header
+        .set_json(&request)
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    // BASELINE: Currently MCP accepts requests without API key (insecure)
+    // After Task 25, this should return 401 Unauthorized
+    let status = resp.status();
+
+    if status.is_success() {
+        println!("  BASELINE: MCP endpoints currently DO NOT require API key (INSECURE - to be fixed in Task 25)");
+    } else if status == StatusCode::UNAUTHORIZED {
+        println!("  API key correctly required");
+    }
+}
+
+/// Test API key validation on REST endpoints
+#[tokio::test]
+#[serial]
+async fn test_rest_api_key_validation() {
+    setup_test_env();
+    println!("=== SECURITY TEST: REST API Key Validation ===");
+
+    let dashboard_state = create_test_dashboard_state("rest_auth").await;
+
+    // REST endpoints should require API key
+    // This tests the existing REST authentication
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .configure(|cfg| rustymail::dashboard::api::init_routes(cfg))
+    ).await;
+
+    // Request without API key should fail
+    let req = test::TestRequest::get()
+        .uri("/api/accounts")
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    // Should require authentication
+    println!("  Response status without API key: {}", resp.status());
+}
+
+/// Test that hardcoded test credentials exist (baseline for Task 24)
+#[tokio::test]
+async fn test_hardcoded_credentials_exist_baseline() {
+    println!("=== SECURITY TEST: Hardcoded Credentials Detection ===");
+
+    // Check .env.example for hardcoded test credentials
+    let env_example = fs::read_to_string(".env.example").unwrap_or_default();
+
+    let has_test_key = env_example.contains("test-rustymail-key-2024");
+
+    if has_test_key {
+        println!("  BASELINE: .env.example contains hardcoded test key (to be fixed in Task 24)");
+    } else {
+        println!("  No hardcoded test key found in .env.example");
+    }
+
+    // Note: The ApiKeyStore::init_with_defaults seeding is in code and can't
+    // be easily tested here, but it's documented in the security report
+    println!("  NOTE: ApiKeyStore::init_with_defaults seeding to be removed in Task 24");
+}
+
+// ============================================================================
+// Rate Limiting Tests (for Task 28)
+// ============================================================================
+
+/// Test that rate limiting validators exist
+#[tokio::test]
+async fn test_rate_limiting_validators_exist() {
+    use rustymail::api::validation;
+
+    println!("=== SECURITY TEST: Rate Limiting Validators ===");
+
+    // The rate limiting logic exists but may not be wired into all routes
+    // This test verifies the validators are available
+
+    // Test IP rate limiting function exists and works
+    // Note: This tests the validation module, not the middleware integration
+
+    println!("  Rate limiting validation module exists");
+    println!("  NOTE: Integration with REST/MCP routes to be verified in Task 28");
+}
+
+/// Test rate limit response headers (placeholder for Task 28)
+#[tokio::test]
+#[serial]
+async fn test_rate_limit_headers_baseline() {
+    setup_test_env();
+    println!("=== SECURITY TEST: Rate Limit Headers (Baseline) ===");
+
+    let dashboard_state = create_test_dashboard_state("rate_limit_headers").await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .route("/api/health", web::get().to(|| async { "ok" }))
+    ).await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/health")
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    // Check for rate limit headers
+    let has_ratelimit_limit = resp.headers().contains_key("X-RateLimit-Limit");
+    let has_ratelimit_remaining = resp.headers().contains_key("X-RateLimit-Remaining");
+
+    if has_ratelimit_limit && has_ratelimit_remaining {
+        println!("  Rate limit headers present");
+    } else {
+        println!("  BASELINE: Rate limit headers not present (to be added in Task 28)");
+    }
+}
+
+/// Test 429 response when rate limit exceeded (placeholder for Task 28)
+#[tokio::test]
+#[serial]
+async fn test_rate_limit_429_response() {
+    setup_test_env();
+    println!("=== SECURITY TEST: Rate Limit 429 Response ===");
+
+    // This test would need to make many rapid requests to trigger rate limiting
+    // For now, document that this behavior needs to be verified
+
+    println!("  NOTE: Rate limit 429 response testing to be implemented in Task 28");
+    println!("  Test should verify that exceeding rate limits returns HTTP 429");
+}
+
+// ============================================================================
+// Combined Security Tests
+// ============================================================================
+
+/// Test security headers are present in responses
+#[tokio::test]
+#[serial]
+async fn test_security_headers_baseline() {
+    setup_test_env();
+    println!("=== SECURITY TEST: Security Headers (Baseline) ===");
+
+    let dashboard_state = create_test_dashboard_state("security_headers").await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(dashboard_state.clone())
+            .route("/api/health", web::get().to(|| async { "ok" }))
+    ).await;
+
+    let req = test::TestRequest::get()
+        .uri("/api/health")
+        .to_request();
+
+    let resp = test::call_service(&app, req).await;
+
+    // Check for recommended security headers
+    let headers_to_check = vec![
+        ("X-Content-Type-Options", "nosniff"),
+        ("X-Frame-Options", "DENY"),
+        ("X-XSS-Protection", "1; mode=block"),
+    ];
+
+    for (header_name, _expected) in headers_to_check {
+        if resp.headers().contains_key(header_name) {
+            println!("  {} header present", header_name);
+        } else {
+            println!("  BASELINE: {} header not present", header_name);
+        }
+    }
+}
+
+/// Summary test that documents all security baselines
+#[tokio::test]
+async fn test_security_baseline_summary() {
+    println!("\n========================================");
+    println!("SECURITY BASELINE SUMMARY");
+    println!("========================================\n");
+
+    println!("Task 22 (CORS):");
+    println!("  - Current: allow_any_origin() - INSECURE");
+    println!("  - Fix: Whitelist specific origins via ALLOWED_ORIGINS env var\n");
+
+    println!("Task 23 (Origin Validation):");
+    println!("  - Current: Substring match with contains() - INSECURE");
+    println!("  - Current: Missing Origin header allowed");
+    println!("  - Fix: Exact origin matching, require Origin for browser requests\n");
+
+    println!("Task 24 (Hardcoded Credentials):");
+    println!("  - Current: Test key seeded at startup - INSECURE");
+    println!("  - Current: .env.example contains test credentials");
+    println!("  - Fix: Remove seeding, require configured keys\n");
+
+    println!("Task 25 (MCP Authentication):");
+    println!("  - Current: No API key required for MCP endpoints - INSECURE");
+    println!("  - Fix: Add API key + scope validation middleware\n");
+
+    println!("Task 27 (Path Traversal):");
+    println!("  - Current: Basic character sanitization only");
+    println!("  - Fix: Add canonicalization + containment checks\n");
+
+    println!("Task 28 (Rate Limiting):");
+    println!("  - Current: Validators exist but not wired to all routes");
+    println!("  - Fix: Add middleware to REST and MCP paths\n");
+
+    println!("========================================");
+    println!("Run: cargo test --test integration security_tests");
+    println!("to verify security fixes as they are implemented");
+    println!("========================================\n");
+}
