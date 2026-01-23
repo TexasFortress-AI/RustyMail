@@ -7,6 +7,7 @@ use rustymail::dashboard::services::attachment_storage::{
     self, AttachmentError, AttachmentInfo,
 };
 use rustymail::imap::types::{Email, Envelope, MimePart, ContentType, ContentDisposition};
+use scopeguard::defer;
 use serial_test::serial;
 use sqlx::SqlitePool;
 use std::collections::HashMap;
@@ -219,7 +220,7 @@ async fn test_get_attachment_path() {
         "user@example.com",
         "<msg123@server.com>",
         "invoice.pdf"
-    );
+    ).expect("get_attachment_path should succeed for valid inputs");
 
     let path_str = path.to_string_lossy();
     assert!(path_str.contains("attachments"));
@@ -238,6 +239,10 @@ async fn test_save_and_retrieve_attachment() {
 
     let pool = create_test_db_pool(test_name).await;
     let temp_dir = TempDir::new().unwrap();
+
+    // Save and restore working directory
+    let original_dir = std::env::current_dir().unwrap();
+    defer! { let _ = std::env::set_current_dir(&original_dir); }
 
     // Change to temp directory for attachment storage
     std::env::set_current_dir(temp_dir.path()).unwrap();
@@ -275,6 +280,11 @@ async fn test_save_multiple_attachments() {
 
     let pool = create_test_db_pool(test_name).await;
     let temp_dir = TempDir::new().unwrap();
+
+    // Save and restore working directory
+    let original_dir = std::env::current_dir().unwrap();
+    defer! { let _ = std::env::set_current_dir(&original_dir); }
+
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let account = "test@example.com";
@@ -313,6 +323,11 @@ async fn test_delete_attachments() {
 
     let pool = create_test_db_pool(test_name).await;
     let temp_dir = TempDir::new().unwrap();
+
+    // Save and restore working directory
+    let original_dir = std::env::current_dir().unwrap();
+    defer! { let _ = std::env::set_current_dir(&original_dir); }
+
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let account = "test@example.com";
@@ -356,6 +371,11 @@ async fn test_attachment_with_special_characters_in_filename() {
 
     let pool = create_test_db_pool(test_name).await;
     let temp_dir = TempDir::new().unwrap();
+
+    // Save and restore working directory
+    let original_dir = std::env::current_dir().unwrap();
+    defer! { let _ = std::env::set_current_dir(&original_dir); }
+
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let account = "test@example.com";
@@ -386,6 +406,11 @@ async fn test_attachment_without_filename() {
 
     let pool = create_test_db_pool(test_name).await;
     let temp_dir = TempDir::new().unwrap();
+
+    // Save and restore working directory
+    let original_dir = std::env::current_dir().unwrap();
+    defer! { let _ = std::env::set_current_dir(&original_dir); }
+
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let account = "test@example.com";
@@ -423,6 +448,11 @@ async fn test_create_zip_archive() {
 
     let pool = create_test_db_pool(test_name).await;
     let temp_dir = TempDir::new().unwrap();
+
+    // Save and restore working directory
+    let original_dir = std::env::current_dir().unwrap();
+    defer! { let _ = std::env::set_current_dir(&original_dir); }
+
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let account = "test@example.com";
@@ -457,6 +487,11 @@ async fn test_create_zip_with_no_attachments() {
 
     let pool = create_test_db_pool(test_name).await;
     let temp_dir = TempDir::new().unwrap();
+
+    // Save and restore working directory
+    let original_dir = std::env::current_dir().unwrap();
+    defer! { let _ = std::env::set_current_dir(&original_dir); }
+
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let account = "test@example.com";
@@ -524,6 +559,11 @@ async fn test_attachment_content_type_preservation() {
 
     let pool = create_test_db_pool(test_name).await;
     let temp_dir = TempDir::new().unwrap();
+
+    // Save and restore working directory
+    let original_dir = std::env::current_dir().unwrap();
+    defer! { let _ = std::env::set_current_dir(&original_dir); }
+
     std::env::set_current_dir(temp_dir.path()).unwrap();
 
     let account = "test@example.com";

@@ -319,8 +319,8 @@ async fn test_pool_stats_tracking() {
     // Get initial stats
     let stats = pool.stats().await;
 
-    // Verify initial state
-    assert_eq!(stats.max_connections, 100, "Max connections should match config");
+    // Verify initial state (default max_connections is 50)
+    assert_eq!(stats.max_connections, 50, "Max connections should match default config");
     assert_eq!(stats.total_created, 0, "No connections should be created yet in unit test");
 }
 
