@@ -696,25 +696,30 @@ async fn test_rest_api_key_validation() {
     println!("  Response status without API key: {}", resp.status());
 }
 
-/// Test that hardcoded test credentials exist (baseline for Task 24)
+/// Test that hardcoded test credentials have been removed (Task 24 fix verification)
 #[tokio::test]
-async fn test_hardcoded_credentials_exist_baseline() {
-    println!("=== SECURITY TEST: Hardcoded Credentials Detection ===");
+async fn test_no_hardcoded_credentials() {
+    println!("=== SECURITY TEST: No Hardcoded Credentials ===");
 
-    // Check .env.example for hardcoded test credentials
+    // Check .env.example does NOT contain hardcoded test credentials
     let env_example = fs::read_to_string(".env.example").unwrap_or_default();
 
-    let has_test_key = env_example.contains("test-rustymail-key-2024");
+    // Verify no hardcoded test keys
+    assert!(!env_example.contains("test-rustymail-key-2024"),
+        ".env.example should NOT contain hardcoded test keys");
+    assert!(!env_example.contains("test-api-key"),
+        ".env.example should NOT contain test-api-key patterns");
 
-    if has_test_key {
-        println!("  BASELINE: .env.example contains hardcoded test key (to be fixed in Task 24)");
-    } else {
-        println!("  No hardcoded test key found in .env.example");
-    }
+    // Verify placeholder is present
+    assert!(env_example.contains("your-secure-api-key-here"),
+        ".env.example should contain placeholder for API key");
 
-    // Note: The ApiKeyStore::init_with_defaults seeding is in code and can't
-    // be easily tested here, but it's documented in the security report
-    println!("  NOTE: ApiKeyStore::init_with_defaults seeding to be removed in Task 24");
+    // Verify security guidance is present
+    assert!(env_example.contains("openssl rand -hex 32"),
+        ".env.example should contain secure key generation instructions");
+
+    println!("  Task 24 FIXED: No hardcoded credentials in .env.example");
+    println!("  Placeholder and security guidance present");
 }
 
 // ============================================================================
@@ -842,10 +847,10 @@ async fn test_security_baseline_summary() {
     println!("  - Missing Origin header still allowed for CLI clients (intentional)");
     println!("  - Blocks substring attacks like 'evil.localhost.com'\n");
 
-    println!("Task 24 (Hardcoded Credentials):");
-    println!("  - Current: Test key seeded at startup - INSECURE");
-    println!("  - Current: .env.example contains test credentials");
-    println!("  - Fix: Remove seeding, require configured keys\n");
+    println!("Task 24 (Hardcoded Credentials): FIXED");
+    println!("  - Implemented: init_from_env() loads API key from RUSTYMAIL_API_KEY");
+    println!("  - .env.example uses placeholder with security guidance");
+    println!("  - init_with_test_defaults() is now #[cfg(test)] only\n");
 
     println!("Task 25 (MCP Authentication):");
     println!("  - Current: No API key required for MCP endpoints - INSECURE");

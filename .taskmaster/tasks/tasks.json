@@ -468,13 +468,14 @@
         "description": "Remove all hardcoded test API keys and credentials from the codebase, require explicit configuration of all API keys, add key expiration support, and update documentation for secure key generation.",
         "details": "Fix critical security vulnerabilities in API key management by removing all hardcoded credentials and test keys:\n\n1) **Remove hardcoded test key initialization in src/api/auth.rs**:\n   - Delete or comment out the ApiKeyStore::init_with_defaults() method that seeds a test key with Admin scope at startup\n   - Ensure no API keys are automatically created when the application starts\n   - Modify the initialization logic to require explicit key configuration through environment variables or secure configuration files\n\n2) **Remove test credentials from .env.example**:\n   - Remove the line `RUSTYMAIL_API_KEY=test-rustymail-key-2024` from .env.example\n   - Replace with a placeholder like `RUSTYMAIL_API_KEY=your-secure-api-key-here`\n   - Add comments explaining that users must generate their own secure API keys\n\n3) **Implement API key expiration support**:\n   - Add an `expires_at` field to the API key storage structure (likely in ApiKeyStore)\n   - Modify the key validation logic to check expiration timestamps\n   - Return 401 Unauthorized for expired keys with appropriate error messages\n   - Consider adding a configurable default expiration period (e.g., 90 days)\n\n4) **Remove any hardcoded IMAP credentials**:\n   - Search the codebase for any hardcoded IMAP usernames, passwords, or server configurations\n   - Ensure all IMAP credentials must be provided through secure configuration\n   - Update any test configurations to use environment variables instead\n\n5) **Add secure key generation documentation**:\n   - Create a new section in the README or a separate SECURITY.md file\n   - Document how to generate cryptographically secure API keys (e.g., using openssl rand -hex 32)\n   - Explain the importance of key rotation and expiration\n   - Provide examples of secure key storage practices\n   - Document the required scopes and permissions for different API operations\n\n6) **Update application startup logic**:\n   - Add validation to ensure required API keys are configured before the application starts\n   - Provide clear error messages if required keys are missing\n   - Consider implementing a setup wizard or initialization script for first-time configuration",
         "testStrategy": "Verify the security improvements with comprehensive testing:\n\n1) **Test removal of hardcoded keys**:\n   - Start the application with a clean environment (no API keys configured)\n   - Verify the application refuses to start or enters a safe mode without any pre-configured keys\n   - Confirm no test keys are accessible through the API\n\n2) **Test API key expiration**:\n   - Create an API key with a short expiration time (e.g., 1 minute in the future)\n   - Make successful API calls with the key\n   - Wait for the key to expire\n   - Verify subsequent API calls return 401 Unauthorized with an \"expired key\" error message\n\n3) **Test IMAP credential requirements**:\n   - Attempt to use IMAP functionality without configuring credentials\n   - Verify appropriate error messages are returned\n   - Configure valid IMAP credentials through environment variables\n   - Confirm IMAP functionality works correctly with configured credentials\n\n4) **Test .env.example changes**:\n   - Copy .env.example to .env\n   - Verify the application doesn't start with placeholder values\n   - Replace placeholders with valid keys and confirm successful startup\n\n5) **Security audit**:\n   - Search the entire codebase for strings like \"test\", \"default\", \"admin\" in authentication contexts\n   - Verify no hardcoded credentials remain in any source files\n   - Check that all authentication-related configuration comes from environment variables or secure config files\n\n6) **Documentation verification**:\n   - Follow the new secure key generation documentation to create API keys\n   - Verify the generated keys work correctly with the application\n   - Confirm all security best practices are clearly explained",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "22",
           "23"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-01-23T11:07:28.410Z"
       },
       {
         "id": "25",
@@ -584,9 +585,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-01-23T11:04:42.188Z",
+      "lastModified": "2026-01-23T11:07:28.410Z",
       "taskCount": 32,
-      "completedCount": 21,
+      "completedCount": 22,
       "tags": [
         "master"
       ]

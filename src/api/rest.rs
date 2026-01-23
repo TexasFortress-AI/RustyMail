@@ -634,9 +634,9 @@ pub async fn run_server(settings: Settings, mcp_handler: Arc<dyn McpHandler>, se
     let bind_address = format!("{}:{}", rest_config.host, rest_config.port);
     info!("Starting REST API server at {}", bind_address);
 
-    // Initialize API key store
+    // Initialize API key store from environment
     let api_key_store = Arc::new(ApiKeyStore::new());
-    api_key_store.init_with_defaults().await;
+    api_key_store.init_from_env().await;
 
     let app_state = Data::new(AppState {
         settings: Arc::new(settings),

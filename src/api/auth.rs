@@ -116,9 +116,53 @@ impl ApiKeyStore {
         }
     }
 
-    /// Initialize with default API keys for testing
-    pub async fn init_with_defaults(&self) {
-        // Add a default test API key
+    /// Initialize API keys from environment variables
+    /// Reads RUSTYMAIL_API_KEY to create an admin API key for dashboard/MCP access
+    pub async fn init_from_env(&self) {
+        if let Ok(api_key) = std::env::var("RUSTYMAIL_API_KEY") {
+            if api_key.is_empty() || api_key == "your-secure-api-key-here" {
+                warn!("RUSTYMAIL_API_KEY is not configured - API authentication will fail");
+                warn!("Generate a secure key with: openssl rand -hex 32");
+                return;
+            }
+
+            let env_key = ApiKey {
+                key: api_key.clone(),
+                name: "Environment API Key".to_string(),
+                email: "configured-via-env".to_string(),
+                imap_credentials: ImapCredentials {
+                    username: String::new(),
+                    password: String::new(),
+                    server: String::new(),
+                    port: 0,
+                },
+                created_at: Utc::now(),
+                last_used: None,
+                is_active: true,
+                rate_limit: RateLimit::default(),
+                allowed_ips: vec![],
+                scopes: vec![
+                    ApiScope::ReadEmail,
+                    ApiScope::WriteEmail,
+                    ApiScope::ManageFolders,
+                    ApiScope::Dashboard,
+                    ApiScope::Admin,
+                ],
+            };
+
+            let mut keys = self.keys.write().await;
+            keys.insert(env_key.key.clone(), env_key);
+            info!("Initialized API key store from RUSTYMAIL_API_KEY environment variable");
+        } else {
+            warn!("RUSTYMAIL_API_KEY environment variable not set - API authentication will fail");
+            warn!("Set RUSTYMAIL_API_KEY to a secure value (generate with: openssl rand -hex 32)");
+        }
+    }
+
+    /// Initialize with default API keys for testing only
+    /// WARNING: This should only be used in tests, never in production
+    #[cfg(test)]
+    pub async fn init_with_test_defaults(&self) {
         let test_key = ApiKey {
             key: "test-api-key-12345".to_string(),
             name: "Test API Key".to_string(),
@@ -144,7 +188,6 @@ impl ApiKeyStore {
 
         let mut keys = self.keys.write().await;
         keys.insert(test_key.key.clone(), test_key);
-        info!("Initialized API key store with default test key");
     }
 
     /// Generate a new API key
@@ -449,7 +492,7 @@ mod tests {
     #[tokio::test]
     async fn test_rate_limiting() {
         let store = ApiKeyStore::new();
-        store.init_with_defaults().await;
+        store.init_with_test_defaults().await;
 
         let test_key = "test-api-key-12345";
 

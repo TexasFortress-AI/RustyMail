@@ -189,7 +189,7 @@ async fn main() -> std::io::Result<()> {
     // --- Create AppState manually (no new method) ---
     let session_manager = Arc::new(SessionManager::new(Arc::new(settings.clone())));
     let api_key_store = Arc::new(ApiKeyStore::new());
-    api_key_store.init_with_defaults().await;
+    api_key_store.init_from_env().await;
     let app_state = AppState {
         settings: Arc::new(settings.clone()),
         mcp_handler: mcp_handler.clone(),
