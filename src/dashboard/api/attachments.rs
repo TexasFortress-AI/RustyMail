@@ -100,9 +100,7 @@ pub async fn list_attachments(
     .map_err(|e| ApiError::InternalError(format!("Failed to get attachments: {}", e)))?;
 
     // If no attachments found in database and we have folder+uid, fetch from IMAP
-    if attachments.is_empty() && query.folder.is_some() && query.uid.is_some() {
-        let folder = query.folder.as_ref().unwrap();
-        let uid = query.uid.unwrap();
+    if let (true, Some(folder), Some(uid)) = (attachments.is_empty(), query.folder.as_ref(), query.uid) {
 
         debug!("No attachments in database for message_id {}. Fetching from IMAP...", message_id);
 

@@ -2026,8 +2026,8 @@ pub async fn execute_mcp_tool_inner(
                             } else {
                                 Ok(vec![s.to_string()])
                             }
-                        } else if val.is_array() {
-                            let emails = val.as_array().unwrap()
+                        } else if let Some(arr) = val.as_array() {
+                            let emails = arr
                                 .iter()
                                 .filter_map(|v| v.as_str().map(String::from))
                                 .filter(|s| !s.is_empty())
@@ -2252,10 +2252,7 @@ pub async fn execute_mcp_tool_inner(
             };
 
             // If no attachments found in database and we have folder+uid, fetch from IMAP
-            if attachments.is_empty() && folder_opt.is_some() && uid_opt.is_some() {
-                let folder = folder_opt.unwrap();
-                let uid = uid_opt.unwrap();
-
+            if let (true, Some(folder), Some(uid)) = (attachments.is_empty(), folder_opt, uid_opt) {
                 debug!("No attachments in database for message_id {}. Fetching from IMAP...", message_id);
 
                 // Fetch email with attachments from IMAP (this will save them to DB)
@@ -2374,10 +2371,7 @@ pub async fn execute_mcp_tool_inner(
             };
 
             // If no attachments found in database and we have folder+uid, fetch from IMAP
-            if attachments.is_empty() && folder_opt.is_some() && uid_opt.is_some() {
-                let folder = folder_opt.as_ref().unwrap();
-                let uid = uid_opt.unwrap();
-
+            if let (true, Some(folder), Some(uid)) = (attachments.is_empty(), folder_opt.as_ref(), uid_opt) {
                 debug!("No attachments in database for message_id {}. Fetching from IMAP...", message_id);
 
                 // Fetch email with attachments from IMAP (this will save them to DB)

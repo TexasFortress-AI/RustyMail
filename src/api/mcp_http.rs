@@ -529,7 +529,9 @@ pub async fn mcp_post_handler(
     // Return response based on Accept header
     if accept_header.contains("text/event-stream") {
         // Client wants SSE format
-        let sse_data = format!("data: {}\n\n", serde_json::to_string(&response).unwrap());
+        let response_json = serde_json::to_string(&response)
+            .unwrap_or_else(|e| format!(r#"{{"error":"serialization failed: {}"}}"#, e));
+        let sse_data = format!("data: {}\n\n", response_json);
         Ok(response_builder
             .content_type("text/event-stream")
             .insert_header(("Cache-Control", "no-cache"))
