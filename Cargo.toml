@@ -88,6 +88,9 @@ crossbeam = "0.8"
 aes-gcm = "0.10"
 hex = "0.4"
 
+# System calls (used for safe process checking in sync binary)
+libc = "0.2"
+
 # OpenAPI documentation
 utoipa = { version = "5", features = ["actix_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "8", features = ["actix-web"] }

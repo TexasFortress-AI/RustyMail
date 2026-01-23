@@ -58,15 +58,16 @@ struct AccountRow {
     imap_use_tls: bool,
 }
 
-/// Check if a process with the given PID is still running
+/// Check if a process with the given PID is still running.
+///
+/// Uses `kill(pid, 0)` which sends no signal but checks if the process exists.
+/// Returns true if process exists and we have permission to signal it.
 #[cfg(unix)]
 fn process_exists(pid: u32) -> bool {
-    // On Unix: kill(pid, 0) returns success if process exists
-    // We use the raw libc call to avoid adding libc as a dependency
-    extern "C" {
-        fn kill(pid: i32, sig: i32) -> i32;
-    }
-    unsafe { kill(pid as i32, 0) == 0 }
+    // SAFETY: libc::kill with signal 0 is a safe operation that only checks
+    // process existence - it does not actually send any signal. The pid is
+    // a simple integer conversion with no memory safety concerns.
+    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
 }
 
 #[cfg(not(unix))]
