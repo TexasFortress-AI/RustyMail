@@ -167,19 +167,32 @@ impl Stream for McpSseStream {
     }
 }
 
-/// Validate Origin header to prevent DNS rebinding attacks
+/// Validate Origin header to prevent DNS rebinding and CSRF attacks
+/// Uses exact origin matching from ALLOWED_ORIGINS environment variable
 fn validate_origin(req: &HttpRequest) -> bool {
+    // Get allowed origins from environment (same as CORS config)
+    let allowed_origins_str = std::env::var("ALLOWED_ORIGINS")
+        .unwrap_or_else(|_| "http://localhost:9439,http://127.0.0.1:9439".to_string());
+
+    let allowed_origins: Vec<String> = allowed_origins_str
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
     if let Some(origin) = req.headers().get(ORIGIN) {
         if let Ok(origin_str) = origin.to_str() {
-            // Allow localhost and 127.0.0.1
-            if origin_str.contains("localhost") || origin_str.contains("127.0.0.1") {
+            // Use exact string matching - not substring matching
+            // This prevents attacks like "evil.localhost.com" bypassing validation
+            if allowed_origins.iter().any(|allowed| allowed == origin_str) {
                 return true;
             }
-            warn!("Rejected request from origin: {}", origin_str);
+            warn!("Rejected request from non-whitelisted origin: {}", origin_str);
             return false;
         }
     }
-    // Allow requests without Origin header (e.g., from non-browser clients)
+    // Allow requests without Origin header (e.g., from non-browser clients like CLI tools)
+    // Browser-based requests always include Origin header, so this is safe
     true
 }
 

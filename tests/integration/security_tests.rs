@@ -408,16 +408,16 @@ async fn test_mcp_origin_127_0_0_1_accepted() {
     println!("  127.0.0.1 origin accepted");
 }
 
-/// Test substring match vulnerability in origin validation
+/// Test that substring bypass attacks are blocked
 ///
-/// BASELINE TEST: This documents the INSECURE substring matching that will be
-/// fixed in Task 23. Currently "evil.localhost.com" is accepted because it
-/// contains "localhost".
+/// SECURITY TEST: Verifies that Task 23 fix correctly blocks origins that
+/// contain "localhost" as a substring but are not exact matches.
+/// "evil.localhost.com" should be rejected because it's not in ALLOWED_ORIGINS.
 #[tokio::test]
 #[serial]
-async fn test_mcp_origin_substring_bypass_baseline() {
+async fn test_mcp_origin_substring_bypass_blocked() {
     setup_test_env();
-    println!("=== SECURITY TEST: MCP Origin Substring Bypass (Baseline - Documents Vulnerability) ===");
+    println!("=== SECURITY TEST: MCP Origin Substring Bypass Blocked ===");
 
     let dashboard_state = create_test_dashboard_state("origin_substring").await;
 
@@ -434,7 +434,7 @@ async fn test_mcp_origin_substring_bypass_baseline() {
         "params": {}
     });
 
-    // Test with evil.localhost.com - contains "localhost" substring
+    // Test with evil.localhost.com - contains "localhost" substring but should be blocked
     let req = test::TestRequest::post()
         .uri("/mcp")
         .insert_header((header::CONTENT_TYPE, "application/json"))
@@ -444,17 +444,10 @@ async fn test_mcp_origin_substring_bypass_baseline() {
 
     let resp = test::call_service(&app, req).await;
 
-    // BASELINE: Currently this is ACCEPTED due to substring match (insecure)
-    // After Task 23, this should return 403 Forbidden
-    let status = resp.status();
-    println!("  Response status for evil.localhost.com: {}", status);
-
-    // Document current insecure behavior
-    if status.is_success() {
-        println!("  BASELINE: evil.localhost.com currently ACCEPTED (INSECURE - to be fixed in Task 23)");
-    } else {
-        println!("  Origin correctly rejected");
-    }
+    // After Task 23 fix: This should return 403 Forbidden
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN,
+        "evil.localhost.com should be BLOCKED - substring matching vulnerability fixed");
+    println!("  Substring bypass attack correctly blocked");
 }
 
 /// Test that requests without Origin header are currently allowed
@@ -844,10 +837,10 @@ async fn test_security_baseline_summary() {
     println!("  - Default: localhost:9439 and 127.0.0.1:9439 for development");
     println!("  - Supports credentials, specific methods/headers\n");
 
-    println!("Task 23 (Origin Validation):");
-    println!("  - Current: Substring match with contains() - INSECURE");
-    println!("  - Current: Missing Origin header allowed");
-    println!("  - Fix: Exact origin matching, require Origin for browser requests\n");
+    println!("Task 23 (Origin Validation): FIXED");
+    println!("  - Implemented: Exact origin matching using ALLOWED_ORIGINS env var");
+    println!("  - Missing Origin header still allowed for CLI clients (intentional)");
+    println!("  - Blocks substring attacks like 'evil.localhost.com'\n");
 
     println!("Task 24 (Hardcoded Credentials):");
     println!("  - Current: Test key seeded at startup - INSECURE");

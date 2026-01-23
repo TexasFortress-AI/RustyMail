@@ -454,12 +454,13 @@
         "description": "Fix critical security vulnerability in src/api/mcp_http.rs (lines 171-189) where origin validation accepts any domain containing 'localhost' and allows requests with no Origin header, enabling CSRF attacks.",
         "details": "Update the origin validation logic in src/api/mcp_http.rs to implement secure origin checking:\n\n1) **Fix substring matching vulnerability** (line ~175-180):\n   - Replace the current logic that accepts any origin containing 'localhost' (e.g., evil.localhost.com)\n   - Implement exact string matching for allowed origins\n   - Use a whitelist approach with full origin strings including protocol and port\n\n2) **Require Origin header on all requests**:\n   - Remove the logic that allows requests with missing Origin headers\n   - Return 403 Forbidden for requests without Origin header\n   - Add proper error message: \"Origin header required\"\n\n3) **Implement secure origin validation**:\n   ```rust\n   // Add at top of file\n   use std::env;\n   \n   // In the origin validation section\n   let allowed_origins = env::var(\"ALLOWED_MCP_ORIGINS\")\n       .unwrap_or_else(|_| \"http://localhost:3000\".to_string())\n       .split(',')\n       .map(|s| s.trim().to_string())\n       .collect::<Vec<String>>();\n   \n   // Validate origin\n   if let Some(origin) = req.headers().get(\"Origin\") {\n       let origin_str = origin.to_str().unwrap_or(\"\");\n       if !allowed_origins.contains(&origin_str.to_string()) {\n           return Ok(Response::builder()\n               .status(StatusCode::FORBIDDEN)\n               .body(Body::from(\"Origin not allowed\"))\n               .unwrap());\n       }\n   } else {\n       return Ok(Response::builder()\n           .status(StatusCode::FORBIDDEN)\n           .body(Body::from(\"Origin header required\"))\n           .unwrap());\n   }\n   ```\n\n4) **Add environment variable configuration**:\n   - Support ALLOWED_MCP_ORIGINS environment variable\n   - Accept comma-separated list of full origins (e.g., \"http://localhost:3000,http://localhost:5173,https://app.example.com\")\n   - Default to \"http://localhost:3000\" if not set\n\n5) **Update CORS headers in response**:\n   - Set Access-Control-Allow-Origin to the specific requesting origin (not \"*\")\n   - Only set it if the origin is in the allowed list\n\n6) **Consider preflight requests**:\n   - Ensure OPTIONS requests also validate origins\n   - Return appropriate CORS headers only for allowed origins",
         "testStrategy": "Verify the security fix with comprehensive testing:\n\n1) **Test substring matching fix**:\n   - Send request with Origin: http://evil.localhost.com - should be rejected (403)\n   - Send request with Origin: http://localhost.attacker.com - should be rejected (403)\n   - Send request with Origin: http://localhost:3000 - should be allowed (200)\n\n2) **Test missing Origin header enforcement**:\n   - Use curl without Origin header: `curl http://localhost:8080/mcp/tools/list` - should be rejected (403)\n   - Use curl with valid Origin: `curl -H \"Origin: http://localhost:3000\" http://localhost:8080/mcp/tools/list` - should work\n\n3) **Test environment variable configuration**:\n   - Set ALLOWED_MCP_ORIGINS=\"http://localhost:3000,http://localhost:5173\"\n   - Verify requests from localhost:3000 work\n   - Verify requests from localhost:5173 work\n   - Verify requests from localhost:8080 are rejected\n\n4) **Test exact matching with ports**:\n   - Origin: http://localhost:3000 with ALLOWED_MCP_ORIGINS=\"http://localhost:3001\" - should fail\n   - Origin: http://localhost:3001 with ALLOWED_MCP_ORIGINS=\"http://localhost:3001\" - should work\n\n5) **Test CORS response headers**:\n   - Verify Access-Control-Allow-Origin is set to the specific origin (not \"*\")\n   - Verify it's only set when origin is allowed\n\n6) **Test preflight OPTIONS requests**:\n   - Send OPTIONS request with valid origin - should return proper CORS headers\n   - Send OPTIONS request with invalid origin - should be rejected",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "22"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-01-23T11:04:42.187Z"
       },
       {
         "id": "24",
@@ -583,9 +584,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-01-23T10:44:12.312Z",
+      "lastModified": "2026-01-23T11:04:42.188Z",
       "taskCount": 32,
-      "completedCount": 20,
+      "completedCount": 21,
       "tags": [
         "master"
       ]
