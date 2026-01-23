@@ -26,6 +26,11 @@ use rustymail::connection_pool::{ConnectionPool, ConnectionFactory, PoolConfig};
 use rustymail::prelude::CloneableImapSessionFactory;
 use rustymail::imap::{ImapClient, AsyncImapSessionWrapper, ImapError};
 
+/// Helper to get the test API key from environment
+fn get_test_api_key() -> String {
+    std::env::var("RUSTYMAIL_API_KEY").expect("RUSTYMAIL_API_KEY should be set by setup_test_env()")
+}
+
 /// Initialize test environment with required environment variables
 fn setup_test_env() {
     // Set required environment variables for tests
@@ -221,13 +226,15 @@ async fn test_mcp_initialize_handshake() {
     ).await;
 
     // Send request and verify response
+    let api_key = get_test_api_key();
     let req = test::TestRequest::post()
         .uri("/mcp")
+        .insert_header(("X-Api-Key", api_key.as_str()))
         .set_json(&request)
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_success(), "Initialize request should succeed");
+    assert!(resp.status().is_success(), "Initialize request should succeed (status: {:?})", resp.status());
 
     // Verify response structure
     let body: serde_json::Value = test::read_body_json(resp).await;
@@ -275,13 +282,15 @@ async fn test_mcp_tools_list() {
     ).await;
 
     // Send request
+    let api_key = get_test_api_key();
     let req = test::TestRequest::post()
         .uri("/mcp")
+        .insert_header(("X-Api-Key", api_key.as_str()))
         .set_json(&request)
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_success(), "tools/list request should succeed");
+    assert!(resp.status().is_success(), "tools/list request should succeed (status: {:?})", resp.status());
 
     // Verify response structure
     let body: serde_json::Value = test::read_body_json(resp).await;
@@ -437,8 +446,10 @@ async fn test_mcp_error_handling_invalid_method() {
     ).await;
 
     // Send request
+    let api_key = get_test_api_key();
     let req = test::TestRequest::post()
         .uri("/mcp")
+        .insert_header(("X-Api-Key", api_key.as_str()))
         .set_json(&request)
         .to_request();
 
@@ -738,8 +749,10 @@ async fn test_mcp_dashboard_api_consistency() {
     ).await;
 
     // Fetch MCP tools
+    let api_key = get_test_api_key();
     let mcp_req = test::TestRequest::post()
         .uri("/mcp")
+        .insert_header(("X-Api-Key", api_key.as_str()))
         .set_json(&mcp_request)
         .to_request();
 
@@ -849,8 +862,10 @@ async fn test_mcp_mark_as_read() {
     ).await;
 
     // Send request
+    let api_key = get_test_api_key();
     let req = test::TestRequest::post()
         .uri("/mcp")
+        .insert_header(("X-Api-Key", api_key.as_str()))
         .set_json(&request)
         .to_request();
 
@@ -902,8 +917,10 @@ async fn test_mcp_mark_as_unread() {
     ).await;
 
     // Send request
+    let api_key = get_test_api_key();
     let req = test::TestRequest::post()
         .uri("/mcp")
+        .insert_header(("X-Api-Key", api_key.as_str()))
         .set_json(&request)
         .to_request();
 
@@ -956,8 +973,10 @@ async fn test_mcp_send_email() {
     ).await;
 
     // Send request
+    let api_key = get_test_api_key();
     let req = test::TestRequest::post()
         .uri("/mcp")
+        .insert_header(("X-Api-Key", api_key.as_str()))
         .set_json(&request)
         .to_request();
 
@@ -1007,8 +1026,10 @@ async fn test_mcp_list_email_attachments() {
     ).await;
 
     // Send request
+    let api_key = get_test_api_key();
     let req = test::TestRequest::post()
         .uri("/mcp")
+        .insert_header(("X-Api-Key", api_key.as_str()))
         .set_json(&request)
         .to_request();
 
@@ -1059,8 +1080,10 @@ async fn test_mcp_download_email_attachments() {
     ).await;
 
     // Send request
+    let api_key = get_test_api_key();
     let req = test::TestRequest::post()
         .uri("/mcp")
+        .insert_header(("X-Api-Key", api_key.as_str()))
         .set_json(&request)
         .to_request();
 
@@ -1109,8 +1132,10 @@ async fn test_mcp_cleanup_attachments() {
     ).await;
 
     // Send request
+    let api_key = get_test_api_key();
     let req = test::TestRequest::post()
         .uri("/mcp")
+        .insert_header(("X-Api-Key", api_key.as_str()))
         .set_json(&request)
         .to_request();
 
@@ -1159,8 +1184,10 @@ async fn test_mcp_create_folder() {
     ).await;
 
     // Send request
+    let api_key = get_test_api_key();
     let req = test::TestRequest::post()
         .uri("/mcp")
+        .insert_header(("X-Api-Key", api_key.as_str()))
         .set_json(&request)
         .to_request();
 
@@ -1209,8 +1236,10 @@ async fn test_mcp_delete_folder() {
     ).await;
 
     // Send request
+    let api_key = get_test_api_key();
     let req = test::TestRequest::post()
         .uri("/mcp")
+        .insert_header(("X-Api-Key", api_key.as_str()))
         .set_json(&request)
         .to_request();
 
@@ -1260,8 +1289,10 @@ async fn test_mcp_rename_folder() {
     ).await;
 
     // Send request
+    let api_key = get_test_api_key();
     let req = test::TestRequest::post()
         .uri("/mcp")
+        .insert_header(("X-Api-Key", api_key.as_str()))
         .set_json(&request)
         .to_request();
 
