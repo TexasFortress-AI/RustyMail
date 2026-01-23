@@ -569,20 +569,24 @@ async fn test_path_traversal_sanitization() {
 
 /// Test that attachment paths stay within storage directory
 ///
-/// BASELINE TEST: This tests the current path construction behavior.
-/// Task 27 should add canonicalization and containment verification.
+/// SECURITY TEST: Verifies path traversal prevention (Task 27 fix)
+/// - Valid paths return Ok with sanitized path
+/// - Path traversal attempts return Err and are rejected
 #[tokio::test]
 async fn test_attachment_path_containment() {
     use rustymail::dashboard::services::attachment_storage::get_attachment_path;
 
     println!("=== SECURITY TEST: Attachment Path Containment ===");
 
-    // Test normal path construction
-    let path = get_attachment_path("user@example.com", "<msg123@example.com>", "document.pdf");
+    // Test normal path construction - should succeed
+    let path_result = get_attachment_path("user@example.com", "<msg123@example.com>", "document.pdf");
+    assert!(path_result.is_ok(), "Valid filename should return Ok");
+
+    let path = path_result.unwrap();
 
     // Path should be within attachments directory
-    assert!(path.starts_with("attachments"),
-        "Path should start with attachments/");
+    assert!(path.to_string_lossy().contains("attachments"),
+        "Path should contain 'attachments'");
 
     // Path components should be sanitized
     let path_str = path.to_string_lossy();
@@ -590,17 +594,29 @@ async fn test_attachment_path_containment() {
 
     println!("  Normal path: {:?}", path);
 
-    // Test with malicious filename
-    let malicious_path = get_attachment_path(
+    // Test with malicious filename - should FAIL (return Err)
+    let malicious_result = get_attachment_path(
         "user@example.com",
         "<msg123@example.com>",
         "../../../etc/passwd"
     );
 
-    // The filename is NOT sanitized by get_attachment_path - this is a gap
-    // Task 27 should fix this by adding containment checks
-    println!("  Malicious filename path: {:?}", malicious_path);
-    println!("  NOTE: Filename sanitization may be missing - to be verified in Task 27");
+    // Path traversal attempts should now be rejected with an error
+    assert!(malicious_result.is_err(),
+        "Path traversal attempt should return Err, not a sanitized path");
+    println!("  Malicious filename correctly rejected with error");
+
+    // Test backslash traversal (Windows-style)
+    let backslash_result = get_attachment_path(
+        "user@example.com",
+        "<msg123@example.com>",
+        "..\\..\\windows\\system32\\config"
+    );
+    assert!(backslash_result.is_err(),
+        "Backslash path traversal should be rejected");
+    println!("  Backslash traversal correctly rejected");
+
+    println!("  Path containment security verified");
 }
 
 /// Test symlink escape prevention (placeholder for Task 27)

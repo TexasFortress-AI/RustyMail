@@ -25,6 +25,10 @@ pub enum AttachmentError {
     NotFound(String),
     #[error("Invalid message ID: {0}")]
     InvalidMessageId(String),
+    #[error("Path traversal attempt detected")]
+    PathTraversal,
+    #[error("Invalid filename: {0}")]
+    InvalidFilename(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -54,6 +58,96 @@ pub fn sanitize_message_id(message_id: &str) -> String {
         .collect()
 }
 
+/// Sanitize filename to prevent path traversal attacks
+/// Rejects any filename containing path traversal patterns - fails closed for security
+pub fn sanitize_filename(filename: &str) -> Result<String, AttachmentError> {
+    // Reject null bytes
+    if filename.contains('\0') {
+        warn!("Path traversal attempt: null byte in filename");
+        return Err(AttachmentError::InvalidFilename("Null byte in filename".to_string()));
+    }
+
+    // Reject path traversal patterns - fail closed rather than silently sanitizing
+    if filename.contains("..") {
+        warn!("Path traversal attempt: '..' in filename '{}'", filename);
+        return Err(AttachmentError::PathTraversal);
+    }
+
+    // Reject path separators - filenames shouldn't contain directory components
+    if filename.contains('/') || filename.contains('\\') {
+        warn!("Path traversal attempt: path separator in filename '{}'", filename);
+        return Err(AttachmentError::PathTraversal);
+    }
+
+    // Reject empty filenames
+    if filename.is_empty() || filename == "." {
+        warn!("Path traversal attempt: empty or dot filename");
+        return Err(AttachmentError::InvalidFilename("Invalid filename".to_string()));
+    }
+
+    // Additional sanitization: replace dangerous characters
+    let sanitized: String = filename
+        .chars()
+        .map(|c| match c {
+            ':' => '_',  // Windows drive separator
+            c => c
+        })
+        .collect();
+
+    // Limit length
+    let result: String = sanitized.chars().take(255).collect();
+
+    Ok(result)
+}
+
+/// Get the attachments storage root directory
+fn get_storage_root() -> PathBuf {
+    std::env::var("ATTACHMENTS_STORAGE_PATH")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("attachments"))
+}
+
+/// Validate that a path is safely contained within the storage root
+/// Uses canonicalization to resolve symlinks and relative paths
+fn validate_path_containment(storage_root: &Path, full_path: &Path) -> Result<PathBuf, AttachmentError> {
+    // Ensure storage root exists and get its canonical form
+    if !storage_root.exists() {
+        fs::create_dir_all(storage_root)?;
+    }
+    let canonical_root = fs::canonicalize(storage_root)?;
+
+    // For new files (that don't exist yet), we need to check the parent directory
+    if full_path.exists() {
+        // File exists - canonicalize it directly
+        let canonical_path = fs::canonicalize(full_path)?;
+        if !canonical_path.starts_with(&canonical_root) {
+            warn!("Path traversal attempt: {:?} escapes storage root {:?}", full_path, canonical_root);
+            return Err(AttachmentError::PathTraversal);
+        }
+        Ok(canonical_path)
+    } else {
+        // File doesn't exist - check parent directory and construct path
+        let parent = full_path.parent()
+            .ok_or_else(|| AttachmentError::InvalidFilename("No parent directory".to_string()))?;
+
+        // Ensure parent directory exists
+        if !parent.exists() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let canonical_parent = fs::canonicalize(parent)?;
+        if !canonical_parent.starts_with(&canonical_root) {
+            warn!("Path traversal attempt: parent {:?} escapes storage root {:?}", parent, canonical_root);
+            return Err(AttachmentError::PathTraversal);
+        }
+
+        let filename = full_path.file_name()
+            .ok_or_else(|| AttachmentError::InvalidFilename("No filename".to_string()))?;
+
+        Ok(canonical_parent.join(filename))
+    }
+}
+
 /// Ensure an email has a message-id, generating one if needed
 pub fn ensure_message_id(email: &Email, account: &str) -> String {
     if let Some(envelope) = &email.envelope {
@@ -71,14 +165,24 @@ pub fn ensure_message_id(email: &Email, account: &str) -> String {
             date)
 }
 
-/// Get the storage path for an attachment
-/// Format: attachments/{account_email}/{sanitized_message_id}/{filename}
-pub fn get_attachment_path(account: &str, message_id: &str, filename: &str) -> PathBuf {
+/// Get the storage path for an attachment with secure path validation
+/// Format: {storage_root}/{sanitized_account}/{sanitized_message_id}/{sanitized_filename}
+/// Returns error if path would escape the storage root
+pub fn get_attachment_path(account: &str, message_id: &str, filename: &str) -> Result<PathBuf, AttachmentError> {
+    // Sanitize all path components
+    let sanitized_account = sanitize_message_id(account); // Reuse for account sanitization
     let sanitized_id = sanitize_message_id(message_id);
-    Path::new("attachments")
-        .join(account)
-        .join(sanitized_id)
-        .join(filename)
+    let sanitized_filename = sanitize_filename(filename)?;
+
+    let storage_root = get_storage_root();
+    let relative_path = Path::new(&sanitized_account)
+        .join(&sanitized_id)
+        .join(&sanitized_filename);
+
+    let full_path = storage_root.join(&relative_path);
+
+    // Validate the constructed path is within the storage root
+    validate_path_containment(&storage_root, &full_path)
 }
 
 /// Save an attachment to filesystem and record metadata in database
@@ -107,14 +211,11 @@ pub async fn save_attachment(
             format!("attachment_{}.{}", Utc::now().timestamp(), ext)
         });
 
-    let storage_path = get_attachment_path(account, message_id, &filename);
+    // Get secure storage path with validation
+    let storage_path = get_attachment_path(account, message_id, &filename)?;
 
-    // Create directory if it doesn't exist
-    if let Some(parent) = storage_path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-
-    // Write attachment to filesystem
+    // Note: validate_path_containment already creates directories as needed
+    // Write attachment to filesystem using the validated path
     let mut file = fs::File::create(&storage_path)?;
     file.write_all(&mime_part.body)?;
 
@@ -238,30 +339,44 @@ pub async fn delete_attachments_for_email(
     message_id: &str,
     account: &str,
 ) -> Result<(), AttachmentError> {
+    let storage_root = get_storage_root();
+
     // Get attachment metadata before deleting
     let attachments = get_attachments_metadata(pool, account, message_id).await?;
 
-    // Delete from filesystem
+    // Delete from filesystem with path validation
     for attachment in &attachments {
+        // Re-validate path containment before deletion to prevent symlink attacks
         let path = Path::new(&attachment.storage_path);
-        if path.exists() {
-            if let Err(e) = fs::remove_file(path) {
-                warn!("Failed to delete attachment file {:?}: {}", path, e);
-            } else {
-                debug!("Deleted attachment file: {:?}", path);
+        match validate_path_containment(&storage_root, path) {
+            Ok(validated_path) => {
+                if validated_path.exists() {
+                    if let Err(e) = fs::remove_file(&validated_path) {
+                        warn!("Failed to delete attachment file {:?}: {}", validated_path, e);
+                    } else {
+                        debug!("Deleted attachment file: {:?}", validated_path);
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Skipping deletion of suspicious path {:?}: {}", path, e);
             }
         }
     }
 
-    // Clean up empty directories
+    // Clean up empty directories with sanitization
+    let sanitized_account = sanitize_message_id(account);
     let sanitized_id = sanitize_message_id(message_id);
-    let message_dir = Path::new("attachments")
-        .join(account)
-        .join(sanitized_id);
+    let message_dir = storage_root
+        .join(&sanitized_account)
+        .join(&sanitized_id);
 
-    if message_dir.exists() {
-        if let Err(e) = fs::remove_dir(&message_dir) {
-            debug!("Could not remove message dir {:?}: {} (may not be empty)", message_dir, e);
+    // Validate the directory path before attempting removal
+    if let Ok(validated_dir) = validate_path_containment(&storage_root, &message_dir) {
+        if validated_dir.exists() {
+            if let Err(e) = fs::remove_dir(&validated_dir) {
+                debug!("Could not remove message dir {:?}: {} (may not be empty)", validated_dir, e);
+            }
         }
     }
 
@@ -290,6 +405,7 @@ pub async fn create_zip_archive(
     use zip::write::FileOptions;
     use zip::ZipWriter;
 
+    let storage_root = get_storage_root();
     let attachments = get_attachments_metadata(pool, account, message_id).await?;
 
     if attachments.is_empty() {
@@ -307,21 +423,35 @@ pub async fn create_zip_archive(
         .compression_method(zip::CompressionMethod::Deflated)
         .unix_permissions(0o644);
 
-    let attachment_count = attachments.len();
+    let mut files_added = 0;
     for attachment in &attachments {
         let path = Path::new(&attachment.storage_path);
-        if path.exists() {
-            zip.start_file(&attachment.filename, options)?;
-            let content = fs::read(path)?;
-            zip.write_all(&content)?;
-            debug!("Added {} to ZIP archive", attachment.filename);
-        } else {
-            warn!("Attachment file not found: {:?}", path);
+
+        // Validate path containment before reading
+        match validate_path_containment(&storage_root, path) {
+            Ok(validated_path) => {
+                if validated_path.exists() {
+                    // Sanitize filename for ZIP entry (prevent zip slip attacks)
+                    let safe_filename = sanitize_filename(&attachment.filename)
+                        .unwrap_or_else(|_| format!("attachment_{}", files_added));
+
+                    zip.start_file(&safe_filename, options)?;
+                    let content = fs::read(&validated_path)?;
+                    zip.write_all(&content)?;
+                    debug!("Added {} to ZIP archive", safe_filename);
+                    files_added += 1;
+                } else {
+                    warn!("Attachment file not found: {:?}", validated_path);
+                }
+            }
+            Err(e) => {
+                warn!("Skipping suspicious attachment path {:?}: {}", path, e);
+            }
         }
     }
 
     zip.finish()?;
-    info!("Created ZIP archive at {:?} with {} files", output_path, attachment_count);
+    info!("Created ZIP archive at {:?} with {} files", output_path, files_added);
 
     Ok(output_path.to_path_buf())
 }
@@ -390,12 +520,47 @@ mod tests {
             "user@example.com",
             "<msg123@server.com>",
             "invoice.pdf"
-        );
+        ).expect("Should return valid path for normal inputs");
 
         assert!(path.to_string_lossy().contains("attachments"));
         assert!(path.to_string_lossy().contains("user@example.com"));
         assert!(path.to_string_lossy().contains("invoice.pdf"));
         assert!(!path.to_string_lossy().contains("<")); // Should be sanitized
-        assert!(!path.to_string_lossy().contains(">"));
+        assert!(!path.to_string_lossy().contains(">")); // Should be sanitized
+    }
+
+    #[test]
+    fn test_get_attachment_path_rejects_traversal() {
+        // Path traversal in filename should be rejected
+        let result = get_attachment_path(
+            "user@example.com",
+            "<msg123@server.com>",
+            "../../../etc/passwd"
+        );
+        assert!(result.is_err());
+
+        // Null byte in filename should be rejected
+        let result = get_attachment_path(
+            "user@example.com",
+            "<msg123@server.com>",
+            "file\0.pdf"
+        );
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_sanitize_filename() {
+        // Normal filename should pass
+        assert!(sanitize_filename("document.pdf").is_ok());
+
+        // Path traversal should be rejected
+        assert!(sanitize_filename("../secret.txt").is_err());
+        assert!(sanitize_filename("..\\secret.txt").is_err());
+
+        // Null bytes should be rejected
+        assert!(sanitize_filename("file\0.txt").is_err());
+
+        // Empty filename should be rejected
+        assert!(sanitize_filename("").is_err());
     }
 }
