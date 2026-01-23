@@ -483,14 +483,15 @@
         "description": "Implement mandatory API-key validation middleware for all MCP routes in mcp_http.rs with per-tool scope requirements and proper error responses for authentication/authorization failures.",
         "details": "Modify src/api/mcp_http.rs to add comprehensive security to mcp_post_handler and mcp_get_handler which currently rely only on weak origin checks:\n\n1) Create a new middleware module src/api/auth/api_key_middleware.rs with:\n   - ApiKey struct containing key, scopes, and metadata\n   - validate_api_key() function that checks against a database table or config file\n   - extract_api_key_from_request() to get key from Authorization header (Bearer token) or X-API-Key header\n   - ApiKeyMiddleware that intercepts all MCP requests before handlers\n\n2) Define scope requirements for each MCP tool:\n   - Low-level tools: email:read, email:write, folder:read, etc.\n   - High-level tools: ai:execute, model:configure, email:draft\n   - Create a tool_scopes mapping in high_level_tools.rs and regular tools module\n\n3) Update mcp_post_handler and mcp_get_handler:\n   - Remove or supplement weak origin check with API key validation\n   - Extract requested tool from the JSON-RPC request\n   - Look up required scopes for the tool\n   - Validate API key has all required scopes\n   - Pass validated API key context to downstream handlers\n\n4) Implement proper error responses:\n   - 401 Unauthorized for missing or invalid API keys\n   - 403 Forbidden for valid key but insufficient scopes\n   - Include WWW-Authenticate header with realm=\"MCP API\"\n   - Return JSON-RPC error format with descriptive messages\n\n5) Create database schema for API keys:\n   ```sql\n   CREATE TABLE api_keys (\n     id SERIAL PRIMARY KEY,\n     key_hash VARCHAR(255) UNIQUE NOT NULL,\n     name VARCHAR(255),\n     scopes TEXT[], -- Array of scope strings\n     created_at TIMESTAMP DEFAULT NOW(),\n     last_used_at TIMESTAMP,\n     is_active BOOLEAN DEFAULT true\n   );\n   ```\n\n6) Add configuration for API key validation:\n   - Environment variable to enable/disable in development\n   - Option to load keys from config file for testing\n   - Rate limiting per API key to prevent abuse",
         "testStrategy": "Test the API key validation thoroughly:\n\n1) Unit tests for api_key_middleware.rs:\n   - Test API key extraction from different header formats\n   - Test scope validation logic with various scope combinations\n   - Test database queries for API key lookup\n\n2) Integration tests for MCP endpoints:\n   - Test requests without API key return 401\n   - Test requests with invalid API key return 401\n   - Test requests with valid key but missing scopes return 403\n   - Test successful requests with proper API key and scopes\n   - Test both mcp_post_handler and mcp_get_handler paths\n\n3) Test each tool's scope requirements:\n   - Verify low-level tools require appropriate read/write scopes\n   - Verify high-level AI tools require elevated scopes\n   - Test scope inheritance (e.g., email:write includes email:read)\n\n4) Security testing:\n   - Attempt to bypass with malformed headers\n   - Test SQL injection in API key lookup\n   - Verify timing attacks don't reveal key existence\n   - Test rate limiting prevents brute force\n\n5) End-to-end testing:\n   - Create test API keys with different scope sets\n   - Verify frontend MCP client can authenticate properly\n   - Test error handling in UI when authentication fails\n   - Verify performance impact is minimal",
-        "status": "pending",
+        "status": "done",
         "dependencies": [
           "22",
           "23",
           "24"
         ],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-01-23T11:10:41.611Z"
       },
       {
         "id": "26",
@@ -585,9 +586,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-01-23T11:07:28.410Z",
+      "lastModified": "2026-01-23T11:10:41.612Z",
       "taskCount": 32,
-      "completedCount": 22,
+      "completedCount": 23,
       "tags": [
         "master"
       ]

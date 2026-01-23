@@ -196,6 +196,67 @@ fn validate_origin(req: &HttpRequest) -> bool {
     true
 }
 
+/// Validate API key from request headers
+/// Extracts key from X-Api-Key or Authorization: Bearer header
+/// Returns Ok(()) if valid, Err with JSON-RPC error response if invalid
+fn validate_api_key(req: &HttpRequest) -> Result<(), Value> {
+    // Get the configured API key from environment
+    let configured_key = match std::env::var("RUSTYMAIL_API_KEY") {
+        Ok(key) if !key.is_empty() && key != "your-secure-api-key-here" => key,
+        _ => {
+            warn!("MCP API key validation failed: RUSTYMAIL_API_KEY not configured");
+            return Err(json!({
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32001,
+                    "message": "Server configuration error: API key not configured"
+                }
+            }));
+        }
+    };
+
+    // Try to extract API key from headers
+    let api_key = req.headers()
+        .get("X-Api-Key")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string())
+        .or_else(|| {
+            // Try Authorization: Bearer header
+            req.headers()
+                .get("Authorization")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|s| s.strip_prefix("Bearer "))
+                .map(|s| s.to_string())
+        });
+
+    match api_key {
+        Some(key) if key == configured_key => {
+            debug!("MCP API key validation successful");
+            Ok(())
+        }
+        Some(_) => {
+            warn!("MCP API key validation failed: invalid key provided");
+            Err(json!({
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32002,
+                    "message": "Unauthorized: invalid API key"
+                }
+            }))
+        }
+        None => {
+            debug!("MCP API key validation failed: no key provided");
+            Err(json!({
+                "jsonrpc": "2.0",
+                "error": {
+                    "code": -32002,
+                    "message": "Unauthorized: API key required. Provide via X-Api-Key header or Authorization: Bearer"
+                }
+            }))
+        }
+    }
+}
+
 /// Handle MCP request and generate JSON-RPC response
 /// Returns None for notifications (requests without id), Some(Value) for requests
 async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, variant: &str) -> Option<Value> {
@@ -414,6 +475,13 @@ pub async fn mcp_post_handler(
         })));
     }
 
+    // Validate API key for authentication
+    if let Err(error_response) = validate_api_key(&req) {
+        return Ok(HttpResponse::Unauthorized()
+            .insert_header(("WWW-Authenticate", "Bearer realm=\"MCP API\""))
+            .json(error_response));
+    }
+
     // Check Accept header
     let accept_header = req.headers().get(ACCEPT)
         .and_then(|h| h.to_str().ok())
@@ -487,6 +555,13 @@ pub async fn mcp_get_handler(
     // Validate Origin header
     if !validate_origin(&req) {
         return Ok(HttpResponse::Forbidden().finish());
+    }
+
+    // Validate API key for authentication
+    if let Err(error_response) = validate_api_key(&req) {
+        return Ok(HttpResponse::Unauthorized()
+            .insert_header(("WWW-Authenticate", "Bearer realm=\"MCP API\""))
+            .json(error_response));
     }
 
     // Check Accept header - must request text/event-stream

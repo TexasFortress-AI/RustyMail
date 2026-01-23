@@ -337,11 +337,12 @@ async fn test_cors_preflight_options_blocked() {
 // Origin Validation Tests (for Task 23)
 // ============================================================================
 
-/// Test that MCP accepts localhost origin
+/// Test that MCP accepts localhost origin (with valid API key)
 #[tokio::test]
 #[serial]
 async fn test_mcp_origin_localhost_accepted() {
     setup_test_env();
+    std::env::set_var("RUSTYMAIL_API_KEY", "test-key-for-origin-tests");
     println!("=== SECURITY TEST: MCP Origin - Localhost Accepted ===");
 
     let dashboard_state = create_test_dashboard_state("origin_localhost").await;
@@ -363,6 +364,7 @@ async fn test_mcp_origin_localhost_accepted() {
         .uri("/mcp")
         .insert_header((header::CONTENT_TYPE, "application/json"))
         .insert_header((header::ORIGIN, "http://localhost:9439"))
+        .insert_header(("X-Api-Key", "test-key-for-origin-tests"))
         .set_json(&request)
         .to_request();
 
@@ -373,11 +375,12 @@ async fn test_mcp_origin_localhost_accepted() {
     println!("  localhost origin accepted");
 }
 
-/// Test that MCP accepts 127.0.0.1 origin
+/// Test that MCP accepts 127.0.0.1 origin (with valid API key)
 #[tokio::test]
 #[serial]
 async fn test_mcp_origin_127_0_0_1_accepted() {
     setup_test_env();
+    std::env::set_var("RUSTYMAIL_API_KEY", "test-key-for-origin-tests");
     println!("=== SECURITY TEST: MCP Origin - 127.0.0.1 Accepted ===");
 
     let dashboard_state = create_test_dashboard_state("origin_127").await;
@@ -399,6 +402,7 @@ async fn test_mcp_origin_127_0_0_1_accepted() {
         .uri("/mcp")
         .insert_header((header::CONTENT_TYPE, "application/json"))
         .insert_header((header::ORIGIN, "http://127.0.0.1:9439"))
+        .insert_header(("X-Api-Key", "test-key-for-origin-tests"))
         .set_json(&request)
         .to_request();
 
@@ -453,12 +457,13 @@ async fn test_mcp_origin_substring_bypass_blocked() {
 /// Test that requests without Origin header are currently allowed
 ///
 /// BASELINE TEST: This documents behavior that may need to change.
-/// Non-browser clients (CLI tools) don't send Origin headers.
+/// Non-browser clients (CLI tools) don't send Origin headers - allowed with valid API key.
 #[tokio::test]
 #[serial]
-async fn test_mcp_origin_missing_header_baseline() {
+async fn test_mcp_origin_missing_header_allowed_with_api_key() {
     setup_test_env();
-    println!("=== SECURITY TEST: MCP Missing Origin Header (Baseline) ===");
+    std::env::set_var("RUSTYMAIL_API_KEY", "test-key-for-origin-tests");
+    println!("=== SECURITY TEST: MCP Missing Origin Header (With API Key) ===");
 
     let dashboard_state = create_test_dashboard_state("origin_missing").await;
 
@@ -475,20 +480,21 @@ async fn test_mcp_origin_missing_header_baseline() {
         "params": {}
     });
 
-    // Request without Origin header
+    // Request without Origin header but WITH valid API key
     let req = test::TestRequest::post()
         .uri("/mcp")
         .insert_header((header::CONTENT_TYPE, "application/json"))
-        // No Origin header
+        .insert_header(("X-Api-Key", "test-key-for-origin-tests"))
+        // No Origin header - CLI clients don't send it
         .set_json(&request)
         .to_request();
 
     let resp = test::call_service(&app, req).await;
 
-    // BASELINE: Currently allowed for CLI clients
+    // Allowed for CLI clients with valid API key
     assert!(resp.status().is_success(),
-        "Requests without Origin should be accepted for CLI clients");
-    println!("  Missing Origin header currently allowed (for CLI clients)");
+        "Requests without Origin should be accepted for CLI clients with valid API key");
+    println!("  Missing Origin header allowed for authenticated CLI clients");
 }
 
 /// Test that external origins are rejected
@@ -621,16 +627,18 @@ async fn test_attachment_symlink_escape() {
 // API Key Authentication Tests (for Tasks 24, 25)
 // ============================================================================
 
-/// Test that MCP endpoints currently don't require API keys
+/// Test that MCP endpoints require API key authentication
 ///
-/// BASELINE TEST: Documents INSECURE behavior to be fixed in Task 25.
+/// SECURITY TEST: Verifies Task 25 fix - MCP endpoints must reject requests without valid API key
 #[tokio::test]
 #[serial]
-async fn test_mcp_no_api_key_required_baseline() {
+async fn test_mcp_requires_api_key() {
     setup_test_env();
-    println!("=== SECURITY TEST: MCP API Key Requirement (Baseline - Documents Gap) ===");
+    // Set a test API key in environment
+    std::env::set_var("RUSTYMAIL_API_KEY", "test-secure-key-for-mcp-auth");
+    println!("=== SECURITY TEST: MCP API Key Requirement ===");
 
-    let dashboard_state = create_test_dashboard_state("mcp_no_auth").await;
+    let dashboard_state = create_test_dashboard_state("mcp_auth").await;
 
     let app = test::init_service(
         App::new()
@@ -645,26 +653,46 @@ async fn test_mcp_no_api_key_required_baseline() {
         "params": {}
     });
 
-    // Request without API key
+    // Request WITHOUT API key - should be rejected
     let req = test::TestRequest::post()
         .uri("/mcp")
         .insert_header((header::CONTENT_TYPE, "application/json"))
         .insert_header((header::ORIGIN, "http://localhost:9439"))
-        // No X-Api-Key header
         .set_json(&request)
         .to_request();
 
     let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED,
+        "MCP endpoint should return 401 when no API key provided");
+    println!("  Request without API key correctly rejected with 401");
 
-    // BASELINE: Currently MCP accepts requests without API key (insecure)
-    // After Task 25, this should return 401 Unauthorized
-    let status = resp.status();
+    // Request WITH valid API key - should succeed
+    let req_with_key = test::TestRequest::post()
+        .uri("/mcp")
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .insert_header((header::ORIGIN, "http://localhost:9439"))
+        .insert_header(("X-Api-Key", "test-secure-key-for-mcp-auth"))
+        .set_json(&request)
+        .to_request();
 
-    if status.is_success() {
-        println!("  BASELINE: MCP endpoints currently DO NOT require API key (INSECURE - to be fixed in Task 25)");
-    } else if status == StatusCode::UNAUTHORIZED {
-        println!("  API key correctly required");
-    }
+    let resp_with_key = test::call_service(&app, req_with_key).await;
+    assert!(resp_with_key.status().is_success(),
+        "MCP endpoint should accept request with valid API key");
+    println!("  Request with valid API key accepted");
+
+    // Request WITH invalid API key - should be rejected
+    let req_invalid_key = test::TestRequest::post()
+        .uri("/mcp")
+        .insert_header((header::CONTENT_TYPE, "application/json"))
+        .insert_header((header::ORIGIN, "http://localhost:9439"))
+        .insert_header(("X-Api-Key", "wrong-api-key"))
+        .set_json(&request)
+        .to_request();
+
+    let resp_invalid = test::call_service(&app, req_invalid_key).await;
+    assert_eq!(resp_invalid.status(), StatusCode::UNAUTHORIZED,
+        "MCP endpoint should return 401 for invalid API key");
+    println!("  Request with invalid API key correctly rejected with 401");
 }
 
 /// Test API key validation on REST endpoints
@@ -852,9 +880,10 @@ async fn test_security_baseline_summary() {
     println!("  - .env.example uses placeholder with security guidance");
     println!("  - init_with_test_defaults() is now #[cfg(test)] only\n");
 
-    println!("Task 25 (MCP Authentication):");
-    println!("  - Current: No API key required for MCP endpoints - INSECURE");
-    println!("  - Fix: Add API key + scope validation middleware\n");
+    println!("Task 25 (MCP Authentication): FIXED");
+    println!("  - Implemented: validate_api_key() in mcp_http.rs");
+    println!("  - Extracts key from X-Api-Key or Authorization: Bearer headers");
+    println!("  - Returns 401 with WWW-Authenticate header for invalid/missing key\n");
 
     println!("Task 27 (Path Traversal):");
     println!("  - Current: Basic character sanitization only");
