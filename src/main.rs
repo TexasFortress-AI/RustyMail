@@ -329,32 +329,9 @@ async fn main() -> std::io::Result<()> {
             .configure(|cfg| dashboard::api::init_routes(cfg)) // Dashboard API routes
             .configure(rustymail::api::mcp_http::configure_mcp_routes); // MCP Streamable HTTP transport
 
-        // Serve static dashboard files (logic remains the same)
-        if let Some(dashboard_config) = &config.dashboard {
-            if dashboard_config.enabled {
-                if let Some(path_str) = &dashboard_config.path {
-                    let static_path = std::path::Path::new(path_str);
-                    if static_path.exists() {
-                        info!("Serving dashboard static files from: {}", path_str);
-                        let owned_path_str_for_handler = path_str.clone();
-                        app = app.service(
-                            actix_files::Files::new("/dashboard", static_path)
-                                .index_file("index.html")
-                                .default_handler(
-                                    web::get().to(move || {
-                                        let path_for_async = owned_path_str_for_handler.clone();
-                                        async move {
-                                            actix_files::NamedFile::open_async(format!("{}/index.html", path_for_async)).await
-                                        }
-                                    }),
-                                ),
-                        );
-                    } else {
-                        warn!("Dashboard path not found: {}", path_str);
-                    }
-                }
-            }
-        }
+        // Dashboard static files are served by Vite dev server (port 9439) in development
+        // For production, use a reverse proxy (nginx) or CDN to serve static files
+        // The REST API server (this server) only handles API requests on port 9437
         app // Return the configured app
     })
     .bind(&listen_addr)
