@@ -105,7 +105,9 @@ const ModelConfigEditor: React.FC<ModelConfigEditorProps> = ({
   };
 
   const enabledProviders = providers.filter(p => p.enabled);
-  const hasChanges = config && (
+  // Allow saving if: no config exists yet (new setup), or values have changed from existing config
+  const isNewConfig = !config;
+  const hasChanges = isNewConfig || (
     selectedProvider !== config.provider ||
     selectedModel !== config.model_name ||
     baseUrl !== (config.base_url || '') ||
