@@ -318,8 +318,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(config.clone())                             // Dashboard config
             .app_data(dashboard_state.clone())                  // Dashboard state
             .app_data(web::Data::new(sse_manager.clone()))      // Dashboard SSE Manager
-            // TODO: Fix rate limiting middleware concurrency issue (RefCell panic)
-            // .wrap(RateLimitMiddleware::new(rate_limit_config.clone()))
+            .wrap(RateLimitMiddleware::new(rate_limit_config.clone()))
             .wrap(cors)
             .wrap(actix_web::middleware::Logger::default())
             .wrap(dashboard::api::middleware::Metrics)

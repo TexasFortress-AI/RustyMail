@@ -16,6 +16,7 @@ use actix_web::{
 use futures_util::future::{ok, Ready, LocalBoxFuture};
 use log::{debug, warn};
 use std::collections::HashMap;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::sync::RwLock;
@@ -168,7 +169,7 @@ impl RateLimitMiddleware {
 
 impl<S, B> Transform<S, ServiceRequest> for RateLimitMiddleware
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + Clone + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     B: 'static,
 {
     type Response = ServiceResponse<actix_web::body::EitherBody<B>>;
@@ -179,35 +180,34 @@ where
 
     fn new_transform(&self, service: S) -> Self::Future {
         ok(RateLimitMiddlewareService {
-            service,
+            service: Rc::new(service),
             state: self.state.clone(),
         })
     }
 }
 
 /// Rate limiting middleware service
-#[derive(Clone)]
 pub struct RateLimitMiddlewareService<S> {
-    service: S,
+    service: Rc<S>,
     state: RateLimiterState,
 }
 
 impl<S, B> Service<ServiceRequest> for RateLimitMiddlewareService<S>
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + Clone + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
     B: 'static,
 {
     type Response = ServiceResponse<actix_web::body::EitherBody<B>>;
     type Error = Error;
     type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&self, _ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        Poll::Ready(Ok(()))
+    fn poll_ready(&self, ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.service.poll_ready(ctx)
     }
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let state = self.state.clone();
-        let service = self.service.clone();
+        let service = Rc::clone(&self.service);
 
         // Extract client IP - check proxy headers first, then peer address
         let client_ip = extract_client_ip(&req);

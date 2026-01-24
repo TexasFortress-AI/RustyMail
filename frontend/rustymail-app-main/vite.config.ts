@@ -21,7 +21,6 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    base: '/dashboard/',
     envDir: path.resolve(__dirname, '../../'),
     server: {
       host: process.env.DASHBOARD_HOST || "0.0.0.0",
