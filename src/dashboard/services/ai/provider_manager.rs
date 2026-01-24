@@ -14,7 +14,7 @@ use tokio::sync::RwLock;
 use crate::api::errors::ApiError as RestApiError;
 use super::provider::{
     AiProvider, AiChatMessage,
-    OpenAiAdapter, OpenRouterAdapter, MorpheusAdapter, OllamaAdapter, MockAiProvider,
+    OpenAiAdapter, OpenRouterAdapter, MorpheusAdapter, OllamaAdapter, LlamaCppAdapter, MockAiProvider,
     AnthropicAdapter, DeepSeekAdapter, XAIAdapter, GeminiAdapter,
     MistralAdapter, TogetherAdapter, AzureOpenAIAdapter
 };
@@ -39,6 +39,7 @@ pub enum ProviderType {
     OpenRouter,
     Morpheus,
     Ollama,
+    LlamaCpp,
     Anthropic,
     DeepSeek,
     XAI,
@@ -175,15 +176,40 @@ impl ProviderManager {
                     priority: 4,
                     enabled: true,
                 };
-                configs.push(config);
+                configs.push(config.clone());
 
-                // Create Ollama provider
-                let provider = Arc::new(OllamaAdapter::new(base_url, self.http_client.clone()));
+                // Create Ollama provider with model from env
+                let provider = Arc::new(OllamaAdapter::new(base_url, self.http_client.clone())
+                    .with_model(config.model));
                 self.providers.write().await.insert("ollama".to_string(), provider);
                 info!("Initialized Ollama provider");
             } else {
                 warn!("OLLAMA_BASE_URL is set but OLLAMA_MODEL is not - skipping Ollama provider");
             }
+        }
+
+        // Check for llama.cpp server configuration
+        if let Ok(base_url) = std::env::var("LLAMACPP_BASE_URL") {
+            let config = ProviderConfig {
+                name: "llamacpp".to_string(),
+                provider_type: ProviderType::LlamaCpp,
+                api_key: None, // llama.cpp server doesn't require an API key
+                model: "local".to_string(), // Model is loaded in server
+                max_tokens: std::env::var("LLAMACPP_MAX_TOKENS")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+                temperature: std::env::var("LLAMACPP_TEMPERATURE")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+                priority: 5,
+                enabled: true,
+            };
+            configs.push(config);
+
+            // Create llama.cpp provider
+            let provider = Arc::new(LlamaCppAdapter::new(base_url, self.http_client.clone()));
+            self.providers.write().await.insert("llamacpp".to_string(), provider);
+            info!("Initialized llama.cpp provider");
         }
 
         // Check for Anthropic Claude configuration
@@ -196,7 +222,7 @@ impl ProviderManager {
                     model,
                     max_tokens: None,
                     temperature: None,
-                    priority: 5,
+                    priority: 6,
                     enabled: true,
                 };
                 configs.push(config);
@@ -218,7 +244,7 @@ impl ProviderManager {
                     model,
                     max_tokens: None,
                     temperature: None,
-                    priority: 6,
+                    priority: 7,
                     enabled: true,
                 };
                 configs.push(config);
@@ -240,7 +266,7 @@ impl ProviderManager {
                     model,
                     max_tokens: None,
                     temperature: None,
-                    priority: 7,
+                    priority: 8,
                     enabled: true,
                 };
                 configs.push(config);
@@ -262,7 +288,7 @@ impl ProviderManager {
                     model,
                     max_tokens: None,
                     temperature: None,
-                    priority: 8,
+                    priority: 9,
                     enabled: true,
                 };
                 configs.push(config);
@@ -284,7 +310,7 @@ impl ProviderManager {
                     model,
                     max_tokens: None,
                     temperature: None,
-                    priority: 9,
+                    priority: 10,
                     enabled: true,
                 };
                 configs.push(config);
@@ -306,7 +332,7 @@ impl ProviderManager {
                     model,
                     max_tokens: None,
                     temperature: None,
-                    priority: 10,
+                    priority: 11,
                     enabled: true,
                 };
                 configs.push(config);
@@ -330,7 +356,7 @@ impl ProviderManager {
                         .expect("AZURE_OPENAI_DEPLOYMENT environment variable must be set when using Azure OpenAI provider"),
                     max_tokens: None,
                     temperature: None,
-                    priority: 11,
+                    priority: 12,
                     enabled: true,
                 };
                 configs.push(config);
@@ -409,6 +435,14 @@ impl ProviderManager {
                     })?;
                 Arc::new(OllamaAdapter::new(base_url, self.http_client.clone())
                     .with_model(config.model.clone()))
+            },
+            ProviderType::LlamaCpp => {
+                // For llama.cpp, we need a base URL from environment variable
+                let base_url = std::env::var("LLAMACPP_BASE_URL")
+                    .map_err(|_| RestApiError::UnprocessableEntity {
+                        message: "llama.cpp provider requires LLAMACPP_BASE_URL environment variable to be set".to_string()
+                    })?;
+                Arc::new(LlamaCppAdapter::new(base_url, self.http_client.clone()))
             },
             ProviderType::Anthropic => {
                 let api_key = config.api_key.as_ref()
@@ -664,6 +698,13 @@ impl ProviderManager {
                     })?;
                 Arc::new(OllamaAdapter::new(base_url, self.http_client.clone())
                     .with_model(config.model.clone()))
+            },
+            ProviderType::LlamaCpp => {
+                let base_url = std::env::var("LLAMACPP_BASE_URL")
+                    .map_err(|_| RestApiError::UnprocessableEntity {
+                        message: "llama.cpp provider requires LLAMACPP_BASE_URL environment variable to be set".to_string()
+                    })?;
+                Arc::new(LlamaCppAdapter::new(base_url, self.http_client.clone()))
             },
             ProviderType::Anthropic => {
                 let api_key = config.api_key.as_ref()

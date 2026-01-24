@@ -155,11 +155,14 @@ impl AiService {
         }
 
         if let Some(_base_url) = ollama_base_url {
+            // Model MUST come from OLLAMA_MODEL env var - no hardcoded default
+            let ollama_model = std::env::var("OLLAMA_MODEL")
+                .expect("OLLAMA_MODEL environment variable must be set when using Ollama");
             provider_manager.add_provider(provider_manager::ProviderConfig {
                 name: "ollama".to_string(),
                 provider_type: provider_manager::ProviderType::Ollama,
                 api_key: None, // Ollama doesn't need an API key for local instances
-                model: "llama3.2".to_string(), // Will be updated from API
+                model: ollama_model,
                 max_tokens: Some(2000),
                 temperature: Some(0.7),
                 priority: 4,
