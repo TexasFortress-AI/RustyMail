@@ -15,6 +15,49 @@ import {
 // Base API URL - in production this would come from environment variables
 const API_BASE = '/api/dashboard';
 
+// Sampler Configuration Types
+export interface SamplerConfig {
+  id?: number;
+  provider: string;
+  model_name: string;
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  min_p?: number;
+  repeat_penalty?: number;
+  num_ctx?: number;
+  max_tokens?: number;
+  think_mode: boolean;
+  stop_sequences: string[];
+  provider_options: Record<string, unknown>;
+  description?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SamplerConfigInput {
+  provider: string;
+  model_name: string;
+  temperature?: number;
+  top_p?: number;
+  top_k?: number;
+  min_p?: number;
+  repeat_penalty?: number;
+  num_ctx?: number;
+  max_tokens?: number;
+  think_mode?: boolean;
+  stop_sequences?: string[];
+  provider_options?: Record<string, unknown>;
+  description?: string;
+}
+
+// MCP Tool type
+interface McpTool {
+  name: string;
+  description: string;
+  inputSchema?: Record<string, unknown>;
+}
+
 // Utility function to handle API requests
 const apiRequest = async <T>(url: string, options?: RequestInit): Promise<T> => {
   const response = await fetch(url, {
@@ -305,6 +348,32 @@ export const apiClient = {
       method: 'POST',
       body: JSON.stringify(params),
     });
+  },
+
+  // Sampler Configuration Management
+  getSamplerConfig: async (provider: string, modelName: string): Promise<SamplerConfig> => {
+    return await apiRequest<SamplerConfig>(`${API_BASE}/ai/sampler-configs?provider=${encodeURIComponent(provider)}&model_name=${encodeURIComponent(modelName)}`);
+  },
+
+  listSamplerConfigs: async (): Promise<{ configs: SamplerConfig[] }> => {
+    return await apiRequest<{ configs: SamplerConfig[] }>(`${API_BASE}/ai/sampler-configs/list`);
+  },
+
+  setSamplerConfig: async (config: SamplerConfigInput): Promise<{ message: string; config: SamplerConfig }> => {
+    return await apiRequest<{ message: string; config: SamplerConfig }>(`${API_BASE}/ai/sampler-configs`, {
+      method: 'POST',
+      body: JSON.stringify(config),
+    });
+  },
+
+  deleteSamplerConfig: async (provider: string, modelName: string): Promise<{ message: string }> => {
+    return await apiRequest<{ message: string }>(`${API_BASE}/ai/sampler-configs?provider=${encodeURIComponent(provider)}&model_name=${encodeURIComponent(modelName)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  getSamplerDefaults: async (): Promise<SamplerConfig> => {
+    return await apiRequest<SamplerConfig>(`${API_BASE}/ai/sampler-configs/defaults`);
   },
 };
 

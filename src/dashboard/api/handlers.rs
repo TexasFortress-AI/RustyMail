@@ -3140,6 +3140,168 @@ pub struct GetModelsForProviderQuery {
     pub provider: String,
 }
 
+// ============================================================================
+// Sampler Configuration API
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct GetSamplerConfigQuery {
+    pub provider: String,
+    pub model_name: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct SamplerConfigRequest {
+    pub provider: String,
+    pub model_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub top_k: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repeat_penalty: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub num_ctx: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_tokens: Option<u32>,
+    #[serde(default)]
+    pub think_mode: bool,
+    #[serde(default)]
+    pub stop_sequences: Vec<String>,
+    #[serde(default)]
+    pub provider_options: serde_json::Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// Get sampler configuration for a specific provider/model
+pub async fn get_sampler_config(
+    query: web::Query<GetSamplerConfigQuery>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling GET /api/dashboard/ai/sampler-configs?provider={}&model_name={}",
+           query.provider, query.model_name);
+
+    let pool = match state.cache_service.db_pool.as_ref() {
+        Some(p) => p,
+        None => return Err(ApiError::InternalError("Database not initialized".to_string())),
+    };
+
+    use crate::dashboard::services::ai::sampler_config;
+
+    match sampler_config::get_sampler_config(pool, &query.provider, &query.model_name).await {
+        Ok(config) => Ok(HttpResponse::Ok().json(config)),
+        Err(e) => {
+            error!("Failed to get sampler config: {:?}", e);
+            Err(ApiError::InternalError(format!("Failed to get sampler config: {:?}", e)))
+        }
+    }
+}
+
+/// List all sampler configurations
+pub async fn list_sampler_configs(
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling GET /api/dashboard/ai/sampler-configs/list");
+
+    let pool = match state.cache_service.db_pool.as_ref() {
+        Some(p) => p,
+        None => return Err(ApiError::InternalError("Database not initialized".to_string())),
+    };
+
+    use crate::dashboard::services::ai::sampler_config;
+
+    match sampler_config::list_sampler_configs(pool).await {
+        Ok(configs) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "configs": configs
+        }))),
+        Err(e) => {
+            error!("Failed to list sampler configs: {:?}", e);
+            Err(ApiError::InternalError(format!("Failed to list sampler configs: {:?}", e)))
+        }
+    }
+}
+
+/// Save sampler configuration
+pub async fn set_sampler_config(
+    req: web::Json<SamplerConfigRequest>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling POST /api/dashboard/ai/sampler-configs for {}/{}",
+           req.provider, req.model_name);
+
+    let pool = match state.cache_service.db_pool.as_ref() {
+        Some(p) => p,
+        None => return Err(ApiError::InternalError("Database not initialized".to_string())),
+    };
+
+    use crate::dashboard::services::ai::sampler_config::{SamplerConfig, save_sampler_config};
+
+    let mut config = SamplerConfig::new(&req.provider, &req.model_name);
+    config.temperature = req.temperature;
+    config.top_p = req.top_p;
+    config.top_k = req.top_k;
+    config.min_p = req.min_p;
+    config.repeat_penalty = req.repeat_penalty;
+    config.num_ctx = req.num_ctx;
+    config.max_tokens = req.max_tokens;
+    config.think_mode = req.think_mode;
+    config.stop_sequences = req.stop_sequences.clone();
+    config.provider_options = req.provider_options.clone();
+    config.description = req.description.clone();
+
+    match save_sampler_config(pool, &config).await {
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": format!("Successfully saved sampler config for {}/{}", req.provider, req.model_name),
+            "config": config
+        }))),
+        Err(e) => {
+            error!("Failed to save sampler config: {:?}", e);
+            Err(ApiError::InternalError(format!("Failed to save sampler config: {:?}", e)))
+        }
+    }
+}
+
+/// Delete sampler configuration
+pub async fn delete_sampler_config(
+    query: web::Query<GetSamplerConfigQuery>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling DELETE /api/dashboard/ai/sampler-configs?provider={}&model_name={}",
+           query.provider, query.model_name);
+
+    let pool = match state.cache_service.db_pool.as_ref() {
+        Some(p) => p,
+        None => return Err(ApiError::InternalError("Database not initialized".to_string())),
+    };
+
+    use crate::dashboard::services::ai::sampler_config;
+
+    match sampler_config::delete_sampler_config(pool, &query.provider, &query.model_name).await {
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": format!("Successfully deleted sampler config for {}/{}", query.provider, query.model_name)
+        }))),
+        Err(e) => {
+            error!("Failed to delete sampler config: {:?}", e);
+            Err(ApiError::InternalError(format!("Failed to delete sampler config: {:?}", e)))
+        }
+    }
+}
+
+/// Get environment default sampler values
+pub async fn get_env_defaults() -> Result<impl Responder, ApiError> {
+    debug!("Handling GET /api/dashboard/ai/sampler-configs/defaults");
+
+    use crate::dashboard::services::ai::sampler_config;
+
+    let defaults = sampler_config::get_env_defaults();
+    Ok(HttpResponse::Ok().json(defaults))
+}
+
 /// Trigger an email sync using the separate sync process.
 /// This spawns the rustymail-sync binary which exits after sync, ensuring memory is returned to OS.
 ///

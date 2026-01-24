@@ -35,6 +35,12 @@ pub fn configure_routes() -> Scope {
         .route("/ai/model-configs", web::get().to(handlers::get_model_configs))
         .route("/ai/model-configs", web::post().to(handlers::set_model_config))
         .route("/ai/models-for-provider", web::get().to(handlers::get_models_for_provider))
+        // AI sampler configuration endpoints
+        .route("/ai/sampler-configs", web::get().to(handlers::get_sampler_config))
+        .route("/ai/sampler-configs", web::post().to(handlers::set_sampler_config))
+        .route("/ai/sampler-configs", web::delete().to(handlers::delete_sampler_config))
+        .route("/ai/sampler-configs/list", web::get().to(handlers::list_sampler_configs))
+        .route("/ai/sampler-configs/defaults", web::get().to(handlers::get_env_defaults))
         // Email sync endpoints
         .route("/sync/trigger", web::post().to(handlers::trigger_email_sync))
         .route("/sync/status", web::get().to(handlers::get_sync_status))

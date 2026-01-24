@@ -237,3 +237,86 @@ export function useStartProcessEmailsJob() {
     },
   });
 }
+
+// ============================================================================
+// Sampler Configuration Hooks
+// ============================================================================
+
+// Hook for fetching sampler config for a specific provider/model
+export function useSamplerConfig(provider: string | null, modelName: string | null) {
+  return useQuery({
+    queryKey: ['samplerConfig', provider, modelName],
+    queryFn: async () => {
+      if (!provider || !modelName) return null;
+      return apiClient.getSamplerConfig(provider, modelName);
+    },
+    enabled: !!provider && !!modelName,
+    retry: false,
+  });
+}
+
+// Hook for listing all sampler configurations
+export function useSamplerConfigs() {
+  return useQuery({
+    queryKey: ['samplerConfigs'],
+    queryFn: async () => {
+      return apiClient.listSamplerConfigs();
+    },
+    retry: false,
+  });
+}
+
+// Hook for saving sampler configuration
+export function useSetSamplerConfig() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (config: {
+      provider: string;
+      model_name: string;
+      temperature?: number;
+      top_p?: number;
+      top_k?: number;
+      min_p?: number;
+      repeat_penalty?: number;
+      num_ctx?: number;
+      max_tokens?: number;
+      think_mode?: boolean;
+      stop_sequences?: string[];
+      provider_options?: Record<string, unknown>;
+      description?: string;
+    }) => {
+      return apiClient.setSamplerConfig(config);
+    },
+    onSuccess: (_, variables) => {
+      // Invalidate sampler config queries
+      queryClient.invalidateQueries({ queryKey: ['samplerConfigs'] });
+      queryClient.invalidateQueries({ queryKey: ['samplerConfig', variables.provider, variables.model_name] });
+    },
+  });
+}
+
+// Hook for deleting sampler configuration
+export function useDeleteSamplerConfig() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ provider, modelName }: { provider: string; modelName: string }) => {
+      return apiClient.deleteSamplerConfig(provider, modelName);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['samplerConfigs'] });
+    },
+  });
+}
+
+// Hook for fetching environment default sampler values
+export function useSamplerDefaults() {
+  return useQuery({
+    queryKey: ['samplerDefaults'],
+    queryFn: async () => {
+      return apiClient.getSamplerDefaults();
+    },
+    retry: false,
+  });
+}
