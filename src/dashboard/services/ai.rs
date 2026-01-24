@@ -7,6 +7,7 @@ pub mod provider;
 pub mod provider_manager;
 pub mod nlp_processor;
 pub mod model_config;
+pub mod sampler_config;
 pub mod tool_converter;
 pub mod email_drafter;
 pub mod agent_executor;
