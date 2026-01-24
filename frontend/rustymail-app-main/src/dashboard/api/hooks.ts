@@ -320,3 +320,32 @@ export function useSamplerDefaults() {
     retry: false,
   });
 }
+
+// Hook for fetching sampler configuration presets
+export function useSamplerPresets() {
+  return useQuery({
+    queryKey: ['samplerPresets'],
+    queryFn: async () => {
+      return apiClient.getSamplerPresets();
+    },
+    retry: false,
+  });
+}
+
+// Hook for importing sampler presets
+export function useImportSamplerPresets() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ presets, overwrite }: {
+      presets: { provider: string; model_name: string }[];
+      overwrite?: boolean;
+    }) => {
+      return apiClient.importSamplerPresets(presets, overwrite);
+    },
+    onSuccess: () => {
+      // Invalidate sampler config queries to refresh the list
+      queryClient.invalidateQueries({ queryKey: ['samplerConfigs'] });
+    },
+  });
+}

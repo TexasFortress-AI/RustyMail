@@ -4,7 +4,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Sliders, Save, Loader2, RotateCcw, Trash2, Info } from 'lucide-react';
+import { Sliders, Save, Loader2, RotateCcw, Trash2, Info, Download, Check } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,16 @@ import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import {
   Tooltip,
   TooltipContent,
@@ -25,6 +35,8 @@ import {
   useSetSamplerConfig,
   useDeleteSamplerConfig,
   useSamplerDefaults,
+  useSamplerPresets,
+  useImportSamplerPresets,
   useAiProviders,
   useModelsForProvider,
 } from '../api/hooks';
@@ -83,6 +95,9 @@ const SamplerConfigPanel: React.FC = () => {
   const [selectedModel, setSelectedModel] = useState<string>('');
   const [formState, setFormState] = useState<FormState>(DEFAULT_FORM_STATE);
   const [hasChanges, setHasChanges] = useState(false);
+  const [presetDialogOpen, setPresetDialogOpen] = useState(false);
+  const [selectedPresets, setSelectedPresets] = useState<Set<string>>(new Set());
+  const [overwriteExisting, setOverwriteExisting] = useState(false);
 
   // API hooks
   const { data: providersData, isLoading: isLoadingProviders } = useAiProviders();
@@ -93,8 +108,10 @@ const SamplerConfigPanel: React.FC = () => {
   );
   const { data: existingConfigs } = useSamplerConfigs();
   const { data: defaultsData } = useSamplerDefaults();
+  const { data: presetsData } = useSamplerPresets();
   const setSamplerConfigMutation = useSetSamplerConfig();
   const deleteSamplerConfigMutation = useDeleteSamplerConfig();
+  const importPresetsMutation = useImportSamplerPresets();
 
   // Get visible fields for current provider
   const visibleFields = PROVIDER_FIELDS[selectedProvider] || PROVIDER_FIELDS.default;
@@ -208,6 +225,49 @@ const SamplerConfigPanel: React.FC = () => {
     c => c.provider === selectedProvider && c.model_name === selectedModel
   );
 
+  // Preset selection helpers
+  const togglePreset = (provider: string, modelName: string) => {
+    const key = `${provider}/${modelName}`;
+    setSelectedPresets(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const selectAllPresets = () => {
+    if (!presetsData?.categories) return;
+    const allKeys = presetsData.categories.flatMap(cat =>
+      cat.presets.map(p => `${p.provider}/${p.model_name}`)
+    );
+    setSelectedPresets(new Set(allKeys));
+  };
+
+  const deselectAllPresets = () => {
+    setSelectedPresets(new Set());
+  };
+
+  const handleImportPresets = async () => {
+    if (selectedPresets.size === 0) return;
+
+    const presetsToImport = Array.from(selectedPresets).map(key => {
+      const [provider, ...modelParts] = key.split('/');
+      return { provider, model_name: modelParts.join('/') };
+    });
+
+    await importPresetsMutation.mutateAsync({
+      presets: presetsToImport,
+      overwrite: overwriteExisting,
+    });
+
+    setPresetDialogOpen(false);
+    setSelectedPresets(new Set());
+  };
+
   if (isLoadingProviders) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -222,14 +282,102 @@ const SamplerConfigPanel: React.FC = () => {
   return (
     <div className="h-full overflow-auto p-6">
       <div className="max-w-4xl mx-auto space-y-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Sliders className="h-6 w-6 text-primary" />
-          <div>
-            <h2 className="text-2xl font-bold">Sampler Configuration</h2>
-            <p className="text-muted-foreground">
-              Configure AI model sampler settings for local LLM inference
-            </p>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <Sliders className="h-6 w-6 text-primary" />
+            <div>
+              <h2 className="text-2xl font-bold">Sampler Configuration</h2>
+              <p className="text-muted-foreground">
+                Configure AI model sampler settings for local LLM inference
+              </p>
+            </div>
           </div>
+
+          {/* Import Presets Button */}
+          <Dialog open={presetDialogOpen} onOpenChange={setPresetDialogOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Download className="h-4 w-4 mr-2" />
+                Import Presets
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+              <DialogHeader>
+                <DialogTitle>Import Recommended Presets</DialogTitle>
+                <DialogDescription>
+                  Select presets to import. These are optimized settings for common models.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="flex-1 overflow-auto py-4 space-y-6">
+                {presetsData?.categories?.map((category) => (
+                  <div key={category.name} className="space-y-2">
+                    <h4 className="font-semibold text-sm">{category.name}</h4>
+                    <p className="text-xs text-muted-foreground mb-2">{category.description}</p>
+                    <div className="space-y-1">
+                      {category.presets.map((preset) => {
+                        const key = `${preset.provider}/${preset.model_name}`;
+                        const isSelected = selectedPresets.has(key);
+                        return (
+                          <button
+                            key={key}
+                            onClick={() => togglePreset(preset.provider, preset.model_name)}
+                            className={`w-full p-2 text-left border rounded-md transition-colors flex items-center gap-2 ${
+                              isSelected ? 'border-primary bg-primary/5' : 'hover:bg-muted'
+                            }`}
+                          >
+                            <div className={`h-4 w-4 border rounded flex items-center justify-center ${
+                              isSelected ? 'bg-primary border-primary' : 'border-muted-foreground'
+                            }`}>
+                              {isSelected && <Check className="h-3 w-3 text-primary-foreground" />}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-sm font-medium truncate">{preset.model_name}</div>
+                              <div className="text-xs text-muted-foreground truncate">
+                                {preset.description}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <DialogFooter className="border-t pt-4 flex-col sm:flex-row gap-2">
+                <div className="flex items-center gap-2 flex-1">
+                  <Checkbox
+                    id="overwrite"
+                    checked={overwriteExisting}
+                    onCheckedChange={(checked) => setOverwriteExisting(checked === true)}
+                  />
+                  <label htmlFor="overwrite" className="text-sm text-muted-foreground">
+                    Overwrite existing configs
+                  </label>
+                </div>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={selectAllPresets}>
+                    Select All
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={deselectAllPresets}>
+                    Clear
+                  </Button>
+                  <Button
+                    onClick={handleImportPresets}
+                    disabled={selectedPresets.size === 0 || importPresetsMutation.isPending}
+                  >
+                    {importPresetsMutation.isPending ? (
+                      <>
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        Importing...
+                      </>
+                    ) : (
+                      `Import ${selectedPresets.size} Preset${selectedPresets.size !== 1 ? 's' : ''}`
+                    )}
+                  </Button>
+                </div>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
 
         <Card>

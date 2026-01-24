@@ -449,6 +449,161 @@ pub fn get_env_defaults() -> SamplerConfig {
     SamplerConfig::from_env_defaults("env", "defaults")
 }
 
+// ============================================================================
+// Sampler Configuration Presets
+// ============================================================================
+// Recommended configurations for popular models based on extensive testing.
+// These can be imported into the database via the WebUI.
+
+/// Preset category for grouping related presets
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PresetCategory {
+    pub name: String,
+    pub description: String,
+    pub presets: Vec<SamplerConfig>,
+}
+
+/// Get all recommended sampler configuration presets
+pub fn get_recommended_presets() -> Vec<PresetCategory> {
+    vec![
+        PresetCategory {
+            name: "Ollama - Recommended".to_string(),
+            description: "Optimized settings for popular Ollama models".to_string(),
+            presets: vec![
+                create_preset("ollama", "hf.co/unsloth/GLM-4.7-Flash-GGUF:q8_0",
+                    0.7, 1.0, None, Some(0.01), 1.0, 51200, false,
+                    "GLM-4.7-Flash Q8 - Recommended for tool-calling with 50k context"),
+                create_preset("ollama", "qwen2.5:7b",
+                    0.7, 0.95, None, Some(0.05), 1.1, 32768, false,
+                    "Qwen 2.5 7B - Fast local model for simple tasks"),
+                create_preset("ollama", "qwen2.5:14b",
+                    0.7, 0.95, None, Some(0.05), 1.1, 32768, false,
+                    "Qwen 2.5 14B - Balanced performance"),
+                create_preset("ollama", "qwen2.5:32b",
+                    0.7, 0.95, None, Some(0.05), 1.1, 32768, false,
+                    "Qwen 2.5 32B - Larger model for complex reasoning"),
+                create_preset("ollama", "llama3.2:7b",
+                    0.8, 0.9, None, Some(0.05), 1.15, 8192, false,
+                    "Llama 3.2 7B - General purpose model"),
+                create_preset("ollama", "llama3.3:70b",
+                    0.7, 0.9, None, Some(0.05), 1.1, 131072, false,
+                    "Llama 3.3 70B - Large model with 128k context"),
+                create_preset("ollama", "mistral:7b",
+                    0.7, 0.95, None, Some(0.05), 1.1, 32768, false,
+                    "Mistral 7B - Fast reasoning model"),
+            ],
+        },
+        PresetCategory {
+            name: "llama.cpp - Recommended".to_string(),
+            description: "Optimized settings for llama.cpp server".to_string(),
+            presets: vec![
+                create_preset("llamacpp", "default",
+                    0.7, 1.0, None, Some(0.01), 1.0, 51200, false,
+                    "Default llama.cpp settings - applies when no model-specific config exists"),
+                create_preset("llamacpp", "GLM-4.7-Flash",
+                    0.7, 1.0, None, Some(0.01), 1.0, 51200, false,
+                    "GLM-4.7-Flash - Optimized for 50k context and tool-calling"),
+            ],
+        },
+        PresetCategory {
+            name: "Cloud Providers".to_string(),
+            description: "Settings for OpenAI, Anthropic, and other cloud APIs".to_string(),
+            presets: vec![
+                create_preset("openai", "gpt-4o",
+                    0.7, 1.0, None, None, 1.0, 128000, false,
+                    "GPT-4o - OpenAI's latest multimodal model"),
+                create_preset("openai", "gpt-4-turbo",
+                    0.7, 1.0, None, None, 1.0, 128000, false,
+                    "GPT-4 Turbo - Fast and capable"),
+                create_preset("anthropic", "claude-3-opus",
+                    0.7, 1.0, None, None, 1.0, 200000, false,
+                    "Claude 3 Opus - Most capable Anthropic model"),
+                create_preset("anthropic", "claude-3-sonnet",
+                    0.7, 1.0, None, None, 1.0, 200000, false,
+                    "Claude 3 Sonnet - Balanced performance"),
+            ],
+        },
+    ]
+}
+
+/// Helper to create a preset configuration
+fn create_preset(
+    provider: &str,
+    model_name: &str,
+    temperature: f32,
+    top_p: f32,
+    top_k: Option<i32>,
+    min_p: Option<f32>,
+    repeat_penalty: f32,
+    num_ctx: u32,
+    think_mode: bool,
+    description: &str,
+) -> SamplerConfig {
+    SamplerConfig {
+        id: None,
+        provider: provider.to_string(),
+        model_name: model_name.to_string(),
+        temperature: Some(temperature),
+        top_p: Some(top_p),
+        top_k,
+        min_p,
+        repeat_penalty: Some(repeat_penalty),
+        num_ctx: Some(num_ctx),
+        max_tokens: None,
+        think_mode,
+        stop_sequences: Vec::new(),
+        provider_options: serde_json::json!({}),
+        description: Some(description.to_string()),
+        created_at: None,
+        updated_at: None,
+    }
+}
+
+/// Import selected presets into the database
+pub async fn import_presets(
+    pool: &SqlitePool,
+    presets: &[SamplerConfig],
+    overwrite: bool,
+) -> Result<ImportResult, ApiError> {
+    let mut imported = 0;
+    let mut skipped = 0;
+
+    for preset in presets {
+        // Check if config already exists
+        let exists = sqlx::query_scalar::<_, i32>(
+            "SELECT COUNT(*) FROM ai_sampler_configs WHERE provider = ? AND model_name = ?"
+        )
+        .bind(&preset.provider)
+        .bind(&preset.model_name)
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0) > 0;
+
+        if exists && !overwrite {
+            skipped += 1;
+            continue;
+        }
+
+        match save_sampler_config(pool, preset).await {
+            Ok(_) => imported += 1,
+            Err(e) => {
+                error!("Failed to import preset {}/{}: {:?}", preset.provider, preset.model_name, e);
+                skipped += 1;
+            }
+        }
+    }
+
+    info!("Imported {} presets, skipped {}", imported, skipped);
+    Ok(ImportResult { imported, skipped })
+}
+
+/// Result of preset import operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImportResult {
+    pub imported: usize,
+    pub skipped: usize,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

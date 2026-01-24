@@ -58,6 +58,13 @@ interface McpTool {
   inputSchema?: Record<string, unknown>;
 }
 
+// Preset Category type
+export interface PresetCategory {
+  name: string;
+  description: string;
+  presets: SamplerConfig[];
+}
+
 // Utility function to handle API requests
 const apiRequest = async <T>(url: string, options?: RequestInit): Promise<T> => {
   const response = await fetch(url, {
@@ -374,6 +381,17 @@ export const apiClient = {
 
   getSamplerDefaults: async (): Promise<SamplerConfig> => {
     return await apiRequest<SamplerConfig>(`${API_BASE}/ai/sampler-configs/defaults`);
+  },
+
+  getSamplerPresets: async (): Promise<{ categories: PresetCategory[] }> => {
+    return await apiRequest<{ categories: PresetCategory[] }>(`${API_BASE}/ai/sampler-configs/presets`);
+  },
+
+  importSamplerPresets: async (presets: { provider: string; model_name: string }[], overwrite: boolean = false): Promise<{ message: string; imported: number; skipped: number }> => {
+    return await apiRequest<{ message: string; imported: number; skipped: number }>(`${API_BASE}/ai/sampler-configs/presets/import`, {
+      method: 'POST',
+      body: JSON.stringify({ presets, overwrite }),
+    });
   },
 };
 

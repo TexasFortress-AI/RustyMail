@@ -3302,6 +3302,77 @@ pub async fn get_env_defaults() -> Result<impl Responder, ApiError> {
     Ok(HttpResponse::Ok().json(defaults))
 }
 
+/// Get recommended sampler configuration presets
+pub async fn get_sampler_presets() -> Result<impl Responder, ApiError> {
+    debug!("Handling GET /api/dashboard/ai/sampler-configs/presets");
+
+    use crate::dashboard::services::ai::sampler_config;
+
+    let presets = sampler_config::get_recommended_presets();
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "categories": presets
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImportPresetsRequest {
+    pub presets: Vec<ImportPresetItem>,
+    #[serde(default)]
+    pub overwrite: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ImportPresetItem {
+    pub provider: String,
+    pub model_name: String,
+}
+
+/// Import selected presets into the database
+pub async fn import_sampler_presets(
+    req: web::Json<ImportPresetsRequest>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    debug!("Handling POST /api/dashboard/ai/sampler-configs/presets/import with {} presets",
+           req.presets.len());
+
+    let pool = match state.cache_service.db_pool.as_ref() {
+        Some(p) => p,
+        None => return Err(ApiError::InternalError("Database not initialized".to_string())),
+    };
+
+    use crate::dashboard::services::ai::sampler_config;
+
+    // Get all recommended presets
+    let all_presets = sampler_config::get_recommended_presets();
+
+    // Filter to only the selected presets
+    let selected_presets: Vec<_> = all_presets.iter()
+        .flat_map(|cat| cat.presets.iter())
+        .filter(|preset| {
+            req.presets.iter().any(|item| {
+                item.provider == preset.provider && item.model_name == preset.model_name
+            })
+        })
+        .cloned()
+        .collect();
+
+    if selected_presets.is_empty() {
+        return Err(ApiError::BadRequest("No matching presets found".to_string()));
+    }
+
+    match sampler_config::import_presets(pool, &selected_presets, req.overwrite).await {
+        Ok(result) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "message": format!("Imported {} presets, skipped {}", result.imported, result.skipped),
+            "imported": result.imported,
+            "skipped": result.skipped
+        }))),
+        Err(e) => {
+            error!("Failed to import presets: {:?}", e);
+            Err(ApiError::InternalError(format!("Failed to import presets: {:?}", e)))
+        }
+    }
+}
+
 /// Trigger an email sync using the separate sync process.
 /// This spawns the rustymail-sync binary which exits after sync, ensuring memory is returned to OS.
 ///
