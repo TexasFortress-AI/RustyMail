@@ -14,7 +14,7 @@ use tokio::sync::RwLock;
 use crate::api::errors::ApiError as RestApiError;
 use super::provider::{
     AiProvider, AiChatMessage,
-    OpenAiAdapter, OpenRouterAdapter, MorpheusAdapter, OllamaAdapter, LlamaCppAdapter, MockAiProvider,
+    OpenAiAdapter, OpenRouterAdapter, MorpheusAdapter, OllamaAdapter, LlamaCppAdapter, LmStudioAdapter, MockAiProvider,
     AnthropicAdapter, DeepSeekAdapter, XAIAdapter, GeminiAdapter,
     MistralAdapter, TogetherAdapter, AzureOpenAIAdapter
 };
@@ -40,6 +40,7 @@ pub enum ProviderType {
     Morpheus,
     Ollama,
     LlamaCpp,
+    LmStudio,
     Anthropic,
     DeepSeek,
     XAI,
@@ -210,6 +211,30 @@ impl ProviderManager {
             let provider = Arc::new(LlamaCppAdapter::new(base_url, self.http_client.clone()));
             self.providers.write().await.insert("llamacpp".to_string(), provider);
             info!("Initialized llama.cpp provider");
+        }
+
+        // Check for LM Studio configuration
+        if let Ok(base_url) = std::env::var("LMSTUDIO_BASE_URL") {
+            let config = ProviderConfig {
+                name: "lmstudio".to_string(),
+                provider_type: ProviderType::LmStudio,
+                api_key: None, // LM Studio doesn't require an API key
+                model: "local".to_string(), // Model is loaded in LM Studio
+                max_tokens: std::env::var("LMSTUDIO_MAX_TOKENS")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+                temperature: std::env::var("LMSTUDIO_TEMPERATURE")
+                    .ok()
+                    .and_then(|v| v.parse().ok()),
+                priority: 6,
+                enabled: true,
+            };
+            configs.push(config);
+
+            // Create LM Studio provider
+            let provider = Arc::new(LmStudioAdapter::new(base_url, self.http_client.clone()));
+            self.providers.write().await.insert("lmstudio".to_string(), provider);
+            info!("Initialized LM Studio provider");
         }
 
         // Check for Anthropic Claude configuration
@@ -443,6 +468,14 @@ impl ProviderManager {
                         message: "llama.cpp provider requires LLAMACPP_BASE_URL environment variable to be set".to_string()
                     })?;
                 Arc::new(LlamaCppAdapter::new(base_url, self.http_client.clone()))
+            },
+            ProviderType::LmStudio => {
+                // For LM Studio, we need a base URL from environment variable
+                let base_url = std::env::var("LMSTUDIO_BASE_URL")
+                    .map_err(|_| RestApiError::UnprocessableEntity {
+                        message: "LM Studio provider requires LMSTUDIO_BASE_URL environment variable to be set".to_string()
+                    })?;
+                Arc::new(LmStudioAdapter::new(base_url, self.http_client.clone()))
             },
             ProviderType::Anthropic => {
                 let api_key = config.api_key.as_ref()
@@ -705,6 +738,13 @@ impl ProviderManager {
                         message: "llama.cpp provider requires LLAMACPP_BASE_URL environment variable to be set".to_string()
                     })?;
                 Arc::new(LlamaCppAdapter::new(base_url, self.http_client.clone()))
+            },
+            ProviderType::LmStudio => {
+                let base_url = std::env::var("LMSTUDIO_BASE_URL")
+                    .map_err(|_| RestApiError::UnprocessableEntity {
+                        message: "LM Studio provider requires LMSTUDIO_BASE_URL environment variable to be set".to_string()
+                    })?;
+                Arc::new(LmStudioAdapter::new(base_url, self.http_client.clone()))
             },
             ProviderType::Anthropic => {
                 let api_key = config.api_key.as_ref()
