@@ -336,12 +336,15 @@ Best for **direct control** over email operations when you need fine-grained acc
          "command": "/absolute/path/to/RustyMail/target/release/rustymail-mcp-stdio",
          "env": {
            "MCP_BACKEND_URL": "http://localhost:9437/mcp",
-           "MCP_TIMEOUT": "30"
+           "MCP_TIMEOUT": "30",
+           "RUSTYMAIL_API_KEY": "your-api-key-from-.env"
          }
        }
      }
    }
    ```
+
+   **Note**: The `RUSTYMAIL_API_KEY` must match the value in your `.env` file.
 
 ### High-Level MCP Variant (Recommended for AI Agents)
 
@@ -380,14 +383,17 @@ Best for **AI-powered workflows** with natural language email management and red
          "command": "/absolute/path/to/RustyMail/target/release/rustymail-mcp-stdio-high-level",
          "env": {
            "MCP_BACKEND_URL": "http://localhost:9437/mcp",
-           "MCP_TIMEOUT": "120"
+           "MCP_TIMEOUT": "120",
+           "RUSTYMAIL_API_KEY": "your-api-key-from-.env"
          }
        }
      }
    }
    ```
 
-   **Note**: Higher timeout (120s) recommended for AI generation tasks.
+   **Notes**:
+   - Higher timeout (120s) recommended for AI generation tasks
+   - The `RUSTYMAIL_API_KEY` must match the value in your `.env` file
 
 ### High-Level Tools Reference
 
