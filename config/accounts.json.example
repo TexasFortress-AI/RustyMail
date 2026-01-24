@@ -1,0 +1,45 @@
+{
+  "version": "1.0",
+  "default_account_id": "user@gmail.com",
+  "accounts": [
+    {
+      "display_name": "Default (user@gmail.com)",
+      "email_address": "user@gmail.com",
+      "provider_type": "custom",
+      "imap": {
+        "host": "your-host",
+        "port": 993,
+        "username": "user@gmail.com",
+        "password": "your-app-password",
+        "use_tls": true
+      },
+      "smtp": null,
+      "is_active": true,
+      "created_at": "2025-10-08T12:24:12.271211Z",
+      "updated_at": "2025-10-08T12:24:12.271211Z"
+    },
+    {
+      "display_name": "User (user@company.com)",
+      "email_address": "user@company.com",
+      "provider_type": "Auto-discovered",
+      "imap": {
+        "host": "your-host",
+        "port": 993,
+        "username": "user@company.com",
+        "password": "your-password",
+        "use_tls": true
+      },
+      "smtp": {
+        "host": "your-host",
+        "port": 465,
+        "username": "user@company.com",
+        "password": "your-password",
+        "use_tls": true,
+        "use_starttls": false
+      },
+      "is_active": true,
+      "created_at": "2025-10-08T12:46:57.845681Z",
+      "updated_at": "2025-10-08T12:46:57.845682Z"
+    }
+  ]
+}

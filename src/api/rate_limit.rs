@@ -15,9 +15,7 @@ use actix_web::{
 };
 use futures_util::future::{ok, Ready, LocalBoxFuture};
 use log::{debug, warn};
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use tokio::sync::RwLock;
@@ -170,7 +168,7 @@ impl RateLimitMiddleware {
 
 impl<S, B> Transform<S, ServiceRequest> for RateLimitMiddleware
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + Clone + 'static,
     B: 'static,
 {
     type Response = ServiceResponse<actix_web::body::EitherBody<B>>;
@@ -181,34 +179,35 @@ where
 
     fn new_transform(&self, service: S) -> Self::Future {
         ok(RateLimitMiddlewareService {
-            service: Rc::new(RefCell::new(service)),
+            service,
             state: self.state.clone(),
         })
     }
 }
 
 /// Rate limiting middleware service
+#[derive(Clone)]
 pub struct RateLimitMiddlewareService<S> {
-    service: Rc<RefCell<S>>,
+    service: S,
     state: RateLimiterState,
 }
 
 impl<S, B> Service<ServiceRequest> for RateLimitMiddlewareService<S>
 where
-    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + 'static,
+    S: Service<ServiceRequest, Response = ServiceResponse<B>, Error = Error> + Clone + 'static,
     B: 'static,
 {
     type Response = ServiceResponse<actix_web::body::EitherBody<B>>;
     type Error = Error;
     type Future = LocalBoxFuture<'static, Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&self, ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.service.borrow_mut().poll_ready(ctx)
+    fn poll_ready(&self, _ctx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        Poll::Ready(Ok(()))
     }
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
         let state = self.state.clone();
-        let service = Rc::clone(&self.service);
+        let service = self.service.clone();
 
         // Extract client IP - check proxy headers first, then peer address
         let client_ip = extract_client_ip(&req);
@@ -219,7 +218,7 @@ where
             match state.check_and_increment(&client_ip).await {
                 Ok((remaining, reset)) => {
                     // Request allowed - call the inner service
-                    let mut res = service.borrow_mut().call(req).await?;
+                    let mut res = service.call(req).await?;
 
                     // Add rate limit headers to response
                     let headers = res.headers_mut();

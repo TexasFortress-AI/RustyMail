@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS ai_model_configurations (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+DROP TRIGGER IF EXISTS update_ai_model_config_timestamp;
+
 CREATE TRIGGER update_ai_model_config_timestamp
     AFTER UPDATE ON ai_model_configurations
     BEGIN
@@ -18,11 +20,9 @@ CREATE TRIGGER update_ai_model_config_timestamp
         WHERE role = NEW.role;
     END;
 
--- Insert default configurations
--- Tool-calling model: lightweight model for routing and executing workflows
-INSERT OR IGNORE INTO ai_model_configurations (role, provider, model_name, base_url)
-VALUES ('tool_calling', 'ollama', 'qwen3:4b-q8_0', 'http://localhost:11434');
-
--- Drafting model: larger model for generating email text
-INSERT OR IGNORE INTO ai_model_configurations (role, provider, model_name, base_url)
-VALUES ('drafting', 'ollama', 'gemma3:27b-it-q8_0', 'http://localhost:11434');
+-- No default configurations inserted - users must configure their AI models
+-- via the WebUI Settings page or MCP tools before using AI features.
+--
+-- Recommended models (see .env.example for full documentation):
+--   tool_calling: hf.co/unsloth/GLM-4.7-Flash-GGUF:q8_0 (via Ollama)
+--   drafting:     gemma3:27b-it-q8_0 (via Ollama)

@@ -274,7 +274,7 @@
         "description": "Add /settings/ai-models page to dashboard",
         "details": "Create UI for configuring tool-calling and drafting models. Include provider dropdown, model name input with autocomplete, base URL input, API key input, test connection button, save button. Display current configurations. Wire up to backend API endpoints.",
         "testStrategy": "",
-        "status": "deferred",
+        "status": "done",
         "dependencies": [
           "4"
         ],
@@ -282,7 +282,8 @@
         "subtasks": [],
         "complexity": 6,
         "recommendedSubtasks": 7,
-        "expansionPrompt": "Build NLP to MCP pipeline: 1) Design natural language processing pipeline using RIG, 2) Create prompt templates for common email operations ('show unread emails', 'emails from sender', 'move emails to folder'), 3) Implement intent recognition and mapping to MCP method calls, 4) Add conversation context tracking for follow-up queries, 5) Create query parsing and validation, 6) Test natural language understanding with various query formats, 7) Verify correct MCP operation mapping and context maintenance"
+        "expansionPrompt": "Build NLP to MCP pipeline: 1) Design natural language processing pipeline using RIG, 2) Create prompt templates for common email operations ('show unread emails', 'emails from sender', 'move emails to folder'), 3) Implement intent recognition and mapping to MCP method calls, 4) Add conversation context tracking for follow-up queries, 5) Create query parsing and validation, 6) Test natural language understanding with various query formats, 7) Verify correct MCP operation mapping and context maintenance",
+        "updatedAt": "2026-01-24T14:18:15.055Z"
       },
       {
         "id": "15",
@@ -427,14 +428,14 @@
         "description": "Modify Ollama provider to support additional_config parameters and update Qwen3 model configuration to disable thinking mode for faster response times.",
         "details": "Update the Ollama provider implementation to read and apply additional_config parameters from the ai_model_configurations table: 1) Modify OllamaChatRequest struct in src/dashboard/services/ai/provider/ollama.rs to include optional additional parameters field, 2) Update OllamaAdapter::generate_response() method to fetch model configuration using get_model_config() and parse additional_config JSON to extract provider-specific parameters, 3) Add logic to merge additional_config parameters into the Ollama API request payload, 4) Use set_model_config() to update the Qwen3 model configuration with additional_config JSON: {\"enable_thinking\": false}, 5) Test that the parameter is properly passed to Ollama API and that thinking blocks are no longer generated in responses. The additional_config field should be parsed as JSON and merged into the request body sent to Ollama's /v1/chat/completions endpoint.",
         "testStrategy": "Test by: 1) Verifying that the Ollama provider properly reads additional_config from database and parses JSON parameters, 2) Confirming that enable_thinking=false parameter is included in API requests to Ollama for Qwen3 model, 3) Testing that Qwen3 responses no longer contain <think> blocks and show improved response speed, 4) Verifying that other models without this configuration continue to work normally, 5) Testing configuration updates through MCP tools to ensure the additional_config field can be modified and persisted correctly.",
-        "status": "deferred",
+        "status": "done",
         "dependencies": [
           "2",
           "4"
         ],
         "priority": "medium",
         "subtasks": [],
-        "updatedAt": "2026-01-23T11:46:31.371Z"
+        "updatedAt": "2026-01-24T14:18:16.982Z"
       },
       {
         "id": "22",
@@ -594,9 +595,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-01-23T12:01:56.488Z",
+      "lastModified": "2026-01-24T14:18:16.983Z",
       "taskCount": 32,
-      "completedCount": 29,
+      "completedCount": 31,
       "tags": [
         "master"
       ]

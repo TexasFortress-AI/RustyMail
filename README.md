@@ -363,12 +363,12 @@ Best for **AI-powered workflows** with natural language email management and red
 2. **Configure AI models** (first-time setup):
 
    The high-level variant uses two AI roles:
-   - **Tool-calling model** (e.g., `qwen3:4b-q8_0`) - Routes tasks and calls tools
+   - **Tool-calling model** (e.g., `hf.co/unsloth/GLM-4.7-Flash-GGUF:q8_0`) - Routes tasks and calls tools
    - **Drafting model** (e.g., `gemma3:27b-it-q8_0`) - Generates email content
 
    Configure via Claude Desktop using the MCP tools:
    ```
-   "Set tool calling model to ollama qwen3:4b-q8_0 at http://localhost:11434"
+   "Set tool calling model to ollama hf.co/unsloth/GLM-4.7-Flash-GGUF:q8_0 at http://localhost:11434"
    "Set drafting model to ollama gemma3:27b-it-q8_0 at http://localhost:11434"
    ```
 

@@ -223,7 +223,7 @@ pub fn get_mcp_high_level_tools_jsonrpc_format() -> Vec<Value> {
                     },
                     "model_name": {
                         "type": "string",
-                        "description": "Model name (e.g., 'qwen3:4b-q8_0', 'gpt-4')"
+                        "description": "Model name (e.g., 'hf.co/unsloth/GLM-4.7-Flash-GGUF:q8_0', 'gpt-4')"
                     },
                     "base_url": {
                         "type": "string",

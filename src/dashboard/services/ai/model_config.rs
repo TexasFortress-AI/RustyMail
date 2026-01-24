@@ -12,7 +12,7 @@ use crate::api::errors::ApiError;
 pub struct ModelConfiguration {
     pub role: String,  // 'tool_calling' or 'drafting'
     pub provider: String,  // 'ollama', 'openai', 'anthropic', etc.
-    pub model_name: String,  // e.g., 'qwen3:4b-q8_0', 'gemma3:27b-it-q8_0'
+    pub model_name: String,  // e.g., 'hf.co/unsloth/GLM-4.7-Flash-GGUF:q8_0', 'gemma3:27b-it-q8_0'
     pub base_url: Option<String>,  // Provider API base URL
     pub api_key: Option<String>,  // Optional API key
     pub additional_config: Option<String>,  // JSON for provider-specific settings
@@ -173,13 +173,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_model_configuration_builder() {
-        let config = ModelConfiguration::new("tool_calling", "ollama", "qwen3:4b-q8_0")
+        let config = ModelConfiguration::new("tool_calling", "ollama", "hf.co/unsloth/GLM-4.7-Flash-GGUF:q8_0")
             .with_base_url("http://localhost:11434")
             .with_api_key("test-key");
 
         assert_eq!(config.role, "tool_calling");
         assert_eq!(config.provider, "ollama");
-        assert_eq!(config.model_name, "qwen3:4b-q8_0");
+        assert_eq!(config.model_name, "hf.co/unsloth/GLM-4.7-Flash-GGUF:q8_0");
         assert_eq!(config.base_url, Some("http://localhost:11434".to_string()));
         assert_eq!(config.api_key, Some("test-key".to_string()));
     }
