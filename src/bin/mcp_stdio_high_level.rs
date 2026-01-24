@@ -20,6 +20,10 @@ struct Cli {
     #[arg(long, env = "MCP_TIMEOUT", default_value = "30")]
     timeout: u64,
 
+    /// API key for authentication with the backend.
+    #[arg(long, env = "RUSTYMAIL_API_KEY")]
+    api_key: Option<String>,
+
     /// Path to the configuration file.
     #[arg(short, long)]
     config: Option<String>,
@@ -86,8 +90,12 @@ async fn main() {
                             continue;
                         }
 
-                        // Forward request to backend
-                        match client.post(&cli.backend_url).json(&request).send().await {
+                        // Forward request to backend (with API key if configured)
+                        let mut request_builder = client.post(&cli.backend_url).json(&request);
+                        if let Some(ref api_key) = cli.api_key {
+                            request_builder = request_builder.header("X-API-Key", api_key);
+                        }
+                        match request_builder.send().await {
                             Ok(response) => {
                                 let status = response.status();
 
