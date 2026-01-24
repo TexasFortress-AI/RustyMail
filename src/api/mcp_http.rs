@@ -171,8 +171,12 @@ impl Stream for McpSseStream {
 /// Uses exact origin matching from ALLOWED_ORIGINS environment variable
 fn validate_origin(req: &HttpRequest) -> bool {
     // Get allowed origins from environment (same as CORS config)
+    // Fallback uses DASHBOARD_PORT env var to avoid hardcoding port numbers
     let allowed_origins_str = std::env::var("ALLOWED_ORIGINS")
-        .unwrap_or_else(|_| "http://localhost:9439,http://127.0.0.1:9439".to_string());
+        .unwrap_or_else(|_| {
+            let port = std::env::var("DASHBOARD_PORT").unwrap_or_else(|_| "9439".to_string());
+            format!("http://localhost:{},http://127.0.0.1:{}", port, port)
+        });
 
     let allowed_origins: Vec<String> = allowed_origins_str
         .split(',')

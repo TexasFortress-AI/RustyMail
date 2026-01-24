@@ -275,10 +275,12 @@ async fn main() -> std::io::Result<()> {
             rate_limit_config.per_ip_per_hour);
 
         // Configure CORS with secure whitelist-based approach
+        // Fallback uses DASHBOARD_PORT env var to avoid hardcoding port numbers
         let allowed_origins_str = std::env::var("ALLOWED_ORIGINS")
             .unwrap_or_else(|_| {
-                warn!("ALLOWED_ORIGINS not set, defaulting to localhost:9439 only for development safety");
-                "http://localhost:9439,http://127.0.0.1:9439".to_string()
+                let port = std::env::var("DASHBOARD_PORT").unwrap_or_else(|_| "9439".to_string());
+                warn!("ALLOWED_ORIGINS not set, defaulting to localhost:{} only for development safety", port);
+                format!("http://localhost:{},http://127.0.0.1:{}", port, port)
             });
 
         let allowed_origins: Vec<String> = allowed_origins_str

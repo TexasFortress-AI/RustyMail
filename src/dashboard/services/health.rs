@@ -102,8 +102,14 @@ impl Default for HealthThresholds {
             memory_critical: 90.0,
             disk_warning: 80.0,
             disk_critical: 95.0,
-            response_time_warning_ms: 1000,
-            response_time_critical_ms: 5000,
+            response_time_warning_ms: std::env::var("HEALTH_RESPONSE_TIME_WARNING_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1000),
+            response_time_critical_ms: std::env::var("HEALTH_RESPONSE_TIME_CRITICAL_MS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(5000),
             connection_pool_warning: 50,
             connection_pool_critical: 80,
         }
