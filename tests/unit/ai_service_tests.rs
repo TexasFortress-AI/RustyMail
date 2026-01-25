@@ -448,3 +448,106 @@ async fn test_provider_manager_get_current_model() {
     let model_name = manager.get_current_model_name().await;
     assert_eq!(model_name, Some("test-model-123".to_string()));
 }
+
+// ==============================================
+// AI Configuration Tests (Tasks 38-41)
+// ==============================================
+
+#[test]
+fn test_tool_calling_providers_list() {
+    // Test that TOOL_CALLING_PROVIDERS constant is defined and includes expected providers
+    use rustymail::dashboard::services::ai::agent_executor::TOOL_CALLING_PROVIDERS;
+
+    assert!(TOOL_CALLING_PROVIDERS.contains(&"ollama"), "Ollama should support tool calling");
+    assert!(TOOL_CALLING_PROVIDERS.contains(&"llamacpp"), "llama.cpp should support tool calling");
+    assert!(TOOL_CALLING_PROVIDERS.contains(&"lmstudio"), "LM Studio should support tool calling");
+}
+
+#[test]
+fn test_supports_tool_calling_function() {
+    use rustymail::dashboard::services::ai::agent_executor::supports_tool_calling;
+
+    // Test supported providers
+    assert!(supports_tool_calling("ollama"), "Ollama should be supported");
+    assert!(supports_tool_calling("llamacpp"), "llama.cpp should be supported");
+    assert!(supports_tool_calling("lmstudio"), "LM Studio should be supported");
+
+    // Test unsupported providers
+    assert!(!supports_tool_calling("anthropic"), "Anthropic not yet supported");
+    assert!(!supports_tool_calling("unknown"), "Unknown provider should not be supported");
+}
+
+#[test]
+fn test_drafting_providers_list() {
+    // Test that DRAFTING_PROVIDERS constant is defined and includes expected providers
+    use rustymail::dashboard::services::ai::email_drafter::DRAFTING_PROVIDERS;
+
+    assert!(DRAFTING_PROVIDERS.contains(&"ollama"), "Ollama should support drafting");
+    assert!(DRAFTING_PROVIDERS.contains(&"openai"), "OpenAI should support drafting");
+    assert!(DRAFTING_PROVIDERS.contains(&"llamacpp"), "llama.cpp should support drafting");
+    assert!(DRAFTING_PROVIDERS.contains(&"lmstudio"), "LM Studio should support drafting");
+}
+
+#[test]
+fn test_sampler_config_effective_methods() {
+    use rustymail::dashboard::services::ai::sampler_config::SamplerConfig;
+
+    // Test that effective_* methods work with None values (should use defaults)
+    let config = SamplerConfig::new("ollama", "test-model");
+
+    // These methods should return sensible defaults, not panic
+    let temp = config.effective_temperature();
+    assert!(temp > 0.0 && temp < 2.0, "Temperature should be in valid range");
+
+    let top_p = config.effective_top_p();
+    assert!(top_p > 0.0 && top_p <= 1.0, "top_p should be in valid range");
+
+    let min_p = config.effective_min_p();
+    assert!(min_p >= 0.0 && min_p <= 1.0, "min_p should be in valid range");
+
+    let repeat_penalty = config.effective_repeat_penalty();
+    assert!(repeat_penalty >= 0.0, "repeat_penalty should be non-negative");
+
+    let num_ctx = config.effective_num_ctx();
+    assert!(num_ctx >= 2048, "num_ctx should be at least 2048");
+}
+
+#[test]
+fn test_sampler_config_with_custom_values() {
+    use rustymail::dashboard::services::ai::sampler_config::SamplerConfig;
+
+    let mut config = SamplerConfig::new("ollama", "test-model");
+    config.temperature = Some(0.3);
+    config.top_p = Some(0.95);
+    config.min_p = Some(0.05);
+    config.repeat_penalty = Some(1.2);
+    config.num_ctx = Some(8192);
+
+    assert_eq!(config.effective_temperature(), 0.3);
+    assert_eq!(config.effective_top_p(), 0.95);
+    assert_eq!(config.effective_min_p(), 0.05);
+    assert_eq!(config.effective_repeat_penalty(), 1.2);
+    assert_eq!(config.effective_num_ctx(), 8192);
+}
+
+#[test]
+fn test_model_configuration_builder() {
+    use rustymail::dashboard::services::ai::model_config::ModelConfiguration;
+
+    let config = ModelConfiguration::new("tool_calling", "ollama", "qwen2.5:7b")
+        .with_base_url("http://localhost:11434")
+        .with_api_key("test-key");
+
+    assert_eq!(config.role, "tool_calling");
+    assert_eq!(config.provider, "ollama");
+    assert_eq!(config.model_name, "qwen2.5:7b");
+    assert_eq!(config.base_url, Some("http://localhost:11434".to_string()));
+    assert_eq!(config.api_key, Some("test-key".to_string()));
+}
+
+#[test]
+fn test_chatbot_role_constant() {
+    use rustymail::dashboard::services::ai::provider_manager::ROLE_CHATBOT;
+
+    assert_eq!(ROLE_CHATBOT, "chatbot", "Chatbot role should be 'chatbot'");
+}
