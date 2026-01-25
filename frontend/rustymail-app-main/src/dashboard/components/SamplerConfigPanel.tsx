@@ -41,6 +41,21 @@ import {
   useModelsForProvider,
 } from '../api/hooks';
 
+// All supported providers (shown in dropdown regardless of configuration status)
+const ALL_SUPPORTED_PROVIDERS = [
+  { name: 'ollama', label: 'Ollama' },
+  { name: 'llamacpp', label: 'llama.cpp' },
+  { name: 'lmstudio', label: 'LM Studio' },
+  { name: 'openai', label: 'OpenAI' },
+  { name: 'anthropic', label: 'Anthropic' },
+  { name: 'openrouter', label: 'OpenRouter' },
+  { name: 'deepseek', label: 'DeepSeek' },
+  { name: 'xai', label: 'xAI (Grok)' },
+  { name: 'gemini', label: 'Google Gemini' },
+  { name: 'mistral', label: 'Mistral AI' },
+  { name: 'morpheus', label: 'Morpheus' },
+];
+
 // Provider-specific field visibility
 const PROVIDER_FIELDS: Record<string, string[]> = {
   ollama: ['temperature', 'topP', 'topK', 'minP', 'typicalP', 'repeatPenalty', 'numCtx', 'thinkMode', 'stopSequences', 'systemPrompt'],
@@ -48,6 +63,12 @@ const PROVIDER_FIELDS: Record<string, string[]> = {
   lmstudio: ['temperature', 'topP', 'topK', 'minP', 'typicalP', 'repeatPenalty', 'numCtx', 'maxTokens', 'stopSequences', 'systemPrompt'],
   openai: ['temperature', 'topP', 'maxTokens', 'stopSequences', 'systemPrompt'],
   anthropic: ['temperature', 'topP', 'maxTokens', 'stopSequences', 'systemPrompt'],
+  openrouter: ['temperature', 'topP', 'maxTokens', 'stopSequences', 'systemPrompt'],
+  deepseek: ['temperature', 'topP', 'maxTokens', 'stopSequences', 'systemPrompt'],
+  xai: ['temperature', 'topP', 'maxTokens', 'stopSequences', 'systemPrompt'],
+  gemini: ['temperature', 'topP', 'maxTokens', 'stopSequences', 'systemPrompt'],
+  mistral: ['temperature', 'topP', 'maxTokens', 'stopSequences', 'systemPrompt'],
+  morpheus: ['temperature', 'topP', 'maxTokens', 'stopSequences', 'systemPrompt'],
   default: ['temperature', 'topP', 'topK', 'minP', 'typicalP', 'repeatPenalty', 'numCtx', 'maxTokens', 'thinkMode', 'stopSequences', 'systemPrompt'],
 };
 
@@ -103,8 +124,8 @@ const SamplerConfigPanel: React.FC = () => {
   const [selectedPresets, setSelectedPresets] = useState<Set<string>>(new Set());
   const [overwriteExisting, setOverwriteExisting] = useState(false);
 
-  // API hooks
-  const { data: providersData, isLoading: isLoadingProviders } = useAiProviders();
+  // API hooks - providersData used to check which providers are configured
+  const { data: providersData } = useAiProviders();
   const { data: modelsData, isLoading: isLoadingModels } = useModelsForProvider(selectedProvider || null);
   const { data: samplerConfig, isLoading: isLoadingConfig } = useSamplerConfig(
     selectedProvider || null,
@@ -230,7 +251,8 @@ const SamplerConfigPanel: React.FC = () => {
     }
   };
 
-  const enabledProviders = providersData?.availableProviders?.filter(p => p.enabled) || [];
+  // Check which providers are currently configured (for showing status indicators)
+  const configuredProviders = new Set(providersData?.availableProviders?.map(p => p.name) || []);
 
   // Check if current model has a saved config
   const hasSavedConfig = existingConfigs?.configs?.some(
@@ -279,17 +301,6 @@ const SamplerConfigPanel: React.FC = () => {
     setPresetDialogOpen(false);
     setSelectedPresets(new Set());
   };
-
-  if (isLoadingProviders) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-          <p className="text-muted-foreground">Loading providers...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="h-full overflow-auto p-6">
@@ -409,9 +420,14 @@ const SamplerConfigPanel: React.FC = () => {
                     <SelectValue placeholder="Select a provider" />
                   </SelectTrigger>
                   <SelectContent>
-                    {enabledProviders.map((provider) => (
+                    {ALL_SUPPORTED_PROVIDERS.map((provider) => (
                       <SelectItem key={provider.name} value={provider.name}>
-                        {provider.name.charAt(0).toUpperCase() + provider.name.slice(1)}
+                        <span className="flex items-center gap-2">
+                          {provider.label}
+                          {configuredProviders.has(provider.name) && (
+                            <span className="text-xs text-green-500">(active)</span>
+                          )}
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -430,13 +446,13 @@ const SamplerConfigPanel: React.FC = () => {
                   <div className="h-10 px-3 border rounded-md bg-muted flex items-center">
                     <span className="text-sm text-muted-foreground">Select a provider first</span>
                   </div>
-                ) : (
+                ) : modelsData?.available_models && modelsData.available_models.length > 0 ? (
                   <Select value={selectedModel} onValueChange={handleModelChange}>
                     <SelectTrigger id="model">
                       <SelectValue placeholder="Select a model" />
                     </SelectTrigger>
                     <SelectContent>
-                      {modelsData?.available_models?.map((model) => (
+                      {modelsData.available_models.map((model) => (
                         <SelectItem key={model} value={model}>
                           <div className="truncate max-w-[250px]" title={model}>
                             {model}
@@ -445,6 +461,13 @@ const SamplerConfigPanel: React.FC = () => {
                       ))}
                     </SelectContent>
                   </Select>
+                ) : (
+                  <Input
+                    id="model"
+                    placeholder="Enter model name (e.g., gpt-4o, claude-sonnet-4-5)"
+                    value={selectedModel}
+                    onChange={(e) => handleModelChange(e.target.value)}
+                  />
                 )}
               </div>
             </div>
