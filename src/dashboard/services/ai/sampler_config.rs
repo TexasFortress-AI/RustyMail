@@ -11,9 +11,63 @@
 //   3. Code defaults (fallback)
 
 use serde::{Serialize, Deserialize};
-use sqlx::SqlitePool;
+use sqlx::{SqlitePool, FromRow};
 use log::{debug, error, info};
 use crate::api::errors::ApiError;
+
+/// Database row for ai_sampler_configs table
+/// Used internally for SQLx queries (derives FromRow)
+#[derive(Debug, FromRow)]
+struct SamplerConfigRow {
+    id: i64,
+    provider: String,
+    model_name: String,
+    temperature: Option<f64>,
+    top_p: Option<f64>,
+    top_k: Option<i32>,
+    min_p: Option<f64>,
+    typical_p: Option<f64>,
+    repeat_penalty: Option<f64>,
+    num_ctx: Option<i32>,
+    max_tokens: Option<i32>,
+    think_mode: i32,
+    stop_sequences: String,
+    system_prompt: Option<String>,
+    provider_options: String,
+    description: Option<String>,
+    created_at: Option<String>,
+    updated_at: Option<String>,
+}
+
+impl SamplerConfigRow {
+    /// Convert database row to SamplerConfig
+    fn into_config(self) -> SamplerConfig {
+        let stop_sequences: Vec<String> = serde_json::from_str(&self.stop_sequences).unwrap_or_default();
+        let provider_options: serde_json::Value = serde_json::from_str(&self.provider_options)
+            .unwrap_or_else(|_| serde_json::json!({}));
+
+        SamplerConfig {
+            id: Some(self.id),
+            provider: self.provider,
+            model_name: self.model_name,
+            temperature: self.temperature.map(|v| v as f32),
+            top_p: self.top_p.map(|v| v as f32),
+            top_k: self.top_k,
+            min_p: self.min_p.map(|v| v as f32),
+            typical_p: self.typical_p.map(|v| v as f32),
+            repeat_penalty: self.repeat_penalty.map(|v| v as f32),
+            num_ctx: self.num_ctx.map(|v| v as u32),
+            max_tokens: self.max_tokens.map(|v| v as u32),
+            think_mode: self.think_mode != 0,
+            stop_sequences,
+            system_prompt: self.system_prompt,
+            provider_options,
+            description: self.description,
+            created_at: self.created_at,
+            updated_at: self.updated_at,
+        }
+    }
+}
 
 /// Default sampler values (code fallbacks)
 /// These are only used when both DB and env vars are missing
@@ -36,11 +90,13 @@ pub struct SamplerConfig {
     pub top_p: Option<f32>,
     pub top_k: Option<i32>,
     pub min_p: Option<f32>,
+    pub typical_p: Option<f32>,  // top-n-sigma / tail-free sampling
     pub repeat_penalty: Option<f32>,
     pub num_ctx: Option<u32>,
     pub max_tokens: Option<u32>,
     pub think_mode: bool,
     pub stop_sequences: Vec<String>,
+    pub system_prompt: Option<String>,  // Custom system prompt override
     pub provider_options: serde_json::Value,
     pub description: Option<String>,
     pub created_at: Option<String>,
@@ -58,11 +114,13 @@ impl SamplerConfig {
             top_p: None,
             top_k: None,
             min_p: None,
+            typical_p: None,
             repeat_penalty: None,
             num_ctx: None,
             max_tokens: None,
             think_mode: false,
             stop_sequences: Vec::new(),
+            system_prompt: None,
             provider_options: serde_json::json!({}),
             description: None,
             created_at: None,
@@ -112,6 +170,13 @@ impl SamplerConfig {
             .ok()
             .map(|v| v.to_lowercase() == "true" || v == "1")
             .unwrap_or(defaults::THINK_MODE);
+
+        config.typical_p = std::env::var("SAMPLER_DEFAULT_TYPICAL_P")
+            .ok()
+            .and_then(|v| v.parse().ok());
+
+        config.system_prompt = std::env::var("SAMPLER_DEFAULT_SYSTEM_PROMPT")
+            .ok();
 
         config
     }
@@ -184,26 +249,9 @@ pub async fn get_sampler_config(
     debug!("Fetching sampler config for provider: {}, model: {}", provider, model_name);
 
     // Try to get from database first
-    let row = sqlx::query_as::<_, (
-        i64,           // id
-        String,        // provider
-        String,        // model_name
-        Option<f64>,   // temperature (REAL in SQLite)
-        Option<f64>,   // top_p
-        Option<i32>,   // top_k
-        Option<f64>,   // min_p
-        Option<f64>,   // repeat_penalty
-        Option<i32>,   // num_ctx
-        Option<i32>,   // max_tokens
-        i32,           // think_mode (INTEGER in SQLite)
-        String,        // stop_sequences
-        String,        // provider_options
-        Option<String>,// description
-        Option<String>,// created_at
-        Option<String>,// updated_at
-    )>(
-        "SELECT id, provider, model_name, temperature, top_p, top_k, min_p, repeat_penalty,
-                num_ctx, max_tokens, think_mode, stop_sequences, provider_options,
+    let row = sqlx::query_as::<_, SamplerConfigRow>(
+        "SELECT id, provider, model_name, temperature, top_p, top_k, min_p, typical_p, repeat_penalty,
+                num_ctx, max_tokens, think_mode, stop_sequences, system_prompt, provider_options,
                 description, created_at, updated_at
          FROM ai_sampler_configs
          WHERE provider = ? AND model_name = ?"
@@ -218,34 +266,9 @@ pub async fn get_sampler_config(
     })?;
 
     match row {
-        Some((id, prov, model, temp, top_p, top_k, min_p, repeat_pen, num_ctx, max_tok, think, stop_seq, prov_opts, desc, created, updated)) => {
+        Some(db_row) => {
             info!("Found sampler config in database for {}/{}", provider, model_name);
-
-            // Parse stop_sequences JSON
-            let stop_sequences: Vec<String> = serde_json::from_str(&stop_seq).unwrap_or_default();
-
-            // Parse provider_options JSON
-            let provider_options: serde_json::Value = serde_json::from_str(&prov_opts)
-                .unwrap_or_else(|_| serde_json::json!({}));
-
-            Ok(SamplerConfig {
-                id: Some(id),
-                provider: prov,
-                model_name: model,
-                temperature: temp.map(|v| v as f32),
-                top_p: top_p.map(|v| v as f32),
-                top_k,
-                min_p: min_p.map(|v| v as f32),
-                repeat_penalty: repeat_pen.map(|v| v as f32),
-                num_ctx: num_ctx.map(|v| v as u32),
-                max_tokens: max_tok.map(|v| v as u32),
-                think_mode: think != 0,
-                stop_sequences,
-                provider_options,
-                description: desc,
-                created_at: created,
-                updated_at: updated,
-            })
+            Ok(db_row.into_config())
         }
         None => {
             debug!("No sampler config in DB for {}/{}, using env defaults", provider, model_name);
@@ -269,19 +292,21 @@ pub async fn save_sampler_config(pool: &SqlitePool, config: &SamplerConfig) -> R
 
     let result = sqlx::query(
         "INSERT INTO ai_sampler_configs (
-            provider, model_name, temperature, top_p, top_k, min_p, repeat_penalty,
-            num_ctx, max_tokens, think_mode, stop_sequences, provider_options, description
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            provider, model_name, temperature, top_p, top_k, min_p, typical_p, repeat_penalty,
+            num_ctx, max_tokens, think_mode, stop_sequences, system_prompt, provider_options, description
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(provider, model_name) DO UPDATE SET
             temperature = excluded.temperature,
             top_p = excluded.top_p,
             top_k = excluded.top_k,
             min_p = excluded.min_p,
+            typical_p = excluded.typical_p,
             repeat_penalty = excluded.repeat_penalty,
             num_ctx = excluded.num_ctx,
             max_tokens = excluded.max_tokens,
             think_mode = excluded.think_mode,
             stop_sequences = excluded.stop_sequences,
+            system_prompt = excluded.system_prompt,
             provider_options = excluded.provider_options,
             description = excluded.description"
     )
@@ -291,11 +316,13 @@ pub async fn save_sampler_config(pool: &SqlitePool, config: &SamplerConfig) -> R
     .bind(config.top_p.map(|v| v as f64))
     .bind(config.top_k)
     .bind(config.min_p.map(|v| v as f64))
+    .bind(config.typical_p.map(|v| v as f64))
     .bind(config.repeat_penalty.map(|v| v as f64))
     .bind(config.num_ctx.map(|v| v as i32))
     .bind(config.max_tokens.map(|v| v as i32))
     .bind(if config.think_mode { 1 } else { 0 })
     .bind(&stop_seq_json)
+    .bind(&config.system_prompt)
     .bind(&prov_opts_json)
     .bind(&config.description)
     .execute(pool)
@@ -313,13 +340,9 @@ pub async fn save_sampler_config(pool: &SqlitePool, config: &SamplerConfig) -> R
 pub async fn list_sampler_configs(pool: &SqlitePool) -> Result<Vec<SamplerConfig>, ApiError> {
     debug!("Listing all sampler configs");
 
-    let rows = sqlx::query_as::<_, (
-        i64, String, String, Option<f64>, Option<f64>, Option<i32>,
-        Option<f64>, Option<f64>, Option<i32>, Option<i32>, i32,
-        String, String, Option<String>, Option<String>, Option<String>,
-    )>(
-        "SELECT id, provider, model_name, temperature, top_p, top_k, min_p, repeat_penalty,
-                num_ctx, max_tokens, think_mode, stop_sequences, provider_options,
+    let rows = sqlx::query_as::<_, SamplerConfigRow>(
+        "SELECT id, provider, model_name, temperature, top_p, top_k, min_p, typical_p, repeat_penalty,
+                num_ctx, max_tokens, think_mode, stop_sequences, system_prompt, provider_options,
                 description, created_at, updated_at
          FROM ai_sampler_configs
          ORDER BY provider, model_name"
@@ -331,31 +354,7 @@ pub async fn list_sampler_configs(pool: &SqlitePool) -> Result<Vec<SamplerConfig
         ApiError::InternalError { message: format!("Failed to list sampler configs: {}", e) }
     })?;
 
-    let configs = rows.into_iter().map(|(id, prov, model, temp, top_p, top_k, min_p, repeat_pen, num_ctx, max_tok, think, stop_seq, prov_opts, desc, created, updated)| {
-        let stop_sequences: Vec<String> = serde_json::from_str(&stop_seq).unwrap_or_default();
-        let provider_options: serde_json::Value = serde_json::from_str(&prov_opts)
-            .unwrap_or_else(|_| serde_json::json!({}));
-
-        SamplerConfig {
-            id: Some(id),
-            provider: prov,
-            model_name: model,
-            temperature: temp.map(|v| v as f32),
-            top_p: top_p.map(|v| v as f32),
-            top_k,
-            min_p: min_p.map(|v| v as f32),
-            repeat_penalty: repeat_pen.map(|v| v as f32),
-            num_ctx: num_ctx.map(|v| v as u32),
-            max_tokens: max_tok.map(|v| v as u32),
-            think_mode: think != 0,
-            stop_sequences,
-            provider_options,
-            description: desc,
-            created_at: created,
-            updated_at: updated,
-        }
-    }).collect();
-
+    let configs = rows.into_iter().map(|row| row.into_config()).collect();
     Ok(configs)
 }
 
@@ -366,13 +365,9 @@ pub async fn list_sampler_configs_by_provider(
 ) -> Result<Vec<SamplerConfig>, ApiError> {
     debug!("Listing sampler configs for provider: {}", provider);
 
-    let rows = sqlx::query_as::<_, (
-        i64, String, String, Option<f64>, Option<f64>, Option<i32>,
-        Option<f64>, Option<f64>, Option<i32>, Option<i32>, i32,
-        String, String, Option<String>, Option<String>, Option<String>,
-    )>(
-        "SELECT id, provider, model_name, temperature, top_p, top_k, min_p, repeat_penalty,
-                num_ctx, max_tokens, think_mode, stop_sequences, provider_options,
+    let rows = sqlx::query_as::<_, SamplerConfigRow>(
+        "SELECT id, provider, model_name, temperature, top_p, top_k, min_p, typical_p, repeat_penalty,
+                num_ctx, max_tokens, think_mode, stop_sequences, system_prompt, provider_options,
                 description, created_at, updated_at
          FROM ai_sampler_configs
          WHERE provider = ?
@@ -386,31 +381,7 @@ pub async fn list_sampler_configs_by_provider(
         ApiError::InternalError { message: format!("Failed to list sampler configs: {}", e) }
     })?;
 
-    let configs = rows.into_iter().map(|(id, prov, model, temp, top_p, top_k, min_p, repeat_pen, num_ctx, max_tok, think, stop_seq, prov_opts, desc, created, updated)| {
-        let stop_sequences: Vec<String> = serde_json::from_str(&stop_seq).unwrap_or_default();
-        let provider_options: serde_json::Value = serde_json::from_str(&prov_opts)
-            .unwrap_or_else(|_| serde_json::json!({}));
-
-        SamplerConfig {
-            id: Some(id),
-            provider: prov,
-            model_name: model,
-            temperature: temp.map(|v| v as f32),
-            top_p: top_p.map(|v| v as f32),
-            top_k,
-            min_p: min_p.map(|v| v as f32),
-            repeat_penalty: repeat_pen.map(|v| v as f32),
-            num_ctx: num_ctx.map(|v| v as u32),
-            max_tokens: max_tok.map(|v| v as u32),
-            think_mode: think != 0,
-            stop_sequences,
-            provider_options,
-            description: desc,
-            created_at: created,
-            updated_at: updated,
-        }
-    }).collect();
-
+    let configs = rows.into_iter().map(|row| row.into_config()).collect();
     Ok(configs)
 }
 
@@ -547,11 +518,13 @@ fn create_preset(
         top_p: Some(top_p),
         top_k,
         min_p,
+        typical_p: None,
         repeat_penalty: Some(repeat_penalty),
         num_ctx: Some(num_ctx),
         max_tokens: None,
         think_mode,
         stop_sequences: Vec::new(),
+        system_prompt: None,
         provider_options: serde_json::json!({}),
         description: Some(description.to_string()),
         created_at: None,

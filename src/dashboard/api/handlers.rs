@@ -3163,6 +3163,8 @@ pub struct SamplerConfigRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub min_p: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub typical_p: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub repeat_penalty: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub num_ctx: Option<u32>,
@@ -3172,6 +3174,8 @@ pub struct SamplerConfigRequest {
     pub think_mode: bool,
     #[serde(default)]
     pub stop_sequences: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_prompt: Option<String>,
     #[serde(default)]
     pub provider_options: serde_json::Value,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -3246,11 +3250,13 @@ pub async fn set_sampler_config(
     config.top_p = req.top_p;
     config.top_k = req.top_k;
     config.min_p = req.min_p;
+    config.typical_p = req.typical_p;
     config.repeat_penalty = req.repeat_penalty;
     config.num_ctx = req.num_ctx;
     config.max_tokens = req.max_tokens;
     config.think_mode = req.think_mode;
     config.stop_sequences = req.stop_sequences.clone();
+    config.system_prompt = req.system_prompt.clone();
     config.provider_options = req.provider_options.clone();
     config.description = req.description.clone();
 

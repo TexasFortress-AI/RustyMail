@@ -43,12 +43,12 @@ import {
 
 // Provider-specific field visibility
 const PROVIDER_FIELDS: Record<string, string[]> = {
-  ollama: ['temperature', 'topP', 'topK', 'minP', 'repeatPenalty', 'numCtx', 'thinkMode', 'stopSequences'],
-  llamacpp: ['temperature', 'topP', 'topK', 'minP', 'repeatPenalty', 'numCtx', 'thinkMode', 'stopSequences'],
-  lmstudio: ['temperature', 'topP', 'topK', 'minP', 'repeatPenalty', 'numCtx', 'maxTokens', 'stopSequences'],
-  openai: ['temperature', 'topP', 'maxTokens', 'stopSequences'],
-  anthropic: ['temperature', 'topP', 'maxTokens', 'stopSequences'],
-  default: ['temperature', 'topP', 'topK', 'minP', 'repeatPenalty', 'numCtx', 'maxTokens', 'thinkMode', 'stopSequences'],
+  ollama: ['temperature', 'topP', 'topK', 'minP', 'typicalP', 'repeatPenalty', 'numCtx', 'thinkMode', 'stopSequences', 'systemPrompt'],
+  llamacpp: ['temperature', 'topP', 'topK', 'minP', 'typicalP', 'repeatPenalty', 'numCtx', 'thinkMode', 'stopSequences', 'systemPrompt'],
+  lmstudio: ['temperature', 'topP', 'topK', 'minP', 'typicalP', 'repeatPenalty', 'numCtx', 'maxTokens', 'stopSequences', 'systemPrompt'],
+  openai: ['temperature', 'topP', 'maxTokens', 'stopSequences', 'systemPrompt'],
+  anthropic: ['temperature', 'topP', 'maxTokens', 'stopSequences', 'systemPrompt'],
+  default: ['temperature', 'topP', 'topK', 'minP', 'typicalP', 'repeatPenalty', 'numCtx', 'maxTokens', 'thinkMode', 'stopSequences', 'systemPrompt'],
 };
 
 interface FormState {
@@ -56,11 +56,13 @@ interface FormState {
   topP: number;
   topK: number | undefined;
   minP: number;
+  typicalP: number | undefined;
   repeatPenalty: number;
   numCtx: number;
   maxTokens: number | undefined;
   thinkMode: boolean;
   stopSequences: string;
+  systemPrompt: string;
   description: string;
 }
 
@@ -69,11 +71,13 @@ const DEFAULT_FORM_STATE: FormState = {
   topP: 1.0,
   topK: undefined,
   minP: 0.01,
+  typicalP: undefined,
   repeatPenalty: 1.0,
   numCtx: 8192,
   maxTokens: undefined,
   thinkMode: false,
   stopSequences: '',
+  systemPrompt: '',
   description: '',
 };
 
@@ -124,11 +128,13 @@ const SamplerConfigPanel: React.FC = () => {
         topP: samplerConfig.top_p ?? DEFAULT_FORM_STATE.topP,
         topK: samplerConfig.top_k ?? undefined,
         minP: samplerConfig.min_p ?? DEFAULT_FORM_STATE.minP,
+        typicalP: samplerConfig.typical_p ?? undefined,
         repeatPenalty: samplerConfig.repeat_penalty ?? DEFAULT_FORM_STATE.repeatPenalty,
         numCtx: samplerConfig.num_ctx ?? DEFAULT_FORM_STATE.numCtx,
         maxTokens: samplerConfig.max_tokens ?? undefined,
         thinkMode: samplerConfig.think_mode ?? false,
         stopSequences: (samplerConfig.stop_sequences || []).join('\n'),
+        systemPrompt: samplerConfig.system_prompt ?? '',
         description: samplerConfig.description ?? '',
       });
       setHasChanges(false);
@@ -139,11 +145,13 @@ const SamplerConfigPanel: React.FC = () => {
         topP: defaultsData.top_p ?? DEFAULT_FORM_STATE.topP,
         topK: defaultsData.top_k ?? undefined,
         minP: defaultsData.min_p ?? DEFAULT_FORM_STATE.minP,
+        typicalP: defaultsData.typical_p ?? undefined,
         repeatPenalty: defaultsData.repeat_penalty ?? DEFAULT_FORM_STATE.repeatPenalty,
         numCtx: defaultsData.num_ctx ?? DEFAULT_FORM_STATE.numCtx,
         maxTokens: defaultsData.max_tokens ?? undefined,
         thinkMode: defaultsData.think_mode ?? false,
         stopSequences: '',
+        systemPrompt: '',
         description: '',
       });
       setHasChanges(false);
@@ -176,11 +184,13 @@ const SamplerConfigPanel: React.FC = () => {
       top_p: formState.topP,
       top_k: formState.topK,
       min_p: formState.minP,
+      typical_p: formState.typicalP,
       repeat_penalty: formState.repeatPenalty,
       num_ctx: formState.numCtx,
       max_tokens: formState.maxTokens,
       think_mode: formState.thinkMode,
       stop_sequences: formState.stopSequences.split('\n').filter(s => s.trim()),
+      system_prompt: formState.systemPrompt || undefined,
       description: formState.description || undefined,
     });
 
@@ -194,11 +204,13 @@ const SamplerConfigPanel: React.FC = () => {
         topP: defaultsData.top_p ?? DEFAULT_FORM_STATE.topP,
         topK: defaultsData.top_k ?? undefined,
         minP: defaultsData.min_p ?? DEFAULT_FORM_STATE.minP,
+        typicalP: defaultsData.typical_p ?? undefined,
         repeatPenalty: defaultsData.repeat_penalty ?? DEFAULT_FORM_STATE.repeatPenalty,
         numCtx: defaultsData.num_ctx ?? DEFAULT_FORM_STATE.numCtx,
         maxTokens: defaultsData.max_tokens ?? undefined,
         thinkMode: defaultsData.think_mode ?? false,
         stopSequences: '',
+        systemPrompt: '',
         description: '',
       });
       setHasChanges(true);
@@ -525,6 +537,33 @@ const SamplerConfigPanel: React.FC = () => {
                 </div>
               )}
 
+              {/* Typical P (top-n-sigma) */}
+              {visibleFields.includes('typicalP') && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Label>Typical P (top-nσ): {formState.typicalP?.toFixed(2) ?? 'disabled'}</Label>
+                    <FieldTooltip text="Tail-free sampling. Filters low probability tokens based on second derivative of distribution. 1.0 = disabled. Try 0.95 for more focused output." />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Slider
+                      value={[formState.typicalP ?? 1.0]}
+                      onValueChange={([v]) => updateFormField('typicalP', v === 1.0 ? undefined : v)}
+                      min={0.5}
+                      max={1}
+                      step={0.01}
+                      className="flex-1"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => updateFormField('typicalP', undefined)}
+                      className="text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Repeat Penalty */}
               {visibleFields.includes('repeatPenalty') && (
                 <div className="space-y-2">
@@ -609,6 +648,26 @@ const SamplerConfigPanel: React.FC = () => {
                     onChange={(e) => updateFormField('stopSequences', e.target.value)}
                     rows={3}
                   />
+                </div>
+              )}
+
+              {/* System Prompt */}
+              {visibleFields.includes('systemPrompt') && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Label>System Prompt (optional)</Label>
+                    <FieldTooltip text="Custom system prompt for this model. Overrides the default RustyMail assistant prompt. Leave empty to use the default." />
+                  </div>
+                  <Textarea
+                    placeholder="You are RustyMail Assistant, an email management AI..."
+                    value={formState.systemPrompt}
+                    onChange={(e) => updateFormField('systemPrompt', e.target.value)}
+                    rows={4}
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Leave empty to use the default system prompt. The prompt defines the AI's behavior and capabilities.
+                  </p>
                 </div>
               )}
 

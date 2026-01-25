@@ -24,11 +24,13 @@ export interface SamplerConfig {
   top_p?: number;
   top_k?: number;
   min_p?: number;
+  typical_p?: number;  // top-n-sigma / tail-free sampling
   repeat_penalty?: number;
   num_ctx?: number;
   max_tokens?: number;
   think_mode: boolean;
   stop_sequences: string[];
+  system_prompt?: string;  // Custom system prompt override
   provider_options: Record<string, unknown>;
   description?: string;
   created_at?: string;
@@ -42,11 +44,13 @@ export interface SamplerConfigInput {
   top_p?: number;
   top_k?: number;
   min_p?: number;
+  typical_p?: number;
   repeat_penalty?: number;
   num_ctx?: number;
   max_tokens?: number;
   think_mode?: boolean;
   stop_sequences?: string[];
+  system_prompt?: string;
   provider_options?: Record<string, unknown>;
   description?: string;
 }
