@@ -18,6 +18,7 @@ use crate::api::errors::ApiError as RestApiError;
 // Default sampler settings for tool-calling
 const DEFAULT_TEMPERATURE: f32 = 0.7;
 const DEFAULT_TOP_P: f32 = 1.0;
+const DEFAULT_MIN_P: f32 = 0.01;  // llama.cpp default is 0.05, we use 0.01
 const DEFAULT_REPEAT_PENALTY: f32 = 1.0;  // Disabled
 const DEFAULT_NUM_CTX: u32 = 51200;  // 50k context window
 
@@ -35,6 +36,11 @@ pub struct OllamaOptions {
     /// Top-k sampling (0 = disabled)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub top_k: Option<u32>,
+
+    /// Min-p sampling (filters tokens below min_p * max_probability)
+    /// Recommended: 0.01 for tool-calling
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_p: Option<f32>,
 
     /// Repeat penalty (1.0 = disabled)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -129,6 +135,7 @@ impl OllamaAdapter {
         let options = OllamaOptions {
             temperature: Some(DEFAULT_TEMPERATURE),
             top_p: Some(DEFAULT_TOP_P),
+            min_p: Some(DEFAULT_MIN_P),
             repeat_penalty: Some(DEFAULT_REPEAT_PENALTY),
             num_ctx: Some(DEFAULT_NUM_CTX),
             think: Some(false),  // ALWAYS disable thinking mode
@@ -157,6 +164,7 @@ impl OllamaAdapter {
             temperature: options.temperature.or(self.options.temperature),
             top_p: options.top_p.or(self.options.top_p),
             top_k: options.top_k.or(self.options.top_k),
+            min_p: options.min_p.or(self.options.min_p),
             repeat_penalty: options.repeat_penalty.or(self.options.repeat_penalty),
             num_ctx: options.num_ctx.or(self.options.num_ctx),
             num_predict: options.num_predict.or(self.options.num_predict),

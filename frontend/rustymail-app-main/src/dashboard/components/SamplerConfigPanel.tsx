@@ -43,7 +43,7 @@ import {
 
 // Provider-specific field visibility
 const PROVIDER_FIELDS: Record<string, string[]> = {
-  ollama: ['temperature', 'topP', 'topK', 'repeatPenalty', 'numCtx', 'thinkMode', 'stopSequences'],
+  ollama: ['temperature', 'topP', 'topK', 'minP', 'repeatPenalty', 'numCtx', 'thinkMode', 'stopSequences'],
   llamacpp: ['temperature', 'topP', 'topK', 'minP', 'repeatPenalty', 'numCtx', 'thinkMode', 'stopSequences'],
   lmstudio: ['temperature', 'topP', 'topK', 'minP', 'repeatPenalty', 'numCtx', 'maxTokens', 'stopSequences'],
   openai: ['temperature', 'topP', 'maxTokens', 'stopSequences'],
