@@ -695,10 +695,11 @@
         "description": "Modify agent_executor.rs to support tool calling for all AI providers (OpenAI, Anthropic, etc.) beyond just Ollama, or restrict the UI to only show supported providers to prevent runtime errors.",
         "details": "Fix the limitation in src/dashboard/services/ai/agent_executor.rs line 189 where only 'ollama' provider is handled for tool calling:\n\n1. **Analyze current implementation**:\n   - Review the existing execute_with_tools() method that currently only supports Ollama\n   - Identify the tool-calling format differences between providers (Ollama uses custom format, OpenAI uses function calling, Anthropic uses tools API)\n   - Check how model configurations are loaded and which providers are configured\n\n2. **Implement provider-specific tool calling adapters**:\n   - Create a ToolCallingAdapter trait in agent_executor.rs with methods:\n     ```rust\n     trait ToolCallingAdapter {\n         fn format_tools(&self, tools: &[Tool]) -> Value;\n         fn parse_tool_calls(&self, response: &Value) -> Result<Vec<ToolCall>>;\n         fn format_tool_results(&self, results: &[ToolResult]) -> Value;\n     }\n     ```\n   - Implement OllamaToolAdapter (refactor existing code)\n   - Implement OpenAIToolAdapter for OpenAI function calling format\n   - Implement AnthropicToolAdapter for Anthropic tools API format\n   - Add placeholder adapters for other providers that return \"not supported\" error\n\n3. **Update AgentExecutor to use adapters**:\n   - Modify execute_with_tools() to select appropriate adapter based on provider:\n     ```rust\n     let adapter: Box<dyn ToolCallingAdapter> = match provider.as_str() {\n         \"ollama\" => Box::new(OllamaToolAdapter::new()),\n         \"openai\" => Box::new(OpenAIToolAdapter::new()),\n         \"anthropic\" => Box::new(AnthropicToolAdapter::new()),\n         _ => return Err(\"Unsupported tool-calling provider\")\n     };\n     ```\n   - Use adapter methods to format tools, parse responses, and format results\n   - Ensure error handling covers provider-specific edge cases\n\n4. **Add provider capability detection**:\n   - Create a supports_tool_calling() method in model configurations\n   - Add a tool_calling_capable boolean field to provider configs\n   - Update get_model_configurations tool to include this capability flag\n\n5. **Update UI/API to respect capabilities**:\n   - Modify the model selection endpoints to filter out non-tool-calling models when selecting tool-calling model\n   - Add validation in set_tool_calling_model to reject unsupported providers\n   - Return clear error messages when attempting to use unsupported providers\n\n6. **Handle provider-specific nuances**:\n   - OpenAI: Convert MCP tools to OpenAI function schema, handle function_call responses\n   - Anthropic: Format tools according to Anthropic's tool use format, parse tool_use blocks\n   - Add appropriate headers and API version parameters for each provider\n   - Handle streaming vs non-streaming responses appropriately",
         "testStrategy": "Verify multi-provider tool calling support with comprehensive testing:\n\n1. **Unit tests for tool adapters**:\n   - Test OllamaToolAdapter formats tools correctly and parses Ollama-style responses\n   - Test OpenAIToolAdapter converts MCP tools to OpenAI function schema\n   - Test AnthropicToolAdapter formats according to Anthropic tool use spec\n   - Verify error handling for malformed responses from each provider\n\n2. **Integration tests for AgentExecutor**:\n   - Mock responses from different providers and verify correct tool execution flow\n   - Test provider selection logic with various model configurations\n   - Verify fallback behavior for unsupported providers\n   - Test error propagation when provider returns unexpected format\n\n3. **End-to-end testing**:\n   - Test process_email_instructions with Ollama model (existing functionality)\n   - Test with OpenAI model configuration if available\n   - Test with Anthropic model configuration if available\n   - Verify UI correctly filters model selection based on capabilities\n\n4. **Manual testing scenarios**:\n   - Configure multiple providers in model_configurations\n   - Attempt to set each as tool-calling model via API\n   - Execute high-level tools and verify correct provider is used\n   - Confirm error messages are clear when selecting unsupported provider\n\n5. **Regression testing**:\n   - Ensure existing Ollama tool calling still works correctly\n   - Verify no breaking changes to high-level tool execution\n   - Test that email processing workflows continue to function",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-01-25T11:41:47.337Z"
       },
       {
         "id": "41",
@@ -725,9 +726,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-01-25T11:39:50.376Z",
+      "lastModified": "2026-01-25T11:41:47.338Z",
       "taskCount": 42,
-      "completedCount": 38,
+      "completedCount": 39,
       "tags": [
         "master"
       ]

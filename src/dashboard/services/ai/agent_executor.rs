@@ -12,6 +12,15 @@ use super::model_config::{get_model_config, ModelConfiguration};
 use super::tool_converter::{mcp_to_ollama_tools, parse_ollama_tool_call};
 use super::sampler_config::{get_sampler_config, SamplerConfig};
 
+/// Providers that support tool calling
+/// Note: These providers have been tested with the tool-calling API format
+pub const TOOL_CALLING_PROVIDERS: &[&str] = &["ollama", "llamacpp", "lmstudio"];
+
+/// Check if a provider supports tool calling
+pub fn supports_tool_calling(provider: &str) -> bool {
+    TOOL_CALLING_PROVIDERS.contains(&provider)
+}
+
 /// Default maximum iterations to prevent infinite loops
 /// Can be overridden via AGENT_MAX_ITERATIONS environment variable
 const DEFAULT_MAX_ITERATIONS: usize = 1000;
@@ -199,10 +208,12 @@ impl AgentExecutor {
     ) -> Result<Value, ApiError> {
         match config.provider.as_str() {
             "ollama" => self.call_ollama_with_tools(config, messages, tools, sampler_config).await,
+            "llamacpp" => self.call_openai_compatible_with_tools(config, messages, tools, sampler_config, "LLAMACPP_BASE_URL").await,
+            "lmstudio" => self.call_openai_compatible_with_tools(config, messages, tools, sampler_config, "LMSTUDIO_BASE_URL").await,
             provider => {
-                error!("Unsupported provider for tool calling: {}", provider);
+                error!("Unsupported provider for tool calling: {}. Supported providers: {:?}", provider, TOOL_CALLING_PROVIDERS);
                 Err(ApiError::BadRequest {
-                    message: format!("Unsupported tool-calling provider: {}", provider),
+                    message: format!("Unsupported tool-calling provider: '{}'. Supported providers: {}", provider, TOOL_CALLING_PROVIDERS.join(", ")),
                 })
             }
         }
@@ -303,6 +314,101 @@ impl AgentExecutor {
                 error!("Ollama native API response missing 'message' field: {:?}", response_body);
                 ApiError::InternalError {
                     message: "Invalid response format from Ollama native API".to_string(),
+                }
+            })?;
+
+        Ok(message.clone())
+    }
+
+    /// Call an OpenAI-compatible API with tool calling (llama.cpp, LM Studio)
+    /// These APIs use /v1/chat/completions with OpenAI tool format
+    async fn call_openai_compatible_with_tools(
+        &self,
+        config: &ModelConfiguration,
+        messages: &[Value],
+        tools: &[Value],
+        sampler_config: Option<&SamplerConfig>,
+        env_var: &str,
+    ) -> Result<Value, ApiError> {
+        let base_url = config.base_url.as_deref()
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var(env_var).ok())
+            .ok_or_else(|| ApiError::BadRequest {
+                message: format!("{} environment variable or base_url config must be set", env_var),
+            })?;
+
+        let url = format!("{}/v1/chat/completions", base_url);
+
+        debug!("Calling OpenAI-compatible API at {} with {} tools", url, tools.len());
+
+        // Build request with sampler config if available
+        let mut request_body = if let Some(cfg) = sampler_config {
+            info!("Applying sampler config to OpenAI-compatible tool call: temp={:?}, top_p={:?}",
+                  cfg.temperature, cfg.top_p);
+            json!({
+                "model": config.model_name,
+                "messages": messages,
+                "tools": tools,
+                "stream": false,
+                "temperature": cfg.effective_temperature(),
+                "top_p": cfg.effective_top_p(),
+            })
+        } else {
+            json!({
+                "model": config.model_name,
+                "messages": messages,
+                "tools": tools,
+                "stream": false,
+            })
+        };
+
+        // Add max_tokens if specified
+        if let Some(cfg) = sampler_config {
+            if let Some(max_tokens) = cfg.max_tokens {
+                request_body["max_tokens"] = json!(max_tokens);
+            }
+        }
+
+        let response = self.http_client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .timeout(std::time::Duration::from_secs(300))  // 5 minutes for large tool contexts
+            .send()
+            .await
+            .map_err(|e| {
+                error!("Failed to call OpenAI-compatible API: {}", e);
+                ApiError::ServiceUnavailable {
+                    service: format!("OpenAI-compatible API: {}", e),
+                }
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error>".to_string());
+            error!("OpenAI-compatible API returned error {}: {}", status, error_body);
+            return Err(ApiError::ServiceUnavailable {
+                service: format!("OpenAI-compatible API returned status {}: {}", status, error_body),
+            });
+        }
+
+        let response_body: Value = response.json().await
+            .map_err(|e| {
+                error!("Failed to parse OpenAI-compatible response: {}", e);
+                ApiError::InternalError {
+                    message: format!("Failed to parse response: {}", e),
+                }
+            })?;
+
+        // OpenAI format returns: {"choices": [{"message": {"role": "...", "content": "...", "tool_calls": [...]}}]}
+        let message = response_body
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("message"))
+            .ok_or_else(|| {
+                error!("OpenAI-compatible API response missing expected fields: {:?}", response_body);
+                ApiError::InternalError {
+                    message: "Invalid response format from OpenAI-compatible API".to_string(),
                 }
             })?;
 
