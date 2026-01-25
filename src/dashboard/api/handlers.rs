@@ -2909,6 +2909,8 @@ pub async fn get_available_event_types() -> Result<impl Responder, ApiError> {
 #[derive(Debug, Deserialize)]
 pub struct SetProviderRequest {
     pub provider_name: String,
+    #[serde(default)]
+    pub model_name: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -2951,17 +2953,44 @@ pub async fn set_ai_provider(
     req: web::Json<SetProviderRequest>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling POST /api/dashboard/ai/providers/set with provider: {}", req.provider_name);
+    debug!("Handling POST /api/dashboard/ai/providers/set with provider: {}, model: {:?}",
+           req.provider_name, req.model_name);
 
-    // Set the current provider
-    state.ai_service
-        .set_current_provider(req.provider_name.clone())
-        .await
-        .map_err(|e| ApiError::BadRequest(e))?;
+    // Get the model name - use provided one or get current model for this provider
+    let model_name = match &req.model_name {
+        Some(name) => name.clone(),
+        None => {
+            // Look up the current model from provider configs
+            let providers = state.ai_service.list_providers().await;
+            providers.iter()
+                .find(|p| p.name == req.provider_name)
+                .map(|p| p.model.clone())
+                .unwrap_or_else(|| "default".to_string())
+        }
+    };
+
+    // Try to persist to database if pool is available
+    if let Some(pool) = state.cache_service.db_pool.as_ref() {
+        state.ai_service
+            .set_current_provider_with_persistence(pool, req.provider_name.clone(), model_name.clone())
+            .await
+            .map_err(|e| ApiError::BadRequest(e))?;
+
+        info!("Persisted chatbot provider selection to database: provider={}, model={}",
+              req.provider_name, model_name);
+    } else {
+        // Fallback to in-memory only if no database
+        warn!("No database pool available, provider selection will not persist across restarts");
+        state.ai_service
+            .set_current_provider(req.provider_name.clone())
+            .await
+            .map_err(|e| ApiError::BadRequest(e))?;
+    }
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
-        "message": format!("Successfully switched to provider: {}", req.provider_name),
-        "current_provider": req.provider_name
+        "message": format!("Successfully switched to provider: {} with model: {}", req.provider_name, model_name),
+        "current_provider": req.provider_name,
+        "current_model": model_name
     })))
 }
 

@@ -522,6 +522,29 @@ impl AiService {
             .map_err(|e| format!("Failed to set provider: {}", e))
     }
 
+    /// Set current provider and persist to database with role='chatbot'
+    /// This ensures the Email Assistant model selection persists across restarts
+    pub async fn set_current_provider_with_persistence(
+        &self,
+        pool: &sqlx::SqlitePool,
+        provider_name: String,
+        model_name: String,
+    ) -> Result<(), String> {
+        self.provider_manager
+            .set_current_provider_with_persistence(pool, provider_name, model_name)
+            .await
+            .map_err(|e| format!("Failed to set provider: {}", e))
+    }
+
+    /// Load chatbot configuration from database on startup
+    /// Returns true if a saved configuration was found and applied
+    pub async fn load_chatbot_config_from_db(&mut self, pool: &sqlx::SqlitePool) -> Result<bool, String> {
+        self.provider_manager
+            .load_chatbot_config_from_db(pool)
+            .await
+            .map_err(|e| format!("Failed to load chatbot config: {}", e))
+    }
+
     pub async fn update_provider_config(&self, name: &str, config: provider_manager::ProviderConfig) -> Result<(), String> {
         self.provider_manager.update_provider_config(name, config)
             .await

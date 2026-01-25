@@ -14,7 +14,7 @@
 use thiserror::Error;
 use std::sync::Arc;
 use actix_web::web;
-use log::{info, error, warn};
+use log::{info, error, warn, debug};
 use actix_web::{web::Data};
 use tokio::sync::Mutex as TokioMutex;
 // Import CloneableImapSessionFactory from prelude
@@ -237,6 +237,22 @@ pub async fn init(
         Ok(mut service) => {
             // Set the email service so AI can fetch real emails
             service.set_email_service(email_service.clone());
+
+            // Load saved chatbot provider/model configuration from database
+            if let Some(pool) = cache_service.db_pool.as_ref() {
+                match service.load_chatbot_config_from_db(pool).await {
+                    Ok(true) => {
+                        info!("Restored chatbot provider configuration from database");
+                    }
+                    Ok(false) => {
+                        debug!("No saved chatbot configuration found in database");
+                    }
+                    Err(e) => {
+                        warn!("Failed to load chatbot configuration from database: {}", e);
+                    }
+                }
+            }
+
             Arc::new(service)
         },
         Err(e) => {

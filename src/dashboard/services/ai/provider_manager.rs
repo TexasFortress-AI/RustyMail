@@ -11,14 +11,20 @@ use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use sqlx::SqlitePool;
 use crate::api::errors::ApiError as RestApiError;
+use crate::api::errors::ApiError;  // For pattern matching
 use super::provider::{
     AiProvider, AiChatMessage,
     OpenAiAdapter, OpenRouterAdapter, MorpheusAdapter, OllamaAdapter, LlamaCppAdapter, LmStudioAdapter, MockAiProvider,
     AnthropicAdapter, DeepSeekAdapter, XAIAdapter, GeminiAdapter,
     MistralAdapter, TogetherAdapter, AzureOpenAIAdapter
 };
+use super::model_config::{get_model_config, set_model_config, ModelConfiguration};
 use reqwest::Client;
+
+/// Role constant for chatbot configuration
+pub const ROLE_CHATBOT: &str = "chatbot";
 
 // Provider configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -559,7 +565,7 @@ impl ProviderManager {
         }
     }
 
-    // Set current provider
+    // Set current provider (in-memory only - use set_current_provider_with_persistence to also save to DB)
     pub async fn set_current_provider(&self, name: String) -> Result<(), RestApiError> {
         let providers = self.providers.read().await;
         if !providers.contains_key(&name) {
@@ -572,6 +578,91 @@ impl ProviderManager {
         *self.current_provider.write().await = Some(name.clone());
         info!("Switched current provider to: {}", name);
         Ok(())
+    }
+
+    /// Set current provider AND persist to database with role='chatbot'
+    /// This ensures the user's Email Assistant model selection persists across restarts
+    pub async fn set_current_provider_with_persistence(
+        &self,
+        pool: &SqlitePool,
+        provider_name: String,
+        model_name: String,
+    ) -> Result<(), RestApiError> {
+        // First validate provider exists
+        let providers = self.providers.read().await;
+        if !providers.contains_key(&provider_name) {
+            return Err(RestApiError::UnprocessableEntity {
+                message: format!("Provider '{}' not found", provider_name)
+            });
+        }
+        drop(providers);
+
+        // Update in-memory state
+        *self.current_provider.write().await = Some(provider_name.clone());
+
+        // Also update the in-memory config model name
+        let mut configs = self.configs.write().await;
+        if let Some(config) = configs.iter_mut().find(|c| c.name == provider_name) {
+            config.model = model_name.clone();
+        }
+        drop(configs);
+
+        // Persist to database with role='chatbot'
+        let db_config = ModelConfiguration::new(ROLE_CHATBOT, &provider_name, &model_name);
+        match set_model_config(pool, &db_config).await {
+            Ok(_) => {
+                info!("Persisted chatbot configuration to database: provider={}, model={}",
+                      provider_name, model_name);
+            }
+            Err(e) => {
+                // Log error but don't fail - in-memory state is already updated
+                error!("Failed to persist chatbot configuration to database: {:?}. In-memory state updated.", e);
+            }
+        }
+
+        info!("Switched current provider to: {} with model: {}", provider_name, model_name);
+        Ok(())
+    }
+
+    /// Load chatbot configuration from database and set as current provider
+    /// Call this on startup to restore user's saved Email Assistant model selection
+    pub async fn load_chatbot_config_from_db(&mut self, pool: &SqlitePool) -> Result<bool, RestApiError> {
+        match get_model_config(pool, ROLE_CHATBOT).await {
+            Ok(config) => {
+                info!("Found saved chatbot configuration: provider={}, model={}",
+                      config.provider, config.model_name);
+
+                // Check if provider is available
+                let providers = self.providers.read().await;
+                if providers.contains_key(&config.provider) {
+                    drop(providers);
+
+                    // Set as current provider
+                    *self.current_provider.write().await = Some(config.provider.clone());
+
+                    // Update model name in configs
+                    let mut configs = self.configs.write().await;
+                    if let Some(cfg) = configs.iter_mut().find(|c| c.name == config.provider) {
+                        cfg.model = config.model_name.clone();
+                    }
+
+                    info!("Restored chatbot provider from database: {}", config.provider);
+                    Ok(true)
+                } else {
+                    warn!("Saved chatbot provider '{}' is not available, using first available provider",
+                          config.provider);
+                    Ok(false)
+                }
+            }
+            Err(ApiError::NotFound { .. }) => {
+                debug!("No saved chatbot configuration found in database");
+                Ok(false)
+            }
+            Err(e) => {
+                error!("Failed to load chatbot configuration from database: {:?}", e);
+                Err(e)
+            }
+        }
     }
 
     // Get current provider name
