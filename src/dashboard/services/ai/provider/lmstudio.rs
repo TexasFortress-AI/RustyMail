@@ -12,6 +12,7 @@ use serde::{Serialize, Deserialize};
 use log::{debug, warn, error, info};
 use super::{AiProvider, AiChatMessage, get_ai_request_timeout, get_ai_generation_timeout};
 use crate::api::errors::ApiError as RestApiError;
+use crate::dashboard::services::ai::sampler_config::SamplerConfig;
 
 // Default sampler settings for tool-calling (same as llama.cpp)
 const DEFAULT_TEMPERATURE: f32 = 0.7;
@@ -198,6 +199,26 @@ impl LmStudioAdapter {
         self.options.min_p = Some(min_p);
         self
     }
+
+    /// Convert SamplerConfig from database to LmStudioOptions
+    fn sampler_config_to_options(config: &SamplerConfig) -> LmStudioOptions {
+        LmStudioOptions {
+            temperature: Some(config.effective_temperature()),
+            top_p: Some(config.effective_top_p()),
+            top_k: config.top_k.map(|v| v as u32),
+            min_p: Some(config.effective_min_p()),
+            repeat_penalty: Some(config.effective_repeat_penalty()),
+            frequency_penalty: None,
+            presence_penalty: None,
+            max_tokens: config.max_tokens.map(|v| v as i32),
+            stop: if config.stop_sequences.is_empty() {
+                None
+            } else {
+                Some(config.stop_sequences.clone())
+            },
+            seed: None,
+        }
+    }
 }
 
 #[async_trait]
@@ -261,6 +282,81 @@ impl AiProvider for LmStudioAdapter {
 
         info!("Sending request to LM Studio server: base_url={}, messages_count={}, temp={:?}, min_p={:?}",
               self.base_url, request_payload.messages.len(), self.options.temperature, self.options.min_p);
+
+        let response = self.http_client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&request_payload)
+            .timeout(get_ai_generation_timeout())
+            .send()
+            .await
+            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("LM Studio: {}", e) })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!("LM Studio API request failed with status {}: {}", status, error_body);
+            return Err(RestApiError::ServiceUnavailable {
+                service: format!("LM Studio API returned error status {}: {}", status, error_body)
+            });
+        }
+
+        let response_body = response
+            .json::<LmStudioChatResponse>()
+            .await
+            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize LM Studio response: {}", e) })?;
+
+        if let Some(choice) = response_body.choices.first() {
+            if let Some(usage) = &response_body.usage {
+                info!("LM Studio response complete. Tokens: prompt={:?}, completion={:?}, total={:?}",
+                      usage.prompt_tokens, usage.completion_tokens, usage.total_tokens);
+            }
+            Ok(choice.message.content.clone())
+        } else {
+            warn!("LM Studio API response did not contain any choices");
+            Err(RestApiError::UnprocessableEntity { message: "LM Studio response was empty or missing choices".to_string() })
+        }
+    }
+
+    async fn generate_response_with_config(
+        &self,
+        messages: &[AiChatMessage],
+        config: Option<&SamplerConfig>,
+    ) -> Result<String, RestApiError> {
+        // Use database config if provided, otherwise fall back to self.options
+        let options = match config {
+            Some(cfg) => {
+                info!("Using sampler config from database for {}/{}", cfg.provider, cfg.model_name);
+                Self::sampler_config_to_options(cfg)
+            }
+            None => {
+                debug!("No sampler config provided, using default options");
+                self.options.clone()
+            }
+        };
+
+        let url = format!("{}/v1/chat/completions", self.base_url);
+
+        // Convert messages to LM Studio format
+        let lmstudio_messages: Vec<LmStudioMessage> = messages.iter().map(LmStudioMessage::from).collect();
+
+        let request_payload = LmStudioChatRequest {
+            messages: lmstudio_messages,
+            temperature: options.temperature,
+            top_p: options.top_p,
+            top_k: options.top_k,
+            min_p: options.min_p,
+            repeat_penalty: options.repeat_penalty,
+            frequency_penalty: options.frequency_penalty,
+            presence_penalty: options.presence_penalty,
+            max_tokens: options.max_tokens,
+            stop: options.stop.clone(),
+            seed: options.seed,
+            stream: false,
+        };
+
+        info!("Sending request to LM Studio server with config: base_url={}, messages_count={}, temp={:?}, min_p={:?}",
+              self.base_url, request_payload.messages.len(), options.temperature, options.min_p);
 
         let response = self.http_client
             .post(&url)

@@ -12,6 +12,7 @@ use serde::{Serialize, Deserialize};
 use log::{debug, warn, error, info};
 use super::{AiProvider, AiChatMessage, get_ai_request_timeout, get_ai_generation_timeout};
 use crate::api::errors::ApiError as RestApiError;
+use crate::dashboard::services::ai::sampler_config::SamplerConfig;
 
 // No default model - must be provided via OLLAMA_MODEL environment variable
 
@@ -188,6 +189,27 @@ impl OllamaAdapter {
         self.options.num_ctx = Some(num_ctx);
         self
     }
+
+    /// Convert SamplerConfig from database to OllamaOptions
+    /// Uses effective_* methods which apply the fallback chain: DB > env > code defaults
+    fn sampler_config_to_options(config: &SamplerConfig) -> OllamaOptions {
+        OllamaOptions {
+            temperature: Some(config.effective_temperature()),
+            top_p: Some(config.effective_top_p()),
+            top_k: config.top_k.map(|v| v as u32),
+            min_p: Some(config.effective_min_p()),
+            repeat_penalty: Some(config.effective_repeat_penalty()),
+            num_ctx: Some(config.effective_num_ctx()),
+            num_predict: config.max_tokens.map(|v| v as i32),
+            think: Some(config.effective_think_mode()),
+            stop: if config.stop_sequences.is_empty() {
+                None
+            } else {
+                Some(config.stop_sequences.clone())
+            },
+            seed: None,
+        }
+    }
 }
 
 #[async_trait]
@@ -246,6 +268,72 @@ impl AiProvider for OllamaAdapter {
 
         info!("Sending request to Ollama native API: base_url={}, model={}, messages_count={}, options={:?}",
               self.base_url, request_payload.model, request_payload.messages.len(), self.options);
+
+        let response = self.http_client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&request_payload)
+            .timeout(get_ai_generation_timeout())
+            .send()
+            .await
+            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Ollama: {}", e) })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!("Ollama API request failed with status {}: {}", status, error_body);
+            return Err(RestApiError::ServiceUnavailable {
+                service: format!("Ollama API returned error status {}: {}", status, error_body)
+            });
+        }
+
+        let response_body = response
+            .json::<OllamaNativeChatResponse>()
+            .await
+            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize Ollama response: {}", e) })?;
+
+        if response_body.done {
+            info!("Ollama response complete. Tokens: prompt={:?}, eval={:?}",
+                  response_body.prompt_eval_count, response_body.eval_count);
+            Ok(response_body.message.content)
+        } else {
+            warn!("Ollama API response was not marked as done");
+            Ok(response_body.message.content)
+        }
+    }
+
+    async fn generate_response_with_config(
+        &self,
+        messages: &[AiChatMessage],
+        config: Option<&SamplerConfig>,
+    ) -> Result<String, RestApiError> {
+        // Use database config if provided, otherwise fall back to self.options
+        let options = match config {
+            Some(cfg) => {
+                info!("Using sampler config from database for {}/{}", cfg.provider, cfg.model_name);
+                Self::sampler_config_to_options(cfg)
+            }
+            None => {
+                debug!("No sampler config provided, using default options");
+                self.options.clone()
+            }
+        };
+
+        // Use NATIVE Ollama API for full control over options
+        let url = format!("{}/api/chat", self.base_url);
+
+        // Convert messages to Ollama format
+        let ollama_messages: Vec<OllamaMessage> = messages.iter().map(OllamaMessage::from).collect();
+
+        let request_payload = OllamaNativeChatRequest {
+            model: self.model.clone(),
+            messages: ollama_messages,
+            stream: false,
+            options: Some(options.clone()),
+        };
+
+        info!("Sending request to Ollama native API with config: base_url={}, model={}, messages_count={}, options={:?}",
+              self.base_url, request_payload.model, request_payload.messages.len(), options);
 
         let response = self.http_client
             .post(&url)

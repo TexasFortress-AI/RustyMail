@@ -6,6 +6,7 @@
 use async_trait::async_trait;
 use serde::{Serialize, Deserialize};
 use crate::api::errors::ApiError as RestApiError;
+use crate::dashboard::services::ai::sampler_config::SamplerConfig;
 use std::time::Duration;
 
 /// Get the standard AI request timeout from environment variable or use default (30 seconds)
@@ -62,6 +63,21 @@ pub trait AiProvider: Send + Sync {
     ///
     /// A `Result` containing the AI's response text (`String`) or an `ApiError`.
     async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError>;
+
+    /// Generates a response with custom sampler configuration.
+    /// This allows applying per-model sampler settings from the database.
+    ///
+    /// Default implementation ignores config and calls generate_response.
+    /// Providers that support sampler config (Ollama, llama.cpp, LM Studio)
+    /// should override this to apply the settings.
+    async fn generate_response_with_config(
+        &self,
+        messages: &[AiChatMessage],
+        _config: Option<&SamplerConfig>,
+    ) -> Result<String, RestApiError> {
+        // Default: ignore config and use standard generation
+        self.generate_response(messages).await
+    }
 
     /// Fetches the list of available models from the provider's API.
     ///

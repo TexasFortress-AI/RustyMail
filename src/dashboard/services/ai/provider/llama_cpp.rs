@@ -12,6 +12,7 @@ use serde::{Serialize, Deserialize};
 use log::{debug, warn, error, info};
 use super::{AiProvider, AiChatMessage, get_ai_request_timeout, get_ai_generation_timeout};
 use crate::api::errors::ApiError as RestApiError;
+use crate::dashboard::services::ai::sampler_config::SamplerConfig;
 
 // Default sampler settings for tool-calling
 const DEFAULT_TEMPERATURE: f32 = 0.7;
@@ -248,6 +249,20 @@ impl LlamaCppAdapter {
         self.options.top_no = Some(top_no);
         self
     }
+
+    /// Convert SamplerConfig from database to a request struct
+    /// Returns the options ready for use in a chat request
+    fn sampler_config_to_request_options(config: &SamplerConfig) -> (Option<f32>, Option<f32>, Option<u32>, Option<f32>, Option<f32>, Option<i32>, Option<Vec<String>>) {
+        (
+            Some(config.effective_temperature()),
+            Some(config.effective_top_p()),
+            config.top_k.map(|v| v as u32),
+            Some(config.effective_min_p()),
+            Some(config.effective_repeat_penalty()),
+            config.max_tokens.map(|v| v as i32),
+            if config.stop_sequences.is_empty() { None } else { Some(config.stop_sequences.clone()) },
+        )
+    }
 }
 
 #[async_trait]
@@ -311,6 +326,89 @@ impl AiProvider for LlamaCppAdapter {
 
         info!("Sending request to llama.cpp server: base_url={}, messages_count={}, temp={:?}, min_p={:?}",
               self.base_url, request_payload.messages.len(), self.options.temperature, self.options.min_p);
+
+        let response = self.http_client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&request_payload)
+            .timeout(get_ai_generation_timeout())
+            .send()
+            .await
+            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("llama.cpp: {}", e) })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!("llama.cpp API request failed with status {}: {}", status, error_body);
+            return Err(RestApiError::ServiceUnavailable {
+                service: format!("llama.cpp API returned error status {}: {}", status, error_body)
+            });
+        }
+
+        let response_body = response
+            .json::<LlamaCppChatResponse>()
+            .await
+            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize llama.cpp response: {}", e) })?;
+
+        if let Some(choice) = response_body.choices.first() {
+            if let Some(usage) = &response_body.usage {
+                info!("llama.cpp response complete. Tokens: prompt={:?}, completion={:?}, total={:?}",
+                      usage.prompt_tokens, usage.completion_tokens, usage.total_tokens);
+            }
+            Ok(choice.message.content.clone())
+        } else {
+            warn!("llama.cpp API response did not contain any choices");
+            Err(RestApiError::UnprocessableEntity { message: "llama.cpp response was empty or missing choices".to_string() })
+        }
+    }
+
+    async fn generate_response_with_config(
+        &self,
+        messages: &[AiChatMessage],
+        config: Option<&SamplerConfig>,
+    ) -> Result<String, RestApiError> {
+        // Use database config if provided, otherwise fall back to self.options
+        let (temperature, top_p, top_k, min_p, repeat_penalty, n_predict, stop) = match config {
+            Some(cfg) => {
+                info!("Using sampler config from database for {}/{}", cfg.provider, cfg.model_name);
+                Self::sampler_config_to_request_options(cfg)
+            }
+            None => {
+                debug!("No sampler config provided, using default options");
+                (
+                    self.options.temperature,
+                    self.options.top_p,
+                    self.options.top_k,
+                    self.options.min_p,
+                    self.options.repeat_penalty,
+                    self.options.n_predict,
+                    self.options.stop.clone(),
+                )
+            }
+        };
+
+        // llama.cpp server uses OpenAI-compatible chat completions endpoint
+        let url = format!("{}/v1/chat/completions", self.base_url);
+
+        // Convert messages to llama.cpp format
+        let llama_messages: Vec<LlamaCppMessage> = messages.iter().map(LlamaCppMessage::from).collect();
+
+        let request_payload = LlamaCppChatRequest {
+            messages: llama_messages,
+            temperature,
+            top_p,
+            top_k,
+            min_p,
+            repeat_penalty,
+            n_predict,
+            stop,
+            seed: self.options.seed,
+            cache_prompt: self.options.cache_prompt,
+            stream: false,
+        };
+
+        info!("Sending request to llama.cpp server with config: base_url={}, messages_count={}, temp={:?}, min_p={:?}",
+              self.base_url, request_payload.messages.len(), temperature, min_p);
 
         let response = self.http_client
             .post(&url)

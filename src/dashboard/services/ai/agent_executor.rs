@@ -10,6 +10,7 @@ use crate::api::errors::ApiError;
 use crate::dashboard::services::DashboardState;
 use super::model_config::{get_model_config, ModelConfiguration};
 use super::tool_converter::{mcp_to_ollama_tools, parse_ollama_tool_call};
+use super::sampler_config::{get_sampler_config, SamplerConfig};
 
 /// Default maximum iterations to prevent infinite loops
 /// Can be overridden via AGENT_MAX_ITERATIONS environment variable
@@ -68,6 +69,16 @@ impl AgentExecutor {
         // Get tool-calling model configuration
         let config = get_model_config(pool, "tool_calling").await?;
 
+        // Fetch sampler config from database for this provider/model
+        let sampler_config = get_sampler_config(pool, &config.provider, &config.model_name).await
+            .map_err(|e| {
+                warn!("Failed to get sampler config, using defaults: {:?}", e);
+            }).ok();
+
+        if sampler_config.is_some() {
+            info!("Loaded sampler config from database for {}/{}", config.provider, config.model_name);
+        }
+
         // Convert MCP tools to Ollama format
         let ollama_tools = mcp_to_ollama_tools(&tools);
         debug!("Converted {} MCP tools to Ollama format", ollama_tools.len());
@@ -109,7 +120,7 @@ impl AgentExecutor {
             debug!("Iteration {}: Calling model with {} messages", iteration, messages.len());
 
             // Call the model with tools
-            let response = self.call_model_with_tools(&config, &messages, &ollama_tools).await?;
+            let response = self.call_model_with_tools(&config, &messages, &ollama_tools, sampler_config.as_ref()).await?;
 
             // Check if the model wants to call tools
             if let Some(tool_calls) = response.get("tool_calls") {
@@ -184,9 +195,10 @@ impl AgentExecutor {
         config: &ModelConfiguration,
         messages: &[Value],
         tools: &[Value],
+        sampler_config: Option<&SamplerConfig>,
     ) -> Result<Value, ApiError> {
         match config.provider.as_str() {
-            "ollama" => self.call_ollama_with_tools(config, messages, tools).await,
+            "ollama" => self.call_ollama_with_tools(config, messages, tools, sampler_config).await,
             provider => {
                 error!("Unsupported provider for tool calling: {}", provider);
                 Err(ApiError::BadRequest {
@@ -203,6 +215,7 @@ impl AgentExecutor {
         config: &ModelConfiguration,
         messages: &[Value],
         tools: &[Value],
+        sampler_config: Option<&SamplerConfig>,
     ) -> Result<Value, ApiError> {
         let base_url = config.base_url.as_deref()
             .map(|s| s.to_string())
@@ -224,12 +237,33 @@ impl AgentExecutor {
             tool.clone()
         }).collect();
 
-        let request_body = json!({
-            "model": config.model_name,
-            "messages": messages,
-            "tools": native_tools,
-            "stream": false,
-        });
+        // Build request body with sampler config from database if available
+        let request_body = if let Some(cfg) = sampler_config {
+            info!("Applying sampler config to Ollama tool call: temp={:?}, top_p={:?}, min_p={:?}, num_ctx={:?}, think={}",
+                  cfg.temperature, cfg.top_p, cfg.min_p, cfg.num_ctx, cfg.think_mode);
+            json!({
+                "model": config.model_name,
+                "messages": messages,
+                "tools": native_tools,
+                "stream": false,
+                "options": {
+                    "temperature": cfg.effective_temperature(),
+                    "top_p": cfg.effective_top_p(),
+                    "top_k": cfg.top_k,
+                    "min_p": cfg.effective_min_p(),
+                    "repeat_penalty": cfg.effective_repeat_penalty(),
+                    "num_ctx": cfg.effective_num_ctx(),
+                    "think": cfg.effective_think_mode(),
+                }
+            })
+        } else {
+            json!({
+                "model": config.model_name,
+                "messages": messages,
+                "tools": native_tools,
+                "stream": false,
+            })
+        };
 
         let response = self.http_client
             .post(&url)

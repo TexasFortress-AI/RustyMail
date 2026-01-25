@@ -4,10 +4,11 @@
 use serde::{Serialize, Deserialize};
 use serde_json::{json, Value};
 use reqwest::Client;
-use log::{debug, error};
+use log::{debug, error, warn, info};
 use sqlx::SqlitePool;
 use crate::api::errors::ApiError;
 use super::model_config::{get_model_config, ModelConfiguration};
+use super::sampler_config::{get_sampler_config, SamplerConfig};
 
 /// Email drafter service
 pub struct EmailDrafter {
@@ -49,11 +50,21 @@ impl EmailDrafter {
         // Get drafting model configuration
         let config = get_model_config(pool, "drafting").await?;
 
+        // Fetch sampler config from database for this provider/model
+        let sampler_config = get_sampler_config(pool, &config.provider, &config.model_name).await
+            .map_err(|e| {
+                warn!("Failed to get sampler config for drafting, using defaults: {:?}", e);
+            }).ok();
+
+        if sampler_config.is_some() {
+            info!("Loaded sampler config from database for drafting {}/{}", config.provider, config.model_name);
+        }
+
         // Build the prompt for the AI
         let prompt = self.build_reply_prompt(&request);
 
         // Generate the draft using the configured model
-        self.generate_with_model(&config, &prompt).await
+        self.generate_with_model(&config, &prompt, sampler_config.as_ref()).await
     }
 
     /// Draft a new email from scratch
@@ -67,11 +78,21 @@ impl EmailDrafter {
         // Get drafting model configuration
         let config = get_model_config(pool, "drafting").await?;
 
+        // Fetch sampler config from database for this provider/model
+        let sampler_config = get_sampler_config(pool, &config.provider, &config.model_name).await
+            .map_err(|e| {
+                warn!("Failed to get sampler config for drafting, using defaults: {:?}", e);
+            }).ok();
+
+        if sampler_config.is_some() {
+            info!("Loaded sampler config from database for drafting {}/{}", config.provider, config.model_name);
+        }
+
         // Build the prompt for the AI
         let prompt = self.build_email_prompt(&request);
 
         // Generate the draft using the configured model
-        self.generate_with_model(&config, &prompt).await
+        self.generate_with_model(&config, &prompt, sampler_config.as_ref()).await
     }
 
     /// Build prompt for replying to an email
@@ -119,10 +140,11 @@ Draft email body:"#,
         &self,
         config: &ModelConfiguration,
         prompt: &str,
+        sampler_config: Option<&SamplerConfig>,
     ) -> Result<String, ApiError> {
         match config.provider.as_str() {
-            "ollama" => self.generate_with_ollama(config, prompt).await,
-            "openai" => self.generate_with_openai(config, prompt).await,
+            "ollama" => self.generate_with_ollama(config, prompt, sampler_config).await,
+            "openai" => self.generate_with_openai(config, prompt, sampler_config).await,
             provider => {
                 error!("Unsupported provider for drafting: {}", provider);
                 Err(ApiError::BadRequest {
@@ -137,6 +159,7 @@ Draft email body:"#,
         &self,
         config: &ModelConfiguration,
         prompt: &str,
+        sampler_config: Option<&SamplerConfig>,
     ) -> Result<String, ApiError> {
         let base_url = config.base_url.as_deref()
             .map(|s| s.to_string())
@@ -144,21 +167,50 @@ Draft email body:"#,
             .ok_or_else(|| ApiError::BadRequest {
                 message: "OLLAMA_BASE_URL environment variable or base_url config must be set".to_string(),
             })?;
-        let url = format!("{}/v1/chat/completions", base_url);
 
-        debug!("Calling Ollama API at {} with model {}", url, config.model_name);
+        // Use native /api/chat for full sampler control
+        let url = format!("{}/api/chat", base_url);
 
-        let request_body = json!({
-            "model": config.model_name,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt
+        debug!("Calling Ollama native API at {} with model {}", url, config.model_name);
+
+        // Build request with sampler config from database if available
+        let request_body = if let Some(cfg) = sampler_config {
+            info!("Applying sampler config to drafting: temp={:?}, top_p={:?}, min_p={:?}, num_ctx={:?}",
+                  cfg.temperature, cfg.top_p, cfg.min_p, cfg.num_ctx);
+            json!({
+                "model": config.model_name,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "stream": false,
+                "options": {
+                    "temperature": cfg.effective_temperature(),
+                    "top_p": cfg.effective_top_p(),
+                    "top_k": cfg.top_k,
+                    "min_p": cfg.effective_min_p(),
+                    "repeat_penalty": cfg.effective_repeat_penalty(),
+                    "num_ctx": cfg.effective_num_ctx(),
+                    "think": cfg.effective_think_mode(),
                 }
-            ],
-            "stream": false,
-            "temperature": 0.7,
-        });
+            })
+        } else {
+            json!({
+                "model": config.model_name,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                "stream": false,
+                "options": {
+                    "temperature": 0.7,
+                }
+            })
+        };
 
         let response = self.http_client
             .post(&url)
@@ -191,17 +243,15 @@ Draft email body:"#,
                 }
             })?;
 
-        // Extract the generated text from the response
+        // Native API returns: {"message": {"role": "assistant", "content": "..."}}
         let content = response_body
-            .get("choices")
-            .and_then(|c| c.get(0))
-            .and_then(|c| c.get("message"))
+            .get("message")
             .and_then(|m| m.get("content"))
             .and_then(|c| c.as_str())
             .ok_or_else(|| {
-                error!("Ollama response missing expected content field");
+                error!("Ollama native API response missing expected content field: {:?}", response_body);
                 ApiError::InternalError {
-                    message: "Invalid response format from Ollama".to_string(),
+                    message: "Invalid response format from Ollama native API".to_string(),
                 }
             })?;
 
@@ -214,6 +264,7 @@ Draft email body:"#,
         &self,
         config: &ModelConfiguration,
         prompt: &str,
+        sampler_config: Option<&SamplerConfig>,
     ) -> Result<String, ApiError> {
         let base_url = config.base_url.as_deref()
             .map(|s| s.to_string())
@@ -231,7 +282,11 @@ Draft email body:"#,
 
         debug!("Calling OpenAI API with model {}", config.model_name);
 
-        let request_body = json!({
+        // Apply sampler config if available (OpenAI supports temperature, top_p, max_tokens)
+        let temperature = sampler_config.map(|c| c.effective_temperature()).unwrap_or(0.7);
+        let top_p = sampler_config.and_then(|c| c.top_p);
+
+        let mut request_body = json!({
             "model": config.model_name,
             "messages": [
                 {
@@ -239,8 +294,18 @@ Draft email body:"#,
                     "content": prompt
                 }
             ],
-            "temperature": 0.7,
+            "temperature": temperature,
         });
+
+        // Add optional parameters if present in sampler config
+        if let Some(p) = top_p {
+            request_body["top_p"] = json!(p);
+        }
+        if let Some(cfg) = sampler_config {
+            if let Some(max) = cfg.max_tokens {
+                request_body["max_tokens"] = json!(max);
+            }
+        }
 
         let response = self.http_client
             .post(&url)
