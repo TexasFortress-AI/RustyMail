@@ -79,7 +79,19 @@ fn mcp_tool_to_ollama(mcp_tool: &Value) -> Option<Value> {
 
 /// Convert Ollama tool call to MCP tool call format
 ///
-/// Ollama tool calls have format:
+/// Handles both native Ollama API format and OpenAI-compatible format:
+///
+/// Native Ollama API format (arguments is an object):
+/// ```json
+/// {
+///   "function": {
+///     "name": "function_name",
+///     "arguments": {"param": "value"}  // JSON object
+///   }
+/// }
+/// ```
+///
+/// OpenAI-compatible format (arguments is a JSON string):
 /// ```json
 /// {
 ///   "id": "call_abc123",
@@ -90,20 +102,29 @@ fn mcp_tool_to_ollama(mcp_tool: &Value) -> Option<Value> {
 ///   }
 /// }
 /// ```
-///
-/// We need to parse the arguments string and return the function name and parsed arguments
 pub fn parse_ollama_tool_call(tool_call: &Value) -> Option<(String, Value)> {
     let function = tool_call.get("function")?;
     let name = function.get("name")?.as_str()?.to_string();
 
-    // Arguments come as a JSON string, need to parse it
-    let arguments_str = function.get("arguments")?.as_str()?;
-    let arguments = match serde_json::from_str::<Value>(arguments_str) {
-        Ok(args) => args,
-        Err(e) => {
-            warn!("Failed to parse tool call arguments for {}: {}", name, e);
-            json!({})
+    let arguments = function.get("arguments")?;
+
+    // Handle both formats: native API returns object, OpenAI-compatible returns JSON string
+    let arguments = if arguments.is_string() {
+        // OpenAI-compatible format: arguments is a JSON string
+        let arguments_str = arguments.as_str()?;
+        match serde_json::from_str::<Value>(arguments_str) {
+            Ok(args) => args,
+            Err(e) => {
+                warn!("Failed to parse tool call arguments string for {}: {}", name, e);
+                json!({})
+            }
         }
+    } else if arguments.is_object() {
+        // Native Ollama format: arguments is already an object
+        arguments.clone()
+    } else {
+        warn!("Unexpected arguments format for tool {}: {:?}", name, arguments);
+        json!({})
     };
 
     Some((name, arguments))
@@ -150,7 +171,8 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_ollama_tool_call() {
+    fn test_parse_ollama_tool_call_openai_format() {
+        // OpenAI-compatible format: arguments is a JSON string
         let tool_call = json!({
             "id": "call_123",
             "type": "function",
@@ -165,6 +187,26 @@ mod tests {
         assert_eq!(name, "send_email");
         assert_eq!(arguments["to"], "user@example.com");
         assert_eq!(arguments["subject"], "Hello");
+    }
+
+    #[test]
+    fn test_parse_ollama_tool_call_native_format() {
+        // Native Ollama API format: arguments is an object
+        let tool_call = json!({
+            "function": {
+                "name": "move_email",
+                "arguments": {
+                    "uid": 123,
+                    "folder": "INBOX.Work"
+                }
+            }
+        });
+
+        let (name, arguments) = parse_ollama_tool_call(&tool_call).unwrap();
+
+        assert_eq!(name, "move_email");
+        assert_eq!(arguments["uid"], 123);
+        assert_eq!(arguments["folder"], "INBOX.Work");
     }
 
     #[test]

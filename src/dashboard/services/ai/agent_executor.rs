@@ -196,7 +196,8 @@ impl AgentExecutor {
         }
     }
 
-    /// Call Ollama with tool calling enabled
+    /// Call Ollama with tool calling enabled using native /api/chat endpoint
+    /// Native API has better tool support than the OpenAI-compatible endpoint
     async fn call_ollama_with_tools(
         &self,
         config: &ModelConfiguration,
@@ -210,14 +211,23 @@ impl AgentExecutor {
                 message: "OLLAMA_BASE_URL environment variable or base_url config must be set".to_string(),
             })?;
         let base_url = base_url.as_str();
-        let url = format!("{}/v1/chat/completions", base_url);
 
-        debug!("Calling Ollama at {} with model {} and {} tools", url, config.model_name, tools.len());
+        // Use native /api/chat endpoint for better tool support
+        let url = format!("{}/api/chat", base_url);
+
+        debug!("Calling Ollama native API at {} with model {} and {} tools", url, config.model_name, tools.len());
+
+        // Convert tools from OpenAI format to native Ollama format
+        // Native format expects tools directly (same structure but without "type": "function" wrapper)
+        let native_tools: Vec<Value> = tools.iter().map(|tool| {
+            // Native Ollama tool format matches OpenAI format actually
+            tool.clone()
+        }).collect();
 
         let request_body = json!({
             "model": config.model_name,
             "messages": messages,
-            "tools": tools,
+            "tools": native_tools,
             "stream": false,
         });
 
@@ -238,7 +248,7 @@ impl AgentExecutor {
         if !response.status().is_success() {
             let status = response.status();
             let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error>".to_string());
-            error!("Ollama API returned error {}: {}", status, error_body);
+            error!("Ollama native API returned error {}: {}", status, error_body);
             return Err(ApiError::ServiceUnavailable {
                 service: format!("Ollama returned status {}: {}", status, error_body),
             });
@@ -252,15 +262,13 @@ impl AgentExecutor {
                 }
             })?;
 
-        // Extract the assistant message
-        let message = response_body
-            .get("choices")
-            .and_then(|c| c.get(0))
-            .and_then(|c| c.get("message"))
+        // Native API returns message directly, not in choices array
+        // Format: {"message": {"role": "assistant", "content": "...", "tool_calls": [...]}}
+        let message = response_body.get("message")
             .ok_or_else(|| {
-                error!("Ollama response missing expected message field");
+                error!("Ollama native API response missing 'message' field: {:?}", response_body);
                 ApiError::InternalError {
-                    message: "Invalid response format from Ollama".to_string(),
+                    message: "Invalid response format from Ollama native API".to_string(),
                 }
             })?;
 
