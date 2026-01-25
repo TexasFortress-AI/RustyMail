@@ -10,6 +10,10 @@ use crate::api::errors::ApiError;
 use super::model_config::{get_model_config, ModelConfiguration};
 use super::sampler_config::{get_sampler_config, SamplerConfig};
 
+/// Providers that support email drafting
+/// These have been tested with their respective API formats
+pub const DRAFTING_PROVIDERS: &[&str] = &["ollama", "openai", "llamacpp", "lmstudio"];
+
 /// Email drafter service
 pub struct EmailDrafter {
     http_client: Client,
@@ -145,10 +149,12 @@ Draft email body:"#,
         match config.provider.as_str() {
             "ollama" => self.generate_with_ollama(config, prompt, sampler_config).await,
             "openai" => self.generate_with_openai(config, prompt, sampler_config).await,
+            "llamacpp" => self.generate_with_openai_compatible(config, prompt, sampler_config, "LLAMACPP_BASE_URL").await,
+            "lmstudio" => self.generate_with_openai_compatible(config, prompt, sampler_config, "LMSTUDIO_BASE_URL").await,
             provider => {
-                error!("Unsupported provider for drafting: {}", provider);
+                error!("Unsupported provider for drafting: {}. Supported: {:?}", provider, DRAFTING_PROVIDERS);
                 Err(ApiError::BadRequest {
-                    message: format!("Unsupported drafting provider: {}", provider),
+                    message: format!("Unsupported drafting provider: '{}'. Supported: {}", provider, DRAFTING_PROVIDERS.join(", ")),
                 })
             }
         }
@@ -350,6 +356,107 @@ Draft email body:"#,
                 error!("OpenAI response missing expected content field");
                 ApiError::InternalError {
                     message: "Invalid response format from OpenAI".to_string(),
+                }
+            })?;
+
+        debug!("Successfully generated draft with {} characters", content.len());
+        Ok(content.to_string())
+    }
+
+    /// Generate text using OpenAI-compatible API (llama.cpp, LM Studio)
+    async fn generate_with_openai_compatible(
+        &self,
+        config: &ModelConfiguration,
+        prompt: &str,
+        sampler_config: Option<&SamplerConfig>,
+        env_var: &str,
+    ) -> Result<String, ApiError> {
+        let base_url = config.base_url.as_deref()
+            .map(|s| s.to_string())
+            .or_else(|| std::env::var(env_var).ok())
+            .ok_or_else(|| ApiError::BadRequest {
+                message: format!("{} environment variable or base_url config must be set", env_var),
+            })?;
+
+        let url = format!("{}/v1/chat/completions", base_url);
+
+        debug!("Calling OpenAI-compatible API at {} with model {}", url, config.model_name);
+
+        // Apply sampler config if available
+        let temperature = sampler_config.map(|c| c.effective_temperature()).unwrap_or(0.7);
+        let top_p = sampler_config.and_then(|c| c.top_p);
+        let min_p = sampler_config.and_then(|c| c.min_p);
+
+        let mut request_body = json!({
+            "model": config.model_name,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            "temperature": temperature,
+            "stream": false,
+        });
+
+        // Add optional parameters if present
+        if let Some(p) = top_p {
+            request_body["top_p"] = json!(p);
+        }
+        if let Some(p) = min_p {
+            request_body["min_p"] = json!(p);
+        }
+        if let Some(cfg) = sampler_config {
+            if let Some(max) = cfg.max_tokens {
+                request_body["max_tokens"] = json!(max);
+            }
+            if let Some(rp) = cfg.repeat_penalty {
+                request_body["repeat_penalty"] = json!(rp);
+            }
+        }
+
+        let response = self.http_client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .json(&request_body)
+            .timeout(std::time::Duration::from_secs(120))  // Longer timeout for local models
+            .send()
+            .await
+            .map_err(|e| {
+                error!("Failed to call OpenAI-compatible API: {}", e);
+                ApiError::ServiceUnavailable {
+                    service: format!("OpenAI-compatible API: {}", e),
+                }
+            })?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error>".to_string());
+            error!("OpenAI-compatible API returned error {}: {}", status, error_body);
+            return Err(ApiError::ServiceUnavailable {
+                service: format!("OpenAI-compatible API returned status {}: {}", status, error_body),
+            });
+        }
+
+        let response_body: Value = response.json().await
+            .map_err(|e| {
+                error!("Failed to parse OpenAI-compatible response: {}", e);
+                ApiError::InternalError {
+                    message: format!("Failed to parse response: {}", e),
+                }
+            })?;
+
+        // OpenAI-compatible format: {"choices": [{"message": {"content": "..."}}]}
+        let content = response_body
+            .get("choices")
+            .and_then(|c| c.get(0))
+            .and_then(|c| c.get("message"))
+            .and_then(|m| m.get("content"))
+            .and_then(|c| c.as_str())
+            .ok_or_else(|| {
+                error!("OpenAI-compatible API response missing expected content field: {:?}", response_body);
+                ApiError::InternalError {
+                    message: "Invalid response format from OpenAI-compatible API".to_string(),
                 }
             })?;
 

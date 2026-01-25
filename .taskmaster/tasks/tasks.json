@@ -707,10 +707,11 @@
         "description": "Modify email_drafter.rs to use the provider adapter abstraction consistently so any configured provider (not just Ollama and OpenAI) works for email drafting, preventing runtime errors when users select other providers in the UI.",
         "details": "Fix the provider limitation in src/dashboard/services/ai/email_drafter.rs where only 'ollama' and 'openai' providers are hardcoded:\n\n1. **Analyze current implementation**:\n   - Review the existing draft_reply() and draft_email() methods that currently only support Ollama and OpenAI\n   - Identify where provider-specific logic is hardcoded (likely in a match statement or if/else chain)\n   - Check how the provider adapter abstraction is used in other services (e.g., agent_executor.rs after Task 40)\n\n2. **Refactor to use provider adapter abstraction**:\n   ```rust\n   // Instead of hardcoding provider logic:\n   match provider_name.as_str() {\n       \"ollama\" => { /* Ollama-specific code */ }\n       \"openai\" => { /* OpenAI-specific code */ }\n       _ => return Err(\"Unsupported provider\")\n   }\n   \n   // Use the provider adapter pattern:\n   let provider = self.provider_manager.get_provider(&provider_name)?;\n   let response = provider.complete(CompletionRequest {\n       model: model_name,\n       messages: vec![\n           Message::system(\"You are an email drafting assistant...\"),\n           Message::user(&prompt)\n       ],\n       temperature: Some(0.7),\n       max_tokens: Some(1000),\n       stream: false,\n   }).await?;\n   ```\n\n3. **Update EmailDrafter struct**:\n   - Add provider_manager: Arc<ProviderManager> field\n   - Remove any provider-specific client fields (ollama_client, openai_client, etc.)\n   - Update the constructor to accept ProviderManager\n\n4. **Modify draft_reply() method**:\n   - Remove provider-specific branching logic\n   - Use provider_manager.get_provider() to get the appropriate adapter\n   - Build a unified CompletionRequest that works with all providers\n   - Handle the response uniformly regardless of provider\n\n5. **Modify draft_email() method**:\n   - Apply the same refactoring as draft_reply()\n   - Ensure consistent error handling across all providers\n\n6. **Update error handling**:\n   - Replace provider-specific error types with a generic error type\n   - Ensure meaningful error messages when a provider fails\n   - Add logging for debugging provider issues\n\n7. **Consider provider capabilities**:\n   - Some providers may have different token limits or features\n   - Use the provider adapter's capabilities to adjust request parameters\n   - Gracefully degrade functionality if a provider doesn't support certain features",
         "testStrategy": "Verify multi-provider email drafting support with comprehensive testing:\n\n1. **Unit tests for EmailDrafter**:\n   - Mock ProviderManager to return different provider adapters\n   - Test draft_reply() with mocked Ollama, OpenAI, Anthropic, LM Studio, and llama.cpp providers\n   - Test draft_email() with all supported providers\n   - Verify error handling when provider_manager.get_provider() fails\n   - Test with providers that have different capabilities/limitations\n\n2. **Integration tests with real providers**:\n   - Set up test configurations for multiple providers in ai_model_configurations\n   - Test actual email drafting with each configured provider\n   - Verify response quality and format consistency across providers\n   - Test error scenarios (invalid API keys, network failures, etc.)\n\n3. **Manual testing through UI**:\n   - Configure multiple providers in the system\n   - Select each provider in the Email Assistant UI\n   - Draft replies and new emails with each provider\n   - Verify no runtime errors occur regardless of selected provider\n   - Test switching between providers during a session\n\n4. **Performance testing**:\n   - Compare response times across different providers\n   - Ensure no performance regression from the refactoring\n   - Test concurrent drafting requests with different providers\n\n5. **Regression testing**:\n   - Ensure Ollama and OpenAI (previously working providers) still function correctly\n   - Verify email quality hasn't degraded with the abstraction\n   - Test edge cases like very long emails or special formatting",
-        "status": "pending",
+        "status": "done",
         "dependencies": [],
         "priority": "high",
-        "subtasks": []
+        "subtasks": [],
+        "updatedAt": "2026-01-25T11:43:26.799Z"
       },
       {
         "id": "42",
@@ -726,9 +727,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-01-25T11:41:47.338Z",
+      "lastModified": "2026-01-25T11:43:26.799Z",
       "taskCount": 42,
-      "completedCount": 39,
+      "completedCount": 40,
       "tags": [
         "master"
       ]
