@@ -460,14 +460,16 @@ You can configure **both variants** in Claude Desktop to access different tool s
       "command": "/path/to/rustymail-mcp-stdio",
       "env": {
         "MCP_BACKEND_URL": "http://localhost:9437/mcp",
-        "MCP_TIMEOUT": "30"
+        "MCP_TIMEOUT": "30",
+        "RUSTYMAIL_API_KEY": "your-api-key-from-.env"
       }
     },
     "rustymail-high-level": {
       "command": "/path/to/rustymail-mcp-stdio-high-level",
       "env": {
         "MCP_BACKEND_URL": "http://localhost:9437/mcp",
-        "MCP_TIMEOUT": "120"
+        "MCP_TIMEOUT": "120",
+        "RUSTYMAIL_API_KEY": "your-api-key-from-.env"
       }
     }
   }
