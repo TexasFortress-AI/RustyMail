@@ -21,7 +21,7 @@ import { Label } from '../../components/ui/label';
 import { Switch } from '../../components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { useToast } from '../../components/ui/use-toast';
-import { Loader2, Wand2, CheckCircle2, XCircle } from 'lucide-react';
+import { Loader2, Wand2, CheckCircle2, XCircle, Shield } from 'lucide-react';
 import { Badge } from '../../components/ui/badge';
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
 
@@ -69,6 +69,22 @@ export function AccountFormDialog({
   });
 
   const [autoConfigResult, setAutoConfigResult] = useState<AutoConfigResult | null>(null);
+  const [oauthLoading, setOauthLoading] = useState(false);
+
+  const handleMicrosoftOAuth = async () => {
+    try {
+      setOauthLoading(true);
+      const { authorization_url } = await accountsApi.getMicrosoftAuthUrl();
+      window.location.href = authorization_url;
+    } catch (error: any) {
+      toast({
+        title: 'OAuth Error',
+        description: error.message || 'Failed to initiate Microsoft sign-in',
+        variant: 'destructive',
+      });
+      setOauthLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (account) {
@@ -365,6 +381,28 @@ export function AccountFormDialog({
                   </div>
                 )}
               </div>
+
+              {autoConfigResult?.supports_oauth && autoConfigResult?.oauth_provider === 'microsoft' && (
+                <div className="space-y-2">
+                  <Button
+                    type="button"
+                    onClick={handleMicrosoftOAuth}
+                    disabled={oauthLoading}
+                    className="w-full"
+                    style={{ backgroundColor: '#0078D4', color: 'white' }}
+                  >
+                    {oauthLoading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Shield className="mr-2 h-4 w-4" />
+                    )}
+                    Sign in with Microsoft
+                  </Button>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Use OAuth2 for secure authentication without storing your password
+                  </p>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="account_name">Account Name *</Label>

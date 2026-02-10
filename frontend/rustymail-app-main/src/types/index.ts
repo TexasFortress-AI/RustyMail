@@ -162,6 +162,7 @@ export interface Account {
   smtp_user?: string;
   smtp_use_tls?: boolean;
   smtp_use_starttls?: boolean;
+  oauth_provider?: string;
   is_active: boolean;
   is_default: boolean;
   connection_status?: AccountConnectionStatus;

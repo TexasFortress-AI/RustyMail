@@ -95,10 +95,11 @@ pub struct Email {
 /// ```rust
 /// use rustymail::imap::types::Folder;
 ///
-/// let folder = Folder {
-///     name: "INBOX".to_string(),
-///     delimiter: Some("/".to_string()),
-/// };
+/// let folder = Folder::new(
+///     "INBOX".to_string(),
+///     "INBOX".to_string(),
+///     Some("/".to_string()),
+/// );
 /// ```
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Folder {
@@ -216,7 +217,7 @@ impl Folder {
 ///
 /// let mailbox = MailboxInfo {
 ///     name: "INBOX".to_string(),
-///     delimiter: Some('/'),
+///     delimiter: "/".to_string(),
 ///     exists: 42,
 ///     recent: 5,
 ///     unseen: Some(10),

@@ -158,7 +158,7 @@ impl AsyncImapSessionWrapper {
         let client = async_imap::Client::new(compat_stream);
 
         // Use XOAUTH2 authentication
-        let authenticator = XOAuth2Authenticator::new(username.to_string(), access_token.to_string());
+        let authenticator = XOAuth2Authenticator::new(&username, &access_token);
         let session = client.authenticate("XOAUTH2", authenticator).await.map_err(|(err, _client)| {
             match err {
                 async_imap::error::Error::No(msg) | async_imap::error::Error::Bad(msg) => ImapError::Auth(format!("XOAUTH2 login failed: {}", msg)),

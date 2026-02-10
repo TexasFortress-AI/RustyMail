@@ -135,6 +135,35 @@ export const accountsApi = {
     }
   },
 
+  // Get OAuth provider status (which providers are configured)
+  async getOAuthStatus(): Promise<{ microsoft: boolean }> {
+    const response = await fetch(`${API_BASE}/oauth/status`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      return { microsoft: false };
+    }
+
+    return response.json();
+  },
+
+  // Get Microsoft OAuth authorization URL
+  async getMicrosoftAuthUrl(): Promise<{ authorization_url: string; state: string }> {
+    const response = await fetch(`${API_BASE}/oauth/microsoft/authorize`, {
+      method: 'GET',
+      headers,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: response.statusText }));
+      throw new Error(error.error || 'Failed to get Microsoft authorization URL');
+    }
+
+    return response.json();
+  },
+
   // Validate connection
   async validateConnection(id: string): Promise<{ success: boolean; message?: string }> {
     const response = await fetch(`${API_BASE}/accounts/${id}/validate`, {

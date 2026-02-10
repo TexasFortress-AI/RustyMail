@@ -20,6 +20,7 @@ import {
   Check,
   Trash2,
   AlertCircle,
+  Shield,
 } from 'lucide-react';
 import {
   AlertDialog,
@@ -167,6 +168,12 @@ export function AccountListPanel({
                           <Badge variant="secondary" className="text-xs">
                             <AlertCircle className="mr-1 h-3 w-3" />
                             Inactive
+                          </Badge>
+                        )}
+                        {account.oauth_provider && (
+                          <Badge variant="outline" className="text-xs gap-1" style={{ borderColor: '#0078D4', color: '#0078D4' }}>
+                            <Shield className="h-3 w-3" />
+                            OAuth
                           </Badge>
                         )}
                         {account.provider_type && (
