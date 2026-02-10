@@ -128,6 +128,48 @@ impl AsyncImapSessionWrapper {
         Ok(Self::with_append_timeout(session, append_timeout))
     }
 
+    /// Connect using XOAUTH2 authentication (for OAuth2 providers like Microsoft 365 and Gmail)
+    pub async fn connect_with_xoauth2(
+        server: &str,
+        port: u16,
+        username: Arc<String>,
+        access_token: Arc<String>,
+        append_timeout: Duration,
+    ) -> Result<Self, ImapError> {
+        use crate::imap::xoauth2::XOAuth2Authenticator;
+
+        let tls_builder = native_tls::TlsConnector::builder();
+        let tls = tls_builder.build().map_err(|e| ImapError::Tls(e.to_string()))?;
+        let tls_connector = TlsConnector::from(tls);
+
+        let addr = format!("{}:{}", server, port);
+        let tcp_stream = TokioTcpStream::connect(&addr).await.map_err(|e| ImapError::Connection(e.to_string()))?;
+
+        info!("Setting socket timeouts: read={:?}, write={:?}", append_timeout, append_timeout);
+
+        let std_stream = tcp_stream.into_std().map_err(|e| ImapError::Connection(format!("Failed to convert to std stream: {}", e)))?;
+        std_stream.set_read_timeout(Some(append_timeout)).map_err(|e| ImapError::Connection(format!("Failed to set read timeout: {}", e)))?;
+        std_stream.set_write_timeout(Some(append_timeout)).map_err(|e| ImapError::Connection(format!("Failed to set write timeout: {}", e)))?;
+        let tcp_stream = TokioTcpStream::from_std(std_stream).map_err(|e| ImapError::Connection(format!("Failed to convert back to tokio stream: {}", e)))?;
+
+        let tls_stream = tls_connector.connect(server, tcp_stream).await.map_err(|e| ImapError::Tls(e.to_string()))?;
+        let compat_stream = tls_stream.compat();
+
+        let client = async_imap::Client::new(compat_stream);
+
+        // Use XOAUTH2 authentication
+        let authenticator = XOAuth2Authenticator::new(username.to_string(), access_token.to_string());
+        let session = client.authenticate("XOAUTH2", authenticator).await.map_err(|(err, _client)| {
+            match err {
+                async_imap::error::Error::No(msg) | async_imap::error::Error::Bad(msg) => ImapError::Auth(format!("XOAUTH2 login failed: {}", msg)),
+                _ => ImapError::Auth(format!("XOAUTH2 login failed: {:?}", err)),
+            }
+        })?;
+
+        info!("XOAUTH2 authentication successful for user: {}", username);
+        Ok(Self::with_append_timeout(session, append_timeout))
+    }
+
     pub async fn current_folder(&self) -> Option<String> {
         self.current_folder.lock().await.clone()
     }

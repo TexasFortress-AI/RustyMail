@@ -11,20 +11,24 @@
 pub mod atomic;
 pub mod client;
 pub mod error;
+pub mod oauth2;
 pub mod session;
 pub mod types;
+pub mod xoauth2;
 
 // --- Re-exports ---
 // Keep these minimal and focused on the public API
 
 pub use client::ImapClient;
 pub use error::ImapError;
+pub use oauth2::{MicrosoftOAuth2Client, MicrosoftOAuth2Config, OAuth2Error, StoredToken, TokenResponse};
 pub use session::{AsyncImapOps, AsyncImapSessionWrapper};
 pub use types::{
     Address, Email, Envelope, FlagOperation, Flags, Folder, MailboxInfo, SearchCriteria,
     // Re-export necessary payload types if they are part of the public API
     AppendEmailPayload, ModifyFlagsPayload,
 };
+pub use xoauth2::XOAuth2Authenticator;
 
 // --- Type Aliases (Consider if these are truly needed publicly) ---
 

@@ -39,6 +39,15 @@ pub struct ImapConfig {
     pub use_tls: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum AuthMethod {
+    #[default]
+    Password,
+    OAuth2,
+    AppPassword,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SmtpConfig {
     pub host: String,

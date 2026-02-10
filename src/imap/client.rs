@@ -86,6 +86,34 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         Ok(ImapClient::new(session))
     }
 
+    /// Establishes a new IMAP connection using XOAUTH2 authentication (for OAuth2 providers)
+    pub async fn connect_with_xoauth2(
+        server: &str,
+        port: u16,
+        username: &str,
+        access_token: &str,
+    ) -> Result<ImapClient<AsyncImapSessionWrapper>, ImapError> {
+        Self::connect_with_xoauth2_and_timeout(server, port, username, access_token, Duration::from_secs(35)).await
+    }
+
+    /// Establishes a new IMAP connection using XOAUTH2 with custom timeout
+    pub async fn connect_with_xoauth2_and_timeout(
+        server: &str,
+        port: u16,
+        username: &str,
+        access_token: &str,
+        append_timeout: Duration,
+    ) -> Result<ImapClient<AsyncImapSessionWrapper>, ImapError> {
+        let session = AsyncImapSessionWrapper::connect_with_xoauth2(
+            server,
+            port,
+            Arc::new(username.to_string()),
+            Arc::new(access_token.to_string()),
+            append_timeout,
+        ).await?;
+        Ok(ImapClient::new(session))
+    }
+
     /// Provides direct access to the underlying session operations.
     pub fn session(&self) -> &T {
         &self.session

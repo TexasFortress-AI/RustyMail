@@ -1,9 +1,38 @@
 {
+  "preferences": {
+    "coworkScheduledTasksEnabled": false,
+    "sidebarMode": "chat"
+  },
   "mcpServers": {
-    "rustymail": {
-      "command": "/Users/au/src/RustyMail/target/release/rustymail-mcp-stdio",
+    "iterm-mcp": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "iterm-mcp"
+      ]
+    },
+    "rustymail-low-level": {
+      "command": "/Users/mlr-mac-user01/src/RustyMail/target/release/rustymail-mcp-stdio",
+      "args": [
+        "--backend-url",
+        "http://localhost:9437/mcp"
+      ],
       "env": {
-        "RUST_LOG": "info"
+        "MCP_BACKEND_URL": "http://localhost:9437/mcp",
+        "MCP_TIMEOUT": "30",
+        "RUSTYMAIL_API_KEY": "your-secure-api-key-here"
+      }
+    },
+    "rustymail": {
+      "command": "/Users/mlr-mac-user01/src/RustyMail/target/release/rustymail-mcp-stdio-high-level",
+      "args": [
+        "--backend-url",
+        "http://localhost:9437/mcp"
+      ],
+      "env": {
+        "MCP_BACKEND_URL": "http://localhost:9437/mcp",
+        "MCP_TIMEOUT": "120",
+        "RUSTYMAIL_API_KEY": "your-secure-api-key-here"
       }
     }
   }

@@ -24,6 +24,7 @@ use env_logger;
 use rustymail::dashboard;
 use rustymail::dashboard::api::SseManager;
 use rustymail::api::openapi_docs;
+use rustymail::dashboard::services::account_store::AccountStore;
 // --- Add imports for factory ---
 use rustymail::imap::client::ImapClient; // Needed for the factory closure
 // --- End imports for factory ---
@@ -106,24 +107,33 @@ async fn main() -> std::io::Result<()> {
     }
     */
 
+    // --- Load Account Credentials from accounts.json (single source of truth) ---
+    let account_store = AccountStore::new("config/accounts.json");
+    account_store.initialize().await.expect("Failed to initialize account store");
+    let default_account = account_store.get_default_account().await
+        .expect("Failed to load default account from accounts.json")
+        .expect("No default account configured in accounts.json");
+
+    info!("Loaded default account from accounts.json: {}", default_account.email_address);
+
     // --- Create IMAP Session Factory ---
     use futures_util::future::BoxFuture;
-    let imap_settings = settings.clone(); // Clone settings needed for the factory
+    let imap_account = default_account.clone();
     let raw_imap_session_factory: Box<dyn Fn() -> BoxFuture<'static, Result<ImapClient<AsyncImapSessionWrapper>, ImapError>> + Send + Sync> = Box::new(move || {
-        let settings_clone = imap_settings.clone(); // Clone again for the async block
+        let account = imap_account.clone();
         Box::pin(async move {
-            info!("ImapSessionFactory: Creating new IMAP session..."); // Add log
+            info!("ImapSessionFactory: Creating new IMAP session...");
             let client = ImapClient::<AsyncImapSessionWrapper>::connect(
-                &settings_clone.imap_host,
-                settings_clone.imap_port,
-                &settings_clone.imap_user,
-                &settings_clone.imap_pass,
+                &account.imap.host,
+                account.imap.port,
+                &account.imap.username,
+                &account.imap.password,
             ).await.map_err(|e| {
-                error!("ImapSessionFactory: Failed to connect: {:?}", e); // Add error log
-                e // Return the original ImapError
+                error!("ImapSessionFactory: Failed to connect: {:?}", e);
+                e
             })?;
-            info!("ImapSessionFactory: New IMAP session created successfully."); // Add success log
-            Ok(client) // <-- Return the client directly
+            info!("ImapSessionFactory: New IMAP session created successfully.");
+            Ok(client)
         })
     });
     // Wrap the factory in a cloneable wrapper
