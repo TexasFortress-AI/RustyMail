@@ -69,6 +69,10 @@ fn create_test_account(email: &str, display_name: &str) -> Account {
         is_active: true,
         is_default: false,
         connection_status: None,
+        oauth_provider: None,
+        oauth_access_token: None,
+        oauth_refresh_token: None,
+        oauth_token_expiry: None,
     }
 }
 

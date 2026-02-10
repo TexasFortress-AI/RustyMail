@@ -18,7 +18,7 @@ use async_trait::async_trait;
 use rustymail::dashboard::services::{
     DashboardState, ClientManager, MetricsService, CacheService, CacheConfig,
     ConfigService, AiService, EmailService, SyncService, AccountService,
-    EventBus, SmtpService, OutboxQueueService
+    EventBus, SmtpService, OutboxQueueService, OAuthService, OAuthConfig
 };
 use rustymail::dashboard::api::sse::SseManager;
 use rustymail::dashboard::api::routes::configure as configure_dashboard_routes;
@@ -172,6 +172,7 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
         connection_pool,
         jobs: std::sync::Arc::new(dashmap::DashMap::new()),
         job_persistence: None,
+        oauth_service: Arc::new(OAuthService::new(OAuthConfig { microsoft: None })),
     })
 }
 

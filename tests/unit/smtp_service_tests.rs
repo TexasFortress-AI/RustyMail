@@ -72,6 +72,10 @@ fn create_test_account_with_smtp(email: &str) -> Account {
         is_active: true,
         is_default: true,
         connection_status: None,
+        oauth_provider: None,
+        oauth_access_token: None,
+        oauth_refresh_token: None,
+        oauth_token_expiry: None,
     }
 }
 
@@ -96,6 +100,10 @@ fn create_test_account_without_smtp(email: &str) -> Account {
         is_active: true,
         is_default: false,
         connection_status: None,
+        oauth_provider: None,
+        oauth_access_token: None,
+        oauth_refresh_token: None,
+        oauth_token_expiry: None,
     }
 }
 

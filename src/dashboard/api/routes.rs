@@ -6,6 +6,7 @@
 use actix_web::{web, Scope};
 use super::handlers;
 use super::accounts;
+use super::oauth;
 use super::sse;
 use super::config;
 use super::health;
@@ -81,6 +82,10 @@ pub fn configure_routes() -> Scope {
         .route("/jobs/{job_id}", web::get().to(handlers::get_job))
         .route("/jobs/cancel", web::post().to(handlers::cancel_job))
         .route("/jobs/process-emails", web::post().to(handlers::start_process_email_instructions))
+        // OAuth endpoints
+        .route("/oauth/status", web::get().to(oauth::oauth_status))
+        .route("/oauth/microsoft/authorize", web::get().to(oauth::microsoft_authorize))
+        .route("/oauth/callback/microsoft", web::get().to(oauth::microsoft_callback))
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {

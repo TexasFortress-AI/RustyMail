@@ -274,3 +274,75 @@ pub async fn connect(
     Ok(ImapClient::new(wrapped_session))
 }
 
+/// Establishes a TLS-encrypted IMAP connection using XOAUTH2 authentication.
+///
+/// This is the OAuth2 variant of `connect()`. Instead of username/password login,
+/// it uses the SASL XOAUTH2 mechanism with a Bearer access token.
+pub async fn connect_with_oauth(
+    server: &str,
+    port: u16,
+    email: &str,
+    access_token: &str,
+    timeout: Duration,
+) -> Result<ImapClient<AsyncImapSessionWrapper>, ImapError> {
+    let addr = (server, port)
+        .to_socket_addrs()?
+        .next()
+        .ok_or_else(|| ImapError::Connection("Invalid server address".to_string()))?;
+
+    let append_timeout_seconds = std::env::var("IMAP_APPEND_TIMEOUT_SECONDS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(35);
+    let append_timeout = Duration::from_secs(append_timeout_seconds);
+
+    info!("Connecting to IMAP server (XOAUTH2): {} with timeout: {:?}", addr, append_timeout);
+
+    let tcp_stream = tokio::time::timeout(timeout, TokioTcpStream::connect(addr))
+        .await
+        .map_err(|_| ImapError::Timeout("Connection timed out".to_string()))??;
+
+    tcp_stream.set_nodelay(true)
+        .map_err(|e| ImapError::Connection(format!("Failed to set TCP_NODELAY: {}", e)))?;
+
+    let std_stream = tcp_stream.into_std()
+        .map_err(|e| ImapError::Connection(format!("Failed to convert to std stream: {}", e)))?;
+    std_stream.set_read_timeout(Some(append_timeout))
+        .map_err(|e| ImapError::Connection(format!("Failed to set read timeout: {}", e)))?;
+    std_stream.set_write_timeout(Some(append_timeout))
+        .map_err(|e| ImapError::Connection(format!("Failed to set write timeout: {}", e)))?;
+    let tcp_stream = TokioTcpStream::from_std(std_stream)
+        .map_err(|e| ImapError::Connection(format!("Failed to convert back: {}", e)))?;
+
+    let tls_builder = TlsConnector::builder();
+    let native_tls_connector = tls_builder.build()
+        .map_err(|e| ImapError::Tls(format!("Failed to build TLS connector: {}", e)))?;
+    let tls_connector = TokioTlsConnector::from(native_tls_connector);
+
+    let tls_stream = tokio::time::timeout(timeout, tls_connector.connect(server, tcp_stream))
+        .await
+        .map_err(|_| ImapError::Timeout("TLS handshake timed out".to_string()))?
+        .map_err(|e| ImapError::Tls(e.to_string()))?;
+
+    info!("TLS connection established (XOAUTH2)");
+
+    let unauthenticated_client = AsyncImapInternalClient::new(tls_stream.compat());
+
+    let authenticator = crate::imap::xoauth2::XOAuth2Authenticator::new(email, access_token);
+
+    let authenticated_session = tokio::time::timeout(
+        timeout,
+        unauthenticated_client.authenticate("XOAUTH2", authenticator),
+    )
+    .await
+    .map_err(|_| ImapError::Timeout("XOAUTH2 authentication timed out".to_string()))?
+    .map_err(|(err, _client)| ImapError::Auth(format!("XOAUTH2 auth failed: {:?}", err)))?;
+
+    info!("IMAP XOAUTH2 authentication successful for: {}", email);
+
+    let wrapped_session = AsyncImapSessionWrapper::with_append_timeout(
+        authenticated_session, append_timeout,
+    );
+    Ok(ImapClient::new(wrapped_session))
+}
+

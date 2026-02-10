@@ -3,48 +3,42 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-//! XOAUTH2 authenticator for async-imap
+//! XOAUTH2 authenticator for async-imap IMAP connections.
 //!
-//! XOAUTH2 is a SASL authentication mechanism used by Google and Microsoft
-//! for OAuth2-based IMAP authentication.
-//! Format: base64("user=" + username + "\x01auth=Bearer " + access_token + "\x01\x01")
+//! Implements the `async_imap::Authenticator` trait for OAuth2-based
+//! IMAP authentication (Microsoft 365, Gmail, etc.).
+//!
+//! Token format: `user=<email>\x01auth=Bearer <access_token>\x01\x01`
+//!
+//! Note: `async_imap::Authenticator::process()` returns the raw token;
+//! the library itself handles base64 encoding before sending to the server.
 
 use async_imap::Authenticator;
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
 
-/// XOAUTH2 authenticator for OAuth2 IMAP authentication
+/// XOAUTH2 authenticator for IMAP SASL authentication.
 #[derive(Debug, Clone)]
 pub struct XOAuth2Authenticator {
-    username: String,
-    access_token: String,
+    /// The pre-formatted XOAUTH2 token string.
+    token: String,
 }
 
 impl XOAuth2Authenticator {
-    /// Create a new XOAUTH2 authenticator
-    pub fn new(username: impl Into<String>, access_token: impl Into<String>) -> Self {
+    /// Create a new XOAUTH2 authenticator.
+    ///
+    /// `email` — the user's email address (e.g., "user@outlook.com")
+    /// `access_token` — the OAuth2 access token
+    pub fn new(email: &str, access_token: &str) -> Self {
         Self {
-            username: username.into(),
-            access_token: access_token.into(),
+            token: format!("user={}\x01auth=Bearer {}\x01\x01", email, access_token),
         }
-    }
-
-    /// Encode the XOAUTH2 string
-    /// Format: user={user}^Aauth=Bearer {token}^A^A
-    /// where ^A is ASCII 0x01 (control character)
-    fn encode(&self) -> Vec<u8> {
-        let auth_string = format!(
-            "user={}\x01auth=Bearer {}\x01\x01",
-            self.username, self.access_token
-        );
-        BASE64.encode(auth_string).into_bytes()
     }
 }
 
 impl Authenticator for XOAuth2Authenticator {
-    type Response = Vec<u8>;
+    type Response = String;
 
     fn process(&mut self, _challenge: &[u8]) -> Self::Response {
-        self.encode()
+        self.token.clone()
     }
 }
 
@@ -53,16 +47,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_xoauth2_encode() {
-        let mut auth = XOAuth2Authenticator::new("user@example.com", "ya29.vF9dft4qmTc2Nvb3RlckBhdHRhdmlzdGEuY29tCg");
-        let encoded = auth.process(&[]);
+    fn test_xoauth2_token_format() {
+        let mut auth = XOAuth2Authenticator::new("user@outlook.com", "my-token-123");
+        let response = auth.process(b"");
+        assert_eq!(
+            response,
+            "user=user@outlook.com\x01auth=Bearer my-token-123\x01\x01"
+        );
+    }
 
-        // Should be valid base64
-        let decoded = BASE64.decode(&encoded).unwrap();
-        let decoded_str = String::from_utf8(decoded).unwrap();
-
-        // Check format
-        assert!(decoded_str.contains("user=user@example.com"));
-        assert!(decoded_str.contains("auth=Bearer ya29.vF9dft4qmTc2Nvb3RlckBhdHRhdmlzdGEuY29tCg"));
+    #[test]
+    fn test_xoauth2_ignores_challenge() {
+        let mut auth = XOAuth2Authenticator::new("a@b.com", "tok");
+        // Challenge content should be ignored for XOAUTH2
+        let r1 = auth.process(b"some challenge");
+        let r2 = auth.process(b"");
+        assert_eq!(r1, r2);
     }
 }

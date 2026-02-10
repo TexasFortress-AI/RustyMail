@@ -56,6 +56,18 @@ pub struct Account {
     pub smtp_pass: Option<String>,
     pub smtp_use_tls: Option<bool>,
     pub smtp_use_starttls: Option<bool>,
+    /// OAuth provider identifier (e.g., "microsoft"). If set, XOAUTH2 is used.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub oauth_provider: Option<String>,
+    /// OAuth access token (never serialized to API responses).
+    #[serde(skip_serializing, default)]
+    pub oauth_access_token: Option<String>,
+    /// OAuth refresh token (never serialized to API responses).
+    #[serde(skip_serializing, default)]
+    pub oauth_refresh_token: Option<String>,
+    /// Unix timestamp when access token expires.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub oauth_token_expiry: Option<i64>,
     #[serde(default = "default_is_active")]
     pub is_active: bool,
     #[serde(default)]
@@ -63,6 +75,13 @@ pub struct Account {
     // Connection status for IMAP and SMTP (optional, populated from separate store)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub connection_status: Option<super::connection_status::AccountConnectionStatus>,
+}
+
+impl Account {
+    /// Returns true if this account uses OAuth2 authentication.
+    pub fn is_oauth(&self) -> bool {
+        self.oauth_provider.is_some()
+    }
 }
 
 // Default value function for is_active (defaults to true for new accounts)
@@ -184,6 +203,10 @@ impl AccountService {
                 use_tls: true,
             },
             smtp: None,
+            oauth_provider: None,
+            oauth_access_token: None,
+            oauth_refresh_token: None,
+            oauth_token_expiry: None,
             is_active: true,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -301,6 +324,10 @@ impl AccountService {
                         use_starttls: smtp_use_starttls.map(|v| v != 0).unwrap_or(true),
                     }
                 }),
+                oauth_provider: None,
+                oauth_access_token: None,
+                oauth_refresh_token: None,
+                oauth_token_expiry: None,
                 is_active: is_active != 0,
                 created_at: Utc::now(),
                 updated_at: Utc::now(),
@@ -441,6 +468,10 @@ impl AccountService {
             smtp_pass: stored.smtp.as_ref().map(|s| s.password.clone()),
             smtp_use_tls: stored.smtp.as_ref().map(|s| s.use_tls),
             smtp_use_starttls: stored.smtp.as_ref().map(|s| s.use_starttls),
+            oauth_provider: stored.oauth_provider,
+            oauth_access_token: stored.oauth_access_token,
+            oauth_refresh_token: stored.oauth_refresh_token,
+            oauth_token_expiry: stored.oauth_token_expiry,
             is_active: stored.is_active,
             is_default: false, // Will be set based on config default_account_id
             connection_status: None, // Will be populated from ConnectionStatusStore
@@ -581,6 +612,10 @@ impl AccountService {
                     use_starttls: account.smtp_use_starttls.unwrap_or(true),
                 }
             }),
+            oauth_provider: None,
+            oauth_access_token: None,
+            oauth_refresh_token: None,
+            oauth_token_expiry: None,
             is_active: account.is_active,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -684,6 +719,11 @@ impl AccountService {
                     use_starttls: account.smtp_use_starttls.unwrap_or(true),
                 }
             }),
+            // Preserve existing OAuth fields during non-OAuth updates
+            oauth_provider: existing.oauth_provider,
+            oauth_access_token: existing.oauth_access_token,
+            oauth_refresh_token: existing.oauth_refresh_token,
+            oauth_token_expiry: existing.oauth_token_expiry,
             is_active: account.is_active,
             created_at: existing.created_at,
             updated_at: Utc::now(),

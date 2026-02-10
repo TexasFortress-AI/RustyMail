@@ -26,6 +26,8 @@ pub mod account;
 pub mod account_store;
 pub mod ai;
 pub mod encryption;
+pub mod oauth_config;
+pub mod oauth_service;
 pub mod attachment_storage;
 pub mod autodiscovery;
 pub mod cache;
@@ -41,6 +43,7 @@ pub mod metrics;
 pub mod outbox_queue;
 pub mod outbox_worker;
 pub mod smtp;
+pub mod smtp_auth;
 pub mod sync;
 pub mod jobs;
 
@@ -72,6 +75,8 @@ pub use smtp::{SmtpService, SendEmailRequest, SendEmailResponse, SmtpError};
 pub use sync::{SyncService};
 pub use jobs::{JobRecord, JobStatus};
 pub use encryption::{CredentialEncryption, EncryptionError};
+pub use oauth_config::{OAuthConfig, OAuthProviderConfig};
+pub use oauth_service::{OAuthService, OAuthError, OAuthTokens, OAuthTokenResponse};
 
 // Import the types that were causing privacy issues directly from their source
 // Removed unresolved ImapConfiguration import
@@ -113,6 +118,7 @@ pub struct DashboardState {
     pub connection_pool: Arc<ConnectionPool>,
     pub jobs: Arc<DashMap<String, JobRecord>>,
     pub job_persistence: Option<Arc<jobs::JobPersistenceService>>,
+    pub oauth_service: Arc<OAuthService>,
 }
 
 // Initialize the services
@@ -261,6 +267,10 @@ pub async fn init(
         }
     };
 
+    // Initialize OAuth Service
+    let oauth_config = OAuthConfig::from_env();
+    let oauth_service = Arc::new(OAuthService::new(oauth_config));
+
     // Create event bus
     let event_bus = Arc::new(EventBus::new());
 
@@ -332,5 +342,6 @@ pub async fn init(
         connection_pool,
         jobs: jobs_map,
         job_persistence: Some(job_persistence),
+        oauth_service,
     })
 }

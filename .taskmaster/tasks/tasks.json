@@ -724,13 +724,142 @@
         "priority": "medium",
         "subtasks": [],
         "updatedAt": "2026-01-25T11:45:53.552Z"
+      },
+      {
+        "id": "43",
+        "title": "Add Microsoft OAuth2 Environment Configuration",
+        "description": "Implement R1: Add environment variables for Microsoft OAuth2 app registration and load them at startup",
+        "details": "Add to `.env.example`:\n\n```\nMICROSOFT_CLIENT_ID=your_azure_app_client_id\nMICROSOFT_CLIENT_SECRET=your_azure_app_client_secret\nOAUTH_REDIRECT_BASE_URL=http://localhost:9780\n```\n\nIn `src/dashboard/config.rs`, use `config::Config` or `dotenvy` (v0.15) to load vars. Create `MicrosoftOAuthConfig` struct:\n\n```rust\n#[derive(Clone, Debug)]\npub struct MicrosoftOAuthConfig {\n    pub client_id: String,\n    pub client_secret: String,\n    pub redirect_base_url: String,\n    pub auth_url: &'static str,\n    pub token_url: &'static str,\n    pub scopes: Vec<String>,\n}\n\nimpl MicrosoftOAuthConfig {\n    pub fn new() -> Result<Self> {\n        Ok(Self {\n            client_id: env::var(\"MICROSOFT_CLIENT_ID\")?,\n            client_secret: env::var(\"MICROSOFT_CLIENT_SECRET\")?,\n            redirect_base_url: env::var(\"OAUTH_REDIRECT_BASE_URL\")?,\n            auth_url: \"https://login.microsoftonline.com/common/oauth2/v2.0/authorize\",\n            token_url: \"https://login.microsoftonline.com/common/oauth2/v2.0/token\",\n            scopes: vec![\n                \"https://outlook.office365.com/IMAP.AccessAsUser.All\".to_string(),\n                \"https://outlook.office365.com/SMTP.Send\".to_string(),\n                \"offline_access\".to_string(),\n            ],\n        })\n    }\n}\n```",
+        "testStrategy": "Unit test config loading with mock env vars, verify scopes contain exact 3 required strings, test missing vars return proper errors",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-10T20:04:58.377Z"
+      },
+      {
+        "id": "44",
+        "title": "Create OAuth2 Service with PKCE Support",
+        "description": "Implement R2: Create Rust service for OAuth2 authorization code flow with PKCE using oauth2 crate v4.4",
+        "details": "Add to Cargo.toml: `oauth2 = \"4.4\"`, `rand = \"0.8\"`, `sha2 = \"0.10\"`, `base64 = \"0.21\"`\n\nCreate `src/dashboard/services/oauth_microsoft.rs`:\n\n```rust\nuse oauth2::{\n    AuthorizationCode, AuthUrl, ClientId, ClientSecret, CodeChallenge, CodeVerifier,\n    PkceCodeChallenge, RedirectUrl, Scope, TokenResponse, TokenUrl,\n};\nuse oauth2::basic::BasicClient;\nuse oauth2::reqwest::http::Request;\n\npub struct MicrosoftOAuthService {\n    client: BasicClient,\n}\n\nimpl MicrosoftOAuthService {\n    pub fn new(config: MicrosoftOAuthConfig) -> Self {\n        let client = BasicClient::new(\n            ClientId::new(config.client_id),\n            Some(ClientSecret::new(config.client_secret)),\n        )\n        .set_auth_uri(AuthUrl::new(config.auth_url.to_string()).unwrap())\n        .set_token_uri(TokenUrl::new(config.token_url.to_string()).unwrap())\n        .set_redirect_uri(\n            RedirectUrl::new(format!(\"{}/api/oauth/callback/microsoft\", config.redirect_base_url)).unwrap(),\n        );\n        Self { client }\n    }\n\n    pub fn authorize_url(&self, state: impl AsRef<str>) -> String {\n        let (pkce_challenge, pkce_verifier) = PkceCodeChallenge::new_random_sha256();\n        // Store pkce_verifier in session/redis with state\n        self.client\n            .authorize_url(AuthorizationCode::new(\"\".to_string()))\n            .add_extra_params(&[(\"state\", state.as_ref())])\n            .set_pkce_challenge(pkce_challenge)\n            .url().to_string()\n    }\n}\n```",
+        "testStrategy": "Mock HTTP client, test authorize_url generates correct URL with PKCE challenge and required scopes, verify state parameter inclusion",
+        "priority": "high",
+        "dependencies": [
+          "43"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-10T20:08:19.928Z"
+      },
+      {
+        "id": "45",
+        "title": "Implement OAuth2 API Endpoints",
+        "description": "Implement R3: Add REST API endpoints for Microsoft OAuth authorize and callback",
+        "details": "In `src/dashboard/api/oauth.rs`:\n\n```rust\n#[get(\"/api/oauth/microsoft/authorize?state=<state>\")]\npub async fn microsoft_authorize(\n    state: String,\n    oauth_service: web::Data<MicrosoftOAuthService>,\n) -> impl Responder {\n    let auth_url = oauth_service.authorize_url(&state);\n    HttpResponse::Ok().json(AuthUrlResponse { url: auth_url })\n}\n\n#[get(\"/api/oauth/callback/microsoft?code={code}&state={state}\")]\npub async fn microsoft_callback(\n    code: String,\n    state: String,\n    oauth_service: web::Data<MicrosoftOAuthService>,\n    account_store: web::Data<AccountStore>,\n) -> impl Responder {\n    let token_result = oauth_service\n        .exchange_code(AuthorizationCode::new(code))\n        .set_pkce_verifier(get_pkce_verifier(state)) // from session\n        .request_async(async_http_client).await;\n    // Encrypt and store tokens using existing encryption service\n    // Create/update account with oauth_provider = \"microsoft\"\n    HttpResponse::Ok().json(\"Account linked successfully\")\n}\n```",
+        "testStrategy": "Integration tests with wiremock for OAuth endpoints, test auth URL generation, test token exchange with mock token response, verify account creation",
+        "priority": "high",
+        "dependencies": [
+          "44"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-10T20:09:49.863Z"
+      },
+      {
+        "id": "46",
+        "title": "Implement XOAUTH2 Token Formatter and Refresh Logic",
+        "description": "Implement R4,R5,R6: Create XOAUTH2 token formatter and automatic token refresh service",
+        "details": "Create `src/dashboard/services/xoauth2.rs`:\n\n```rust\npub fn generate_xoauth2_token(email: &str, access_token: &str) -> String {\n    let token = format!(\"user={}\\x01auth=Bearer {}\\x01\\x01\", email, access_token);\n    base64::encode(token.as_bytes())\n}\n\npub async fn refresh_token_if_needed(\n    account: &mut Account,\n    oauth_service: &MicrosoftOAuthService,\n    encryption: &EncryptionService,\n) -> Result<bool> {\n    let expiry = account.oauth_token_expiry;\n    if expiry > Utc::now() + Duration::minutes(5) {\n        return Ok(false); // No refresh needed\n    }\n    let refresh_token = encryption.decrypt(&account.oauth_refresh_token)?;\n    let new_token = oauth_service\n        .refresh_token(&RefreshToken::new(refresh_token))\n        .request_async(async_http_client)\n        .await?;\n    account.oauth_access_token = encryption.encrypt(&new_token.access_token().secret())?;\n    account.oauth_refresh_token = encryption.encrypt(&new_token.refresh_token().unwrap().secret())?;\n    account.oauth_token_expiry = Utc::now() + Duration::seconds(new_token.expires_in().unwrap_or(3600) as i64);\n    account_store.update(account).await?;\n    Ok(true)\n}\n```",
+        "testStrategy": "Unit tests for XOAUTH2 format (verify exact byte sequence), test refresh logic with mock token responses, test expiry threshold (5min buffer)",
+        "priority": "high",
+        "dependencies": [
+          "44",
+          "45"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-10T20:19:05.089Z"
+      },
+      {
+        "id": "47",
+        "title": "Update IMAP Client for XOAUTH2 Authentication",
+        "description": "Implement R4: Modify async-imap client to use XOAUTH2 for Microsoft accounts",
+        "details": "In IMAP connection logic (`src/dashboard/services/imap.rs`):\n\n```rust\npub async fn connect_imap(account: &mut Account, config: &Config) -> Result<ImapStream> {\n    let mut imap = async_imap::connect(config.imap_server, Office365ImapStream::new()).await?;\n    imap.login(\"\", \"\").await.map_err(|_| anyhow::anyhow!(\"Skip login\"))?;\n    \n    if account.oauth_provider == Some(\"microsoft\".to_string()) {\n        refresh_token_if_needed(account, &oauth_service, &encryption).await?;\n        let access_token = encryption.decrypt(&account.oauth_access_token)?;\n        let xoauth2_token = generate_xoauth2_token(&account.email, &access_token);\n        imap.authenticate(\"XOAUTH2\", xoauth2_token.as_bytes()).await?;\n    } else {\n        imap.login(&account.email, &account.imap_password).await?;\n    }\n    Ok(imap)\n}\n```",
+        "testStrategy": "Integration test with imap test server (greenmail/docker), verify XOAUTH2 auth succeeds for microsoft accounts, test token refresh trigger",
+        "priority": "high",
+        "dependencies": [
+          "46"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-10T20:15:59.498Z"
+      },
+      {
+        "id": "48",
+        "title": "Update SMTP Client for XOAUTH2 Authentication",
+        "description": "Implement R5: Modify lettre SMTP client to use XOAUTH2 for Microsoft accounts",
+        "details": "In SMTP logic (`src/dashboard/services/smtp.rs`):\n\n```rust\nuse lettre::transport::smtp::authentication::Xoauth2;\n\npub async fn create_smtp_transport(account: &mut Account) -> Result<SmtpTransport> {\n    if account.oauth_provider == Some(\"microsoft\".to_string()) {\n        refresh_token_if_needed(account, &oauth_service, &encryption).await?;\n        let access_token = encryption.decrypt(&account.oauth_access_token)?;\n        let xoauth2_token = generate_xoauth2_token(&account.email, &access_token);\n        \n        let auth = Xoauth2::new(account.email.clone(), access_token);\n        let transport = SmtpTransport::starttls_relay(&config.smtp_server)\n            ?.credentials(auth)\n            .port(587)\n            .build();\n        Ok(transport)\n    } else {\n        // Existing password auth\n    }\n}\n```",
+        "testStrategy": "Integration test with smtp test server, verify XOAUTH2 SMTP auth succeeds, test with expired tokens triggers refresh",
+        "priority": "high",
+        "dependencies": [
+          "46",
+          "47"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-10T20:19:05.564Z"
+      },
+      {
+        "id": "49",
+        "title": "Update Account Store for OAuth Fields",
+        "description": "Implement R8: Extend StoredAccount struct and account_store.rs for OAuth support",
+        "details": "Update `src/dashboard/services/account_store.rs`:\n\n```rust\n#[derive(Serialize, Deserialize)]\npub struct StoredAccount {\n    // existing fields...\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub oauth_provider: Option<String>,\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub oauth_access_token: Option<String>, // encrypted\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub oauth_refresh_token: Option<String>, // encrypted\n    #[serde(skip_serializing_if = \"Option::is_none\")]\n    pub oauth_token_expiry: Option<DateTime<Utc>>,\n}\n\nimpl AccountStore {\n    pub async fn sync_oauth_account(&self, account: &Account) -> Result<()> {\n        let stored = self.load().await?;\n        if let Some(mut stored_acc) = stored.accounts.iter_mut()\n            .find(|a| a.email == account.email) {\n            stored_acc.oauth_provider = account.oauth_provider.clone();\n            // sync other oauth fields\n            self.save(&stored).await?;\n        }\n    }\n}\n```",
+        "testStrategy": "Unit tests for JSON serialization of OAuth fields, test file sync preserves encrypted tokens, test missing fields handled gracefully",
+        "priority": "medium",
+        "dependencies": [
+          "45"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-10T20:13:49.993Z"
+      },
+      {
+        "id": "50",
+        "title": "Implement Frontend Microsoft OAuth UI",
+        "description": "Implement R7: Add OAuth button and UI updates to Svelte WebUI",
+        "details": "In `webui/src/routes/accounts/+page.svelte`:\n\n```svelte\n<script>\n    let authUrl = '';\n    async function getMicrosoftAuthUrl() {\n        const response = await fetch('/api/oauth/microsoft/authorize?state=' + crypto.randomUUID());\n        const data = await response.json();\n        authUrl = data.url;\n        window.location.href = authUrl;\n    }\n</script>\n\n<button class=\"microsoft-oauth-btn\" on:click={getMicrosoftAuthUrl}>\n    🔐 Sign in with Microsoft\n</button>\n\n{#if account.oauth_provider === 'microsoft'}\n    <div class=\"oauth-badge\">Microsoft OAuth ✓</div>\n    <button class=\"re-auth-btn\">Re-authorize (tokens expired)</button>\n{/if}\n\n<style>\n    .microsoft-oauth-btn { background: #0078D4; color: white; }\n</style>\n```",
+        "testStrategy": "Cypress/Playwright E2E tests: click OAuth button redirects to Microsoft, callback returns to accounts page with new account, verify badge display",
+        "priority": "medium",
+        "dependencies": [
+          "45"
+        ],
+        "status": "deferred",
+        "subtasks": [],
+        "updatedAt": "2026-02-10T20:19:13.613Z"
+      },
+      {
+        "id": "51",
+        "title": "Add Comprehensive OAuth Unit Tests",
+        "description": "Implement R9: Add unit tests for all OAuth2 functionality",
+        "details": "Create `tests/oauth_tests.rs`:\n\n```rust\n#[tokio::test]\nasync fn test_oauth_url_generation() {\n    let service = MicrosoftOAuthService::new(config);\n    let url = service.authorize_url(\"test-state\");\n    assert!(url.contains(\"scope=https%3A%2F%2Foutlook.office365.com%2FIMAP.AccessAsUser.All\"));\n    assert!(url.contains(\"code_challenge_method=S256\"));\n}\n\n#[tokio::test]\nasync fn test_xoauth2_format() {\n    let token = generate_xoauth2_token(\"test@example.com\", \"abc123\");\n    assert_eq!(token, \"dXNlcj10ZXN0QGV4YW1wbGUuY29tAHB1dGg9QmVhcmVyIGFiYzEyMAA=\");\n}\n\n#[tokio::test]\nasync fn test_token_refresh() {\n    // Mock expired token, verify refresh called\n}\n```",
+        "testStrategy": "Run full test suite: verify 100% coverage on oauth_service.rs, xoauth2.rs, test edge cases (expired refresh tokens, network failures)",
+        "priority": "medium",
+        "dependencies": [
+          "46",
+          "47",
+          "48",
+          "49"
+        ],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-10T20:24:52.724Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-01-25T11:45:53.553Z",
-      "taskCount": 42,
-      "completedCount": 41,
+      "lastModified": "2026-02-10T20:24:52.724Z",
+      "taskCount": 51,
+      "completedCount": 49,
       "tags": [
         "master"
       ]

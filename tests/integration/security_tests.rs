@@ -30,7 +30,7 @@ use tempfile::TempDir;
 use rustymail::dashboard::services::{
     DashboardState, ClientManager, MetricsService, CacheService, CacheConfig,
     ConfigService, AiService, EmailService, SyncService, AccountService,
-    EventBus, SmtpService, OutboxQueueService
+    EventBus, SmtpService, OutboxQueueService, OAuthService, OAuthConfig
 };
 use rustymail::dashboard::api::sse::SseManager;
 use rustymail::connection_pool::{ConnectionPool, ConnectionFactory, PoolConfig};
@@ -167,6 +167,7 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
         connection_pool,
         jobs: Arc::new(DashMap::new()),
         job_persistence: None,
+        oauth_service: Arc::new(OAuthService::new(OAuthConfig { microsoft: None })),
     })
 }
 

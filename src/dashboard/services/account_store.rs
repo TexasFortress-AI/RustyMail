@@ -68,11 +68,30 @@ pub struct StoredAccount {
     pub provider_type: Option<String>,
     pub imap: ImapConfig,
     pub smtp: Option<SmtpConfig>,
+    /// OAuth provider identifier (e.g., "microsoft"). If set, XOAUTH2 is used instead of passwords.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub oauth_provider: Option<String>,
+    /// OAuth access token (encrypted at rest).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub oauth_access_token: Option<String>,
+    /// OAuth refresh token (encrypted at rest).
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub oauth_refresh_token: Option<String>,
+    /// Unix timestamp (seconds) when the OAuth access token expires.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub oauth_token_expiry: Option<i64>,
     pub is_active: bool,
     #[serde(default = "Utc::now")]
     pub created_at: DateTime<Utc>,
     #[serde(default = "Utc::now")]
     pub updated_at: DateTime<Utc>,
+}
+
+impl StoredAccount {
+    /// Returns true if this account uses OAuth2 authentication.
+    pub fn is_oauth(&self) -> bool {
+        self.oauth_provider.is_some()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,7 +173,7 @@ impl AccountStore {
         let contents = async_fs::read_to_string(&self.config_path).await?;
         let mut config: AccountsConfig = serde_json::from_str(&contents)?;
 
-        // Decrypt passwords for all accounts
+        // Decrypt passwords and OAuth tokens for all accounts
         for account in &mut config.accounts {
             // Decrypt IMAP password
             if !account.imap.password.is_empty() {
@@ -164,6 +183,17 @@ impl AccountStore {
             if let Some(smtp) = &mut account.smtp {
                 if !smtp.password.is_empty() {
                     smtp.password = self.encryption.decrypt(&smtp.password)?;
+                }
+            }
+            // Decrypt OAuth tokens if present
+            if let Some(token) = &account.oauth_access_token {
+                if !token.is_empty() {
+                    account.oauth_access_token = Some(self.encryption.decrypt(token)?);
+                }
+            }
+            if let Some(token) = &account.oauth_refresh_token {
+                if !token.is_empty() {
+                    account.oauth_refresh_token = Some(self.encryption.decrypt(token)?);
                 }
             }
         }
@@ -176,7 +206,7 @@ impl AccountStore {
     async fn save_config(&self, config: &AccountsConfig) -> Result<(), AccountStoreError> {
         debug!("Saving accounts config to: {:?}", self.config_path);
 
-        // Clone config and encrypt passwords before saving
+        // Clone config and encrypt passwords/tokens before saving
         let mut encrypted_config = config.clone();
         for account in &mut encrypted_config.accounts {
             // Encrypt IMAP password (skip if already encrypted or empty)
@@ -187,6 +217,17 @@ impl AccountStore {
             if let Some(smtp) = &mut account.smtp {
                 if !smtp.password.is_empty() && !smtp.password.starts_with("ENC:") {
                     smtp.password = self.encryption.encrypt(&smtp.password)?;
+                }
+            }
+            // Encrypt OAuth tokens if present
+            if let Some(token) = &account.oauth_access_token {
+                if !token.is_empty() && !token.starts_with("ENC:") {
+                    account.oauth_access_token = Some(self.encryption.encrypt(token)?);
+                }
+            }
+            if let Some(token) = &account.oauth_refresh_token {
+                if !token.is_empty() && !token.starts_with("ENC:") {
+                    account.oauth_refresh_token = Some(self.encryption.encrypt(token)?);
                 }
             }
         }
@@ -340,6 +381,10 @@ mod tests {
                 use_tls: true,
             },
             smtp: None,
+            oauth_provider: None,
+            oauth_access_token: None,
+            oauth_refresh_token: None,
+            oauth_token_expiry: None,
             is_active: true,
             created_at: Utc::now(),
             updated_at: Utc::now(),
@@ -364,5 +409,74 @@ mod tests {
         store.delete_account("test@example.com").await.unwrap();
         let accounts = store.list_accounts().await.unwrap();
         assert_eq!(accounts.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_oauth_account_roundtrip() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("accounts.json");
+        let store = AccountStore::new(&config_path);
+        store.initialize().await.unwrap();
+
+        let account = StoredAccount {
+            display_name: "OAuth Test".to_string(),
+            email_address: "user@outlook.com".to_string(),
+            provider_type: Some("outlook".to_string()),
+            imap: ImapConfig {
+                host: "outlook.office365.com".to_string(),
+                port: 993,
+                username: "user@outlook.com".to_string(),
+                password: String::new(), // OAuth accounts don't use passwords
+                use_tls: true,
+            },
+            smtp: None,
+            oauth_provider: Some("microsoft".to_string()),
+            oauth_access_token: Some("test-access-token".to_string()),
+            oauth_refresh_token: Some("test-refresh-token".to_string()),
+            oauth_token_expiry: Some(1700000000),
+            is_active: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        store.add_account(account).await.unwrap();
+
+        let retrieved = store.get_account("user@outlook.com").await.unwrap();
+        assert!(retrieved.is_oauth());
+        assert_eq!(retrieved.oauth_provider.as_deref(), Some("microsoft"));
+        assert_eq!(retrieved.oauth_access_token.as_deref(), Some("test-access-token"));
+        assert_eq!(retrieved.oauth_refresh_token.as_deref(), Some("test-refresh-token"));
+        assert_eq!(retrieved.oauth_token_expiry, Some(1700000000));
+        // Password should be empty for OAuth accounts
+        assert!(retrieved.imap.password.is_empty());
+    }
+
+    #[test]
+    fn test_is_oauth() {
+        let mut account = StoredAccount {
+            display_name: "Test".to_string(),
+            email_address: "test@test.com".to_string(),
+            provider_type: None,
+            imap: ImapConfig {
+                host: "imap.test.com".to_string(),
+                port: 993,
+                username: "test".to_string(),
+                password: "pass".to_string(),
+                use_tls: true,
+            },
+            smtp: None,
+            oauth_provider: None,
+            oauth_access_token: None,
+            oauth_refresh_token: None,
+            oauth_token_expiry: None,
+            is_active: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        };
+
+        assert!(!account.is_oauth());
+
+        account.oauth_provider = Some("microsoft".to_string());
+        assert!(account.is_oauth());
     }
 }

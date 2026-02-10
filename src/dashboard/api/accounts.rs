@@ -159,6 +159,10 @@ pub async fn create_account(
         smtp_pass: req.smtp_pass.clone(),
         smtp_use_tls: req.smtp_use_tls,
         smtp_use_starttls: req.smtp_use_starttls,
+        oauth_provider: None,
+        oauth_access_token: None,
+        oauth_refresh_token: None,
+        oauth_token_expiry: None,
         is_active: true,
         is_default: req.is_default,
         connection_status: None, // Will be populated after validation
