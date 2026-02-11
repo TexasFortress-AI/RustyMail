@@ -463,6 +463,28 @@ export function AccountFormDialog({
                 </div>
               )}
 
+              {account?.oauth_provider === 'microsoft' && (
+                <div className="space-y-2">
+                  <Button
+                    type="button"
+                    onClick={handleMicrosoftOAuth}
+                    disabled={oauthLoading}
+                    className="w-full"
+                    style={{ backgroundColor: '#0078D4', color: 'white' }}
+                  >
+                    {oauthLoading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Shield className="mr-2 h-4 w-4" />
+                    )}
+                    Authorize Microsoft 365
+                  </Button>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Sign in with Microsoft to authorize IMAP access
+                  </p>
+                </div>
+              )}
+
               {account && (
                 <div className="space-y-2">
                   <Button
