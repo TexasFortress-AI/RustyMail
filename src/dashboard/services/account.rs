@@ -786,18 +786,37 @@ impl AccountService {
 
     /// Validate account credentials by attempting to connect and record status
     pub async fn validate_connection(&self, account: &Account) -> Result<(), AccountError> {
-        use std::time::Duration;
         debug!("Validating connection for account: {}", account.display_name);
 
-        // Attempt to connect using the provided credentials with 10 second timeout
-        let timeout = Duration::from_secs(10);
-        let connect_result = crate::imap::client::connect(
-            &account.imap_host,
-            account.imap_port as u16,
-            &account.imap_user,
-            &account.imap_pass,
-            timeout,
-        ).await;
+        // Route OAuth accounts through XOAUTH2
+        let connect_result = if account.is_oauth() {
+            match &account.oauth_access_token {
+                Some(token) => {
+                    debug!("Validating OAuth connection for {}", account.email_address);
+                    crate::imap::client::ImapClient::<crate::imap::session::AsyncImapSessionWrapper>::connect_with_xoauth2(
+                        &account.imap_host,
+                        account.imap_port as u16,
+                        &account.imap_user,
+                        token,
+                    ).await
+                }
+                None => {
+                    return Err(AccountError::OperationFailed(
+                        "OAuth account has no access token. Click 'Connect Microsoft 365' to authorize.".to_string()
+                    ));
+                }
+            }
+        } else {
+            use std::time::Duration;
+            let timeout = Duration::from_secs(10);
+            crate::imap::client::connect(
+                &account.imap_host,
+                account.imap_port as u16,
+                &account.imap_user,
+                &account.imap_pass,
+                timeout,
+            ).await
+        };
 
         // Record connection status
         let mut status = self.connection_status_store
