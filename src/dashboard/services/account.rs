@@ -381,6 +381,7 @@ impl AccountService {
                         imap_host = ?, imap_port = ?, imap_user = ?, imap_pass = ?, imap_use_tls = ?,
                         smtp_host = ?, smtp_port = ?, smtp_user = ?, smtp_pass = ?,
                         smtp_use_tls = ?, smtp_use_starttls = ?,
+                        oauth_provider = ?, oauth_access_token = ?, oauth_refresh_token = ?, oauth_token_expiry = ?,
                         is_active = ?, updated_at = CURRENT_TIMESTAMP
                     WHERE email_address = ?
                     "#
@@ -398,6 +399,10 @@ impl AccountService {
                 .bind(account.smtp.as_ref().map(|s| &s.password))
                 .bind(account.smtp.as_ref().map(|s| if s.use_tls { 1 } else { 0 }))
                 .bind(account.smtp.as_ref().map(|s| if s.use_starttls { 1 } else { 0 }))
+                .bind(&account.oauth_provider)
+                .bind(&account.oauth_access_token)
+                .bind(&account.oauth_refresh_token)
+                .bind(account.oauth_token_expiry)
                 .bind(if account.is_active { 1 } else { 0 })
                 .bind(&account.email_address)
                 .execute(db)
@@ -413,8 +418,9 @@ impl AccountService {
                         imap_host, imap_port, imap_user, imap_pass, imap_use_tls,
                         smtp_host, smtp_port, smtp_user, smtp_pass,
                         smtp_use_tls, smtp_use_starttls,
+                        oauth_provider, oauth_access_token, oauth_refresh_token, oauth_token_expiry,
                         is_active, is_default, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     "#
                 )
                 .bind(&account.display_name)
@@ -431,6 +437,10 @@ impl AccountService {
                 .bind(account.smtp.as_ref().map(|s| &s.password))
                 .bind(account.smtp.as_ref().map(|s| if s.use_tls { 1 } else { 0 }))
                 .bind(account.smtp.as_ref().map(|s| if s.use_starttls { 1 } else { 0 }))
+                .bind(&account.oauth_provider)
+                .bind(&account.oauth_access_token)
+                .bind(&account.oauth_refresh_token)
+                .bind(account.oauth_token_expiry)
                 .bind(if account.is_active { 1 } else { 0 })
                 .execute(db)
                 .await?;
@@ -731,6 +741,32 @@ impl AccountService {
 
         self.account_store.update_account(updated).await?;
         info!("Updated account: {} ({})", account.display_name, account.email_address);
+        Ok(())
+    }
+
+    /// Update only the OAuth tokens for an account (used by OAuth callback).
+    pub async fn update_oauth_tokens(
+        &self,
+        email: &str,
+        access_token: &str,
+        refresh_token: Option<&str>,
+        expires_at: i64,
+    ) -> Result<(), AccountError> {
+        let mut stored = self.account_store.get_account(email).await?;
+        stored.oauth_access_token = Some(access_token.to_string());
+        if let Some(rt) = refresh_token {
+            stored.oauth_refresh_token = Some(rt.to_string());
+        }
+        stored.oauth_token_expiry = Some(expires_at);
+        stored.updated_at = Utc::now();
+        self.account_store.update_account(stored).await?;
+
+        // Sync to DB so sync binary picks up the new tokens
+        if let Err(e) = self.sync_accounts_to_db().await {
+            warn!("Failed to sync OAuth tokens to database: {}", e);
+        }
+
+        info!("Updated OAuth tokens for account: {}", email);
         Ok(())
     }
 

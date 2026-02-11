@@ -6,9 +6,9 @@
 //! OAuth2 API endpoints for Microsoft 365 account linking.
 
 use actix_web::{web, HttpResponse};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use log::{error, info};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 
 use crate::dashboard::services::DashboardState;
 
@@ -123,17 +123,81 @@ pub async fn microsoft_callback(
         }
     };
 
-    // Store the tokens in the account service
-    // The actual account creation/update with OAuth tokens will be handled
-    // by the account store integration (task 49).
-    // For now, return the success with token info.
     info!("Microsoft OAuth2 token exchange successful (expires_in={}s)", token_response.expires_in);
+
+    // Extract email from the JWT access token's preferred_username claim
+    let email = match extract_email_from_jwt(&token_response.access_token) {
+        Some(e) => e,
+        None => {
+            error!("Could not extract email from access token JWT");
+            return HttpResponse::InternalServerError().json(CallbackResponse {
+                success: false,
+                email: None,
+                message: "Token received but could not identify account email".to_string(),
+            });
+        }
+    };
+
+    // Compute expiry as Unix timestamp
+    let expires_at = chrono::Utc::now().timestamp() + token_response.expires_in as i64;
+
+    // Persist tokens to the matching account
+    let account_service = state.account_service.lock().await;
+    if let Err(e) = account_service.update_oauth_tokens(
+        &email,
+        &token_response.access_token,
+        token_response.refresh_token.as_deref(),
+        expires_at,
+    ).await {
+        error!("Failed to persist OAuth tokens for {}: {}", email, e);
+        return HttpResponse::InternalServerError().json(CallbackResponse {
+            success: false,
+            email: Some(email),
+            message: format!("Token exchange succeeded but failed to save: {}", e),
+        });
+    }
+
+    info!("OAuth tokens persisted for account: {}", email);
 
     HttpResponse::Ok().json(CallbackResponse {
         success: true,
-        email: None, // Will be populated when account store integration is done
-        message: "OAuth authorization successful. Tokens received.".to_string(),
+        email: Some(email),
+        message: "OAuth authorization successful. Account linked.".to_string(),
     })
+}
+
+/// Extract the `preferred_username` (email) from a Microsoft JWT access token.
+///
+/// Microsoft access tokens are JWTs with 3 base64url-encoded segments.
+/// We decode the payload (segment 1) and extract the `preferred_username` field.
+/// No signature verification needed — we just received this from Microsoft's token endpoint.
+fn extract_email_from_jwt(token: &str) -> Option<String> {
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() != 3 {
+        return None;
+    }
+
+    // JWT uses base64url encoding (no padding). The base64 crate's STANDARD
+    // engine expects standard base64 with padding, so convert URL-safe chars.
+    let payload_b64 = parts[1]
+        .replace('-', "+")
+        .replace('_', "/");
+
+    // Add padding if needed
+    let padded = match payload_b64.len() % 4 {
+        2 => format!("{}==", payload_b64),
+        3 => format!("{}=", payload_b64),
+        _ => payload_b64,
+    };
+
+    let decoded = BASE64.decode(&padded).ok()?;
+    let payload: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
+
+    // Microsoft tokens use "preferred_username" for the user's email, or fall back to "upn"
+    payload.get("preferred_username")
+        .or_else(|| payload.get("upn"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
 }
 
 /// GET /api/dashboard/oauth/status
@@ -145,4 +209,45 @@ pub async fn oauth_status(
     HttpResponse::Ok().json(serde_json::json!({
         "microsoft": state.oauth_service.is_microsoft_configured(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+
+    /// Build a fake JWT with the given JSON payload (no real signature).
+    fn fake_jwt(payload_json: &str) -> String {
+        let header = BASE64.encode(b"{\"alg\":\"none\"}");
+        let payload = BASE64.encode(payload_json.as_bytes())
+            .replace('+', "-")
+            .replace('/', "_")
+            .trim_end_matches('=')
+            .to_string();
+        format!("{}.{}.sig", header, payload)
+    }
+
+    #[test]
+    fn test_extract_email_preferred_username() {
+        let jwt = fake_jwt(r#"{"preferred_username":"user@outlook.com","sub":"abc"}"#);
+        assert_eq!(extract_email_from_jwt(&jwt), Some("user@outlook.com".to_string()));
+    }
+
+    #[test]
+    fn test_extract_email_upn_fallback() {
+        let jwt = fake_jwt(r#"{"upn":"admin@contoso.com","sub":"abc"}"#);
+        assert_eq!(extract_email_from_jwt(&jwt), Some("admin@contoso.com".to_string()));
+    }
+
+    #[test]
+    fn test_extract_email_no_email_field() {
+        let jwt = fake_jwt(r#"{"sub":"abc","name":"Test User"}"#);
+        assert_eq!(extract_email_from_jwt(&jwt), None);
+    }
+
+    #[test]
+    fn test_extract_email_invalid_jwt() {
+        assert_eq!(extract_email_from_jwt("not-a-jwt"), None);
+        assert_eq!(extract_email_from_jwt(""), None);
+    }
 }

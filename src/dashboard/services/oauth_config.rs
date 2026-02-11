@@ -11,13 +11,17 @@
 use log::{info, debug};
 use serde::{Deserialize, Serialize};
 
-/// Microsoft OAuth2 authorization endpoint (common tenant).
-pub const MICROSOFT_AUTH_URL: &str =
-    "https://login.microsoftonline.com/common/oauth2/v2.0/authorize";
+/// Microsoft OAuth2 authorization endpoint (tenant-specific or "common").
+pub fn microsoft_auth_url() -> String {
+    let tenant = std::env::var("MICROSOFT_TENANT_ID").unwrap_or_else(|_| "common".to_string());
+    format!("https://login.microsoftonline.com/{}/oauth2/v2.0/authorize", tenant)
+}
 
-/// Microsoft OAuth2 token endpoint (common tenant).
-pub const MICROSOFT_TOKEN_URL: &str =
-    "https://login.microsoftonline.com/common/oauth2/v2.0/token";
+/// Microsoft OAuth2 token endpoint (tenant-specific or "common").
+pub fn microsoft_token_url() -> String {
+    let tenant = std::env::var("MICROSOFT_TENANT_ID").unwrap_or_else(|_| "common".to_string());
+    format!("https://login.microsoftonline.com/{}/oauth2/v2.0/token", tenant)
+}
 
 /// Required scopes for IMAP + SMTP access via OAuth2.
 pub const MICROSOFT_SCOPES: &[&str] = &[
@@ -180,9 +184,9 @@ mod tests {
     }
 
     #[test]
-    fn test_microsoft_constants() {
-        assert!(MICROSOFT_AUTH_URL.contains("login.microsoftonline.com"));
-        assert!(MICROSOFT_TOKEN_URL.contains("login.microsoftonline.com"));
+    fn test_microsoft_endpoints() {
+        assert!(microsoft_auth_url().contains("login.microsoftonline.com"));
+        assert!(microsoft_token_url().contains("login.microsoftonline.com"));
         assert_eq!(MICROSOFT_SCOPES.len(), 3);
         assert!(MICROSOFT_SCOPES.contains(&"offline_access"));
     }

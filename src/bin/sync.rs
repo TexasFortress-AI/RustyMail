@@ -56,6 +56,8 @@ struct AccountRow {
     imap_user: String,
     imap_pass: String,
     imap_use_tls: bool,
+    oauth_provider: Option<String>,
+    oauth_access_token: Option<String>,
 }
 
 /// Check if a process with the given PID is still running.
@@ -176,7 +178,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rows = if let Some(ref account_filter) = cli.account {
         sqlx::query(
             r#"
-            SELECT email_address, imap_host, imap_port, imap_user, imap_pass, imap_use_tls
+            SELECT email_address, imap_host, imap_port, imap_user, imap_pass, imap_use_tls,
+                   oauth_provider, oauth_access_token
             FROM accounts WHERE is_active = 1 AND email_address = ?
             "#
         )
@@ -186,7 +189,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         sqlx::query(
             r#"
-            SELECT email_address, imap_host, imap_port, imap_user, imap_pass, imap_use_tls
+            SELECT email_address, imap_host, imap_port, imap_user, imap_pass, imap_use_tls,
+                   oauth_provider, oauth_access_token
             FROM accounts WHERE is_active = 1
             "#
         )
@@ -211,6 +215,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             imap_user: row.get("imap_user"),
             imap_pass: row.get("imap_pass"),
             imap_use_tls: row.get("imap_use_tls"),
+            oauth_provider: row.get("oauth_provider"),
+            oauth_access_token: row.get("oauth_access_token"),
         }
     }).collect();
 
@@ -236,13 +242,25 @@ async fn sync_account(pool: &SqlitePool, account: &AccountRow, folder_filter: Op
     };
     info!("Syncing account: {} ({})", account.email_address, mode);
 
-    // Create IMAP session
-    let client = rustymail::imap::client::ImapClient::<rustymail::imap::session::AsyncImapSessionWrapper>::connect(
-        &account.imap_host,
-        account.imap_port as u16,
-        &account.imap_user,
-        &account.imap_pass,
-    ).await?;
+    // Create IMAP session (XOAUTH2 for OAuth accounts, password for others)
+    let client = if account.oauth_provider.is_some() {
+        let token = account.oauth_access_token.as_deref()
+            .ok_or("OAuth account has no access token — complete OAuth flow first")?;
+        info!("Using XOAUTH2 authentication for {}", account.email_address);
+        rustymail::imap::client::ImapClient::<rustymail::imap::session::AsyncImapSessionWrapper>::connect_with_xoauth2(
+            &account.imap_host,
+            account.imap_port as u16,
+            &account.imap_user,
+            token,
+        ).await?
+    } else {
+        rustymail::imap::client::ImapClient::<rustymail::imap::session::AsyncImapSessionWrapper>::connect(
+            &account.imap_host,
+            account.imap_port as u16,
+            &account.imap_user,
+            &account.imap_pass,
+        ).await?
+    };
 
     info!("Connected to IMAP server {} for {}", account.imap_host, account.email_address);
 

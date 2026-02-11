@@ -67,9 +67,9 @@ fn test_microsoft_redirect_uri_construction() {
 }
 
 #[test]
-fn test_microsoft_constants_valid() {
-    assert!(MICROSOFT_AUTH_URL.starts_with("https://"));
-    assert!(MICROSOFT_TOKEN_URL.starts_with("https://"));
+fn test_microsoft_endpoints_valid() {
+    assert!(microsoft_auth_url().starts_with("https://"));
+    assert!(microsoft_token_url().starts_with("https://"));
     assert!(MICROSOFT_SCOPES.contains(&"offline_access"));
     assert!(MICROSOFT_SCOPES.iter().any(|s| s.contains("IMAP")));
     assert!(MICROSOFT_SCOPES.iter().any(|s| s.contains("SMTP")));

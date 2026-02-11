@@ -21,7 +21,7 @@ use thiserror::Error;
 use tokio::sync::Mutex;
 
 use super::oauth_config::{
-    OAuthConfig, OAuthProviderConfig, MICROSOFT_AUTH_URL, MICROSOFT_TOKEN_URL, MICROSOFT_SCOPES,
+    OAuthConfig, OAuthProviderConfig, microsoft_auth_url, microsoft_token_url, MICROSOFT_SCOPES,
 };
 use super::encryption::CredentialEncryption;
 
@@ -128,7 +128,7 @@ impl OAuthService {
 
         let auth_url = format!(
             "{}?client_id={}&response_type=code&redirect_uri={}&scope={}&state={}&code_challenge={}&code_challenge_method=S256&response_mode=query",
-            MICROSOFT_AUTH_URL,
+            microsoft_auth_url(),
             urlencoding::encode(&ms_config.client_id),
             urlencoding::encode(&redirect_uri),
             urlencoding::encode(&scopes),
@@ -172,7 +172,7 @@ impl OAuthService {
         info!("Exchanging authorization code for tokens (provider={})", pending.provider);
 
         let response = self.http_client
-            .post(MICROSOFT_TOKEN_URL)
+            .post(&microsoft_token_url())
             .form(&params)
             .send()
             .await?;
@@ -214,7 +214,7 @@ impl OAuthService {
         debug!("Refreshing Microsoft OAuth2 access token");
 
         let response = self.http_client
-            .post(MICROSOFT_TOKEN_URL)
+            .post(&microsoft_token_url())
             .form(&params)
             .send()
             .await?;
@@ -376,7 +376,7 @@ mod tests {
 
         let (url, state) = service.generate_microsoft_auth_url().await.unwrap();
 
-        assert!(url.starts_with(MICROSOFT_AUTH_URL));
+        assert!(url.starts_with(&microsoft_auth_url()));
         assert!(url.contains("client_id=test-client-id"));
         assert!(url.contains("response_type=code"));
         assert!(url.contains("code_challenge_method=S256"));

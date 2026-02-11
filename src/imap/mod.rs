@@ -77,7 +77,22 @@ impl CloneableImapSessionFactory {
 
         debug!("Creating IMAP session for account: {} ({})", account.email_address, account.imap_host);
 
-        // Create a new IMAP client with account-specific credentials
+        // Route to XOAUTH2 if account is configured for OAuth and has an access token
+        if account.is_oauth() {
+            if let Some(ref token) = account.oauth_access_token {
+                debug!("Using XOAUTH2 authentication for {}", account.email_address);
+                let client = ImapClient::<AsyncImapSessionWrapper>::connect_with_xoauth2(
+                    &account.imap_host,
+                    account.imap_port as u16,
+                    &account.imap_user,
+                    token,
+                ).await?;
+                return Ok(client);
+            }
+            return Err(ImapError::Auth("OAuth account has no access token — complete OAuth flow first".to_string()));
+        }
+
+        // Password-based authentication
         let client = ImapClient::<AsyncImapSessionWrapper>::connect(
             &account.imap_host,
             account.imap_port as u16,
