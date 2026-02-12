@@ -668,6 +668,24 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
                 },
                 "required": ["message_id", "account_id"]
             }
+        }),
+        serde_json::json!({
+            "name": "sync_emails",
+            "description": "Trigger email sync for a specific folder or all folders. Syncs emails from IMAP server into the local cache.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "Optional. Specific folder to sync (e.g., 'INBOX', 'INBOX/resumes', 'Sent Items'). If omitted, syncs all folders."
+                    }
+                },
+                "required": ["account_id"]
+            }
         })
     ]
 }
@@ -955,6 +973,14 @@ pub async fn list_mcp_tools(
                 "folder": "REQUIRED. Folder containing messages",
                 "uids": "REQUIRED. Array of message UIDs to mark as unread",
                 "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+            }
+        }),
+        serde_json::json!({
+            "name": "sync_emails",
+            "description": "Trigger email sync for a specific folder or all folders",
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
+                "folder": "Optional. Specific folder to sync (e.g., 'INBOX', 'INBOX/resumes'). If omitted, syncs all folders."
             }
         })
     ]
@@ -2612,6 +2638,52 @@ pub async fn execute_mcp_tool_inner(
                     "error": format!("Job not found: {}", job_id),
                     "tool": tool_name
                 }),
+            }
+        }
+        "sync_emails" => {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            let folder = params.get("folder").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let sync_service = state.sync_service.clone();
+
+            match folder {
+                Some(ref f) => {
+                    info!("MCP sync_emails: syncing folder '{}' for account '{}'", f, account_id);
+                    match sync_service.sync_folder(&account_id, f).await {
+                        Ok(()) => serde_json::json!({
+                            "success": true,
+                            "message": format!("Synced folder '{}' for account '{}'", f, account_id),
+                            "tool": tool_name
+                        }),
+                        Err(e) => serde_json::json!({
+                            "success": false,
+                            "error": format!("Failed to sync folder '{}': {}", f, e),
+                            "tool": tool_name
+                        })
+                    }
+                }
+                None => {
+                    info!("MCP sync_emails: syncing all folders for account '{}'", account_id);
+                    match sync_service.sync_all_folders(&account_id).await {
+                        Ok(()) => serde_json::json!({
+                            "success": true,
+                            "message": format!("Synced all folders for account '{}'", account_id),
+                            "tool": tool_name
+                        }),
+                        Err(e) => serde_json::json!({
+                            "success": false,
+                            "error": format!("Failed to sync all folders: {}", e),
+                            "tool": tool_name
+                        })
+                    }
+                }
             }
         }
         _ => {

@@ -862,8 +862,9 @@
         "testStrategy": "1. Create test IMAP account with known read/unread email counts\n2. Run sync and verify unread count matches server state\n3. Verify emails remain unread on server after sync\n4. Test get_folder_stats returns accurate unread counts\n5. Regression test to ensure no duplicate flags in arrays",
         "priority": "high",
         "dependencies": [],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-12T12:09:20.096Z"
       },
       {
         "id": "53",
@@ -873,8 +874,9 @@
         "testStrategy": "1. Test syncing individual subfolders via API\n2. Verify folder hierarchy is preserved in cache\n3. Test sync_all_folders option syncs entire folder tree\n4. Verify get_folder_stats works for all synced folders\n5. Performance test with large folder structures (50+ folders)",
         "priority": "high",
         "dependencies": [],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-12T12:18:17.743Z"
       },
       {
         "id": "54",
@@ -982,9 +984,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-02-12T12:00:33.517Z",
+      "lastModified": "2026-02-12T12:18:17.743Z",
       "taskCount": 61,
-      "completedCount": 51,
+      "completedCount": 53,
       "tags": [
         "master"
       ]
