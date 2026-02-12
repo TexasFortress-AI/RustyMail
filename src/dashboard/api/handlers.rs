@@ -686,6 +686,29 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
                 },
                 "required": ["account_id"]
             }
+        }),
+        serde_json::json!({
+            "name": "search_by_attachment_type",
+            "description": "Search for attachments matching MIME type patterns (e.g., 'image/*', 'application/pdf')",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    },
+                    "mime_types": {
+                        "type": "array",
+                        "description": "REQUIRED. Array of MIME type patterns (e.g., ['image/*', 'application/pdf'])",
+                        "items": { "type": "string" }
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Optional. Maximum results to return (default: 50)"
+                    }
+                },
+                "required": ["account_id", "mime_types"]
+            }
         })
     ]
 }
@@ -981,6 +1004,15 @@ pub async fn list_mcp_tools(
             "parameters": {
                 "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
                 "folder": "Optional. Specific folder to sync (e.g., 'INBOX', 'INBOX/resumes'). If omitted, syncs all folders."
+            }
+        }),
+        serde_json::json!({
+            "name": "search_by_attachment_type",
+            "description": "Search for attachments matching MIME type patterns (e.g., 'image/*', 'application/pdf')",
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
+                "mime_types": "REQUIRED. Array of MIME type patterns (e.g., ['image/*', 'application/pdf'])",
+                "limit": "Optional. Maximum results to return (default: 50)"
             }
         })
     ]
@@ -2638,6 +2670,49 @@ pub async fn execute_mcp_tool_inner(
                     "error": format!("Job not found: {}", job_id),
                     "tool": tool_name
                 }),
+            }
+        }
+        "search_by_attachment_type" => {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            let mime_types: Vec<String> = params.get("mime_types")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+
+            let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+
+            let pool = state.cache_service.db_pool.as_ref();
+            match pool {
+                Some(pool) => {
+                    match crate::dashboard::services::attachment_storage::search_by_attachment_type(
+                        pool, &account_id, &mime_types, limit
+                    ).await {
+                        Ok(results) => serde_json::json!({
+                            "success": true,
+                            "data": results,
+                            "count": results.len(),
+                            "tool": tool_name
+                        }),
+                        Err(e) => serde_json::json!({
+                            "success": false,
+                            "error": format!("Search failed: {}", e),
+                            "tool": tool_name
+                        })
+                    }
+                }
+                None => serde_json::json!({
+                    "success": false,
+                    "error": "Database not available",
+                    "tool": tool_name
+                })
             }
         }
         "sync_emails" => {

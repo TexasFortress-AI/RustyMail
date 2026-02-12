@@ -456,6 +456,114 @@ pub async fn create_zip_archive(
     Ok(output_path.to_path_buf())
 }
 
+/// Search for emails that have attachments matching given MIME types.
+/// Supports wildcard patterns like "image/*" or exact types like "application/pdf".
+/// Returns a list of (message_id, filename, content_type, size_bytes) tuples.
+pub async fn search_by_attachment_type(
+    pool: &SqlitePool,
+    account: &str,
+    mime_patterns: &[String],
+    limit: usize,
+) -> Result<Vec<AttachmentInfo>, AttachmentError> {
+    if mime_patterns.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    // Build LIKE clauses for each pattern
+    // "image/*" becomes "image/%" for SQL LIKE
+    let like_patterns: Vec<String> = mime_patterns.iter()
+        .map(|p| p.replace('*', "%"))
+        .collect();
+
+    let placeholders: Vec<String> = like_patterns.iter()
+        .map(|_| "content_type LIKE ?".to_string())
+        .collect();
+    let where_clause = placeholders.join(" OR ");
+
+    let query_str = format!(
+        r#"
+        SELECT filename, size_bytes, content_type, content_id, downloaded_at, storage_path
+        FROM attachment_metadata
+        WHERE account_email = ? AND ({})
+        ORDER BY downloaded_at DESC
+        LIMIT ?
+        "#,
+        where_clause
+    );
+
+    let mut query = sqlx::query_as::<_, (String, i64, Option<String>, Option<String>, DateTime<Utc>, String)>(&query_str)
+        .bind(account);
+
+    for pattern in &like_patterns {
+        query = query.bind(pattern);
+    }
+    query = query.bind(limit as i64);
+
+    let rows = query.fetch_all(pool).await?;
+
+    Ok(rows.into_iter()
+        .map(|(filename, size_bytes, content_type, content_id, downloaded_at, storage_path)| AttachmentInfo {
+            filename, size_bytes, content_type, content_id, downloaded_at, storage_path,
+        })
+        .collect())
+}
+
+/// Store attachment metadata during email sync without downloading file contents.
+/// Uses empty storage_path since files are not yet downloaded.
+/// On conflict, only updates metadata fields (size, content_type, content_id)
+/// and preserves any existing storage_path from a prior download.
+pub async fn store_attachment_metadata_from_mime(
+    pool: &SqlitePool,
+    account: &str,
+    message_id: &str,
+    attachments: &[MimePart],
+) -> Result<usize, AttachmentError> {
+    let mut stored = 0;
+    for mime_part in attachments {
+        let filename = mime_part.content_disposition.as_ref()
+            .and_then(|d| d.filename().cloned())
+            .unwrap_or_else(|| {
+                let ext = match mime_part.content_type.sub_type.as_str() {
+                    "pdf" => "pdf",
+                    "jpeg" | "jpg" => "jpg",
+                    "png" => "png",
+                    "gif" => "gif",
+                    "plain" => "txt",
+                    "html" => "html",
+                    _ => "bin",
+                };
+                format!("attachment_{}.{}", stored, ext)
+            });
+
+        let size_bytes = mime_part.body.len() as i64;
+        let content_type = Some(mime_part.content_type.mime_type());
+        let content_id = mime_part.content_id.clone();
+
+        sqlx::query(
+            r#"
+            INSERT INTO attachment_metadata
+                (message_id, account_email, filename, size_bytes, content_type, content_id, storage_path)
+            VALUES (?, ?, ?, ?, ?, ?, '')
+            ON CONFLICT(message_id, account_email, filename) DO UPDATE SET
+                size_bytes = excluded.size_bytes,
+                content_type = excluded.content_type,
+                content_id = excluded.content_id
+            "#
+        )
+        .bind(message_id)
+        .bind(account)
+        .bind(&filename)
+        .bind(size_bytes)
+        .bind(&content_type)
+        .bind(&content_id)
+        .execute(pool)
+        .await?;
+
+        stored += 1;
+    }
+    Ok(stored)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

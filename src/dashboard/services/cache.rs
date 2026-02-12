@@ -388,6 +388,17 @@ impl CacheService {
         .fetch_one(pool)
         .await?;
 
+        // Store attachment metadata if the email has attachments and a message_id
+        if !email.attachments.is_empty() {
+            if let Some(ref msg_id) = message_id {
+                if let Err(e) = super::attachment_storage::store_attachment_metadata_from_mime(
+                    pool, account_id, msg_id, &email.attachments,
+                ).await {
+                    warn!("Failed to store attachment metadata for email {}: {}", email.uid, e);
+                }
+            }
+        }
+
         // Create cached email for memory cache
         let cached_email = CachedEmail {
             id: email_id,
