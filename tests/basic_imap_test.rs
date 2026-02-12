@@ -63,3 +63,25 @@ fn test_flag_operations() {
         _ => assert!(false),
     }
 }
+
+/// Regression test: IMAP fetches must use BODY.PEEK[] to avoid setting \Seen flag.
+/// See bug report: "Read/Unread Status Discrepancy Between MCP Interface and Web UI"
+/// Using BODY[] instead of BODY.PEEK[] causes the server to mark emails as read
+/// as a side effect of caching/syncing.
+#[test]
+fn test_imap_fetch_uses_peek_to_preserve_unseen_flag() {
+    let source = std::fs::read_to_string("src/imap/session.rs")
+        .expect("Failed to read src/imap/session.rs");
+
+    // Find all uid_fetch calls and ensure none use bare BODY[] without PEEK
+    for (line_num, line) in source.lines().enumerate() {
+        if line.contains("uid_fetch") && line.contains("BODY[]") && !line.contains("BODY.PEEK[]") {
+            panic!(
+                "src/imap/session.rs line {}: uid_fetch uses BODY[] instead of BODY.PEEK[]. \
+                 This will set the \\Seen flag on the server as a side effect of fetching. \
+                 Use BODY.PEEK[] to preserve the original flag state.",
+                line_num + 1
+            );
+        }
+    }
+}

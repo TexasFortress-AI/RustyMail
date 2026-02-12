@@ -279,7 +279,7 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
         let mut session_guard = self.session.lock().await;
         let sequence = uids.iter().map(|uid| uid.to_string()).collect::<Vec<_>>().join(",");
         debug!("Fetching {} UIDs: {:?}", uids.len(), uids);
-        let mut fetch_stream = session_guard.uid_fetch(&sequence, "(FLAGS ENVELOPE INTERNALDATE BODY[])").await.map_err(ImapError::from)?;
+        let mut fetch_stream = session_guard.uid_fetch(&sequence, "(FLAGS ENVELOPE INTERNALDATE BODY.PEEK[])").await.map_err(ImapError::from)?;
         let mut emails = Vec::new();
         while let Some(fetch_result) = fetch_stream.try_next().await.map_err(ImapError::from)? {
             let email = Email::from_fetch(&fetch_result)?;
@@ -373,7 +373,7 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
     async fn fetch_raw_message(&self, uid: u32) -> Result<Vec<u8>, ImapError> {
         let mut session_guard = self.session.lock().await;
         let sequence = uid.to_string();
-        let mut fetch_stream = session_guard.uid_fetch(&sequence, "BODY[]").await.map_err(ImapError::from)?;
+        let mut fetch_stream = session_guard.uid_fetch(&sequence, "BODY.PEEK[]").await.map_err(ImapError::from)?;
         if let Some(fetch_result) = fetch_stream.try_next().await.map_err(ImapError::from)? {
             fetch_result.body().map(|b| b.to_vec()).ok_or_else(|| ImapError::MissingData("Message body not found".to_string()))
         } else {
