@@ -155,7 +155,12 @@ impl AsyncImapSessionWrapper {
         let tls_stream = tls_connector.connect(server, tcp_stream).await.map_err(|e| ImapError::Tls(e.to_string()))?;
         let compat_stream = tls_stream.compat();
 
-        let client = async_imap::Client::new(compat_stream);
+        let mut client = async_imap::Client::new(compat_stream);
+
+        // Consume the IMAP server greeting before AUTHENTICATE.
+        // async-imap's login() handles this internally, but authenticate()
+        // expects the greeting to have been read already.
+        let _greeting = client.read_response().await;
 
         // Use XOAUTH2 authentication
         let authenticator = XOAuth2Authenticator::new(&username, &access_token);
