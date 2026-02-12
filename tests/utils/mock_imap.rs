@@ -185,6 +185,10 @@ impl AsyncImapOps for MockImapSession {
         self.fetch_emails_result.clone()
     }
 
+    async fn fetch_flags(&self, _uids: &[u32]) -> Result<Vec<(u32, Vec<String>)>, ImapError> {
+        Ok(Vec::new())
+    }
+
     async fn move_email(&self, _uid: u32, _from_folder: &str, _to_folder: &str) -> Result<(), ImapError> {
         self.move_email_result.clone()
     }

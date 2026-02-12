@@ -59,6 +59,8 @@ pub trait AsyncImapOps: Send + Sync + Debug {
     async fn search_emails(&self, criteria: &str) -> Result<Vec<u32>, ImapError>;
     async fn search_emails_structured(&self, criteria: &SearchCriteria) -> Result<Vec<u32>, ImapError>;
     async fn fetch_emails(&self, uids: &[u32]) -> Result<Vec<Email>, ImapError>;
+    /// Fetch only FLAGS for the given UIDs (lightweight, no body download).
+    async fn fetch_flags(&self, uids: &[u32]) -> Result<Vec<(u32, Vec<String>)>, ImapError>;
     async fn move_email(&self, uid: u32, from_folder: &str, to_folder: &str) -> Result<(), ImapError>;
     async fn store_flags(&self, uids: &[u32], operation: FlagOperation, flags: &[String]) -> Result<(), ImapError>;
     async fn append(&self, folder: &str, content: &[u8], flags: &[String]) -> Result<(), ImapError>;
@@ -293,6 +295,24 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
                   uids.iter().filter(|uid| !emails.iter().any(|e| e.uid == **uid)).collect::<Vec<_>>());
         }
         Ok(emails)
+    }
+
+    async fn fetch_flags(&self, uids: &[u32]) -> Result<Vec<(u32, Vec<String>)>, ImapError> {
+        let mut session_guard = self.session.lock().await;
+        let sequence = uids.iter().map(|uid| uid.to_string()).collect::<Vec<_>>().join(",");
+        let mut fetch_stream = session_guard.uid_fetch(&sequence, "FLAGS").await.map_err(ImapError::from)?;
+        let mut results = Vec::new();
+        while let Some(fetch_result) = fetch_stream.try_next().await.map_err(ImapError::from)? {
+            if let Some(uid) = fetch_result.uid {
+                let mut seen_flags = std::collections::HashSet::new();
+                let flags: Vec<String> = fetch_result.flags()
+                    .map(|f| format!("{:?}", f))
+                    .filter(|f| seen_flags.insert(f.clone()))
+                    .collect();
+                results.push((uid, flags));
+            }
+        }
+        Ok(results)
     }
 
     async fn move_email(&self, uid: u32, from_folder: &str, to_folder: &str) -> Result<(), ImapError> {

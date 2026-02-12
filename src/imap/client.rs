@@ -153,6 +153,10 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         self.session.fetch_emails(uids).await
     }
 
+    pub async fn fetch_flags(&self, uids: &[u32]) -> Result<Vec<(u32, Vec<String>)>, ImapError> {
+        self.session.fetch_flags(uids).await
+    }
+
     pub async fn move_email(&self, uid: u32, from_folder: &str, to_folder: &str) -> Result<(), ImapError> {
         self.session.move_email(uid, from_folder, to_folder).await
     }

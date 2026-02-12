@@ -37,6 +37,7 @@ mod tests {
             async fn select_folder(&self, folder_name: &str) -> Result<MailboxInfo, ImapError>;
             async fn search_emails(&self, criteria: &str) -> Result<Vec<u32>, ImapError>;
             async fn fetch_emails(&self, uids: &[u32]) -> Result<Vec<Email>, ImapError>;
+            async fn fetch_flags(&self, uids: &[u32]) -> Result<Vec<(u32, Vec<String>)>, ImapError>;
             async fn move_email(&self, uid: u32, from_folder: &str, to_folder: &str) -> Result<(), ImapError>;
             async fn store_flags(&self, uids: &[u32], operation: FlagOperation, flags: &[String]) -> Result<(), ImapError>;
             async fn expunge(&self) -> Result<(), ImapError>;
@@ -81,6 +82,10 @@ mod tests {
 
         async fn fetch_emails(&self, uids: &[u32]) -> Result<Vec<Email>, ImapError> {
             self.fetch_emails(uids).await
+        }
+
+        async fn fetch_flags(&self, uids: &[u32]) -> Result<Vec<(u32, Vec<String>)>, ImapError> {
+            self.fetch_flags(uids).await
         }
 
         async fn move_email(&self, uid: u32, from_folder: &str, to_folder: &str) -> Result<(), ImapError> {

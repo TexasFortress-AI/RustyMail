@@ -474,6 +474,50 @@ impl SyncService {
     }
 
     /// Perform a full sync of a folder (clear cache and re-download) for a specific account
+    /// Resync only FLAGS from the server for all cached emails in a folder.
+    /// This is lightweight (no body download) and fixes stale read/unread state.
+    pub async fn sync_flags_for_folder(&self, account_id: &str, folder_name: &str) -> Result<(), SyncError> {
+        info!("Resyncing flags for folder: {} account: {}", folder_name, account_id);
+
+        let account_service = self.account_service.lock().await;
+        let account = account_service.get_account(account_id).await
+            .map_err(|e| SyncError::AccountError(format!("Failed to get account: {}", e)))?;
+        drop(account_service);
+
+        let account_email = &account.email_address;
+
+        // Get all cached UIDs for this folder
+        let cached_uids = self.cache_service.get_cached_uids(folder_name, account_email).await
+            .map_err(|e| SyncError::CacheError(e.to_string()))?;
+
+        if cached_uids.is_empty() {
+            debug!("No cached emails to resync flags for in {}", folder_name);
+            return Ok(());
+        }
+
+        // Create IMAP session
+        let session = self.imap_factory.create_session_for_account(&account).await?;
+        session.select_folder(folder_name).await?;
+
+        // Fetch flags in batches of 500 (FLAGS-only is very lightweight)
+        const FLAG_BATCH_SIZE: usize = 500;
+        let mut updated = 0;
+
+        for chunk in cached_uids.chunks(FLAG_BATCH_SIZE) {
+            let flag_results = session.fetch_flags(chunk).await?;
+            for (uid, flags) in flag_results {
+                if let Err(e) = self.cache_service.update_email_flags(folder_name, uid, &flags, account_email).await {
+                    warn!("Failed to update flags for UID {}: {}", uid, e);
+                } else {
+                    updated += 1;
+                }
+            }
+        }
+
+        info!("Flag resync complete: updated {}/{} emails in {}", updated, cached_uids.len(), folder_name);
+        Ok(())
+    }
+
     pub async fn full_sync_folder(&self, account_id: &str, folder_name: &str) -> Result<(), SyncError> {
         info!("Performing full sync of folder: {} for account: {}", folder_name, account_id);
 

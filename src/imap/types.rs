@@ -5,7 +5,7 @@
 
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt,
     convert::Infallible,
 };
@@ -667,9 +667,11 @@ impl Email {
     }
 
     pub fn from_fetch(fetch: &Fetch) -> Result<Self, ImapError> {
-        // Handle flags - fetch.flags() returns an iterator
+        // Handle flags - fetch.flags() returns an iterator; deduplicate
+        let mut seen_flags = HashSet::new();
         let flags: Vec<String> = fetch.flags()
             .map(|f| format!("{:?}", f))
+            .filter(|f| seen_flags.insert(f.clone()))
             .collect();
         let envelope = fetch.envelope().map(|env| Envelope {
             date: env.date.as_ref().map(|d| Email::decode_mime_encoded_text(d)),
@@ -856,9 +858,11 @@ impl Email {
 impl From<Fetch> for Email {
     fn from(fetch: Fetch) -> Self {
         let uid = fetch.uid.unwrap_or(0);
-        // Handle flags - fetch.flags() returns an iterator
+        // Handle flags - fetch.flags() returns an iterator; deduplicate
+        let mut seen_flags = HashSet::new();
         let flags: Vec<String> = fetch.flags()
             .map(|f| format!("{:?}", f))
+            .filter(|f| seen_flags.insert(f.clone()))
             .collect();
 
         let envelope = fetch.envelope().map(|env| Envelope {

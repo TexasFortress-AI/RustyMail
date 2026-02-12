@@ -3511,6 +3511,32 @@ pub async fn trigger_email_sync(
     }
 }
 
+/// Resync only FLAGS from the IMAP server for cached emails (lightweight, no body download).
+pub async fn sync_flags(
+    state: Data<DashboardState>,
+    query: web::Query<serde_json::Value>,
+) -> Result<impl Responder, ApiError> {
+    let account_id = get_account_id_to_use(&query.0, &state).await?;
+    let folder = query.get("folder").and_then(|v| v.as_str()).unwrap_or("INBOX");
+
+    info!("Triggering flag resync for account {} folder {}", account_id, folder);
+
+    let sync_service = state.sync_service.clone();
+    let account_id_owned = account_id.clone();
+    let folder_owned = folder.to_string();
+
+    tokio::spawn(async move {
+        if let Err(e) = sync_service.sync_flags_for_folder(&account_id_owned, &folder_owned).await {
+            error!("Flag resync failed for {}/{}: {}", account_id_owned, folder_owned, e);
+        }
+    });
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "message": format!("Flag resync started for folder {} on account {}", folder, account_id),
+        "status": "syncing_flags"
+    })))
+}
+
 /// Get the current sync status
 pub async fn get_sync_status(
     state: Data<DashboardState>,

@@ -418,6 +418,41 @@ impl CacheService {
         Ok(())
     }
 
+    /// Get all cached UIDs for a folder (used for flag resync).
+    pub async fn get_cached_uids(&self, folder_name: &str, account_id: &str) -> Result<Vec<u32>, CacheError> {
+        let folder = match self.get_folder_from_cache_for_account(folder_name, account_id).await {
+            Some(f) => f,
+            None => return Ok(Vec::new()),
+        };
+        let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
+        let rows = sqlx::query_scalar::<_, i64>("SELECT uid FROM emails WHERE folder_id = ?")
+            .bind(folder.id)
+            .fetch_all(pool)
+            .await?;
+        Ok(rows.into_iter().map(|uid| uid as u32).collect())
+    }
+
+    /// Update only the flags for an existing cached email (lightweight flag resync).
+    pub async fn update_email_flags(&self, folder_name: &str, uid: u32, flags: &[String], account_id: &str) -> Result<(), CacheError> {
+        let folder = self.get_or_create_folder_for_account(folder_name, account_id).await?;
+        let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
+        let flags_json = serde_json::to_string(flags).unwrap_or_else(|_| "[]".to_string());
+
+        sqlx::query("UPDATE emails SET flags = ?, updated_at = CURRENT_TIMESTAMP WHERE folder_id = ? AND uid = ?")
+            .bind(&flags_json)
+            .bind(folder.id)
+            .bind(uid as i64)
+            .execute(pool)
+            .await?;
+
+        // Invalidate memory cache entry
+        let cache_key = format!("{}:{}:{}", account_id, folder_name, uid);
+        let mut memory_cache = self.memory_cache.write().await;
+        memory_cache.pop(&cache_key);
+
+        Ok(())
+    }
+
     pub async fn get_cached_email(&self, folder_name: &str, uid: u32, account_id: &str) -> Result<Option<CachedEmail>, CacheError> {
         // Check memory cache first
         let cache_key = format!("{}:{}:{}", account_id, folder_name, uid);
