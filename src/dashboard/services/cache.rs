@@ -472,15 +472,11 @@ impl CacheService {
 
         let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
 
-        let email = sqlx::query_as::<_, (
-            i64, i64, i64, Option<String>, Option<String>, Option<String>, Option<String>,
-            String, String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>,
-            String, Option<String>, Option<String>, DateTime<Utc>
-        )>(
+        let row = sqlx::query(
             r#"
             SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
                    to_addresses, cc_addresses, date, internal_date, size,
-                   flags, body_text, body_html, cached_at
+                   flags, body_text, body_html, cached_at, has_attachments
             FROM emails
             WHERE folder_id = ? AND uid = ?
             "#
@@ -490,32 +486,29 @@ impl CacheService {
         .fetch_optional(pool)
         .await?;
 
-        if let Some((id, folder_id, uid_i64, message_id, subject, from_address, from_name,
-                    to_json, cc_json, date, internal_date, size, flags_json,
-                    body_text, body_html, cached_at)) = email {
-
-            let to_addresses: Vec<String> = serde_json::from_str(&to_json).unwrap_or_default();
-            let cc_addresses: Vec<String> = serde_json::from_str(&cc_json).unwrap_or_default();
-            let flags: Vec<String> = serde_json::from_str(&flags_json).unwrap_or_default();
+        if let Some(row) = row {
+            let to_json: String = row.get("to_addresses");
+            let cc_json: String = row.get("cc_addresses");
+            let flags_json: String = row.get("flags");
 
             let cached_email = CachedEmail {
-                id,
-                folder_id,
-                uid: uid_i64 as u32,
-                message_id,
-                subject,
-                from_address,
-                from_name,
-                to_addresses,
-                cc_addresses,
-                date,
-                internal_date,
-                size,
-                flags,
-                body_text,
-                body_html,
-                cached_at,
-                has_attachments: false, // Not checking attachments in single email fetch
+                id: row.get("id"),
+                folder_id: row.get("folder_id"),
+                uid: row.get::<i64, _>("uid") as u32,
+                message_id: row.get("message_id"),
+                subject: row.get("subject"),
+                from_address: row.get("from_address"),
+                from_name: row.get("from_name"),
+                to_addresses: serde_json::from_str(&to_json).unwrap_or_default(),
+                cc_addresses: serde_json::from_str(&cc_json).unwrap_or_default(),
+                date: row.get("date"),
+                internal_date: row.get("internal_date"),
+                size: row.get("size"),
+                flags: serde_json::from_str(&flags_json).unwrap_or_default(),
+                body_text: row.get("body_text"),
+                body_html: row.get("body_html"),
+                cached_at: row.get("cached_at"),
+                has_attachments: row.get::<i32, _>("has_attachments") != 0,
             };
 
             // Add to memory cache for future access
@@ -859,15 +852,11 @@ impl CacheService {
 
         let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
 
-        let email = sqlx::query_as::<_, (
-            i64, i64, i64, Option<String>, Option<String>, Option<String>, Option<String>,
-            String, String, Option<DateTime<Utc>>, Option<DateTime<Utc>>, Option<i64>,
-            String, Option<String>, Option<String>, DateTime<Utc>
-        )>(
+        let row = sqlx::query(
             r#"
             SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
                    to_addresses, cc_addresses, date, internal_date, size,
-                   flags, body_text, body_html, cached_at
+                   flags, body_text, body_html, cached_at, has_attachments
             FROM emails
             WHERE folder_id = ? AND uid = ?
             "#
@@ -877,31 +866,29 @@ impl CacheService {
         .fetch_optional(pool)
         .await?;
 
-        if let Some((id, folder_id, uid, message_id, subject, from_address, from_name,
-                     to_json, cc_json, date, internal_date, size, flags_json,
-                     body_text, body_html, cached_at)) = email {
-            let to_addresses: Vec<String> = serde_json::from_str(&to_json).unwrap_or_default();
-            let cc_addresses: Vec<String> = serde_json::from_str(&cc_json).unwrap_or_default();
-            let flags: Vec<String> = serde_json::from_str(&flags_json).unwrap_or_default();
+        if let Some(row) = row {
+            let to_json: String = row.get("to_addresses");
+            let cc_json: String = row.get("cc_addresses");
+            let flags_json: String = row.get("flags");
 
             Ok(Some(CachedEmail {
-                id,
-                folder_id,
-                uid: uid as u32,
-                message_id,
-                subject,
-                from_address,
-                from_name,
-                to_addresses,
-                cc_addresses,
-                date,
-                internal_date,
-                size,
-                flags,
-                body_text,
-                body_html,
-                cached_at,
-                has_attachments: false, // Not checking attachments in single email fetch
+                id: row.get("id"),
+                folder_id: row.get("folder_id"),
+                uid: row.get::<i64, _>("uid") as u32,
+                message_id: row.get("message_id"),
+                subject: row.get("subject"),
+                from_address: row.get("from_address"),
+                from_name: row.get("from_name"),
+                to_addresses: serde_json::from_str(&to_json).unwrap_or_default(),
+                cc_addresses: serde_json::from_str(&cc_json).unwrap_or_default(),
+                date: row.get("date"),
+                internal_date: row.get("internal_date"),
+                size: row.get("size"),
+                flags: serde_json::from_str(&flags_json).unwrap_or_default(),
+                body_text: row.get("body_text"),
+                body_html: row.get("body_html"),
+                cached_at: row.get("cached_at"),
+                has_attachments: row.get::<i32, _>("has_attachments") != 0,
             }))
         } else {
             Ok(None)
@@ -991,7 +978,7 @@ impl CacheService {
             r#"
             SELECT DISTINCT e.id, e.folder_id, e.uid, e.message_id, e.subject, e.from_address, e.from_name,
                    e.to_addresses, e.cc_addresses, e.date, e.internal_date, e.size,
-                   e.flags, e.body_text, e.body_html, e.cached_at
+                   e.flags, e.body_text, e.body_html, e.cached_at, e.has_attachments
             FROM emails e
             LEFT JOIN attachment_metadata a ON e.message_id = a.message_id AND a.account_email =
             "#
@@ -1048,7 +1035,7 @@ impl CacheService {
                 body_text: row.get("body_text"),
                 body_html: row.get("body_html"),
                 cached_at: row.get("cached_at"),
-                has_attachments: false, // This was already the case
+                has_attachments: row.get::<i32, _>("has_attachments") != 0,
             };
             cached_emails.push(cached_email);
         }
