@@ -102,6 +102,12 @@ impl OAuthService {
         self.config.has_microsoft()
     }
 
+    /// Returns the OAuth redirect base URL (e.g., "http://localhost:9439").
+    /// Used by the callback handler to redirect back to the frontend after OAuth.
+    pub fn redirect_base_url(&self) -> Option<&str> {
+        self.config.microsoft.as_ref().map(|c| c.redirect_base_url.as_str())
+    }
+
     /// Generate a Microsoft OAuth2 authorization URL with PKCE.
     ///
     /// Returns `(authorization_url, state)`. The state is used to correlate

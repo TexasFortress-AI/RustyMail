@@ -5,7 +5,9 @@
 
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useSSEEvents } from '@/dashboard/hooks/useSSEEvents';
+import { useToast } from '@/components/ui/use-toast';
 import { GripHorizontal, GripVertical } from 'lucide-react';
 import TopBar from './TopBar';
 import StatsPanel from './StatsPanel';
@@ -27,11 +29,42 @@ const Dashboard: React.FC = () => {
   // Initialize SSE event listener
   useSSEEvents();
 
+  // Toast and URL params for OAuth redirect handling
+  const { toast } = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+
   // Get account context
   const { refreshAccounts, currentAccount, loading: accountsLoading } = useAccount();
 
   // Active tab state
   const [activeTab, setActiveTab] = useState('email');
+
+  // Handle OAuth redirect query params (?oauth=success&email=... or ?oauth=error&message=...)
+  useEffect(() => {
+    const oauthStatus = searchParams.get('oauth');
+    if (!oauthStatus) return;
+
+    if (oauthStatus === 'success') {
+      const email = searchParams.get('email') || 'unknown';
+      toast({
+        title: 'OAuth Successful',
+        description: `Account ${email} linked successfully.`,
+      });
+      refreshAccounts();
+      setActiveTab('accounts');
+    } else if (oauthStatus === 'error') {
+      const message = searchParams.get('message') || 'Unknown error';
+      toast({
+        title: 'OAuth Failed',
+        description: message,
+        variant: 'destructive',
+      });
+      setActiveTab('accounts');
+    }
+
+    // Clear query params from URL to prevent re-triggering on refresh
+    setSearchParams({}, { replace: true });
+  }, [searchParams, setSearchParams, toast, refreshAccounts]);
 
   // Current folder state (shared between EmailList and ChatbotPanel)
   // Initialize from localStorage or default to 'INBOX'

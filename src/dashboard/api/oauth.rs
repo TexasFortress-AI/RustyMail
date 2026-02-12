@@ -6,6 +6,7 @@
 //! OAuth2 API endpoints for Microsoft 365 account linking.
 
 use actix_web::{web, HttpResponse};
+use actix_web::http::header;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use log::{error, info};
 use serde::{Deserialize, Serialize};
@@ -75,51 +76,53 @@ pub async fn microsoft_callback(
     query: web::Query<OAuthCallbackQuery>,
     state: web::Data<DashboardState>,
 ) -> HttpResponse {
+    let oauth_service = &state.oauth_service;
+
+    // Determine the frontend base URL to redirect back to after OAuth.
+    // Falls back to "/" if OAUTH_REDIRECT_BASE_URL isn't available.
+    let base_url = oauth_service
+        .redirect_base_url()
+        .unwrap_or("/")
+        .trim_end_matches('/');
+
     // Check for error from Microsoft
     if let Some(error) = &query.error {
         let desc = query.error_description.as_deref().unwrap_or("Unknown error");
         error!("Microsoft OAuth callback error: {} - {}", error, desc);
-        return HttpResponse::BadRequest().json(CallbackResponse {
-            success: false,
-            email: None,
-            message: format!("Authorization denied: {}", desc),
-        });
+        let encoded_msg = urlencoding::encode(desc);
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, format!("{}/?oauth=error&message={}", base_url, encoded_msg)))
+            .finish();
     }
 
     let code = match &query.code {
         Some(c) => c,
         None => {
-            return HttpResponse::BadRequest().json(CallbackResponse {
-                success: false,
-                email: None,
-                message: "Missing authorization code".to_string(),
-            });
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, format!("{}/?oauth=error&message=Missing+authorization+code", base_url)))
+                .finish();
         }
     };
 
     let oauth_state = match &query.state {
         Some(s) => s,
         None => {
-            return HttpResponse::BadRequest().json(CallbackResponse {
-                success: false,
-                email: None,
-                message: "Missing state parameter".to_string(),
-            });
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, format!("{}/?oauth=error&message=Missing+state+parameter", base_url)))
+                .finish();
         }
     };
-
-    let oauth_service = &state.oauth_service;
 
     // Exchange authorization code for tokens
     let token_response = match oauth_service.exchange_code(oauth_state, code).await {
         Ok(tokens) => tokens,
         Err(e) => {
             error!("Token exchange failed: {}", e);
-            return HttpResponse::InternalServerError().json(CallbackResponse {
-                success: false,
-                email: None,
-                message: format!("Token exchange failed: {}", e),
-            });
+            let msg = format!("Token exchange failed: {}", e);
+            let encoded_msg = urlencoding::encode(&msg);
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, format!("{}/?oauth=error&message={}", base_url, encoded_msg)))
+                .finish();
         }
     };
 
@@ -130,11 +133,9 @@ pub async fn microsoft_callback(
         Some(e) => e,
         None => {
             error!("Could not extract email from access token JWT");
-            return HttpResponse::InternalServerError().json(CallbackResponse {
-                success: false,
-                email: None,
-                message: "Token received but could not identify account email".to_string(),
-            });
+            return HttpResponse::Found()
+                .insert_header((header::LOCATION, format!("{}/?oauth=error&message=Could+not+identify+account+email", base_url)))
+                .finish();
         }
     };
 
@@ -150,20 +151,19 @@ pub async fn microsoft_callback(
         expires_at,
     ).await {
         error!("Failed to persist OAuth tokens for {}: {}", email, e);
-        return HttpResponse::InternalServerError().json(CallbackResponse {
-            success: false,
-            email: Some(email),
-            message: format!("Token exchange succeeded but failed to save: {}", e),
-        });
+        let msg = format!("Failed to save tokens: {}", e);
+        let encoded_msg = urlencoding::encode(&msg);
+        return HttpResponse::Found()
+            .insert_header((header::LOCATION, format!("{}/?oauth=error&message={}", base_url, encoded_msg)))
+            .finish();
     }
 
     info!("OAuth tokens persisted for account: {}", email);
 
-    HttpResponse::Ok().json(CallbackResponse {
-        success: true,
-        email: Some(email),
-        message: "OAuth authorization successful. Account linked.".to_string(),
-    })
+    let encoded_email = urlencoding::encode(&email);
+    HttpResponse::Found()
+        .insert_header((header::LOCATION, format!("{}/?oauth=success&email={}", base_url, encoded_email)))
+        .finish()
 }
 
 /// Extract the `preferred_username` (email) from a Microsoft JWT access token.

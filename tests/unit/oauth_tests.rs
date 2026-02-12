@@ -90,6 +90,25 @@ async fn test_oauth_service_unconfigured_rejects_auth_url() {
 }
 
 #[tokio::test]
+async fn test_oauth_service_redirect_base_url() {
+    // Unconfigured returns None
+    let config = OAuthConfig { microsoft: None };
+    let service = OAuthService::new(config);
+    assert_eq!(service.redirect_base_url(), None);
+
+    // Configured returns the base URL
+    let config = OAuthConfig {
+        microsoft: Some(OAuthProviderConfig {
+            client_id: "id".to_string(),
+            client_secret: "secret".to_string(),
+            redirect_base_url: "http://localhost:9439".to_string(),
+        }),
+    };
+    let service = OAuthService::new(config);
+    assert_eq!(service.redirect_base_url(), Some("http://localhost:9439"));
+}
+
+#[tokio::test]
 async fn test_oauth_service_generates_valid_auth_url() {
     let config = OAuthConfig {
         microsoft: Some(OAuthProviderConfig {

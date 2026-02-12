@@ -853,13 +853,138 @@
         "status": "done",
         "subtasks": [],
         "updatedAt": "2026-02-10T20:24:52.724Z"
+      },
+      {
+        "id": "52",
+        "title": "Fix Read/Unread Flag Synchronization",
+        "description": "Fix the critical bug where all emails are marked as 'Seen' despite being unread on the server. Ensure proper IMAP flag synchronization using BODY.PEEK[] to avoid marking emails as read during fetch.",
+        "details": "1. Modify IMAP fetch commands to use BODY.PEEK[] instead of BODY[] to prevent marking emails as read during sync:\n```rust\n// In sync module\nlet fetch_command = format!(\"{}:{} (FLAGS BODY.PEEK[])\", start_uid, end_uid);\n```\n2. Update flag parsing logic to correctly read \\Seen flag from server response\n3. Implement proper flag storage in cache database with deduplication\n4. Add unit tests to verify flags are preserved during sync\n5. Update get_folder_stats to correctly count unread emails based on absence of \\Seen flag",
+        "testStrategy": "1. Create test IMAP account with known read/unread email counts\n2. Run sync and verify unread count matches server state\n3. Verify emails remain unread on server after sync\n4. Test get_folder_stats returns accurate unread counts\n5. Regression test to ensure no duplicate flags in arrays",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "53",
+        "title": "Enable Multi-Folder Synchronization",
+        "description": "Extend the email synchronization system to support caching of subfolders beyond just INBOX, including critical folders like INBOX/resumes, Sent Items, and INBOX/Contracts.",
+        "details": "1. Add folder configuration to sync settings:\n```rust\nstruct SyncConfig {\n    folders_to_sync: Vec<String>, // e.g., [\"INBOX\", \"INBOX/resumes\", \"Sent Items\"]\n    sync_all_folders: bool,\n}\n```\n2. Modify sync_account function to iterate through configured folders\n3. Update database schema to properly handle folder hierarchy\n4. Add sync_folder(account_id, folder_name) API endpoint\n5. Implement folder sync status tracking\n6. Add UI controls for folder selection in admin panel",
+        "testStrategy": "1. Test syncing individual subfolders via API\n2. Verify folder hierarchy is preserved in cache\n3. Test sync_all_folders option syncs entire folder tree\n4. Verify get_folder_stats works for all synced folders\n5. Performance test with large folder structures (50+ folders)",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "54",
+        "title": "Fix Attachment Detection and Metadata Parsing",
+        "description": "Resolve the has_attachments flag inconsistency and implement proper MIME part parsing to accurately detect and store attachment metadata during email synchronization.",
+        "details": "1. Implement robust MIME parser using mail-parser crate:\n```rust\nuse mail_parser::{Message, MimeHeaders};\n\nfn parse_attachments(raw_email: &[u8]) -> Vec<AttachmentMetadata> {\n    let message = Message::parse(raw_email).unwrap();\n    let mut attachments = Vec::new();\n    \n    for part in message.parts() {\n        if part.is_attachment() {\n            attachments.push(AttachmentMetadata {\n                filename: part.attachment_name().unwrap_or(\"unnamed\").to_string(),\n                mime_type: part.content_type().unwrap_or(\"application/octet-stream\"),\n                size: part.len(),\n                part_id: part.part_id(),\n            });\n        }\n    }\n    attachments\n}\n```\n2. Update database schema to store attachment metadata\n3. Fix has_attachments flag calculation\n4. Ensure consistency across all API endpoints",
+        "testStrategy": "1. Test with emails containing various attachment types (PDF, images, documents)\n2. Verify has_attachments flag is consistent across list_cached_emails and get_email_by_uid\n3. Test inline vs attached content distinction\n4. Verify attachment metadata is correctly stored and retrieved\n5. Test with multipart/mixed and multipart/alternative messages",
+        "priority": "high",
+        "dependencies": [
+          "52"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "55",
+        "title": "Implement Attachment Metadata API Endpoints",
+        "description": "Create new API endpoints to expose attachment metadata including filenames, MIME types, sizes, and enable filtering emails by attachment type.",
+        "details": "1. Implement get_attachment_metadata endpoint:\n```rust\n#[derive(Serialize)]\nstruct AttachmentInfo {\n    attachment_id: String,\n    filename: String,\n    mime_type: String,\n    size: u64,\n}\n\nasync fn get_attachment_metadata(uid: u64, folder: String) -> Vec<AttachmentInfo>\n```\n2. Implement search_emails_by_attachment endpoint with MIME type filtering:\n```rust\nasync fn search_emails_by_attachment(\n    mime_types: Vec<String>, // e.g., [\"image/*\", \"application/pdf\"]\n    folder: String,\n    limit: Option<usize>\n) -> Vec<EmailSummary>\n```\n3. Add attachment count and total size to email responses\n4. Implement wildcard MIME type matching (e.g., image/*)",
+        "testStrategy": "1. Test get_attachment_metadata returns correct data for emails with multiple attachments\n2. Verify MIME type filtering works with wildcards\n3. Test performance with large attachment queries\n4. Verify empty results for emails without attachments\n5. Test edge cases like emails with 50+ attachments",
+        "priority": "medium",
+        "dependencies": [
+          "54"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "56",
+        "title": "Add Flag-Based Email Filtering",
+        "description": "Implement filtering capabilities for emails based on IMAP flags (Seen/Unseen, Flagged, etc.) to support unread email workflows and other flag-based queries.",
+        "details": "1. Add flag filter parameters to list_cached_emails:\n```rust\npub struct EmailFilter {\n    flags_include: Option<Vec<String>>, // Must have these flags\n    flags_exclude: Option<Vec<String>>, // Must not have these flags\n    unread_only: Option<bool>, // Shorthand for excluding \\Seen\n}\n```\n2. Implement list_emails_by_flag endpoint:\n```rust\nasync fn list_emails_by_flag(\n    flag: String, // e.g., \"Seen\", \"Flagged\", \"Answered\"\n    include: bool, // true = has flag, false = doesn't have flag\n    folder: String,\n    limit: Option<usize>\n) -> Vec<EmailSummary>\n```\n3. Add database indexes on flags for performance\n4. Support standard IMAP flags: \\Seen, \\Answered, \\Flagged, \\Deleted, \\Draft",
+        "testStrategy": "1. Test filtering unread emails (no \\Seen flag)\n2. Verify multiple flag combinations work correctly\n3. Test performance with large datasets\n4. Verify flag exclusion logic\n5. Test with custom flags if supported by server",
+        "priority": "medium",
+        "dependencies": [
+          "52"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "57",
+        "title": "Expose Email Thread Headers and Implement Thread Grouping",
+        "description": "Add support for email threading by exposing In-Reply-To and References headers, and implement thread grouping functionality for conversation tracking.",
+        "details": "1. Update email parsing to extract thread headers:\n```rust\nstruct EmailHeaders {\n    message_id: String,\n    in_reply_to: Option<String>,\n    references: Option<Vec<String>>,\n}\n```\n2. Implement thread ID calculation algorithm:\n```rust\nfn calculate_thread_id(headers: &EmailHeaders) -> String {\n    // Use oldest message-id in References chain, or current message-id\n    if let Some(refs) = &headers.references {\n        refs.first().unwrap_or(&headers.message_id).clone()\n    } else {\n        headers.in_reply_to.as_ref().unwrap_or(&headers.message_id).clone()\n    }\n}\n```\n3. Add get_email_thread endpoint to retrieve full conversation\n4. Update database schema to store thread relationships\n5. Implement thread-aware search",
+        "testStrategy": "1. Test with known email threads to verify correct grouping\n2. Test thread calculation with various header combinations\n3. Verify orphaned emails get their own thread ID\n4. Test performance of thread queries\n5. Verify thread ordering is chronological",
+        "priority": "medium",
+        "dependencies": [
+          "53"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "58",
+        "title": "Implement Domain-Based Search and Address Aggregation",
+        "description": "Create functionality to search emails by sender/recipient domain and generate aggregated reports of email addresses and domains for analytics.",
+        "details": "1. Implement domain extraction and indexing:\n```rust\nfn extract_domain(email: &str) -> Option<String> {\n    email.split('@').nth(1).map(|d| d.to_lowercase())\n}\n```\n2. Add search_by_domain endpoint:\n```rust\nasync fn search_by_domain(\n    domain: String,\n    search_in: Vec<String>, // [\"from\", \"to\", \"cc\"]\n    folder: String\n) -> Vec<EmailSummary>\n```\n3. Implement get_email_address_report:\n```rust\n#[derive(Serialize)]\nstruct AddressReport {\n    unique_addresses: Vec<AddressCount>,\n    unique_domains: Vec<DomainCount>,\n    total_addresses: usize,\n}\n```\n4. Add database indexes on email domains\n5. Implement batch processing for large folders",
+        "testStrategy": "1. Test domain extraction with various email formats\n2. Verify domain search is case-insensitive\n3. Test aggregation report accuracy\n4. Performance test with 20k+ emails\n5. Test with international domains",
+        "priority": "medium",
+        "dependencies": [
+          "53"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "59",
+        "title": "Implement Attachment Download Functionality",
+        "description": "Add capability to download email attachments by implementing secure attachment retrieval with proper access controls and content delivery.",
+        "details": "1. Implement download_attachment endpoint:\n```rust\nasync fn download_attachment(\n    uid: u64,\n    attachment_id: String,\n    folder: String,\n    account_id: String\n) -> Result<AttachmentData, Error> {\n    // Verify user has access to account\n    // Fetch email from cache or IMAP\n    // Extract specific MIME part\n    // Return base64 encoded content or file stream\n}\n```\n2. Add attachment caching strategy:\n```rust\nstruct AttachmentCache {\n    max_size_mb: u64,\n    ttl_seconds: u64,\n}\n```\n3. Implement streaming for large attachments\n4. Add virus scanning integration point\n5. Support both base64 and direct file download",
+        "testStrategy": "1. Test downloading various file types\n2. Verify access control prevents unauthorized downloads\n3. Test with large attachments (>10MB)\n4. Verify content integrity with checksums\n5. Test cache hit/miss scenarios",
+        "priority": "low",
+        "dependencies": [
+          "55"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "60",
+        "title": "Fix OAuth Redirect UX Issue",
+        "description": "Resolve the UI bug where successful OAuth authentication redirects to a raw JSON response instead of returning to the RustyMail interface.",
+        "details": "1. Modify OAuth callback handler to redirect to UI:\n```rust\nasync fn oauth_callback(query: OAuthResponse) -> impl Responder {\n    // Process OAuth response\n    let result = process_oauth_token(query).await;\n    \n    // Redirect to UI with status\n    if result.success {\n        HttpResponse::Found()\n            .header(\"Location\", \"/accounts?oauth=success&email={}\", result.email)\n            .finish()\n    } else {\n        HttpResponse::Found()\n            .header(\"Location\", \"/accounts?oauth=failed&error={}\", result.error)\n            .finish()\n    }\n}\n```\n2. Update frontend to handle OAuth status parameters\n3. Add success/error toast notifications\n4. Implement proper error handling for OAuth failures",
+        "testStrategy": "1. Test successful OAuth flow returns to UI\n2. Test failed OAuth shows appropriate error\n3. Verify no sensitive data in URL parameters\n4. Test with multiple OAuth providers\n5. Verify browser back button behavior",
+        "priority": "low",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-12T12:00:33.516Z"
+      },
+      {
+        "id": "61",
+        "title": "Implement Email Synopsis Generation API",
+        "description": "Create an API endpoint that generates concise 3-5 line summaries of emails, particularly useful for unread email overviews and quick scanning.",
+        "details": "1. Implement get_email_synopsis endpoint:\n```rust\nasync fn get_email_synopsis(\n    uid: u64,\n    folder: String,\n    max_lines: Option<usize>, // Default: 3\n    use_ai: Option<bool> // Use AI or simple extraction\n) -> Synopsis {\n    if use_ai {\n        // Integration with LLM API\n        let prompt = format!(\"Summarize in {} lines: {}\", max_lines, email_body);\n        call_llm_api(prompt).await\n    } else {\n        // Simple extraction: subject + first N sentences\n        extract_summary(email_body, max_lines)\n    }\n}\n```\n2. Add bulk synopsis generation for unread emails\n3. Implement caching for generated summaries\n4. Add configuration for AI provider (OpenAI/Claude/local)\n5. Support multiple languages",
+        "testStrategy": "1. Test synopsis quality with various email types\n2. Verify length constraints are respected\n3. Test AI fallback to simple extraction\n4. Performance test bulk generation\n5. Test with HTML-heavy emails",
+        "priority": "low",
+        "dependencies": [
+          "56"
+        ],
+        "status": "pending",
+        "subtasks": []
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-02-10T20:46:34.498Z",
-      "taskCount": 51,
-      "completedCount": 50,
+      "lastModified": "2026-02-12T12:00:33.517Z",
+      "taskCount": 61,
+      "completedCount": 51,
       "tags": [
         "master"
       ]
