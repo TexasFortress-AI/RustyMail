@@ -61,6 +61,8 @@ pub struct CachedEmail {
     pub body_html: Option<String>,
     pub cached_at: DateTime<Utc>,
     pub has_attachments: bool,
+    pub in_reply_to: Option<String>,
+    pub references_header: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -333,6 +335,14 @@ impl CacheService {
             (None, None, None, None, Vec::new(), Vec::new(), None)
         };
 
+        // Extract thread headers
+        let in_reply_to = email.envelope.as_ref().and_then(|e| e.in_reply_to.clone());
+        let references_header = email.body.as_ref().and_then(|body| {
+            mail_parser::Message::parse(body).and_then(|msg| {
+                msg.header_raw("References").map(|v| v.to_string())
+            })
+        });
+
         // Serialize arrays to JSON
         let to_addresses = serde_json::to_string(&to).unwrap_or_else(|_| "[]".to_string());
         let cc_addresses = serde_json::to_string(&cc).unwrap_or_else(|_| "[]".to_string());
@@ -348,8 +358,9 @@ impl CacheService {
             INSERT INTO emails (
                 folder_id, uid, message_id, subject, from_address, from_name,
                 to_addresses, cc_addresses, date, internal_date, size, flags,
-                headers, body_text, body_html, has_attachments
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                headers, body_text, body_html, has_attachments,
+                in_reply_to, references_header
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(folder_id, uid) DO UPDATE SET
                 message_id = excluded.message_id,
                 subject = excluded.subject,
@@ -365,6 +376,8 @@ impl CacheService {
                 body_text = excluded.body_text,
                 body_html = excluded.body_html,
                 has_attachments = excluded.has_attachments,
+                in_reply_to = excluded.in_reply_to,
+                references_header = excluded.references_header,
                 updated_at = CURRENT_TIMESTAMP
             RETURNING id
             "#
@@ -385,6 +398,8 @@ impl CacheService {
         .bind(&email.text_body)
         .bind(&email.html_body)
         .bind(has_attachments)
+        .bind(&in_reply_to)
+        .bind(&references_header)
         .fetch_one(pool)
         .await?;
 
@@ -418,6 +433,8 @@ impl CacheService {
             body_html: email.html_body.clone(),
             cached_at: Utc::now(),
             has_attachments: !email.attachments.is_empty(),
+            in_reply_to: in_reply_to.clone(),
+            references_header: references_header.clone(),
         };
 
         // Add to memory cache with account_id to prevent cross-account data leakage
@@ -487,7 +504,8 @@ impl CacheService {
             r#"
             SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
                    to_addresses, cc_addresses, date, internal_date, size,
-                   flags, body_text, body_html, cached_at, has_attachments
+                   flags, body_text, body_html, cached_at, has_attachments,
+                   in_reply_to, references_header
             FROM emails
             WHERE folder_id = ? AND uid = ?
             "#
@@ -520,6 +538,8 @@ impl CacheService {
                 body_html: row.get("body_html"),
                 cached_at: row.get("cached_at"),
                 has_attachments: row.get::<i32, _>("has_attachments") != 0,
+                in_reply_to: row.get("in_reply_to"),
+                references_header: row.get("references_header"),
             };
 
             // Add to memory cache for future access
@@ -551,7 +571,7 @@ impl CacheService {
                    flags,
                    CASE WHEN body_text IS NOT NULL THEN SUBSTR(body_text, 1, 200) || '...' ELSE NULL END as body_text,
                    CASE WHEN body_html IS NOT NULL THEN SUBSTR(body_html, 1, 200) || '...' ELSE NULL END as body_html,
-                   cached_at, has_attachments
+                   cached_at, has_attachments, in_reply_to, references_header
             FROM emails
             WHERE folder_id = ?
             ORDER BY COALESCE(date, internal_date) DESC
@@ -561,7 +581,8 @@ impl CacheService {
             r#"
             SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
                    to_addresses, cc_addresses, date, internal_date, size,
-                   flags, body_text, body_html, cached_at, has_attachments
+                   flags, body_text, body_html, cached_at, has_attachments,
+                   in_reply_to, references_header
             FROM emails
             WHERE folder_id = ?
             ORDER BY COALESCE(date, internal_date) DESC
@@ -618,6 +639,8 @@ impl CacheService {
                 body_html,
                 cached_at,
                 has_attachments: has_attachments_i32 != 0,
+                in_reply_to: row.get("in_reply_to"),
+                references_header: row.get("references_header"),
             });
         }
 
@@ -654,7 +677,8 @@ impl CacheService {
         let query_str = format!(
             r#"SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
                    to_addresses, cc_addresses, date, internal_date, size,
-                   flags, body_text, body_html, cached_at, has_attachments
+                   flags, body_text, body_html, cached_at, has_attachments,
+                   in_reply_to, references_header
             FROM emails
             WHERE {}
             ORDER BY COALESCE(date, internal_date) DESC
@@ -694,6 +718,8 @@ impl CacheService {
                 body_html: row.get("body_html"),
                 cached_at: row.get("cached_at"),
                 has_attachments: row.get::<i32, _>("has_attachments") != 0,
+                in_reply_to: row.get("in_reply_to"),
+                references_header: row.get("references_header"),
             });
         }
 
@@ -943,7 +969,8 @@ impl CacheService {
             r#"
             SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
                    to_addresses, cc_addresses, date, internal_date, size,
-                   flags, body_text, body_html, cached_at, has_attachments
+                   flags, body_text, body_html, cached_at, has_attachments,
+                   in_reply_to, references_header
             FROM emails
             WHERE folder_id = ? AND uid = ?
             "#
@@ -976,6 +1003,8 @@ impl CacheService {
                 body_html: row.get("body_html"),
                 cached_at: row.get("cached_at"),
                 has_attachments: row.get::<i32, _>("has_attachments") != 0,
+                in_reply_to: row.get("in_reply_to"),
+                references_header: row.get("references_header"),
             }))
         } else {
             Ok(None)
@@ -1065,7 +1094,8 @@ impl CacheService {
             r#"
             SELECT DISTINCT e.id, e.folder_id, e.uid, e.message_id, e.subject, e.from_address, e.from_name,
                    e.to_addresses, e.cc_addresses, e.date, e.internal_date, e.size,
-                   e.flags, e.body_text, e.body_html, e.cached_at, e.has_attachments
+                   e.flags, e.body_text, e.body_html, e.cached_at, e.has_attachments,
+                   e.in_reply_to, e.references_header
             FROM emails e
             LEFT JOIN attachment_metadata a ON e.message_id = a.message_id AND a.account_email =
             "#
@@ -1123,6 +1153,8 @@ impl CacheService {
                 body_html: row.get("body_html"),
                 cached_at: row.get("cached_at"),
                 has_attachments: row.get::<i32, _>("has_attachments") != 0,
+                in_reply_to: row.get("in_reply_to"),
+                references_header: row.get("references_header"),
             };
             cached_emails.push(cached_email);
         }
@@ -1130,5 +1162,92 @@ impl CacheService {
         Ok(cached_emails)
     }
 
+    /// Get all emails in the same thread as the given message_id
+    pub async fn get_thread_emails(&self, message_id: &str, account_id: &str) -> Result<Vec<CachedEmail>, CacheError> {
+        let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
+
+        // Step 1: Look up the seed email to get its references chain
+        let seed_row = sqlx::query(
+            "SELECT in_reply_to, references_header FROM emails e
+             JOIN folders f ON e.folder_id = f.id
+             WHERE e.message_id = ? AND f.account_id = ?"
+        )
+        .bind(message_id)
+        .bind(account_id)
+        .fetch_optional(pool)
+        .await?;
+
+        // Step 2: Build the full set of message_ids in this thread
+        let mut thread_ids: Vec<String> = vec![message_id.to_string()];
+        if let Some(row) = &seed_row {
+            if let Some(irt) = row.get::<Option<String>, _>("in_reply_to") {
+                if !irt.is_empty() {
+                    thread_ids.push(irt);
+                }
+            }
+            if let Some(refs) = row.get::<Option<String>, _>("references_header") {
+                for r in refs.split_whitespace() {
+                    let r = r.trim_matches(|c| c == '<' || c == '>');
+                    if !r.is_empty() && !thread_ids.contains(&r.to_string()) {
+                        thread_ids.push(r.to_string());
+                    }
+                }
+            }
+        }
+
+        // Step 3: Find all emails where message_id or in_reply_to is in thread_ids
+        let placeholders: Vec<&str> = thread_ids.iter().map(|_| "?").collect();
+        let ph_str = placeholders.join(", ");
+        let sql = format!(
+            "SELECT e.id, e.folder_id, e.uid, e.message_id, e.subject, e.from_address, e.from_name,
+                    e.to_addresses, e.cc_addresses, e.date, e.internal_date, e.size,
+                    e.flags, e.body_text, e.body_html, e.cached_at, e.has_attachments,
+                    e.in_reply_to, e.references_header
+             FROM emails e
+             JOIN folders f ON e.folder_id = f.id
+             WHERE f.account_id = ? AND (e.message_id IN ({ph}) OR e.in_reply_to IN ({ph}))
+             ORDER BY COALESCE(e.date, e.internal_date) ASC",
+            ph = ph_str
+        );
+
+        let mut query = sqlx::query(&sql).bind(account_id);
+        // Bind thread_ids twice (once for message_id IN, once for in_reply_to IN)
+        for id in &thread_ids {
+            query = query.bind(id);
+        }
+        for id in &thread_ids {
+            query = query.bind(id);
+        }
+
+        let rows = query.fetch_all(pool).await?;
+        let mut emails = Vec::new();
+        for row in rows {
+            let to_str: String = row.get("to_addresses");
+            let cc_str: String = row.get("cc_addresses");
+            let flags_str: String = row.get("flags");
+            emails.push(CachedEmail {
+                id: row.get("id"),
+                folder_id: row.get("folder_id"),
+                uid: row.get::<i64, _>("uid") as u32,
+                message_id: row.get("message_id"),
+                subject: row.get("subject"),
+                from_address: row.get("from_address"),
+                from_name: row.get("from_name"),
+                to_addresses: serde_json::from_str(&to_str).unwrap_or_default(),
+                cc_addresses: serde_json::from_str(&cc_str).unwrap_or_default(),
+                date: row.get("date"),
+                internal_date: row.get("internal_date"),
+                size: row.get("size"),
+                flags: serde_json::from_str(&flags_str).unwrap_or_default(),
+                body_text: row.get("body_text"),
+                body_html: row.get("body_html"),
+                cached_at: row.get("cached_at"),
+                has_attachments: row.get::<i32, _>("has_attachments") != 0,
+                in_reply_to: row.get("in_reply_to"),
+                references_header: row.get("references_header"),
+            });
+        }
+        Ok(emails)
+    }
 
 }

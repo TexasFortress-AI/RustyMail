@@ -714,6 +714,24 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
             }
         }),
         serde_json::json!({
+            "name": "get_email_thread",
+            "description": "Get all emails in a conversation thread by message_id (uses In-Reply-To and References headers)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account"
+                    },
+                    "message_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Message-ID of any email in the thread"
+                    }
+                },
+                "required": ["account_id", "message_id"]
+            }
+        }),
+        serde_json::json!({
             "name": "list_emails_by_flag",
             "description": "Filter cached emails by IMAP flags (Seen, Flagged, Answered, etc.)",
             "inputSchema": {
@@ -1080,6 +1098,14 @@ pub async fn list_mcp_tools(
                 "folder": "Optional. Folder name (default: INBOX)",
                 "uid": "REQUIRED. Email UID",
                 "max_lines": "Optional. Max sentences to extract (default: 3)"
+            }
+        }),
+        serde_json::json!({
+            "name": "get_email_thread",
+            "description": "Get all emails in a conversation thread by message_id",
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account",
+                "message_id": "REQUIRED. Message-ID of any email in the thread"
             }
         }),
         serde_json::json!({
@@ -2826,6 +2852,54 @@ pub async fn execute_mcp_tool_inner(
                 Err(e) => serde_json::json!({
                     "success": false,
                     "error": format!("Failed to fetch email: {}", e),
+                    "tool": tool_name
+                })
+            }
+        }
+        "get_email_thread" => {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            let message_id = match params.get("message_id").and_then(|v| v.as_str()) {
+                Some(mid) => mid.to_string(),
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "message_id parameter is required",
+                    "tool": tool_name
+                })
+            };
+
+            match state.cache_service.get_thread_emails(&message_id, &account_id).await {
+                Ok(emails) => {
+                    let thread: Vec<serde_json::Value> = emails.iter().map(|e| {
+                        serde_json::json!({
+                            "uid": e.uid,
+                            "message_id": e.message_id,
+                            "subject": e.subject,
+                            "from_address": e.from_address,
+                            "from_name": e.from_name,
+                            "date": e.date,
+                            "in_reply_to": e.in_reply_to,
+                            "has_attachments": e.has_attachments,
+                            "flags": e.flags,
+                        })
+                    }).collect();
+                    serde_json::json!({
+                        "success": true,
+                        "thread_count": thread.len(),
+                        "thread": thread,
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to fetch thread: {}", e),
                     "tool": tool_name
                 })
             }
