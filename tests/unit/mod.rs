@@ -26,3 +26,4 @@ pub mod smtp_service_tests;
 pub mod attachment_tests;
 pub mod imap_keepalive_tests;
 pub mod oauth_tests;
+pub mod rmcp_sdk_tests;
