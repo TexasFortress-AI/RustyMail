@@ -201,6 +201,147 @@ pub fn get_mcp_high_level_tools_jsonrpc_format() -> Vec<Value> {
             }
         }),
 
+        // === Enhanced Discovery Tools (6 read-only, cache-side) ===
+        json!({
+            "name": "get_email_synopsis",
+            "description": "Get a concise synopsis of an email (subject + first sentences) without returning full body",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "Optional. Folder name (default: INBOX)"
+                    },
+                    "uid": {
+                        "type": "integer",
+                        "description": "REQUIRED. Email UID"
+                    },
+                    "max_lines": {
+                        "type": "integer",
+                        "description": "Optional. Max sentences to extract (default: 3)"
+                    }
+                },
+                "required": ["account_id", "uid"]
+            }
+        }),
+        json!({
+            "name": "get_email_thread",
+            "description": "Get all emails in a conversation thread by message_id (uses In-Reply-To and References headers)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account"
+                    },
+                    "message_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Message-ID of any email in the thread"
+                    }
+                },
+                "required": ["account_id", "message_id"]
+            }
+        }),
+        json!({
+            "name": "search_by_domain",
+            "description": "Search cached emails by sender/recipient domain (e.g., 'gmail.com', 'company.org')",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account"
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": "REQUIRED. Domain to search for (e.g., 'gmail.com')"
+                    },
+                    "search_in": {
+                        "type": "array",
+                        "description": "Optional. Fields to search: 'from', 'to', 'cc' (default: ['from'])",
+                        "items": { "type": "string" }
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Optional. Max results (default: 50)"
+                    }
+                },
+                "required": ["account_id", "domain"]
+            }
+        }),
+        json!({
+            "name": "list_emails_by_flag",
+            "description": "Filter cached emails by IMAP flags (Seen, Flagged, Answered, etc.). Use unread_only for quick unread filter.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "Optional. Folder name (default: INBOX)"
+                    },
+                    "flags_include": {
+                        "type": "array",
+                        "description": "Optional. Emails must have ALL these flags (e.g., ['Flagged'])",
+                        "items": { "type": "string" }
+                    },
+                    "flags_exclude": {
+                        "type": "array",
+                        "description": "Optional. Emails must NOT have these flags (e.g., ['Seen'] for unread)",
+                        "items": { "type": "string" }
+                    },
+                    "unread_only": {
+                        "type": "boolean",
+                        "description": "Optional. Shorthand for flags_exclude=['Seen']"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Optional. Max results (default: 50)"
+                    }
+                },
+                "required": ["account_id"]
+            }
+        }),
+        json!({
+            "name": "get_address_report",
+            "description": "Get aggregated report of unique email addresses and domains for an account (top senders, domain breakdown)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account"
+                    }
+                },
+                "required": ["account_id"]
+            }
+        }),
+        json!({
+            "name": "sync_emails",
+            "description": "Trigger email sync from IMAP server into the local cache. Can sync a specific folder or all folders.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "Optional. Specific folder to sync. If omitted, syncs all folders."
+                    }
+                },
+                "required": ["account_id"]
+            }
+        }),
+
         // === Configuration Tools (3) ===
         json!({
             "name": "get_model_configurations",
@@ -338,14 +479,19 @@ pub async fn execute_high_level_tool(
         "cancel_job" => {
             handle_cancel_job(state, arguments).await
         }
-        // Browsing tools (delegate to existing handlers)
+        // Browsing tools (delegate to existing low-level handlers)
         "list_accounts" |
         "list_folders_hierarchical" |
         "list_cached_emails" |
         "get_email_by_uid" |
         "search_cached_emails" |
-        "get_folder_stats" => {
-            // Delegate to existing low-level handler
+        "get_folder_stats" |
+        "get_email_synopsis" |
+        "get_email_thread" |
+        "search_by_domain" |
+        "list_emails_by_flag" |
+        "get_address_report" |
+        "sync_emails" => {
             crate::dashboard::api::handlers::execute_mcp_tool_inner(state, tool_name, arguments).await
         }
 
