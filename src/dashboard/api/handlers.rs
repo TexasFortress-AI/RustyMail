@@ -732,6 +732,47 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
             }
         }),
         serde_json::json!({
+            "name": "search_by_domain",
+            "description": "Search cached emails by sender/recipient domain (e.g., 'gmail.com', 'company.org')",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account"
+                    },
+                    "domain": {
+                        "type": "string",
+                        "description": "REQUIRED. Domain to search for (e.g., 'gmail.com')"
+                    },
+                    "search_in": {
+                        "type": "array",
+                        "description": "Optional. Fields to search: 'from', 'to', 'cc' (default: ['from'])",
+                        "items": { "type": "string" }
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Optional. Max results (default: 50)"
+                    }
+                },
+                "required": ["account_id", "domain"]
+            }
+        }),
+        serde_json::json!({
+            "name": "get_address_report",
+            "description": "Get aggregated report of unique email addresses and domains for an account",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account"
+                    }
+                },
+                "required": ["account_id"]
+            }
+        }),
+        serde_json::json!({
             "name": "list_emails_by_flag",
             "description": "Filter cached emails by IMAP flags (Seen, Flagged, Answered, etc.)",
             "inputSchema": {
@@ -1106,6 +1147,23 @@ pub async fn list_mcp_tools(
             "parameters": {
                 "account_id": "REQUIRED. Email address of the account",
                 "message_id": "REQUIRED. Message-ID of any email in the thread"
+            }
+        }),
+        serde_json::json!({
+            "name": "search_by_domain",
+            "description": "Search cached emails by sender/recipient domain",
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account",
+                "domain": "REQUIRED. Domain to search for (e.g., 'gmail.com')",
+                "search_in": "Optional. Array of fields: 'from', 'to', 'cc' (default: ['from'])",
+                "limit": "Optional. Max results (default: 50)"
+            }
+        }),
+        serde_json::json!({
+            "name": "get_address_report",
+            "description": "Get aggregated report of unique email addresses and domains",
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account"
             }
         }),
         serde_json::json!({
@@ -2900,6 +2958,84 @@ pub async fn execute_mcp_tool_inner(
                 Err(e) => serde_json::json!({
                     "success": false,
                     "error": format!("Failed to fetch thread: {}", e),
+                    "tool": tool_name
+                })
+            }
+        }
+        "search_by_domain" => {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            let domain = match params.get("domain").and_then(|v| v.as_str()) {
+                Some(d) => d.to_string(),
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "domain parameter is required",
+                    "tool": tool_name
+                })
+            };
+
+            let search_in: Vec<&str> = params.get("search_in")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|s| s.as_str()).collect())
+                .unwrap_or_else(|| vec!["from"]);
+            let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+
+            match state.cache_service.search_by_domain(&domain, &search_in, &account_id, limit).await {
+                Ok(emails) => {
+                    let results: Vec<serde_json::Value> = emails.iter().map(|e| {
+                        serde_json::json!({
+                            "uid": e.uid,
+                            "subject": e.subject,
+                            "from_address": e.from_address,
+                            "from_name": e.from_name,
+                            "date": e.date,
+                            "flags": e.flags,
+                            "has_attachments": e.has_attachments,
+                        })
+                    }).collect();
+                    serde_json::json!({
+                        "success": true,
+                        "domain": domain,
+                        "count": results.len(),
+                        "emails": results,
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => serde_json::json!({
+                    "success": false,
+                    "error": format!("Domain search failed: {}", e),
+                    "tool": tool_name
+                })
+            }
+        }
+        "get_address_report" => {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            match state.cache_service.get_address_report(&account_id).await {
+                Ok(report) => {
+                    serde_json::json!({
+                        "success": true,
+                        "report": report,
+                        "tool": tool_name
+                    })
+                }
+                Err(e) => serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to generate report: {}", e),
                     "tool": tool_name
                 })
             }

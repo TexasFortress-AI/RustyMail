@@ -1250,4 +1250,115 @@ impl CacheService {
         Ok(emails)
     }
 
+    /// Search cached emails by sender/recipient domain
+    pub async fn search_by_domain(&self, domain: &str, search_in: &[&str], account_id: &str, limit: usize) -> Result<Vec<CachedEmail>, CacheError> {
+        let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
+        let domain_pattern = format!("%@{}%", domain.to_lowercase());
+
+        let mut conditions = Vec::new();
+        for field in search_in {
+            match *field {
+                "from" => conditions.push("LOWER(e.from_address) LIKE ?".to_string()),
+                "to" => conditions.push("e.to_addresses LIKE ?".to_string()),
+                "cc" => conditions.push("e.cc_addresses LIKE ?".to_string()),
+                _ => {}
+            }
+        }
+        if conditions.is_empty() {
+            conditions.push("LOWER(e.from_address) LIKE ?".to_string());
+        }
+
+        let where_clause = conditions.join(" OR ");
+        let sql = format!(
+            "SELECT e.id, e.folder_id, e.uid, e.message_id, e.subject, e.from_address, e.from_name,
+                    e.to_addresses, e.cc_addresses, e.date, e.internal_date, e.size,
+                    e.flags, e.body_text, e.body_html, e.cached_at, e.has_attachments,
+                    e.in_reply_to, e.references_header
+             FROM emails e
+             JOIN folders f ON e.folder_id = f.id
+             WHERE f.account_id = ? AND ({})
+             ORDER BY COALESCE(e.date, e.internal_date) DESC
+             LIMIT ?",
+            where_clause
+        );
+
+        let mut query = sqlx::query(&sql).bind(account_id);
+        for _ in &conditions {
+            query = query.bind(&domain_pattern);
+        }
+        query = query.bind(limit as i64);
+
+        let rows = query.fetch_all(pool).await?;
+        let mut emails = Vec::new();
+        for row in rows {
+            let to_str: String = row.get("to_addresses");
+            let cc_str: String = row.get("cc_addresses");
+            let flags_str: String = row.get("flags");
+            emails.push(CachedEmail {
+                id: row.get("id"),
+                folder_id: row.get("folder_id"),
+                uid: row.get::<i64, _>("uid") as u32,
+                message_id: row.get("message_id"),
+                subject: row.get("subject"),
+                from_address: row.get("from_address"),
+                from_name: row.get("from_name"),
+                to_addresses: serde_json::from_str(&to_str).unwrap_or_default(),
+                cc_addresses: serde_json::from_str(&cc_str).unwrap_or_default(),
+                date: row.get("date"),
+                internal_date: row.get("internal_date"),
+                size: row.get("size"),
+                flags: serde_json::from_str(&flags_str).unwrap_or_default(),
+                body_text: row.get("body_text"),
+                body_html: row.get("body_html"),
+                cached_at: row.get("cached_at"),
+                has_attachments: row.get::<i32, _>("has_attachments") != 0,
+                in_reply_to: row.get("in_reply_to"),
+                references_header: row.get("references_header"),
+            });
+        }
+        Ok(emails)
+    }
+
+    /// Get aggregated address/domain report for an account
+    pub async fn get_address_report(&self, account_id: &str) -> Result<serde_json::Value, CacheError> {
+        let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
+
+        // Get unique sender addresses with counts
+        let sender_rows = sqlx::query(
+            "SELECT LOWER(e.from_address) as addr, COUNT(*) as cnt
+             FROM emails e JOIN folders f ON e.folder_id = f.id
+             WHERE f.account_id = ? AND e.from_address IS NOT NULL AND e.from_address != ''
+             GROUP BY LOWER(e.from_address)
+             ORDER BY cnt DESC"
+        )
+        .bind(account_id)
+        .fetch_all(pool)
+        .await?;
+
+        let mut addresses: Vec<serde_json::Value> = Vec::new();
+        let mut domains: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+
+        for row in &sender_rows {
+            let addr: String = row.get("addr");
+            let count: i64 = row.get("cnt");
+            addresses.push(serde_json::json!({"address": addr, "count": count}));
+
+            if let Some(domain) = addr.split('@').nth(1) {
+                *domains.entry(domain.to_string()).or_insert(0) += count;
+            }
+        }
+
+        let mut domain_list: Vec<serde_json::Value> = domains.into_iter()
+            .map(|(d, c)| serde_json::json!({"domain": d, "count": c}))
+            .collect();
+        domain_list.sort_by(|a, b| b["count"].as_i64().cmp(&a["count"].as_i64()));
+
+        Ok(serde_json::json!({
+            "unique_addresses": addresses.len(),
+            "unique_domains": domain_list.len(),
+            "top_addresses": addresses.iter().take(50).collect::<Vec<_>>(),
+            "top_domains": domain_list.iter().take(30).collect::<Vec<_>>(),
+        }))
+    }
+
 }
