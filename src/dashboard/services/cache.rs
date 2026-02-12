@@ -624,6 +624,82 @@ impl CacheService {
         Ok(cached_emails)
     }
 
+    /// Get cached emails filtered by flags for a specific account.
+    /// `flags_include`: email must contain ALL of these flags (e.g., ["Seen"])
+    /// `flags_exclude`: email must NOT contain ANY of these flags (e.g., ["Seen"] for unread)
+    pub async fn get_cached_emails_by_flags(
+        &self, folder_name: &str, account_id: &str,
+        flags_include: &[String], flags_exclude: &[String],
+        limit: usize, offset: usize,
+    ) -> Result<Vec<CachedEmail>, CacheError> {
+        let folder = match self.get_or_create_folder_for_account(folder_name, account_id).await {
+            Ok(f) => f,
+            Err(_) => return Ok(Vec::new()),
+        };
+
+        let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
+
+        // Build dynamic query with flag filters
+        // Flags are stored as JSON arrays like: ["Seen","Flagged"]
+        // SQL: flags LIKE '%"Seen"%' matches the quoted flag within the JSON
+        let mut conditions = vec!["folder_id = ?".to_string()];
+        for flag in flags_include {
+            conditions.push(format!("flags LIKE '%\"{}\"%'", flag));
+        }
+        for flag in flags_exclude {
+            conditions.push(format!("flags NOT LIKE '%\"{}\"%'", flag));
+        }
+
+        let where_clause = conditions.join(" AND ");
+        let query_str = format!(
+            r#"SELECT id, folder_id, uid, message_id, subject, from_address, from_name,
+                   to_addresses, cc_addresses, date, internal_date, size,
+                   flags, body_text, body_html, cached_at, has_attachments
+            FROM emails
+            WHERE {}
+            ORDER BY COALESCE(date, internal_date) DESC
+            LIMIT ? OFFSET ?"#,
+            where_clause
+        );
+
+        let mut query = sqlx::query(&query_str).bind(folder.id);
+        // Bind limit and offset
+        let rows = query
+            .bind(limit as i64)
+            .bind(offset as i64)
+            .fetch_all(pool)
+            .await?;
+
+        let mut cached_emails = Vec::new();
+        for row in rows {
+            let to_str: String = row.get("to_addresses");
+            let cc_str: String = row.get("cc_addresses");
+            let flags_str: String = row.get("flags");
+
+            cached_emails.push(CachedEmail {
+                id: row.get("id"),
+                folder_id: row.get("folder_id"),
+                uid: row.get::<i64, _>("uid") as u32,
+                message_id: row.get("message_id"),
+                subject: row.get("subject"),
+                from_address: row.get("from_address"),
+                from_name: row.get("from_name"),
+                to_addresses: serde_json::from_str(&to_str).unwrap_or_default(),
+                cc_addresses: serde_json::from_str(&cc_str).unwrap_or_default(),
+                date: row.get("date"),
+                internal_date: row.get("internal_date"),
+                size: row.get("size"),
+                flags: serde_json::from_str(&flags_str).unwrap_or_default(),
+                body_text: row.get("body_text"),
+                body_html: row.get("body_html"),
+                cached_at: row.get("cached_at"),
+                has_attachments: row.get::<i32, _>("has_attachments") != 0,
+            });
+        }
+
+        Ok(cached_emails)
+    }
+
     /// Get folder from cache for a specific account
     /// First checks in-memory cache, then falls back to database lookup
     /// Automatically tries "INBOX." prefix if exact match fails (for GoDaddy/hierarchical folder names)

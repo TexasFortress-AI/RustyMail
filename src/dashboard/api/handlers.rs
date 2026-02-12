@@ -688,6 +688,46 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
             }
         }),
         serde_json::json!({
+            "name": "list_emails_by_flag",
+            "description": "Filter cached emails by IMAP flags (Seen, Flagged, Answered, etc.)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "Optional. Folder name (default: INBOX)"
+                    },
+                    "flags_include": {
+                        "type": "array",
+                        "description": "Optional. Emails must have ALL these flags (e.g., ['Flagged'])",
+                        "items": { "type": "string" }
+                    },
+                    "flags_exclude": {
+                        "type": "array",
+                        "description": "Optional. Emails must NOT have ANY of these flags (e.g., ['Seen'] for unread)",
+                        "items": { "type": "string" }
+                    },
+                    "unread_only": {
+                        "type": "boolean",
+                        "description": "Optional. Shorthand for flags_exclude=['Seen']"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Optional. Max results (default: 50)"
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "Optional. Pagination offset (default: 0)"
+                    }
+                },
+                "required": ["account_id"]
+            }
+        }),
+        serde_json::json!({
             "name": "search_by_attachment_type",
             "description": "Search for attachments matching MIME type patterns (e.g., 'image/*', 'application/pdf')",
             "inputSchema": {
@@ -1004,6 +1044,19 @@ pub async fn list_mcp_tools(
             "parameters": {
                 "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
                 "folder": "Optional. Specific folder to sync (e.g., 'INBOX', 'INBOX/resumes'). If omitted, syncs all folders."
+            }
+        }),
+        serde_json::json!({
+            "name": "list_emails_by_flag",
+            "description": "Filter cached emails by IMAP flags (Seen, Flagged, Answered, etc.)",
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account",
+                "folder": "Optional. Folder name (default: INBOX)",
+                "flags_include": "Optional. Array of flags emails must have (e.g., ['Flagged'])",
+                "flags_exclude": "Optional. Array of flags emails must not have (e.g., ['Seen'] for unread)",
+                "unread_only": "Optional. Boolean shorthand for flags_exclude=['Seen']",
+                "limit": "Optional. Max results (default: 50)",
+                "offset": "Optional. Pagination offset (default: 0)"
             }
         }),
         serde_json::json!({
@@ -2670,6 +2723,70 @@ pub async fn execute_mcp_tool_inner(
                     "error": format!("Job not found: {}", job_id),
                     "tool": tool_name
                 }),
+            }
+        }
+        "list_emails_by_flag" => {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            let folder = params.get("folder").and_then(|v| v.as_str()).unwrap_or("INBOX");
+            let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
+            let offset = params.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+
+            let flags_include: Vec<String> = params.get("flags_include")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+            let flags_exclude: Vec<String> = params.get("flags_exclude")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .unwrap_or_default();
+
+            // Shorthand: unread_only adds "Seen" to exclude list
+            if params.get("unread_only").and_then(|v| v.as_bool()).unwrap_or(false) {
+                let mut exclude = flags_exclude;
+                if !exclude.contains(&"Seen".to_string()) {
+                    exclude.push("Seen".to_string());
+                }
+                match state.cache_service.get_cached_emails_by_flags(
+                    folder, &account_id, &flags_include, &exclude, limit, offset,
+                ).await {
+                    Ok(emails) => serde_json::json!({
+                        "success": true,
+                        "data": emails,
+                        "count": emails.len(),
+                        "folder": folder,
+                        "tool": tool_name
+                    }),
+                    Err(e) => serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to filter emails: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            } else {
+                match state.cache_service.get_cached_emails_by_flags(
+                    folder, &account_id, &flags_include, &flags_exclude, limit, offset,
+                ).await {
+                    Ok(emails) => serde_json::json!({
+                        "success": true,
+                        "data": emails,
+                        "count": emails.len(),
+                        "folder": folder,
+                        "tool": tool_name
+                    }),
+                    Err(e) => serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to filter emails: {}", e),
+                        "tool": tool_name
+                    })
+                }
             }
         }
         "search_by_attachment_type" => {
