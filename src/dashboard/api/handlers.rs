@@ -688,6 +688,32 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
             }
         }),
         serde_json::json!({
+            "name": "get_email_synopsis",
+            "description": "Get a concise synopsis of an email (subject + first sentences)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "Optional. Folder name (default: INBOX)"
+                    },
+                    "uid": {
+                        "type": "integer",
+                        "description": "REQUIRED. Email UID"
+                    },
+                    "max_lines": {
+                        "type": "integer",
+                        "description": "Optional. Max sentences to extract (default: 3)"
+                    }
+                },
+                "required": ["account_id", "uid"]
+            }
+        }),
+        serde_json::json!({
             "name": "list_emails_by_flag",
             "description": "Filter cached emails by IMAP flags (Seen, Flagged, Answered, etc.)",
             "inputSchema": {
@@ -1044,6 +1070,16 @@ pub async fn list_mcp_tools(
             "parameters": {
                 "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
                 "folder": "Optional. Specific folder to sync (e.g., 'INBOX', 'INBOX/resumes'). If omitted, syncs all folders."
+            }
+        }),
+        serde_json::json!({
+            "name": "get_email_synopsis",
+            "description": "Get a concise synopsis of an email (subject + first sentences)",
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account",
+                "folder": "Optional. Folder name (default: INBOX)",
+                "uid": "REQUIRED. Email UID",
+                "max_lines": "Optional. Max sentences to extract (default: 3)"
             }
         }),
         serde_json::json!({
@@ -2723,6 +2759,75 @@ pub async fn execute_mcp_tool_inner(
                     "error": format!("Job not found: {}", job_id),
                     "tool": tool_name
                 }),
+            }
+        }
+        "get_email_synopsis" => {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            let folder = params.get("folder").and_then(|v| v.as_str()).unwrap_or("INBOX");
+            let uid = match params.get("uid").and_then(|v| v.as_u64()).map(|u| u as u32) {
+                Some(u) => u,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "uid parameter is required",
+                    "tool": tool_name
+                })
+            };
+            let max_lines = params.get("max_lines").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
+
+            match state.cache_service.get_email_by_uid_for_account(folder, uid, &account_id).await {
+                Ok(Some(email)) => {
+                    let subject = email.subject.as_deref().unwrap_or("(no subject)");
+                    let synopsis = match &email.body_text {
+                        Some(body) => {
+                            let sentences: Vec<&str> = body
+                                .split(|c: char| c == '.' || c == '!' || c == '?')
+                                .map(|s| s.trim())
+                                .filter(|s| !s.is_empty() && s.len() > 5)
+                                .take(max_lines)
+                                .collect();
+                            if sentences.is_empty() {
+                                body.lines()
+                                    .map(|l| l.trim())
+                                    .filter(|l| !l.is_empty())
+                                    .take(max_lines)
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            } else {
+                                sentences.join(". ") + "."
+                            }
+                        }
+                        None => "(no body text available)".to_string(),
+                    };
+                    serde_json::json!({
+                        "success": true,
+                        "uid": uid,
+                        "folder": folder,
+                        "subject": subject,
+                        "synopsis": synopsis,
+                        "from": email.from_address,
+                        "date": email.date,
+                        "has_attachments": email.has_attachments,
+                        "tool": tool_name
+                    })
+                }
+                Ok(None) => serde_json::json!({
+                    "success": false,
+                    "error": format!("Email UID {} not found in {}", uid, folder),
+                    "tool": tool_name
+                }),
+                Err(e) => serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to fetch email: {}", e),
+                    "tool": tool_name
+                })
             }
         }
         "list_emails_by_flag" => {
