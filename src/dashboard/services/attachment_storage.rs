@@ -564,6 +564,47 @@ pub async fn store_attachment_metadata_from_mime(
     Ok(stored)
 }
 
+/// Read a single attachment's content from disk, returning base64-encoded data
+pub async fn read_attachment_content(
+    pool: &SqlitePool,
+    account: &str,
+    message_id: &str,
+    filename: &str,
+) -> Result<(String, String, Vec<u8>), AttachmentError> {
+    // Look up attachment metadata from DB
+    let row = sqlx::query(
+        "SELECT storage_path, content_type FROM attachment_metadata
+         WHERE message_id = ? AND account_email = ? AND filename = ?"
+    )
+    .bind(message_id)
+    .bind(account)
+    .bind(filename)
+    .fetch_optional(pool)
+    .await?
+    .ok_or_else(|| AttachmentError::NotFound(
+        format!("Attachment '{}' not found for message {}", filename, message_id)
+    ))?;
+
+    let storage_path: String = sqlx::Row::get(&row, "storage_path");
+    let content_type: Option<String> = sqlx::Row::get(&row, "content_type");
+
+    if storage_path.is_empty() {
+        return Err(AttachmentError::NotFound(
+            format!("Attachment '{}' has metadata only (not yet downloaded from IMAP)", filename)
+        ));
+    }
+
+    // Validate path is within storage root before reading
+    let storage_root = get_storage_root();
+    let full_path = PathBuf::from(&storage_path);
+    validate_path_containment(&storage_root, &full_path)?;
+
+    let content = fs::read(&full_path)?;
+    let mime = content_type.unwrap_or_else(|| "application/octet-stream".to_string());
+
+    Ok((filename.to_string(), mime, content))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

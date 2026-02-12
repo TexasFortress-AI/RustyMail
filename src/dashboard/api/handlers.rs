@@ -670,6 +670,36 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
             }
         }),
         serde_json::json!({
+            "name": "get_attachment_content",
+            "description": "Get a single attachment's content as base64 (downloads from IMAP if needed)",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account"
+                    },
+                    "message_id": {
+                        "type": "string",
+                        "description": "Message-ID of the email (provide this OR folder+uid)"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "Folder name (required if message_id not provided)"
+                    },
+                    "uid": {
+                        "type": "integer",
+                        "description": "Email UID (required if message_id not provided)"
+                    },
+                    "filename": {
+                        "type": "string",
+                        "description": "REQUIRED. Filename of the attachment to retrieve"
+                    }
+                },
+                "required": ["account_id", "filename"]
+            }
+        }),
+        serde_json::json!({
             "name": "sync_emails",
             "description": "Trigger email sync for a specific folder or all folders. Syncs emails from IMAP server into the local cache.",
             "inputSchema": {
@@ -1103,6 +1133,17 @@ pub async fn list_mcp_tools(
             "parameters": {
                 "message_id": "REQUIRED. The message ID of the email",
                 "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+            }
+        }),
+        serde_json::json!({
+            "name": "get_attachment_content",
+            "description": "Get a single attachment's content as base64",
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account",
+                "message_id": "Message-ID (provide this OR folder+uid)",
+                "folder": "Folder name (if message_id not provided)",
+                "uid": "Email UID (if message_id not provided)",
+                "filename": "REQUIRED. Filename of the attachment"
             }
         }),
         serde_json::json!({
@@ -2741,6 +2782,134 @@ pub async fn execute_mcp_tool_inner(
                         "tool": tool_name
                     })
                 }
+            }
+        }
+        "get_attachment_content" => {
+            use crate::dashboard::services::attachment_storage;
+            use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            let filename = match params.get("filename").and_then(|v| v.as_str()) {
+                Some(f) => f.to_string(),
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "filename parameter is required",
+                    "tool": tool_name
+                })
+            };
+
+            let db_pool = match state.cache_service.db_pool.as_ref() {
+                Some(pool) => pool,
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "Database not available",
+                    "tool": tool_name
+                })
+            };
+
+            // Resolve message_id from params or folder+uid
+            let message_id = if let Some(mid) = params.get("message_id").and_then(|v| v.as_str()) {
+                mid.to_string()
+            } else {
+                let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                    Some(f) => f,
+                    None => return serde_json::json!({
+                        "success": false,
+                        "error": "folder parameter required when message_id not provided",
+                        "tool": tool_name
+                    })
+                };
+                let uid = match params.get("uid").and_then(|v| v.as_u64()) {
+                    Some(u) => u as u32,
+                    None => return serde_json::json!({
+                        "success": false,
+                        "error": "uid parameter required when message_id not provided",
+                        "tool": tool_name
+                    })
+                };
+                match state.cache_service.get_email_by_uid_for_account(folder, uid, &account_id).await {
+                    Ok(Some(email)) => email.message_id.unwrap_or_default(),
+                    Ok(None) => return serde_json::json!({
+                        "success": false,
+                        "error": format!("Email UID {} not found in {}", uid, folder),
+                        "tool": tool_name
+                    }),
+                    Err(e) => return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to look up email: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            };
+
+            // Try reading from disk first; if metadata-only, fetch from IMAP
+            match attachment_storage::read_attachment_content(db_pool, &account_id, &message_id, &filename).await {
+                Ok((_name, content_type, content)) => {
+                    serde_json::json!({
+                        "success": true,
+                        "filename": filename,
+                        "content_type": content_type,
+                        "size_bytes": content.len(),
+                        "content_base64": BASE64.encode(&content),
+                        "message_id": message_id,
+                        "tool": tool_name
+                    })
+                }
+                Err(attachment_storage::AttachmentError::NotFound(msg)) if msg.contains("not yet downloaded") => {
+                    // Metadata exists but file not on disk - need IMAP fetch
+                    let folder = params.get("folder").and_then(|v| v.as_str()).unwrap_or("INBOX");
+                    let uid = params.get("uid").and_then(|v| v.as_u64()).map(|u| u as u32);
+
+                    if let Some(uid) = uid {
+                        match email_service.fetch_email_with_attachments(folder, uid, &account_id).await {
+                            Ok(_) => {
+                                // Retry reading after IMAP download
+                                match attachment_storage::read_attachment_content(db_pool, &account_id, &message_id, &filename).await {
+                                    Ok((_name, content_type, content)) => {
+                                        serde_json::json!({
+                                            "success": true,
+                                            "filename": filename,
+                                            "content_type": content_type,
+                                            "size_bytes": content.len(),
+                                            "content_base64": BASE64.encode(&content),
+                                            "message_id": message_id,
+                                            "tool": tool_name
+                                        })
+                                    }
+                                    Err(e) => serde_json::json!({
+                                        "success": false,
+                                        "error": format!("Failed to read after IMAP fetch: {}", e),
+                                        "tool": tool_name
+                                    })
+                                }
+                            }
+                            Err(e) => serde_json::json!({
+                                "success": false,
+                                "error": format!("Failed to fetch from IMAP: {}", e),
+                                "tool": tool_name
+                            })
+                        }
+                    } else {
+                        serde_json::json!({
+                            "success": false,
+                            "error": "Attachment not yet downloaded. Provide folder+uid to trigger IMAP fetch.",
+                            "tool": tool_name
+                        })
+                    }
+                }
+                Err(e) => serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to read attachment: {}", e),
+                    "tool": tool_name
+                })
             }
         }
         // === Job Management Tools ===
