@@ -127,6 +127,7 @@ impl ServerHandler for RustyMailService {
                 name: "RustyMail MCP Server".to_string(),
                 title: Some("RustyMail MCP".to_string()),
                 version: "0.1.0".to_string(),
+                description: Some("IMAP email client with MCP interface".to_string()),
                 icons: None,
                 website_url: None,
             },
@@ -136,7 +137,7 @@ impl ServerHandler for RustyMailService {
 
     async fn call_tool(
         &self,
-        request: CallToolRequestParam,
+        request: CallToolRequestParams,
         _context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
         self.execute_legacy_tool(request.name.to_string(), request.arguments.and_then(|m| m.into_iter().next().map(|(_, v)| v))).await
@@ -144,21 +145,40 @@ impl ServerHandler for RustyMailService {
 
     async fn list_tools(
         &self,
-        _request: Option<PaginatedRequestParam>,
+        _request: Option<PaginatedRequestParams>,
         _context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        let items: Vec<Tool> = self.tool_registry.keys().map(|name| {
-            Tool {
-                name: name.clone().into(),
-                title: Some(name.clone().into()),
-                description: Some(format!("IMAP tool: {}", name).into()),
-                input_schema: Arc::new(serde_json::Map::new()),
+        // Pull tool definitions from the actual source of truth (handlers.rs + high_level_tools.rs)
+        let low_level = crate::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
+        let high_level = crate::dashboard::api::high_level_tools::get_mcp_high_level_tools_jsonrpc_format();
+
+        let mut seen_names = std::collections::HashSet::new();
+        let mut items: Vec<Tool> = Vec::new();
+
+        // Convert JSON tool definitions to rmcp Tool structs, deduplicating by name
+        for tool_json in low_level.iter().chain(high_level.iter()) {
+            let name = tool_json.get("name").and_then(|v| v.as_str()).unwrap_or("unknown");
+            if !seen_names.insert(name.to_string()) {
+                continue; // Skip duplicates (high-level tools that also exist in low-level)
+            }
+            let description = tool_json.get("description").and_then(|v| v.as_str()).unwrap_or("");
+            let input_schema = tool_json.get("inputSchema")
+                .and_then(|v| v.as_object())
+                .cloned()
+                .unwrap_or_default();
+
+            items.push(Tool {
+                name: name.to_string().into(),
+                title: Some(name.to_string()),
+                description: Some(description.to_string().into()),
+                input_schema: Arc::new(input_schema),
                 output_schema: None,
+                execution: None,
                 icons: None,
                 annotations: None,
                 meta: None,
-            }
-        }).collect();
+            });
+        }
 
         Ok(ListToolsResult {
             tools: items,
