@@ -24,6 +24,7 @@ import { format } from 'date-fns';
 import { useToast } from '../../hooks/use-toast';
 import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
 import { SendMailDialog } from './SendMailDialog';
+import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
 
 interface Email {
   id: number;
@@ -44,6 +45,19 @@ interface EmailListResponse {
   emails: Email[];
   folder: string;
   count: number;
+}
+
+interface CachedFolderDetail {
+  name: string;
+  total_messages: number;
+  unseen_messages: number;
+  last_sync: string | null;
+}
+
+interface CachedFoldersResponse {
+  account_id: string;
+  folders: string[];
+  folder_details: CachedFolderDetail[];
 }
 
 export interface EmailContext {
@@ -174,47 +188,30 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     refetchInterval: currentFolder === 'INBOX.Outbox' ? 5000 : 30000,
   });
 
-  // Fetch available folders from IMAP
-  const { data: foldersData, isLoading: foldersLoading, error: foldersError } = useQuery<{account_id: string; folders: string[]}>({
-    queryKey: ['folders', currentAccount?.id],
+  // Fetch available folders from local cache (no IMAP connection needed)
+  const { data: foldersData, isLoading: foldersLoading, error: foldersError } = useQuery<CachedFoldersResponse>({
+    queryKey: ['cached-folders', currentAccount?.id],
     queryFn: async () => {
       if (!currentAccount) {
         throw new Error('No account selected');
       }
 
-      // Add timeout to prevent hanging
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-
-      try {
-        const response = await fetch(
-          `${API_BASE_URL}/dashboard/folders?account_id=${currentAccount.id}`,
-          {
-            headers: {
-              'X-API-Key': config.api.apiKey
-            },
-            signal: controller.signal
-          }
-        );
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch folders');
+      const response = await fetch(
+        `${API_BASE_URL}/dashboard/cached-folders?account_id=${currentAccount.id}`,
+        {
+          headers: {
+            'X-API-Key': config.api.apiKey
+          },
         }
-        return response.json();
-      } catch (error) {
-        clearTimeout(timeoutId);
-        if (error instanceof Error && error.name === 'AbortError') {
-          console.warn('Folders fetch timed out, using fallback');
-          // Return fallback folders instead of throwing
-          return { account_id: currentAccount.id, folders: ['INBOX', 'INBOX.Sent', 'INBOX.Drafts', 'INBOX.Trash'] };
-        }
-        throw error;
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch cached folders');
       }
+      return response.json();
     },
     enabled: !!currentAccount,
     staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-    retry: false, // Don't retry on failure
   });
 
 
@@ -564,6 +561,21 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     return name.charAt(0).toUpperCase() + name.slice(1);
   };
 
+  const getFolderDetail = (folderName: string): CachedFolderDetail | undefined => {
+    return foldersData?.folder_details?.find(d => d.name === folderName);
+  };
+
+  const formatSyncTime = (timestamp: string | null): string | null => {
+    if (!timestamp) return null;
+    const diffMs = Date.now() - new Date(timestamp).getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return `${Math.floor(diffHours / 24)}d ago`;
+  };
+
   const formatDate = (dateStr: string | null, internalDateStr: string | null) => {
     const dateToUse = dateStr || internalDateStr;
     if (!dateToUse) return 'No date';
@@ -645,16 +657,39 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
               {foldersLoading ? (
                 <SelectItem value={currentFolder} disabled>Loading folders...</SelectItem>
               ) : (foldersData?.folders && foldersData.folders.length > 0) ? (
-                foldersData.folders.map((folder) => (
-                  <SelectItem key={folder} value={folder}>
-                    {formatFolderName(folder)}
-                  </SelectItem>
-                ))
+                foldersData.folders.map((folder) => {
+                  const detail = getFolderDetail(folder);
+                  const syncTime = detail ? formatSyncTime(detail.last_sync) : null;
+                  return (
+                    <SelectItem key={folder} value={folder}>
+                      <span className="flex items-center gap-2">
+                        {formatFolderName(folder)}
+                        {detail && detail.total_messages > 0 && (
+                          <span className="text-xs text-muted-foreground">
+                            ({detail.total_messages.toLocaleString()})
+                          </span>
+                        )}
+                        {syncTime && (
+                          <span className="text-xs text-muted-foreground">
+                            {syncTime}
+                          </span>
+                        )}
+                      </span>
+                    </SelectItem>
+                  );
+                })
               ) : (
                 <SelectItem value="INBOX">Inbox</SelectItem>
               )}
             </SelectContent>
           </Select>
+          {currentAccount?.connection_status?.imap && (
+            <ConnectionStatusIndicator
+              label="IMAP"
+              attempt={currentAccount.connection_status.imap}
+              compact
+            />
+          )}
           <span className="text-sm font-normal text-muted-foreground">
             ({data?.emails.length || 0} of {data?.count || 0} emails)
           </span>

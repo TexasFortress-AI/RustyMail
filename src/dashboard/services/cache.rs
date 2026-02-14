@@ -794,6 +794,27 @@ impl CacheService {
         Some(cached_folder)
     }
 
+    /// Get all cached folders for a specific account from the database
+    /// Returns folder names with message counts and last sync time
+    pub async fn get_all_cached_folders_for_account(&self, account_id: &str) -> Result<Vec<CachedFolder>, CacheError> {
+        let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
+
+        let rows = sqlx::query_as::<_, (i64, String, Option<String>, Option<String>, Option<i64>, Option<i64>, i32, i32, Option<DateTime<Utc>>)>(
+            "SELECT id, name, delimiter, attributes, uidvalidity, uidnext, total_messages, unseen_messages, last_sync FROM folders WHERE account_id = ? ORDER BY name"
+        )
+        .bind(account_id)
+        .fetch_all(pool)
+        .await?;
+
+        let folders: Vec<CachedFolder> = rows.into_iter().map(|(id, name, delimiter, attributes_json, uidvalidity, uidnext, total_messages, unseen_messages, last_sync)| {
+            let attributes: Vec<String> = attributes_json
+                .and_then(|json| serde_json::from_str(&json).ok())
+                .unwrap_or_default();
+            CachedFolder { id, name, delimiter, attributes, uidvalidity, uidnext, total_messages, unseen_messages, last_sync }
+        }).collect();
+
+        Ok(folders)
+    }
 
     pub async fn update_sync_state(&self, folder_name: &str, last_uid: u32, status: SyncStatus, account_id: &str) -> Result<(), CacheError> {
         let folder = self.get_or_create_folder_for_account(folder_name, account_id).await?;

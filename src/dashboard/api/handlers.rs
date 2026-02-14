@@ -4388,6 +4388,42 @@ pub async fn list_folders(
     }
 }
 
+/// List folders from the local cache database (no IMAP connection needed)
+pub async fn list_cached_folders(
+    state: Data<DashboardState>,
+    query: web::Query<EmailQueryParams>,
+) -> Result<impl Responder, ApiError> {
+    let account_id = match query.account_id.as_ref() {
+        Some(id) => id.clone(),
+        None => {
+            let account_service = state.account_service.lock().await;
+            match account_service.get_default_account().await {
+                Ok(Some(account)) => account.email_address,
+                Ok(None) => return Err(ApiError::NotFound("No default account configured".to_string())),
+                Err(e) => return Err(ApiError::InternalError(format!("Failed to get default account: {}", e))),
+            }
+        }
+    };
+
+    info!("Listing cached folders for account: {}", account_id);
+
+    match state.cache_service.get_all_cached_folders_for_account(&account_id).await {
+        Ok(folders) => {
+            let folder_names: Vec<&str> = folders.iter().map(|f| f.name.as_str()).collect();
+            info!("Found {} cached folders for account {}", folders.len(), account_id);
+            Ok(HttpResponse::Ok().json(serde_json::json!({
+                "account_id": account_id,
+                "folders": folder_names,
+                "folder_details": folders,
+            })))
+        }
+        Err(e) => {
+            error!("Failed to list cached folders for account {}: {}", account_id, e);
+            Err(ApiError::InternalError(format!("Failed to list cached folders: {}", e)))
+        }
+    }
+}
+
 pub async fn get_cached_emails(
     state: Data<DashboardState>,
     query: web::Query<EmailQueryParams>,

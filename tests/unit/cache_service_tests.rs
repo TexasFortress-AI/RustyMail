@@ -520,3 +520,32 @@ async fn test_email_update_on_conflict() {
 
     cleanup_test_db(test_name);
 }
+
+#[tokio::test]
+#[serial]
+async fn test_get_all_cached_folders_for_account() {
+    let test_name = "all_cached_folders";
+    cleanup_test_db(test_name);
+
+    let account_id = "folders@test.com";
+    let service = setup_service_with_account(test_name, account_id).await;
+
+    // Cache emails in multiple folders (this implicitly creates the folders)
+    let email1 = create_test_email(1, "Inbox Email", "a@test.com");
+    let email2 = create_test_email(2, "Sent Email", "b@test.com");
+    let email3 = create_test_email(3, "Drafts Email", "c@test.com");
+    service.cache_email("INBOX", &email1, account_id).await.unwrap();
+    service.cache_email("INBOX.Sent", &email2, account_id).await.unwrap();
+    service.cache_email("INBOX.Drafts", &email3, account_id).await.unwrap();
+
+    // Retrieve all cached folders
+    let folders = service.get_all_cached_folders_for_account(account_id).await.unwrap();
+    assert_eq!(folders.len(), 3, "Should have 3 cached folders");
+
+    let folder_names: Vec<&str> = folders.iter().map(|f| f.name.as_str()).collect();
+    assert!(folder_names.contains(&"INBOX"), "Should contain INBOX");
+    assert!(folder_names.contains(&"INBOX.Sent"), "Should contain INBOX.Sent");
+    assert!(folder_names.contains(&"INBOX.Drafts"), "Should contain INBOX.Drafts");
+
+    cleanup_test_db(test_name);
+}
