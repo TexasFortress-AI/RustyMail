@@ -1,62 +1,12 @@
+# Dependabot version updates are DISABLED.
+# Dependency upgrades are managed manually via:
+#   cargo update && cargo audit    (Rust)
+#   npm update && npm audit        (frontend)
+#
+# Security alerts (CVE notifications) are still active via GitHub repo settings
+# under Settings > Security > Dependabot alerts. Those do NOT require this file.
+#
+# To re-enable version update PRs, uncomment the config below.
+
 version: 2
-updates:
-  - package-ecosystem: "cargo"
-    directory: "/"
-    schedule:
-      interval: "monthly"  # Changed from weekly to monthly
-      day: "monday"
-      time: "04:00"
-    open-pull-requests-limit: 5  # Reduced from 10 to 5
-    reviewers:
-      - "au"
-    labels:
-      - "dependencies"
-      - "rust"
-    groups:
-      patch-updates:
-        patterns:
-          - "*"
-        update-types:
-          - "patch"
-      minor-updates:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-
-  - package-ecosystem: "npm"
-    directory: "/frontend/rustymail-app-main"
-    schedule:
-      interval: "monthly"  # Changed from weekly to monthly
-      day: "monday"
-      time: "04:00"
-    open-pull-requests-limit: 5  # Reduced from 10 to 5
-    reviewers:
-      - "au"
-    labels:
-      - "dependencies"
-      - "frontend"
-    groups:
-      patch-updates:
-        patterns:
-          - "*"
-        update-types:
-          - "patch"
-      minor-updates:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    schedule:
-      interval: "monthly"  # Changed from weekly to monthly
-      day: "monday"
-      time: "04:00"
-    open-pull-requests-limit: 3  # Reduced from 5 to 3
-    reviewers:
-      - "au"
-    labels:
-      - "dependencies"
-      - "github-actions"
+updates: []
