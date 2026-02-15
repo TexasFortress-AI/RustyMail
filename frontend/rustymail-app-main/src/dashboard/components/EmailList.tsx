@@ -25,6 +25,7 @@ import { useToast } from '../../hooks/use-toast';
 import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
 import { SendMailDialog } from './SendMailDialog';
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
+import { SyncStatusPanel } from './SyncStatusPanel';
 import { accountsApi } from '../api/accounts';
 
 interface Email {
@@ -732,15 +733,11 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
             <PenSquare className="mr-2 h-4 w-4" />
             Compose
           </Button>
-          <Button
-            onClick={handleSync}
-            disabled={isFetching}
-            size="sm"
-            variant="outline"
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
-            Sync
-          </Button>
+          <SyncStatusPanel
+            accountId={currentAccount?.id}
+            folder={currentFolder}
+            onSyncComplete={() => refetch()}
+          />
         </div>
       </CardHeader>
 
