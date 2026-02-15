@@ -8,7 +8,7 @@
 use actix_web::{web, HttpResponse};
 use actix_web::http::header;
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
-use log::{error, info};
+use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 
 use crate::dashboard::services::DashboardState;
@@ -159,6 +159,17 @@ pub async fn microsoft_callback(
     }
 
     info!("OAuth tokens persisted for account: {}", email);
+
+    // Validate the connection to update the connection status indicator
+    match account_service.get_account(&email).await {
+        Ok(account) => {
+            match account_service.validate_connection(&account).await {
+                Ok(()) => info!("OAuth re-auth: connection validated for {}", email),
+                Err(e) => warn!("OAuth re-auth: connection validation failed for {}: {}", email, e),
+            }
+        }
+        Err(e) => warn!("OAuth re-auth: could not fetch account {}: {}", email, e),
+    }
 
     let encoded_email = urlencoding::encode(&email);
     HttpResponse::Found()

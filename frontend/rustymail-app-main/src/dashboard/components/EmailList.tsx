@@ -25,6 +25,7 @@ import { useToast } from '../../hooks/use-toast';
 import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
 import { SendMailDialog } from './SendMailDialog';
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
+import { accountsApi } from '../api/accounts';
 
 interface Email {
   id: number;
@@ -76,6 +77,20 @@ interface EmailListProps {
 const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, onEmailSelect, onRefetchReady }) => {
   const { currentAccount } = useAccount();
   const { toast } = useToast();
+
+  const handleReauthorize = async () => {
+    try {
+      const { authorization_url } = await accountsApi.getMicrosoftAuthUrl();
+      window.location.href = authorization_url;
+    } catch (error: any) {
+      toast({
+        title: 'OAuth Error',
+        description: error.message || 'Failed to initiate Microsoft sign-in',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const [hasAutoSynced, setHasAutoSynced] = useState<Set<string>>(new Set());
@@ -688,6 +703,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
               label="IMAP"
               attempt={currentAccount.connection_status.imap}
               compact
+              onReauthorize={currentAccount.oauth_provider === 'microsoft' ? handleReauthorize : undefined}
             />
           )}
           <span className="text-sm font-normal text-muted-foreground">

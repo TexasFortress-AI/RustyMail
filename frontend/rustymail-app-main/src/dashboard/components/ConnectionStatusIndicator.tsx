@@ -18,6 +18,7 @@ import {
   HelpCircle,
   Copy,
   ChevronDown,
+  Shield,
 } from 'lucide-react';
 import { useToast } from '../../components/ui/use-toast';
 
@@ -25,12 +26,14 @@ interface ConnectionStatusIndicatorProps {
   label: string; // e.g., "IMAP" or "SMTP"
   attempt: ConnectionAttempt;
   compact?: boolean; // Show just the dot without label
+  onReauthorize?: () => void; // Optional callback for OAuth re-authorization
 }
 
 export function ConnectionStatusIndicator({
   label,
   attempt,
   compact = false,
+  onReauthorize,
 }: ConnectionStatusIndicatorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const { toast } = useToast();
@@ -139,6 +142,17 @@ export function ConnectionStatusIndicator({
             <div className="bg-muted p-2 rounded text-xs font-mono break-all">
               {attempt.message}
             </div>
+            {attempt.status === 'failed' && onReauthorize && (
+              <Button
+                onClick={onReauthorize}
+                size="sm"
+                className="w-full"
+                style={{ backgroundColor: '#0078D4', color: 'white' }}
+              >
+                <Shield className="mr-2 h-3 w-3" />
+                Authorize Microsoft 365
+              </Button>
+            )}
             <Button
               onClick={copyToClipboard}
               variant="outline"
@@ -192,6 +206,17 @@ export function ConnectionStatusIndicator({
           <div className="bg-muted p-2 rounded text-xs font-mono break-all max-h-32 overflow-y-auto">
             {attempt.message}
           </div>
+          {attempt.status === 'failed' && onReauthorize && (
+            <Button
+              onClick={onReauthorize}
+              size="sm"
+              className="w-full"
+              style={{ backgroundColor: '#0078D4', color: 'white' }}
+            >
+              <Shield className="mr-2 h-3 w-3" />
+              Authorize Microsoft 365
+            </Button>
+          )}
           <Button
             onClick={copyToClipboard}
             variant="outline"

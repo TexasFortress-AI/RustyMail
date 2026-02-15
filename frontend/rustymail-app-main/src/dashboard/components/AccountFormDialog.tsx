@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Account, AccountFormData, AutoConfigResult } from '../../types';
 import { accountsApi } from '../api/accounts';
+import { useAccount } from '../../contexts/AccountContext';
 import {
   Dialog,
   DialogContent,
@@ -40,6 +41,7 @@ export function AccountFormDialog({
 }: AccountFormDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { refreshAccounts } = useAccount();
   const [loading, setLoading] = useState(false);
   const [autoConfiguring, setAutoConfiguring] = useState(false);
   const [validating, setValidating] = useState(false);
@@ -217,6 +219,9 @@ export function AccountFormDialog({
       if (result.success) {
         // Invalidate folders query to refetch and show newly created folders (like Outbox)
         queryClient.invalidateQueries({ queryKey: ['folders', account.id] });
+        queryClient.invalidateQueries({ queryKey: ['cached-folders', account.id] });
+        // Refresh accounts to update connection status indicators across the UI
+        await refreshAccounts();
 
         toast({
           title: 'Connection Successful',
