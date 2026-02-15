@@ -46,6 +46,10 @@ struct Cli {
     /// Sync only this specific folder (requires --account)
     #[arg(long)]
     folder: Option<String>,
+
+    /// Force re-sync all emails (ignore last synced UID, re-download everything)
+    #[arg(long)]
+    force: bool,
 }
 
 /// Account row from database
@@ -224,7 +228,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Sync each account (or single account if filtered)
     for account in accounts {
-        if let Err(e) = sync_account(&pool, &account, cli.folder.as_deref()).await {
+        if let Err(e) = sync_account(&pool, &account, cli.folder.as_deref(), cli.force).await {
             error!("Failed to sync {}: {}", account.email_address, e);
         }
     }
@@ -235,7 +239,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 /// Sync folders for a single account
 /// If folder_filter is Some, only sync that specific folder
-async fn sync_account(pool: &SqlitePool, account: &AccountRow, folder_filter: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+async fn sync_account(pool: &SqlitePool, account: &AccountRow, folder_filter: Option<&str>, force: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mode = match folder_filter {
         Some(f) => format!("folder {}", f),
         None => "all folders".to_string(),
@@ -277,7 +281,7 @@ async fn sync_account(pool: &SqlitePool, account: &AccountRow, folder_filter: Op
 
     // Sync each folder
     for folder in &folders_to_sync {
-        if let Err(e) = sync_folder(pool, &client, &account.email_address, folder).await {
+        if let Err(e) = sync_folder(pool, &client, &account.email_address, folder, force).await {
             warn!("Failed to sync folder {} for {}: {}", folder, account.email_address, e);
             // Continue with other folders (only relevant in all-folders mode)
         }
@@ -298,16 +302,22 @@ async fn sync_folder(
     client: &rustymail::imap::client::ImapClient<rustymail::imap::session::AsyncImapSessionWrapper>,
     account_email: &str,
     folder_name: &str,
+    force: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     debug!("Syncing folder: {} for {}", folder_name, account_email);
 
     // Select folder
     client.select_folder(folder_name).await?;
 
-    // Get last synced UID
-    let last_uid_synced = get_last_uid(pool, folder_name, account_email).await?;
+    // Get last synced UID (ignored when force=true)
+    let last_uid_synced = if force {
+        info!("Force re-sync: ignoring last_uid_synced for folder {}", folder_name);
+        0
+    } else {
+        get_last_uid(pool, folder_name, account_email).await?
+    };
 
-    // Search for new emails
+    // Search for new emails (force mode fetches ALL)
     let search_criteria = if last_uid_synced > 0 {
         format!("UID {}:*", last_uid_synced + 1)
     } else {

@@ -1147,8 +1147,9 @@
         "testStrategy": "1. Build sync binary: `cargo build --bin sync`\n2. Test normal sync: `./target/debug/sync --account-id 1 --folder-id 1`\n3. Test force sync: `./target/debug/sync --account-id 1 --folder-id 1 --force`\n4. Verify force sync resets last_uid_synced to 0 in database\n5. Verify force sync re-downloads all emails even if already cached\n6. Test --help flag shows force option documentation",
         "priority": "medium",
         "dependencies": [],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-15T01:52:10.478Z"
       },
       {
         "id": "74",
@@ -1207,9 +1208,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-02-15T01:50:31.437Z",
+      "lastModified": "2026-02-15T01:52:10.478Z",
       "taskCount": 77,
-      "completedCount": 65,
+      "completedCount": 66,
       "tags": [
         "master"
       ]
