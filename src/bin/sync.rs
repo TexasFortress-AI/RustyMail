@@ -331,11 +331,18 @@ async fn sync_folder(
         return Ok(());
     }
 
-    info!("Syncing {} emails in folder {} for {}", uids.len(), folder_name, account_email);
+    let total_emails = uids.len() as i64;
+    info!("Syncing {} emails in folder {} for {}", total_emails, folder_name, account_email);
+
+    // Set initial sync progress
+    if let Err(e) = update_sync_progress(pool, folder_name, account_email, 0, total_emails).await {
+        warn!("Failed to write initial sync progress: {}", e);
+    }
 
     // Process in batches of 100
     const BATCH_SIZE: usize = 100;
     let mut max_uid = last_uid_synced;
+    let mut emails_synced: i64 = 0;
 
     for chunk in uids.chunks(BATCH_SIZE) {
         let emails = client.fetch_emails(chunk).await?;
@@ -348,6 +355,13 @@ async fn sync_folder(
                     max_uid = email.uid;
                 }
             }
+        }
+
+        emails_synced += emails.len() as i64;
+
+        // Update sync progress after each batch
+        if let Err(e) = update_sync_progress(pool, folder_name, account_email, emails_synced, total_emails).await {
+            warn!("Failed to update sync progress: {}", e);
         }
 
         // Explicitly drop to free memory
@@ -388,18 +402,43 @@ async fn get_last_uid(pool: &SqlitePool, folder_name: &str, account_id: &str) ->
     Ok(result.unwrap_or(0) as u32)
 }
 
-/// Update sync state with new last UID
+/// Update sync progress (called during batch processing)
+async fn update_sync_progress(pool: &SqlitePool, folder_name: &str, account_id: &str, emails_synced: i64, emails_total: i64) -> Result<(), sqlx::Error> {
+    let folder_id = get_or_create_folder_id(pool, folder_name, account_id).await?;
+
+    sqlx::query(
+        r#"
+        INSERT INTO sync_state (folder_id, sync_status, emails_synced, emails_total, updated_at)
+        VALUES (?, 'Syncing', ?, ?, datetime('now'))
+        ON CONFLICT(folder_id) DO UPDATE SET
+            sync_status = 'Syncing',
+            emails_synced = excluded.emails_synced,
+            emails_total = excluded.emails_total,
+            updated_at = datetime('now')
+        "#
+    )
+    .bind(folder_id)
+    .bind(emails_synced)
+    .bind(emails_total)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+/// Update sync state with new last UID (resets progress to 0)
 async fn update_sync_state(pool: &SqlitePool, folder_name: &str, last_uid: u32, account_id: &str) -> Result<(), sqlx::Error> {
     // Get folder_id first
     let folder_id = get_or_create_folder_id(pool, folder_name, account_id).await?;
 
     sqlx::query(
         r#"
-        INSERT INTO sync_state (folder_id, last_uid_synced, sync_status, updated_at)
-        VALUES (?, ?, 'Idle', datetime('now'))
+        INSERT INTO sync_state (folder_id, last_uid_synced, sync_status, emails_synced, emails_total, updated_at)
+        VALUES (?, ?, 'Idle', 0, 0, datetime('now'))
         ON CONFLICT(folder_id) DO UPDATE SET
             last_uid_synced = excluded.last_uid_synced,
             sync_status = 'Idle',
+            emails_synced = 0,
+            emails_total = 0,
             updated_at = datetime('now')
         "#
     )
