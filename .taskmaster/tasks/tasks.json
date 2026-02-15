@@ -1088,13 +1088,127 @@
         "priority": "medium",
         "subtasks": [],
         "updatedAt": "2026-02-14T12:46:08.593Z"
+      },
+      {
+        "id": "69",
+        "title": "Add cached_count to CachedFolder struct and API response",
+        "description": "Enhance the CachedFolder struct to include a count of cached emails and update the API to return this information, enabling the UI to show cached vs total email counts",
+        "details": "Backend (cache.rs):\n1. Add `pub cached_count: i32` field to the `CachedFolder` struct\n2. Modify `get_all_cached_folders_for_account()` function to include a subquery in the SQL:\n```rust\nlet query = r#\"\n    SELECT f.*, \n           (SELECT COUNT(*) FROM emails e WHERE e.folder_id = f.id) AS cached_count\n    FROM folders f\n    WHERE f.account_id = $1\n\"#;\n```\n3. Update the row mapping to populate the new field:\n```rust\ncached_count: row.get(\"cached_count\"),\n```\n\nFrontend (EmailList.tsx):\n1. Add `cached_count: number` to the `CachedFolderDetail` TypeScript interface\n2. Update the folder dropdown display logic:\n```typescript\n// Change from:\n({detail.total_messages.toLocaleString()})\n// To:\n({detail.cached_count.toLocaleString()} / {detail.total_messages.toLocaleString()})\n```",
+        "testStrategy": "1. Run `cargo build && cargo test` to ensure Rust compilation and tests pass\n2. Make API call to `/api/dashboard/cached-folders` and verify response includes `cached_count` field for each folder\n3. Verify UI folder dropdown displays format like 'Inbox (350 / 1,600)' showing cached vs total counts\n4. Test with folders containing 0 cached emails to ensure proper handling",
+        "priority": "high",
+        "dependencies": [],
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-15T01:48:50.569Z"
+      },
+      {
+        "id": "70",
+        "title": "Create sync progress migration (010_add_sync_progress.sql)",
+        "description": "Add database columns to track email sync progress in real-time, storing the number of emails synced and total emails to sync",
+        "details": "Create migration file `migrations/010_add_sync_progress.sql`:\n```sql\n-- Add columns to track sync progress\nALTER TABLE sync_state ADD COLUMN emails_synced INTEGER DEFAULT 0;\nALTER TABLE sync_state ADD COLUMN emails_total INTEGER DEFAULT 0;\n\n-- Add index for performance when querying sync state\nCREATE INDEX idx_sync_state_account_folder ON sync_state(account_id, folder_id);\n```\n\nEnsure migration runner is configured to apply this migration on startup. The columns should default to 0 to maintain backward compatibility with existing records.",
+        "testStrategy": "1. Apply migration to test database and verify columns are added successfully\n2. Check that existing sync_state records have emails_synced=0 and emails_total=0\n3. Verify migration rollback works correctly if needed\n4. Test that the application starts successfully with the new schema\n5. Verify index creation improves query performance for sync state lookups",
+        "priority": "high",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "71",
+        "title": "Update sync binary to write progress during sync",
+        "description": "Modify the sync binary to update sync progress in the database as it processes emails, providing real-time visibility into sync operations",
+        "details": "In `src/bin/sync.rs`, modify the `sync_folder()` function:\n\n1. At the start of sync:\n```rust\n// After fetching UIDs from IMAP\nlet total_emails = uids.len() as i32;\nupdate_sync_progress(&pool, account_id, folder_id, \"Syncing\", 0, total_emails).await?;\n```\n\n2. After each batch is processed:\n```rust\n// Inside the batch processing loop\nlet emails_processed = batch_index * batch_size + current_batch.len();\nupdate_sync_progress(&pool, account_id, folder_id, \"Syncing\", emails_processed as i32, total_emails).await?;\n```\n\n3. At the end of sync (in `update_sync_state()`):\n```rust\n// Reset progress counters when sync completes\nsqlx::query!(\n    \"UPDATE sync_state SET sync_status = 'Idle', emails_synced = 0, emails_total = 0, last_sync = $3 WHERE account_id = $1 AND folder_id = $2\",\n    account_id, folder_id, Utc::now()\n).execute(pool).await?;\n```\n\n4. Add helper function:\n```rust\nasync fn update_sync_progress(\n    pool: &PgPool,\n    account_id: i32,\n    folder_id: i32,\n    status: &str,\n    synced: i32,\n    total: i32\n) -> Result<()> {\n    sqlx::query!(\n        \"UPDATE sync_state SET sync_status = $1, emails_synced = $2, emails_total = $3 WHERE account_id = $4 AND folder_id = $5\",\n        status, synced, total, account_id, folder_id\n    ).execute(pool).await?;\n    Ok(())\n}\n```",
+        "testStrategy": "1. Run sync binary and monitor database updates during sync operation\n2. Verify sync_state table shows incremental progress updates\n3. Test with large folders (1000+ emails) to ensure progress updates are frequent enough\n4. Verify progress resets to 0/0 after sync completes\n5. Test error scenarios to ensure partial progress is recorded\n6. Monitor performance impact of frequent database updates",
+        "priority": "high",
+        "dependencies": [
+          "70"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "72",
+        "title": "Update SyncState struct and sync status API to include progress fields",
+        "description": "Extend the SyncState data structure and API endpoints to expose sync progress information to the frontend",
+        "details": "1. Update `SyncState` struct in `src/dashboard/services/cache.rs`:\n```rust\n#[derive(Serialize, Deserialize, Debug)]\npub struct SyncState {\n    pub account_id: i32,\n    pub folder_id: i32,\n    pub sync_status: String,\n    pub last_sync: Option<DateTime<Utc>>,\n    pub last_uid_synced: i64,\n    pub emails_synced: i32,  // New field\n    pub emails_total: i32,    // New field\n}\n```\n\n2. Update `get_sync_state()` query:\n```rust\nlet sync_state = sqlx::query_as!(\n    SyncState,\n    r#\"SELECT account_id, folder_id, sync_status, last_sync, last_uid_synced, \n              emails_synced, emails_total \n       FROM sync_state \n       WHERE account_id = $1 AND folder_id = $2\"#,\n    account_id, folder_id\n).fetch_optional(pool).await?;\n```\n\n3. Update API response in `src/dashboard/api/handlers.rs` `get_sync_status()`:\n```rust\nlet response = json!({\n    \"status\": sync_state.sync_status,\n    \"last_sync\": sync_state.last_sync,\n    \"emails_synced\": sync_state.emails_synced,\n    \"emails_total\": sync_state.emails_total,\n    \"is_syncing\": sync_state.sync_status == \"Syncing\"\n});\n```",
+        "testStrategy": "1. Compile and run tests: `cargo build && cargo test`\n2. Call `/api/sync/status` endpoint and verify response includes emails_synced and emails_total fields\n3. Test during active sync to ensure progress values are returned correctly\n4. Test when sync is idle to verify fields return 0\n5. Verify backward compatibility if sync_state records don't have these fields yet",
+        "priority": "high",
+        "dependencies": [
+          "70"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "73",
+        "title": "Add force re-sync CLI flag to sync binary",
+        "description": "Implement a --force flag in the sync binary that allows users to re-download all emails by resetting the sync checkpoint",
+        "details": "1. Update CLI struct in `src/bin/sync.rs`:\n```rust\n#[derive(Parser, Debug)]\n#[command(author, version, about, long_about = None)]\nstruct Cli {\n    /// Account ID to sync\n    #[arg(short, long)]\n    account_id: i32,\n    \n    /// Folder ID to sync (optional, syncs all if not specified)\n    #[arg(short, long)]\n    folder_id: Option<i32>,\n    \n    /// Force full re-sync by resetting sync checkpoint\n    #[arg(long, help = \"Force re-download all emails by resetting sync checkpoint\")]\n    force: bool,\n}\n```\n\n2. Pass force flag through the sync chain:\n```rust\n// In main()\nif let Some(folder_id) = cli.folder_id {\n    sync_folder(&pool, cli.account_id, folder_id, cli.force).await?;\n} else {\n    sync_all_folders(&pool, cli.account_id, cli.force).await?;\n}\n\n// Update function signatures\nasync fn sync_folder(pool: &PgPool, account_id: i32, folder_id: i32, force: bool) -> Result<()> {\n    if force {\n        // Reset last_uid_synced to 0 before starting sync\n        sqlx::query!(\n            \"UPDATE sync_state SET last_uid_synced = 0 WHERE account_id = $1 AND folder_id = $2\",\n            account_id, folder_id\n        ).execute(pool).await?;\n    }\n    // Continue with normal sync logic\n}\n```\n\n3. Update IMAP search criteria when force=true:\n```rust\nlet search_criteria = if force || last_uid_synced == 0 {\n    \"ALL\".to_string()\n} else {\n    format!(\"UID {}:*\", last_uid_synced + 1)\n};\n```",
+        "testStrategy": "1. Build sync binary: `cargo build --bin sync`\n2. Test normal sync: `./target/debug/sync --account-id 1 --folder-id 1`\n3. Test force sync: `./target/debug/sync --account-id 1 --folder-id 1 --force`\n4. Verify force sync resets last_uid_synced to 0 in database\n5. Verify force sync re-downloads all emails even if already cached\n6. Test --help flag shows force option documentation",
+        "priority": "medium",
+        "dependencies": [],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "74",
+        "title": "Add force parameter to sync trigger API endpoint",
+        "description": "Extend the sync trigger API endpoint to accept a force parameter that passes the --force flag to the sync binary",
+        "details": "In `src/dashboard/api/handlers.rs`, modify `trigger_email_sync()`:\n\n```rust\n#[derive(Deserialize)]\nstruct SyncParams {\n    account_id: i32,\n    folder_id: Option<i32>,\n    force: Option<bool>,  // New optional parameter\n}\n\npub async fn trigger_email_sync(\n    Query(params): Query<SyncParams>,\n    State(state): State<AppState>,\n) -> Result<impl IntoResponse, AppError> {\n    // Build command arguments\n    let mut args = vec![\n        \"--account-id\".to_string(),\n        params.account_id.to_string(),\n    ];\n    \n    if let Some(folder_id) = params.folder_id {\n        args.push(\"--folder-id\".to_string());\n        args.push(folder_id.to_string());\n    }\n    \n    // Add force flag if requested\n    if params.force.unwrap_or(false) {\n        args.push(\"--force\".to_string());\n    }\n    \n    // Spawn sync process\n    let mut cmd = Command::new(\"./target/release/sync\");\n    cmd.args(&args);\n    \n    match cmd.spawn() {\n        Ok(_) => Ok(Json(json!({\n            \"status\": \"sync_started\",\n            \"account_id\": params.account_id,\n            \"folder_id\": params.folder_id,\n            \"force\": params.force.unwrap_or(false)\n        }))),\n        Err(e) => Err(AppError::InternalServerError(format!(\"Failed to start sync: {}\", e)))\n    }\n}\n```\n\nUpdate route registration if needed to ensure query parameters are parsed correctly.",
+        "testStrategy": "1. Test normal sync trigger: `POST /api/sync/trigger?account_id=1&folder_id=1`\n2. Test force sync trigger: `POST /api/sync/trigger?account_id=1&folder_id=1&force=true`\n3. Verify sync binary is spawned with correct arguments using process monitoring\n4. Test with force=false explicitly to ensure it doesn't add the flag\n5. Test error handling when sync binary is not found or fails to start\n6. Verify API response includes force parameter status",
+        "priority": "medium",
+        "dependencies": [
+          "73"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "75",
+        "title": "Create useSyncStatus hook for frontend",
+        "description": "Implement a React hook that polls the sync status API and provides real-time sync progress updates to UI components",
+        "details": "Create `frontend/src/hooks/useSyncStatus.ts`:\n\n```typescript\nimport { useState, useEffect, useCallback } from 'react';\nimport { useQuery } from '@tanstack/react-query';\n\ninterface SyncStatus {\n  status: string;\n  last_sync: string | null;\n  emails_synced: number;\n  emails_total: number;\n  is_syncing: boolean;\n}\n\ninterface UseSyncStatusReturn {\n  isSyncing: boolean;\n  emailsSynced: number;\n  emailsTotal: number;\n  lastSync: Date | null;\n  error: Error | null;\n  refetch: () => void;\n}\n\nexport function useSyncStatus(accountId: number, folderId?: number): UseSyncStatusReturn {\n  const [pollInterval, setPollInterval] = useState<number | false>(false);\n  \n  const { data, error, refetch } = useQuery<SyncStatus>({\n    queryKey: ['syncStatus', accountId, folderId],\n    queryFn: async () => {\n      const params = new URLSearchParams({ account_id: accountId.toString() });\n      if (folderId) params.append('folder_id', folderId.toString());\n      \n      const response = await fetch(`/api/sync/status?${params}`);\n      if (!response.ok) throw new Error('Failed to fetch sync status');\n      return response.json();\n    },\n    refetchInterval: pollInterval,\n    refetchIntervalInBackground: true,\n  });\n  \n  // Enable polling when syncing, disable when idle\n  useEffect(() => {\n    if (data?.is_syncing) {\n      setPollInterval(2000); // Poll every 2 seconds during sync\n    } else {\n      setPollInterval(false); // Stop polling when idle\n    }\n  }, [data?.is_syncing]);\n  \n  return {\n    isSyncing: data?.is_syncing ?? false,\n    emailsSynced: data?.emails_synced ?? 0,\n    emailsTotal: data?.emails_total ?? 0,\n    lastSync: data?.last_sync ? new Date(data.last_sync) : null,\n    error: error as Error | null,\n    refetch,\n  };\n}\n```\n\nExport from hooks index file for easy importing.",
+        "testStrategy": "1. Create test component that uses the hook and verify it renders sync status\n2. Mock API responses to test different sync states (idle, syncing, error)\n3. Verify polling starts when is_syncing=true and stops when is_syncing=false\n4. Test error handling when API calls fail\n5. Verify memory leaks don't occur when component unmounts during active polling\n6. Test with different account/folder ID combinations",
+        "priority": "medium",
+        "dependencies": [
+          "72"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "76",
+        "title": "Create SyncStatusPanel component",
+        "description": "Build a comprehensive UI component that displays sync progress, status, and provides sync control buttons including force re-sync functionality",
+        "details": "Create `frontend/src/components/SyncStatusPanel.tsx`:\n\n```typescript\nimport React, { useState } from 'react';\nimport { Button, Progress, Alert, Tooltip } from '@/components/ui';\nimport { RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';\nimport { useSyncStatus } from '@/hooks/useSyncStatus';\nimport { formatDistanceToNow } from 'date-fns';\n\ninterface SyncStatusPanelProps {\n  accountId: number;\n  folderId?: number;\n  onSyncComplete?: () => void;\n}\n\nexport function SyncStatusPanel({ accountId, folderId, onSyncComplete }: SyncStatusPanelProps) {\n  const { isSyncing, emailsSynced, emailsTotal, lastSync, error } = useSyncStatus(accountId, folderId);\n  const [isTriggering, setIsTriggering] = useState(false);\n  \n  const triggerSync = async (force: boolean = false) => {\n    if (force && !confirm('This will re-download all emails. Continue?')) return;\n    \n    setIsTriggering(true);\n    try {\n      const params = new URLSearchParams({ account_id: accountId.toString() });\n      if (folderId) params.append('folder_id', folderId.toString());\n      if (force) params.append('force', 'true');\n      \n      const response = await fetch(`/api/sync/trigger?${params}`, { method: 'POST' });\n      if (!response.ok) throw new Error('Failed to trigger sync');\n    } catch (err) {\n      console.error('Sync trigger failed:', err);\n    } finally {\n      setIsTriggering(false);\n    }\n  };\n  \n  const progressPercent = emailsTotal > 0 ? (emailsSynced / emailsTotal) * 100 : 0;\n  \n  return (\n    <div className=\"bg-white rounded-lg shadow p-4 space-y-3\">\n      {/* Sync Status */}\n      <div className=\"flex items-center justify-between\">\n        <div className=\"flex items-center gap-2\">\n          {isSyncing ? (\n            <>\n              <RefreshCw className=\"h-4 w-4 animate-spin text-blue-500\" />\n              <span className=\"text-sm font-medium\">Syncing emails...</span>\n            </>\n          ) : (\n            <>\n              <CheckCircle className=\"h-4 w-4 text-green-500\" />\n              <span className=\"text-sm text-gray-600\">\n                {lastSync ? `Last synced ${formatDistanceToNow(lastSync)} ago` : 'Never synced'}\n              </span>\n            </>\n          )}\n        </div>\n        \n        {/* Action Buttons */}\n        <div className=\"flex gap-2\">\n          <Button\n            size=\"sm\"\n            variant=\"outline\"\n            onClick={() => triggerSync(false)}\n            disabled={isSyncing || isTriggering}\n          >\n            Sync\n          </Button>\n          \n          <Tooltip content=\"Re-download all emails\">\n            <Button\n              size=\"sm\"\n              variant=\"outline\"\n              onClick={() => triggerSync(true)}\n              disabled={isSyncing || isTriggering}\n              className=\"text-orange-600 hover:text-orange-700\"\n            >\n              Force Re-sync\n            </Button>\n          </Tooltip>\n        </div>\n      </div>\n      \n      {/* Progress Bar */}\n      {isSyncing && emailsTotal > 0 && (\n        <div className=\"space-y-1\">\n          <div className=\"flex justify-between text-xs text-gray-600\">\n            <span>Progress: {emailsSynced.toLocaleString()} / {emailsTotal.toLocaleString()}</span>\n            <span>{progressPercent.toFixed(0)}%</span>\n          </div>\n          <Progress value={progressPercent} className=\"h-2\" />\n        </div>\n      )}\n      \n      {/* Error Alert */}\n      {error && (\n        <Alert variant=\"destructive\" className=\"text-sm\">\n          <AlertCircle className=\"h-4 w-4\" />\n          <span>Sync error: {error.message}</span>\n        </Alert>\n      )}\n    </div>\n  );\n}\n```",
+        "testStrategy": "1. Test component renders correctly with different sync states\n2. Verify progress bar shows correct percentage during sync\n3. Test sync button triggers API call with correct parameters\n4. Test force re-sync shows confirmation dialog and sends force=true\n5. Verify buttons are disabled during sync operations\n6. Test error display when sync status API fails\n7. Test last sync time formatting with various dates\n8. Verify component updates in real-time during active sync",
+        "priority": "low",
+        "dependencies": [
+          "75",
+          "74"
+        ],
+        "status": "pending",
+        "subtasks": []
+      },
+      {
+        "id": "77",
+        "title": "Integrate SyncStatusPanel into EmailList and update folder dropdown",
+        "description": "Integrate the new SyncStatusPanel component into the EmailList view and update the folder dropdown to display cached vs total email counts",
+        "details": "Update `frontend/src/components/EmailList.tsx`:\n\n```typescript\n// Add imports\nimport { SyncStatusPanel } from './SyncStatusPanel';\n\n// Remove existing sync-related state and handlers\n// Remove: const [isSyncing, setIsSyncing] = useState(false);\n// Remove: handleSync function\n\n// In the component JSX, add SyncStatusPanel after the header\nexport function EmailList({ accountId }: EmailListProps) {\n  // ... existing code ...\n  \n  return (\n    <div className=\"flex flex-col h-full\">\n      {/* Existing header */}\n      <div className=\"border-b px-4 py-3\">\n        {/* ... existing header content ... */}\n      </div>\n      \n      {/* Add SyncStatusPanel */}\n      <SyncStatusPanel \n        accountId={accountId} \n        folderId={selectedFolder?.id}\n        onSyncComplete={() => {\n          // Refetch folders and emails after sync\n          refetchFolders();\n          refetchEmails();\n        }}\n      />\n      \n      {/* Update folder dropdown display */}\n      <Select value={selectedFolder?.id} onValueChange={handleFolderChange}>\n        <SelectTrigger>\n          <SelectValue>\n            {selectedFolder && folderDetails ? (\n              <span>\n                {selectedFolder.name} \n                <span className=\"text-gray-500 ml-1\">\n                  ({folderDetails.cached_count.toLocaleString()} / {folderDetails.total_messages.toLocaleString()})\n                </span>\n              </span>\n            ) : (\n              'Select folder'\n            )}\n          </SelectValue>\n        </SelectTrigger>\n        <SelectContent>\n          {folders?.map((folder) => {\n            const detail = folderDetails?.find(d => d.folder_id === folder.id);\n            return (\n              <SelectItem key={folder.id} value={folder.id}>\n                {folder.name}\n                {detail && (\n                  <span className=\"text-gray-500 ml-1\">\n                    ({detail.cached_count.toLocaleString()} / {detail.total_messages.toLocaleString()})\n                  </span>\n                )}\n              </SelectItem>\n            );\n          })}\n        </SelectContent>\n      </Select>\n      \n      {/* Rest of the component */}\n    </div>\n  );\n}\n```\n\nRemove the inline sync button and related logic since it's now handled by SyncStatusPanel.",
+        "testStrategy": "1. Verify SyncStatusPanel renders in the EmailList header area\n2. Test folder dropdown shows format 'Inbox (350 / 1,600)' for each folder\n3. Verify sync operations triggered from panel update the email list\n4. Test that removing old sync button doesn't break any functionality\n5. Verify folder counts update after sync completes\n6. Test responsive layout with SyncStatusPanel at different screen sizes\n7. Ensure no duplicate sync triggers or race conditions\n8. Test that folder selection still works correctly with new display format",
+        "priority": "low",
+        "dependencies": [
+          "69",
+          "76"
+        ],
+        "status": "pending",
+        "subtasks": []
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-02-14T12:46:08.593Z",
-      "taskCount": 68,
-      "completedCount": 63,
+      "lastModified": "2026-02-15T01:48:50.569Z",
+      "taskCount": 77,
+      "completedCount": 64,
       "tags": [
         "master"
       ]

@@ -39,6 +39,7 @@ pub struct CachedFolder {
     pub uidnext: Option<i64>,
     pub total_messages: i32,
     pub unseen_messages: i32,
+    pub cached_count: i32,
     pub last_sync: Option<DateTime<Utc>>,
 }
 
@@ -207,6 +208,7 @@ impl CacheService {
                 uidnext,
                 total_messages,
                 unseen_messages,
+                cached_count: 0,
                 last_sync,
             };
 
@@ -253,6 +255,7 @@ impl CacheService {
                 uidnext,
                 total_messages,
                 unseen_messages,
+                cached_count: 0,
                 last_sync,
             };
 
@@ -280,6 +283,7 @@ impl CacheService {
                 uidnext: None,
                 total_messages: 0,
                 unseen_messages: 0,
+                cached_count: 0,
                 last_sync: None,
             };
 
@@ -784,6 +788,7 @@ impl CacheService {
             uidnext,
             total_messages,
             unseen_messages,
+            cached_count: 0,
             last_sync,
         };
 
@@ -799,18 +804,18 @@ impl CacheService {
     pub async fn get_all_cached_folders_for_account(&self, account_id: &str) -> Result<Vec<CachedFolder>, CacheError> {
         let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
 
-        let rows = sqlx::query_as::<_, (i64, String, Option<String>, Option<String>, Option<i64>, Option<i64>, i32, i32, Option<DateTime<Utc>>)>(
-            "SELECT id, name, delimiter, attributes, uidvalidity, uidnext, total_messages, unseen_messages, last_sync FROM folders WHERE account_id = ? ORDER BY name"
+        let rows = sqlx::query_as::<_, (i64, String, Option<String>, Option<String>, Option<i64>, Option<i64>, i32, i32, i32, Option<DateTime<Utc>>)>(
+            "SELECT f.id, f.name, f.delimiter, f.attributes, f.uidvalidity, f.uidnext, f.total_messages, f.unseen_messages, (SELECT COUNT(*) FROM emails e WHERE e.folder_id = f.id) AS cached_count, f.last_sync FROM folders f WHERE f.account_id = ? ORDER BY f.name"
         )
         .bind(account_id)
         .fetch_all(pool)
         .await?;
 
-        let folders: Vec<CachedFolder> = rows.into_iter().map(|(id, name, delimiter, attributes_json, uidvalidity, uidnext, total_messages, unseen_messages, last_sync)| {
+        let folders: Vec<CachedFolder> = rows.into_iter().map(|(id, name, delimiter, attributes_json, uidvalidity, uidnext, total_messages, unseen_messages, cached_count, last_sync)| {
             let attributes: Vec<String> = attributes_json
                 .and_then(|json| serde_json::from_str(&json).ok())
                 .unwrap_or_default();
-            CachedFolder { id, name, delimiter, attributes, uidvalidity, uidnext, total_messages, unseen_messages, last_sync }
+            CachedFolder { id, name, delimiter, attributes, uidvalidity, uidnext, total_messages, unseen_messages, cached_count, last_sync }
         }).collect();
 
         Ok(folders)

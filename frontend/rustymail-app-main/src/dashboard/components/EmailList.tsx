@@ -52,6 +52,7 @@ interface CachedFolderDetail {
   name: string;
   total_messages: number;
   unseen_messages: number;
+  cached_count: number;
   last_sync: string | null;
 }
 
@@ -681,7 +682,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
                         {formatFolderName(folder)}
                         {detail && detail.total_messages > 0 && (
                           <span className="text-xs text-muted-foreground">
-                            ({detail.total_messages.toLocaleString()})
+                            ({detail.cached_count.toLocaleString()} / {detail.total_messages.toLocaleString()})
                           </span>
                         )}
                         {syncTime && (
