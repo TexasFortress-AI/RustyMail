@@ -74,6 +74,8 @@ pub struct SyncState {
     pub last_incremental_sync: Option<DateTime<Utc>>,
     pub sync_status: SyncStatus,
     pub error_message: Option<String>,
+    pub emails_synced: i32,
+    pub emails_total: i32,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -859,17 +861,17 @@ impl CacheService {
 
         let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
 
-        let state = sqlx::query_as::<_, (i64, Option<i64>, Option<DateTime<Utc>>, Option<DateTime<Utc>>, String, Option<String>)>(
-            "SELECT folder_id, last_uid_synced, last_full_sync, last_incremental_sync, sync_status, error_message
+        let state = sqlx::query_as::<_, (i64, Option<i64>, Option<DateTime<Utc>>, Option<DateTime<Utc>>, String, Option<String>, Option<i32>, Option<i32>)>(
+            "SELECT folder_id, last_uid_synced, last_full_sync, last_incremental_sync, sync_status, error_message, emails_synced, emails_total
              FROM sync_state WHERE folder_id = ?"
         )
         .bind(folder.id)
         .fetch_optional(pool)
         .await?;
 
-        if let Some((folder_id, last_uid, last_full, last_inc, status_str, error_msg)) = state {
+        if let Some((folder_id, last_uid, last_full, last_inc, status_str, error_msg, synced, total)) = state {
             let sync_status = match status_str.as_str() {
-                "syncing" => SyncStatus::Syncing,
+                "syncing" | "Syncing" => SyncStatus::Syncing,
                 "error" => SyncStatus::Error,
                 _ => SyncStatus::Idle,
             };
@@ -881,6 +883,8 @@ impl CacheService {
                 last_incremental_sync: last_inc,
                 sync_status,
                 error_message: error_msg,
+                emails_synced: synced.unwrap_or(0),
+                emails_total: total.unwrap_or(0),
             }))
         } else {
             Ok(None)

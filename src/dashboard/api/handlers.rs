@@ -4318,22 +4318,26 @@ pub async fn get_sync_status(
     match state.cache_service.get_sync_state(folder, &account_email).await {
         Ok(Some(sync_state)) => {
             Ok(HttpResponse::Ok().json(serde_json::json!({
-                "folder": "INBOX",
+                "folder": folder,
                 "status": format!("{:?}", sync_state.sync_status),
                 "last_uid_synced": sync_state.last_uid_synced,
                 "last_full_sync": sync_state.last_full_sync,
                 "last_incremental_sync": sync_state.last_incremental_sync,
-                "error_message": sync_state.error_message
+                "error_message": sync_state.error_message,
+                "emails_synced": sync_state.emails_synced,
+                "emails_total": sync_state.emails_total
             })))
         }
         Ok(None) => {
             Ok(HttpResponse::Ok().json(serde_json::json!({
-                "folder": "INBOX",
+                "folder": folder,
                 "status": "never_synced",
                 "last_uid_synced": null,
                 "last_full_sync": null,
                 "last_incremental_sync": null,
-                "error_message": null
+                "error_message": null,
+                "emails_synced": 0,
+                "emails_total": 0
             })))
         }
         Err(e) => {
