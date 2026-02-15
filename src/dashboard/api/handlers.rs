@@ -4174,6 +4174,7 @@ pub async fn trigger_email_sync(
         Err(_) => None, // No account specified, will sync all
     };
     let folder = query.get("folder").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let force = query.get("force").and_then(|v| v.as_str()).map(|s| s == "true").unwrap_or(false);
 
     let mode_desc = match (&account_id, &folder) {
         (Some(acc), Some(f)) => format!("account {} folder {}", acc, f),
@@ -4200,6 +4201,9 @@ pub async fn trigger_email_sync(
     }
     if let Some(ref f) = folder {
         cmd.arg("--folder").arg(f);
+    }
+    if force {
+        cmd.arg("--force");
     }
 
     // Spawn the sync process and wait for it to complete (or detect already running)
