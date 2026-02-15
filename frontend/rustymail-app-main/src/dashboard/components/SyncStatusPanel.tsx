@@ -10,7 +10,15 @@ import { API_BASE_URL } from '../../config/api';
 import { config } from '../config';
 import { useToast } from '../../hooks/use-toast';
 import { useSyncStatus } from '../hooks/useSyncStatus';
-import { RefreshCw, AlertTriangle } from 'lucide-react';
+import { RefreshCw, AlertTriangle, ChevronDown, FolderSync } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../../components/ui/dropdown-menu';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,7 +28,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from '../../components/ui/alert-dialog';
 
 interface SyncStatusPanelProps {
@@ -35,6 +42,7 @@ export function SyncStatusPanel({ accountId, folder, folderLastSync, onSyncCompl
   const { isSyncing, emailsSynced, emailsTotal, lastSync, error, startPolling } =
     useSyncStatus(accountId, folder);
   const [triggering, setTriggering] = useState(false);
+  const [forceDialogOpen, setForceDialogOpen] = useState(false);
 
   const triggerSync = async (force: boolean, allFolders: boolean) => {
     if (!accountId) {
@@ -65,7 +73,6 @@ export function SyncStatusPanel({ accountId, folder, folderLastSync, onSyncCompl
             : `Syncing ${folder} in background...`,
         });
         startPolling();
-        // Delay refetch to give sync time to start
         if (onSyncComplete) {
           setTimeout(onSyncComplete, 3000);
         }
@@ -85,103 +92,113 @@ export function SyncStatusPanel({ accountId, folder, folderLastSync, onSyncCompl
   };
 
   const progressPercent = emailsTotal > 0 ? Math.round((emailsSynced / emailsTotal) * 100) : 0;
+  const effectiveLastSync = lastSync || folderLastSync || null;
 
   const formatLastSync = (dateStr: string | null) => {
     if (!dateStr) return 'Never';
     try {
       const date = new Date(dateStr);
-      const now = new Date();
-      const diffMs = now.getTime() - date.getTime();
+      const diffMs = Date.now() - date.getTime();
       const diffMins = Math.floor(diffMs / 60000);
       if (diffMins < 1) return 'Just now';
       if (diffMins < 60) return `${diffMins}m ago`;
       const diffHours = Math.floor(diffMins / 60);
       if (diffHours < 24) return `${diffHours}h ago`;
-      return date.toLocaleDateString();
+      return `${Math.floor(diffHours / 24)}d ago`;
     } catch {
       return 'Unknown';
     }
   };
 
-  return (
-    <div className="flex items-center gap-2">
-      {isSyncing ? (
-        <>
-          <div className="flex items-center gap-2 min-w-[200px]">
-            <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-500" />
-            <Progress value={progressPercent} className="h-2 flex-1" />
-            <span className="text-xs text-muted-foreground whitespace-nowrap">
-              {emailsSynced.toLocaleString()} / {emailsTotal.toLocaleString()}
-            </span>
-          </div>
-        </>
-      ) : (
-        <>
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            Synced: {formatLastSync(lastSync || folderLastSync || null)}
-          </span>
+  // While syncing, show inline progress bar (no dropdown needed)
+  if (isSyncing) {
+    return (
+      <div className="flex items-center gap-2 min-w-[180px]">
+        <RefreshCw className="h-3.5 w-3.5 animate-spin text-blue-500 shrink-0" />
+        <Progress value={progressPercent} className="h-2 flex-1" />
+        <span className="text-xs text-muted-foreground whitespace-nowrap">
+          {emailsSynced.toLocaleString()} / {emailsTotal.toLocaleString()}
+        </span>
+      </div>
+    );
+  }
 
+  // When idle, show compact dropdown trigger with sync actions inside
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
           <Button
             variant="outline"
             size="sm"
-            className="h-7 text-xs"
+            className="h-7 text-xs gap-1"
+            disabled={triggering}
+          >
+            <RefreshCw className={`h-3 w-3 ${triggering ? 'animate-spin' : ''}`} />
+            {formatLastSync(effectiveLastSync)}
+            <ChevronDown className="h-3 w-3 opacity-50" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+            Last synced: {formatLastSync(effectiveLastSync)}
+            {error && <span className="text-destructive ml-1">(error)</span>}
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
             onClick={() => triggerSync(false, false)}
             disabled={triggering}
-            title="Fetch only new emails in the current folder since last sync"
           >
-            <RefreshCw className={`h-3 w-3 mr-1 ${triggering ? 'animate-spin' : ''}`} />
-            Sync
-          </Button>
-
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs"
+            <RefreshCw className="h-4 w-4 mr-2" />
+            <div>
+              <div className="font-medium">Sync folder</div>
+              <div className="text-xs text-muted-foreground">Fetch new emails in {folder}</div>
+            </div>
+          </DropdownMenuItem>
+          <DropdownMenuItem
             onClick={() => triggerSync(false, true)}
             disabled={triggering}
-            title="Fetch new emails across all folders for this account"
           >
-            Sync All
-          </Button>
+            <FolderSync className="h-4 w-4 mr-2" />
+            <div>
+              <div className="font-medium">Sync all folders</div>
+              <div className="text-xs text-muted-foreground">Fetch new emails across all folders</div>
+            </div>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() => setForceDialogOpen(true)}
+            disabled={triggering}
+            className="text-orange-600 focus:text-orange-600"
+          >
+            <AlertTriangle className="h-4 w-4 mr-2" />
+            <div>
+              <div className="font-medium">Force re-sync</div>
+              <div className="text-xs text-muted-foreground">Re-download all emails in {folder}</div>
+            </div>
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
-          <AlertDialog>
-            <AlertDialogTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs text-orange-600 border-orange-300 hover:bg-orange-50"
-                disabled={triggering}
-                title="Re-download ALL emails in this folder, even ones already cached"
-              >
-                <AlertTriangle className="h-3 w-3 mr-1" />
-                Force Re-sync
-              </Button>
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Force Re-sync?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  This will re-download ALL emails in "{folder}" from the server, even ones already cached.
-                  This is useful if emails were missed due to expired tokens or connection errors.
-                  It may take a while for large folders.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={() => triggerSync(true, false)}>
-                  Force Re-sync
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </>
-      )}
-
-      {error && (
-        <span className="text-xs text-destructive" title={error}>
-          Error
-        </span>
-      )}
-    </div>
+      <AlertDialog open={forceDialogOpen} onOpenChange={setForceDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Force Re-sync?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will re-download ALL emails in "{folder}" from the server,
+              even ones already cached. This is useful if emails were missed
+              due to expired tokens or connection errors. It may take a while
+              for large folders.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => triggerSync(true, false)}>
+              Force Re-sync
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
