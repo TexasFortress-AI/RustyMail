@@ -736,6 +736,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
           <SyncStatusPanel
             accountId={currentAccount?.id}
             folder={currentFolder}
+            folderLastSync={getFolderDetail(currentFolder)?.last_sync}
             onSyncComplete={() => refetch()}
           />
         </div>

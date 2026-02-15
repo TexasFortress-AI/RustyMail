@@ -26,10 +26,11 @@ import {
 interface SyncStatusPanelProps {
   accountId: string | undefined;
   folder: string;
+  folderLastSync?: string | null;
   onSyncComplete?: () => void;
 }
 
-export function SyncStatusPanel({ accountId, folder, onSyncComplete }: SyncStatusPanelProps) {
+export function SyncStatusPanel({ accountId, folder, folderLastSync, onSyncComplete }: SyncStatusPanelProps) {
   const { toast } = useToast();
   const { isSyncing, emailsSynced, emailsTotal, lastSync, error, startPolling } =
     useSyncStatus(accountId, folder);
@@ -117,7 +118,7 @@ export function SyncStatusPanel({ accountId, folder, onSyncComplete }: SyncStatu
       ) : (
         <>
           <span className="text-xs text-muted-foreground whitespace-nowrap">
-            Synced: {formatLastSync(lastSync)}
+            Synced: {formatLastSync(lastSync || folderLastSync || null)}
           </span>
 
           <Button
@@ -126,6 +127,7 @@ export function SyncStatusPanel({ accountId, folder, onSyncComplete }: SyncStatu
             className="h-7 text-xs"
             onClick={() => triggerSync(false, false)}
             disabled={triggering}
+            title="Fetch only new emails in the current folder since last sync"
           >
             <RefreshCw className={`h-3 w-3 mr-1 ${triggering ? 'animate-spin' : ''}`} />
             Sync
@@ -137,6 +139,7 @@ export function SyncStatusPanel({ accountId, folder, onSyncComplete }: SyncStatu
             className="h-7 text-xs"
             onClick={() => triggerSync(false, true)}
             disabled={triggering}
+            title="Fetch new emails across all folders for this account"
           >
             Sync All
           </Button>
@@ -148,6 +151,7 @@ export function SyncStatusPanel({ accountId, folder, onSyncComplete }: SyncStatu
                 size="sm"
                 className="h-7 text-xs text-orange-600 border-orange-300 hover:bg-orange-50"
                 disabled={triggering}
+                title="Re-download ALL emails in this folder, even ones already cached"
               >
                 <AlertTriangle className="h-3 w-3 mr-1" />
                 Force Re-sync
