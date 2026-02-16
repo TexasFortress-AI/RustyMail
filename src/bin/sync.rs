@@ -472,13 +472,14 @@ async fn update_sync_state(pool: &SqlitePool, folder_name: &str, last_uid: u32, 
 
     sqlx::query(
         r#"
-        INSERT INTO sync_state (folder_id, last_uid_synced, sync_status, emails_synced, emails_total, updated_at)
-        VALUES (?, ?, 'Idle', 0, 0, datetime('now'))
+        INSERT INTO sync_state (folder_id, last_uid_synced, sync_status, emails_synced, emails_total, last_incremental_sync, updated_at)
+        VALUES (?, ?, 'Idle', 0, 0, datetime('now'), datetime('now'))
         ON CONFLICT(folder_id) DO UPDATE SET
             last_uid_synced = excluded.last_uid_synced,
             sync_status = 'Idle',
             emails_synced = 0,
             emails_total = 0,
+            last_incremental_sync = datetime('now'),
             updated_at = datetime('now')
         "#
     )
