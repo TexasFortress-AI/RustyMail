@@ -306,8 +306,13 @@ async fn sync_folder(
 ) -> Result<(), Box<dyn std::error::Error>> {
     debug!("Syncing folder: {} for {}", folder_name, account_email);
 
-    // Select folder
-    client.select_folder(folder_name).await?;
+    // Select folder and capture mailbox metadata
+    let mailbox_info = client.select_folder(folder_name).await?;
+
+    // Write IMAP mailbox metadata (EXISTS, UIDVALIDITY, UIDNEXT) to the folders table
+    if let Err(e) = update_folder_metadata(pool, folder_name, account_email, &mailbox_info).await {
+        warn!("Failed to update folder metadata for {}: {}", folder_name, e);
+    }
 
     // Get last synced UID (ignored when force=true)
     let last_uid_synced = if force {
@@ -422,6 +427,41 @@ async fn update_sync_progress(pool: &SqlitePool, folder_name: &str, account_id: 
     .bind(emails_total)
     .execute(pool)
     .await?;
+    Ok(())
+}
+
+/// Update folder metadata from IMAP SELECT response (EXISTS, UIDVALIDITY, UIDNEXT, unseen)
+async fn update_folder_metadata(
+    pool: &SqlitePool,
+    folder_name: &str,
+    account_id: &str,
+    mailbox_info: &rustymail::imap::types::MailboxInfo,
+) -> Result<(), sqlx::Error> {
+    let folder_id = get_or_create_folder_id(pool, folder_name, account_id).await?;
+
+    sqlx::query(
+        r#"
+        UPDATE folders SET
+            total_messages = ?,
+            unseen_messages = ?,
+            uidvalidity = ?,
+            uidnext = ?,
+            last_sync = datetime('now')
+        WHERE id = ?
+        "#
+    )
+    .bind(mailbox_info.exists as i64)
+    .bind(mailbox_info.unseen.map(|u| u as i64))
+    .bind(mailbox_info.uid_validity.map(|v| v as i64))
+    .bind(mailbox_info.uid_next.map(|n| n as i64))
+    .bind(folder_id)
+    .execute(pool)
+    .await?;
+
+    debug!(
+        "Updated folder metadata for {}: exists={}, uidvalidity={:?}, uidnext={:?}",
+        folder_name, mailbox_info.exists, mailbox_info.uid_validity, mailbox_info.uid_next
+    );
     Ok(())
 }
 

@@ -32,7 +32,7 @@ use tokio_util::compat::TokioAsyncReadCompatExt;
 use crate::imap::{
     error::ImapError,
     session::{AsyncImapOps, AsyncImapSessionWrapper, TlsImapSession},
-    // Folder, MailboxInfo, ModifyFlagsPayload, SearchCriteria, // Unused
+    types::MailboxInfo,
 };
 
 // Async IMAP types (async-imap crate)
@@ -141,7 +141,7 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         self.session.rename_folder(old_name, new_name).await
     }
 
-    pub async fn select_folder(&self, name: &str) -> Result<(), ImapError> {
+    pub async fn select_folder(&self, name: &str) -> Result<MailboxInfo, ImapError> {
         self.session.select_folder(name).await
     }
 

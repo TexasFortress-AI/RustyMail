@@ -27,7 +27,7 @@ use async_imap::{
 
 // Local types
 use crate::imap::{
-    types::{Email, FlagOperation, SearchCriteria},
+    types::{Email, FlagOperation, MailboxInfo, SearchCriteria},
     error::ImapError,
 };
 
@@ -55,7 +55,7 @@ pub trait AsyncImapOps: Send + Sync + Debug {
     async fn create_folder(&self, name: &str) -> Result<(), ImapError>;
     async fn delete_folder(&self, name: &str) -> Result<(), ImapError>;
     async fn rename_folder(&self, old_name: &str, new_name: &str) -> Result<(), ImapError>;
-    async fn select_folder(&self, name: &str) -> Result<(), ImapError>;
+    async fn select_folder(&self, name: &str) -> Result<MailboxInfo, ImapError>;
     async fn search_emails(&self, criteria: &str) -> Result<Vec<u32>, ImapError>;
     async fn search_emails_structured(&self, criteria: &SearchCriteria) -> Result<Vec<u32>, ImapError>;
     async fn fetch_emails(&self, uids: &[u32]) -> Result<Vec<Email>, ImapError>;
@@ -247,12 +247,14 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
         session_guard.rename(old_name, new_name).await.map_err(ImapError::from)
     }
 
-    async fn select_folder(&self, name: &str) -> Result<(), ImapError> {
+    async fn select_folder(&self, name: &str) -> Result<MailboxInfo, ImapError> {
         let mut session_guard = self.session.lock().await;
-        session_guard.select(name).await.map(|_| ()).map_err(ImapError::from)?;
+        let mailbox = session_guard.select(name).await.map_err(ImapError::from)?;
         let mut folder_guard = self.current_folder.lock().await;
         *folder_guard = Some(name.to_string());
-        Ok(())
+        let mut info = MailboxInfo::from(mailbox);
+        info.name = name.to_string();
+        Ok(info)
     }
 
     async fn search_emails(&self, criteria: &str) -> Result<Vec<u32>, ImapError> {

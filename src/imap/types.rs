@@ -221,6 +221,8 @@ impl Folder {
 ///     exists: 42,
 ///     recent: 5,
 ///     unseen: Some(10),
+///     uid_validity: Some(12345),
+///     uid_next: Some(100),
 ///     selectable: true,
 /// };
 /// ```
@@ -238,30 +240,38 @@ pub struct MailboxInfo {
     pub recent: u32,
     /// Number of unseen messages
     pub unseen: Option<u32>,
+    /// UIDVALIDITY value for the mailbox (RFC 3501 section 2.3.1.1)
+    pub uid_validity: Option<u32>,
+    /// The next UID that will be assigned to a new message
+    pub uid_next: Option<u32>,
 }
 
 impl From<AsyncImapName> for MailboxInfo {
     fn from(name: AsyncImapName) -> Self {
         Self {
             name: name.name().to_string(),
-            delimiter: DEFAULT_MAILBOX_DELIMITER.to_string(), // async-imap Name doesn't have delimiter method
-            selectable: true, // Assume selectable by default
+            delimiter: DEFAULT_MAILBOX_DELIMITER.to_string(),
+            selectable: true,
             exists: 0,
             recent: 0,
             unseen: None,
+            uid_validity: None,
+            uid_next: None,
         }
     }
 }
 
 impl From<AsyncImapMailbox> for MailboxInfo {
-    fn from(_mailbox: AsyncImapMailbox) -> Self {
+    fn from(mailbox: AsyncImapMailbox) -> Self {
         Self {
-            name: String::new(), // async-imap Mailbox doesn't have name method
+            name: String::new(), // Mailbox struct doesn't carry the folder name; caller must set it
             delimiter: DEFAULT_MAILBOX_DELIMITER.to_string(),
             selectable: true,
-            exists: 0, // async-imap Mailbox doesn't have exists method
-            recent: 0, // async-imap Mailbox doesn't have recent method
-            unseen: None, // async-imap Mailbox doesn't have unseen method
+            exists: mailbox.exists,
+            recent: mailbox.recent,
+            unseen: mailbox.unseen,
+            uid_validity: mailbox.uid_validity,
+            uid_next: mailbox.uid_next,
         }
     }
 }
