@@ -206,7 +206,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
   });
 
   // Fetch available folders from local cache (no IMAP connection needed)
-  const { data: foldersData, isLoading: foldersLoading, error: foldersError } = useQuery<CachedFoldersResponse>({
+  const { data: foldersData, isLoading: foldersLoading, error: foldersError, refetch: refetchFolders } = useQuery<CachedFoldersResponse>({
     queryKey: ['cached-folders', currentAccount?.id],
     queryFn: async () => {
       if (!currentAccount) {
@@ -737,7 +737,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
             accountId={currentAccount?.id}
             folder={currentFolder}
             folderLastSync={getFolderDetail(currentFolder)?.last_sync}
-            onSyncComplete={() => refetch()}
+            onSyncComplete={() => { refetch(); refetchFolders(); }}
           />
         </div>
       </CardHeader>
