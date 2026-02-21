@@ -3061,13 +3061,15 @@ pub async fn execute_mcp_tool_inner(
                     };
                     serde_json::json!({
                         "success": true,
-                        "uid": uid,
-                        "folder": folder,
-                        "subject": subject,
-                        "synopsis": synopsis,
-                        "from": email.from_address,
-                        "date": email.date,
-                        "has_attachments": email.has_attachments,
+                        "data": {
+                            "uid": uid,
+                            "folder": folder,
+                            "subject": subject,
+                            "synopsis": synopsis,
+                            "from": email.from_address,
+                            "date": email.date,
+                            "has_attachments": email.has_attachments,
+                        },
                         "tool": tool_name
                     })
                 }
@@ -3119,8 +3121,10 @@ pub async fn execute_mcp_tool_inner(
                     }).collect();
                     serde_json::json!({
                         "success": true,
-                        "thread_count": thread.len(),
-                        "thread": thread,
+                        "data": {
+                            "thread_count": thread.len(),
+                            "thread": thread,
+                        },
                         "tool": tool_name
                     })
                 }
@@ -3171,9 +3175,11 @@ pub async fn execute_mcp_tool_inner(
                     }).collect();
                     serde_json::json!({
                         "success": true,
-                        "domain": domain,
-                        "count": results.len(),
-                        "emails": results,
+                        "data": {
+                            "domain": domain,
+                            "count": results.len(),
+                            "emails": results,
+                        },
                         "tool": tool_name
                     })
                 }
@@ -3198,7 +3204,7 @@ pub async fn execute_mcp_tool_inner(
                 Ok(report) => {
                     serde_json::json!({
                         "success": true,
-                        "report": report,
+                        "data": report,
                         "tool": tool_name
                     })
                 }
@@ -3335,7 +3341,9 @@ pub async fn execute_mcp_tool_inner(
                     match sync_service.sync_folder(&account_id, f).await {
                         Ok(()) => serde_json::json!({
                             "success": true,
-                            "message": format!("Synced folder '{}' for account '{}'", f, account_id),
+                            "data": {
+                                "message": format!("Synced folder '{}' for account '{}'", f, account_id),
+                            },
                             "tool": tool_name
                         }),
                         Err(e) => serde_json::json!({
@@ -3350,7 +3358,9 @@ pub async fn execute_mcp_tool_inner(
                     match sync_service.sync_all_folders(&account_id).await {
                         Ok(()) => serde_json::json!({
                             "success": true,
-                            "message": format!("Synced all folders for account '{}'", account_id),
+                            "data": {
+                                "message": format!("Synced all folders for account '{}'", account_id),
+                            },
                             "tool": tool_name
                         }),
                         Err(e) => serde_json::json!({
@@ -4679,6 +4689,7 @@ pub async fn delete_email(
 pub struct JobsQueryParams {
     pub status: Option<String>,
     pub limit: Option<i64>,
+    pub account_id: Option<String>,
 }
 
 /// Get all background jobs
@@ -4690,7 +4701,7 @@ pub async fn get_jobs(
 
     // First try to get jobs from persistence service if available
     if let Some(ref persistence) = state.job_persistence {
-        let jobs = persistence.get_all_jobs(query.status.as_deref(), query.limit)
+        let jobs = persistence.get_all_jobs(query.status.as_deref(), query.limit, query.account_id.as_deref())
             .await
             .map_err(|e| ApiError::InternalError(format!("Failed to get jobs: {}", e)))?;
 
@@ -4784,6 +4795,111 @@ pub async fn cancel_job(
         "success": true,
         "job_id": req.job_id,
         "message": "Job cancelled successfully"
+    })))
+}
+
+/// Pause a running job
+pub async fn pause_job(
+    req: web::Json<CancelJobRequest>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    info!("Handling POST /api/dashboard/jobs/pause for job: {}", req.job_id);
+
+    if let Some(ref persistence) = state.job_persistence {
+        let paused = persistence.pause_job(&req.job_id)
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Failed to pause job: {}", e)))?;
+
+        if !paused {
+            return Err(ApiError::BadRequest(format!("Job {} is not running or not found", req.job_id)));
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "success": true,
+        "job_id": req.job_id,
+        "message": "Job paused successfully"
+    })))
+}
+
+/// Resume a paused job
+pub async fn resume_job(
+    req: web::Json<CancelJobRequest>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    info!("Handling POST /api/dashboard/jobs/resume for job: {}", req.job_id);
+
+    if let Some(ref persistence) = state.job_persistence {
+        let resumed = persistence.resume_job(&req.job_id)
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Failed to resume job: {}", e)))?;
+
+        if !resumed {
+            return Err(ApiError::BadRequest(format!("Job {} is not paused or not found", req.job_id)));
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "success": true,
+        "job_id": req.job_id,
+        "message": "Job resumed successfully"
+    })))
+}
+
+/// Delete a single job by ID
+pub async fn delete_job_handler(
+    path: web::Path<String>,
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    let job_id = path.into_inner();
+    info!("Handling DELETE /api/dashboard/jobs/{}", job_id);
+
+    if let Some(ref persistence) = state.job_persistence {
+        persistence.delete_job(&job_id)
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Failed to delete job: {}", e)))?;
+    }
+
+    // Also remove from in-memory state
+    state.jobs.remove(&job_id);
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "success": true,
+        "deleted_job_id": job_id
+    })))
+}
+
+/// Clear all finished (completed, failed, cancelled) jobs
+pub async fn clear_finished_jobs(
+    state: web::Data<DashboardState>,
+) -> Result<impl Responder, ApiError> {
+    info!("Handling DELETE /api/dashboard/jobs/finished");
+
+    let mut deleted_count: u64 = 0;
+
+    if let Some(ref persistence) = state.job_persistence {
+        deleted_count = persistence.delete_finished_jobs()
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Failed to clear finished jobs: {}", e)))?;
+    }
+
+    // Also clean from in-memory state
+    let keys_to_remove: Vec<String> = state.jobs.iter()
+        .filter(|entry| {
+            matches!(&entry.status,
+                crate::dashboard::services::jobs::JobStatus::Completed(_) |
+                crate::dashboard::services::jobs::JobStatus::Failed(_)
+            )
+        })
+        .map(|entry| entry.key().clone())
+        .collect();
+    for key in keys_to_remove {
+        state.jobs.remove(&key);
+    }
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "success": true,
+        "deleted_count": deleted_count
     })))
 }
 
