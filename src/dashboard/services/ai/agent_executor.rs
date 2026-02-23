@@ -72,6 +72,7 @@ impl AgentExecutor {
         instruction: &str,
         account_id: Option<&str>,
         tools: Vec<Value>,  // MCP tool definitions
+        job_id: Option<&str>,
     ) -> Result<AgentResult, ApiError> {
         info!("Executing instruction with {} tools available", tools.len());
 
@@ -124,6 +125,19 @@ impl AgentExecutor {
                     iterations: iteration - 1,
                     error: Some("Maximum iterations exceeded".to_string()),
                 });
+            }
+
+            // Check if job is paused - wait until resumed
+            if let (Some(jid), Some(ref persistence)) = (job_id, &state.job_persistence) {
+                loop {
+                    match persistence.get_job_status(jid).await {
+                        Ok(Some(status)) if status == "paused" => {
+                            debug!("Job {} is paused, waiting...", jid);
+                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                        }
+                        _ => break,
+                    }
+                }
             }
 
             debug!("Iteration {}: Calling model with {} messages", iteration, messages.len());

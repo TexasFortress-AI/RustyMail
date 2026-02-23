@@ -670,7 +670,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
             <SelectTrigger className="w-[180px] h-8">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-[80vh]">
               {foldersLoading ? (
                 <SelectItem value={currentFolder} disabled>Loading folders...</SelectItem>
               ) : (foldersData?.folders && foldersData.folders.length > 0) ? (

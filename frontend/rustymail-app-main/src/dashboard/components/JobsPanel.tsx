@@ -10,9 +10,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Loader2, Play, X, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle } from 'lucide-react';
-import { useJobs, useCancelJob, useStartProcessEmailsJob } from '@/dashboard/api/hooks';
+import { Loader2, Play, X, RefreshCw, Clock, CheckCircle, XCircle, AlertCircle, Trash2, Settings, Pause, PlayCircle } from 'lucide-react';
+import { useJobs, useCancelJob, useStartProcessEmailsJob, useDeleteJob, useClearFinishedJobs, useModelConfigs, usePauseJob, useResumeJob } from '@/dashboard/api/hooks';
 import { useAccount } from '@/contexts/AccountContext';
+
+interface JobsPanelProps {
+  onNavigateToModels?: () => void;
+}
 
 type Job = {
   job_id: string;
@@ -51,6 +55,13 @@ const JobStatusBadge: React.FC<{ status: string }> = ({ status }) => {
           Failed
         </Badge>
       );
+    case 'paused':
+      return (
+        <Badge variant="default" className="bg-yellow-500">
+          <Pause className="w-3 h-3 mr-1" />
+          Paused
+        </Badge>
+      );
     case 'cancelled':
       return (
         <Badge variant="secondary">
@@ -77,11 +88,16 @@ const formatDate = (dateStr: string | null): string => {
   }
 };
 
-const JobsPanel: React.FC = () => {
+const JobsPanel: React.FC<JobsPanelProps> = ({ onNavigateToModels }) => {
   const { accounts, currentAccount } = useAccount();
-  const { data: jobsData, isLoading: jobsLoading, refetch } = useJobs({ limit: 50 });
+  const { data: jobsData, isLoading: jobsLoading, isFetching, refetch } = useJobs({ limit: 50, account_id: currentAccount?.id });
   const cancelJobMutation = useCancelJob();
   const startJobMutation = useStartProcessEmailsJob();
+  const deleteJobMutation = useDeleteJob();
+  const clearFinishedMutation = useClearFinishedJobs();
+  const pauseJobMutation = usePauseJob();
+  const resumeJobMutation = useResumeJob();
+  const { data: modelConfigsData } = useModelConfigs();
 
   // Form state for new job
   const [newJobInstruction, setNewJobInstruction] = useState('');
@@ -90,6 +106,40 @@ const JobsPanel: React.FC = () => {
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
 
   const jobs = jobsData?.jobs || [];
+  const finishedJobs = jobs.filter(j => j.status !== 'running');
+  const toolCallingConfig = modelConfigsData?.configs?.find((c: { role: string }) => c.role === 'tool_calling');
+
+  const handlePauseJob = async (jobId: string) => {
+    try {
+      await pauseJobMutation.mutateAsync(jobId);
+    } catch (error) {
+      console.error('Failed to pause job:', error);
+    }
+  };
+
+  const handleResumeJob = async (jobId: string) => {
+    try {
+      await resumeJobMutation.mutateAsync(jobId);
+    } catch (error) {
+      console.error('Failed to resume job:', error);
+    }
+  };
+
+  const handleDeleteJob = async (jobId: string) => {
+    try {
+      await deleteJobMutation.mutateAsync(jobId);
+    } catch (error) {
+      console.error('Failed to delete job:', error);
+    }
+  };
+
+  const handleClearFinished = async () => {
+    try {
+      await clearFinishedMutation.mutateAsync();
+    } catch (error) {
+      console.error('Failed to clear finished jobs:', error);
+    }
+  };
 
   const handleStartJob = async () => {
     if (!newJobInstruction || !newJobAccountId) return;
@@ -187,17 +237,41 @@ const JobsPanel: React.FC = () => {
 
       {/* Jobs List */}
       <Card className="flex-1 flex flex-col overflow-hidden">
-        <CardHeader className="pb-3 flex flex-row items-center justify-between">
-          <div>
-            <CardTitle className="text-lg">Background Jobs</CardTitle>
-            <CardDescription>
-              {jobs.length} job{jobs.length !== 1 ? 's' : ''} total
-            </CardDescription>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-lg">Background Jobs</CardTitle>
+              <CardDescription>
+                {jobs.length} job{jobs.length !== 1 ? 's' : ''} total
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearFinished}
+                disabled={finishedJobs.length === 0 || clearFinishedMutation.isPending}
+                title="Clear all finished jobs"
+              >
+                <Trash2 className="w-4 h-4 mr-2" />
+                Clear Finished
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => refetch()} title="Refresh jobs list">
+                <RefreshCw className={`w-4 h-4 mr-2 ${isFetching ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
           </div>
-          <Button variant="outline" size="sm" onClick={() => refetch()}>
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
-          </Button>
+          {toolCallingConfig && onNavigateToModels && (
+            <button
+              onClick={onNavigateToModels}
+              className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs bg-muted hover:bg-muted/80 transition-colors cursor-pointer border w-fit"
+              title="Click to configure model"
+            >
+              <Settings className="w-3 h-3" />
+              Model: {toolCallingConfig.provider} / {toolCallingConfig.model_name}
+            </button>
+          )}
         </CardHeader>
         <CardContent className="flex-1 overflow-auto">
           {jobsLoading ? (
@@ -242,23 +316,78 @@ const JobsPanel: React.FC = () => {
                         )}
                       </div>
                     </div>
-                    {job.status === 'running' && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCancelJob(job.job_id);
-                        }}
-                        disabled={cancelJobMutation.isPending}
-                      >
-                        {cancelJobMutation.isPending ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <X className="w-4 h-4" />
-                        )}
-                      </Button>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {job.status === 'running' && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePauseJob(job.job_id);
+                            }}
+                            disabled={pauseJobMutation.isPending}
+                            title="Pause job"
+                          >
+                            <Pause className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCancelJob(job.job_id);
+                            }}
+                            disabled={cancelJobMutation.isPending}
+                            title="Cancel job"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </>
+                      )}
+                      {job.status === 'paused' && (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleResumeJob(job.job_id);
+                            }}
+                            disabled={resumeJobMutation.isPending}
+                            title="Resume job"
+                          >
+                            <PlayCircle className="w-4 h-4" />
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCancelJob(job.job_id);
+                            }}
+                            disabled={cancelJobMutation.isPending}
+                            title="Cancel job"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </>
+                      )}
+                      {job.status !== 'running' && job.status !== 'paused' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteJob(job.job_id);
+                          }}
+                          disabled={deleteJobMutation.isPending}
+                          title="Dismiss job"
+                        >
+                          <X className="w-4 h-4 text-muted-foreground" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
 
                   {/* Expanded details */}

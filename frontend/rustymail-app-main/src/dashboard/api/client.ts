@@ -304,7 +304,7 @@ export const apiClient = {
   },
 
   // Jobs Management
-  getJobs: async (params?: { status?: string; limit?: number }): Promise<{
+  getJobs: async (params?: { status?: string; limit?: number; account_id?: string }): Promise<{
     jobs: Array<{
       job_id: string;
       instruction: string | null;
@@ -323,6 +323,7 @@ export const apiClient = {
     const searchParams = new URLSearchParams();
     if (params?.status) searchParams.append('status', params.status);
     if (params?.limit) searchParams.append('limit', params.limit.toString());
+    if (params?.account_id) searchParams.append('account_id', params.account_id);
     const queryString = searchParams.toString();
     return await apiRequest<any>(`${API_BASE}/jobs${queryString ? `?${queryString}` : ''}`);
   },
@@ -345,6 +346,32 @@ export const apiClient = {
 
   cancelJob: async (jobId: string): Promise<{ success: boolean; job_id: string; message: string }> => {
     return await apiRequest<any>(`${API_BASE}/jobs/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ job_id: jobId }),
+    });
+  },
+
+  deleteJob: async (jobId: string): Promise<{ success: boolean; deleted_job_id: string }> => {
+    return await apiRequest<any>(`${API_BASE}/jobs/${jobId}`, {
+      method: 'DELETE',
+    });
+  },
+
+  clearFinishedJobs: async (): Promise<{ success: boolean; deleted_count: number }> => {
+    return await apiRequest<any>(`${API_BASE}/jobs/finished`, {
+      method: 'DELETE',
+    });
+  },
+
+  pauseJob: async (jobId: string): Promise<{ success: boolean; job_id: string; message: string }> => {
+    return await apiRequest<any>(`${API_BASE}/jobs/pause`, {
+      method: 'POST',
+      body: JSON.stringify({ job_id: jobId }),
+    });
+  },
+
+  resumeJob: async (jobId: string): Promise<{ success: boolean; job_id: string; message: string }> => {
+    return await apiRequest<any>(`${API_BASE}/jobs/resume`, {
       method: 'POST',
       body: JSON.stringify({ job_id: jobId }),
     });

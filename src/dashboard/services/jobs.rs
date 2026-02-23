@@ -8,7 +8,33 @@ use serde_json::Value;
 use std::time::Instant;
 use sqlx::SqlitePool;
 use log::{debug, error, info, warn};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
+
+/// Parse a datetime string from SQLite, trying RFC3339 first, then SQLite's format.
+/// SQLite stores timestamps as "YYYY-MM-DD HH:MM:SS" (no timezone), which we treat as UTC.
+fn parse_sqlite_datetime(s: &str) -> DateTime<Utc> {
+    // Try RFC3339 first (e.g. "2026-01-25T10:43:55+00:00")
+    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+        return dt.with_timezone(&Utc);
+    }
+    // Try SQLite's CURRENT_TIMESTAMP format (e.g. "2026-01-25 10:43:55")
+    if let Ok(naive) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+        return naive.and_utc();
+    }
+    warn!("Failed to parse datetime '{}', falling back to now", s);
+    Utc::now()
+}
+
+/// Parse an optional datetime string from SQLite.
+fn parse_sqlite_datetime_opt(s: &str) -> Option<DateTime<Utc>> {
+    if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+        return Some(dt.with_timezone(&Utc));
+    }
+    if let Ok(naive) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+        return Some(naive.and_utc());
+    }
+    None
+}
 
 /// Status of a background job
 #[derive(Serialize, Clone)]
@@ -58,11 +84,12 @@ pub struct PersistedJob {
     pub resume_checkpoint: Option<String>,  // JSON checkpoint data
     pub retry_count: i32,
     pub max_retries: i32,
+    pub account_id: Option<String>,
 }
 
 impl PersistedJob {
     /// Create a new job record
-    pub fn new(job_id: String, instruction: Option<String>) -> Self {
+    pub fn new(job_id: String, instruction: Option<String>, account_id: Option<String>) -> Self {
         let now = Utc::now();
         Self {
             job_id,
@@ -77,12 +104,13 @@ impl PersistedJob {
             resume_checkpoint: None,
             retry_count: 0,
             max_retries: 3,
+            account_id,
         }
     }
 
     /// Create a resumable job
-    pub fn new_resumable(job_id: String, instruction: Option<String>) -> Self {
-        let mut job = Self::new(job_id, instruction);
+    pub fn new_resumable(job_id: String, instruction: Option<String>, account_id: Option<String>) -> Self {
+        let mut job = Self::new(job_id, instruction, account_id);
         job.resumable = true;
         job
     }
@@ -104,8 +132,8 @@ impl JobPersistenceService {
 
         sqlx::query(
             r#"
-            INSERT INTO background_jobs (job_id, instruction, status, resumable, max_retries)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO background_jobs (job_id, instruction, status, resumable, max_retries, account_id)
+            VALUES (?, ?, ?, ?, ?, ?)
             "#
         )
         .bind(&job.job_id)
@@ -113,6 +141,7 @@ impl JobPersistenceService {
         .bind(&job.status)
         .bind(job.resumable)
         .bind(job.max_retries)
+        .bind(&job.account_id)
         .execute(&self.pool)
         .await
         .map_err(|e| {
@@ -219,11 +248,11 @@ impl JobPersistenceService {
 
     /// Get a job by ID
     pub async fn get_job(&self, job_id: &str) -> Result<Option<PersistedJob>, String> {
-        let row = sqlx::query_as::<_, (String, Option<String>, String, Option<String>, Option<String>, String, String, Option<String>, bool, Option<String>, i32, i32)>(
+        let row = sqlx::query_as::<_, (String, Option<String>, String, Option<String>, Option<String>, String, String, Option<String>, bool, Option<String>, i32, i32, Option<String>)>(
             r#"
             SELECT job_id, instruction, status, result_data, error_message,
                    started_at, updated_at, completed_at, resumable, resume_checkpoint,
-                   retry_count, max_retries
+                   retry_count, max_retries, account_id
             FROM background_jobs
             WHERE job_id = ?
             "#
@@ -234,20 +263,21 @@ impl JobPersistenceService {
         .map_err(|e| format!("Database error: {}", e))?;
 
         match row {
-            Some((job_id, instruction, status, result_data, error_message, started_at, updated_at, completed_at, resumable, resume_checkpoint, retry_count, max_retries)) => {
+            Some((job_id, instruction, status, result_data, error_message, started_at, updated_at, completed_at, resumable, resume_checkpoint, retry_count, max_retries, account_id)) => {
                 Ok(Some(PersistedJob {
                     job_id,
                     instruction,
                     status,
                     result_data,
                     error_message,
-                    started_at: DateTime::parse_from_rfc3339(&started_at).map(|dt| dt.with_timezone(&Utc)).unwrap_or_else(|_| Utc::now()),
-                    updated_at: DateTime::parse_from_rfc3339(&updated_at).map(|dt| dt.with_timezone(&Utc)).unwrap_or_else(|_| Utc::now()),
-                    completed_at: completed_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+                    started_at: parse_sqlite_datetime(&started_at),
+                    updated_at: parse_sqlite_datetime(&updated_at),
+                    completed_at: completed_at.and_then(|s| parse_sqlite_datetime_opt(&s)),
                     resumable,
                     resume_checkpoint,
                     retry_count,
                     max_retries,
+                    account_id,
                 }))
             }
             None => Ok(None),
@@ -256,11 +286,11 @@ impl JobPersistenceService {
 
     /// Get all running jobs (for resume on startup)
     pub async fn get_running_jobs(&self) -> Result<Vec<PersistedJob>, String> {
-        let rows = sqlx::query_as::<_, (String, Option<String>, String, Option<String>, Option<String>, String, String, Option<String>, bool, Option<String>, i32, i32)>(
+        let rows = sqlx::query_as::<_, (String, Option<String>, String, Option<String>, Option<String>, String, String, Option<String>, bool, Option<String>, i32, i32, Option<String>)>(
             r#"
             SELECT job_id, instruction, status, result_data, error_message,
                    started_at, updated_at, completed_at, resumable, resume_checkpoint,
-                   retry_count, max_retries
+                   retry_count, max_retries, account_id
             FROM background_jobs
             WHERE status = 'running'
             ORDER BY started_at ASC
@@ -270,20 +300,21 @@ impl JobPersistenceService {
         .await
         .map_err(|e| format!("Database error: {}", e))?;
 
-        let jobs: Vec<PersistedJob> = rows.into_iter().map(|(job_id, instruction, status, result_data, error_message, started_at, updated_at, completed_at, resumable, resume_checkpoint, retry_count, max_retries)| {
+        let jobs: Vec<PersistedJob> = rows.into_iter().map(|(job_id, instruction, status, result_data, error_message, started_at, updated_at, completed_at, resumable, resume_checkpoint, retry_count, max_retries, account_id)| {
             PersistedJob {
                 job_id,
                 instruction,
                 status,
                 result_data,
                 error_message,
-                started_at: DateTime::parse_from_rfc3339(&started_at).map(|dt| dt.with_timezone(&Utc)).unwrap_or_else(|_| Utc::now()),
-                updated_at: DateTime::parse_from_rfc3339(&updated_at).map(|dt| dt.with_timezone(&Utc)).unwrap_or_else(|_| Utc::now()),
-                completed_at: completed_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+                started_at: parse_sqlite_datetime(&started_at),
+                updated_at: parse_sqlite_datetime(&updated_at),
+                completed_at: completed_at.and_then(|s| parse_sqlite_datetime_opt(&s)),
                 resumable,
                 resume_checkpoint,
                 retry_count,
                 max_retries,
+                account_id,
             }
         }).collect();
 
@@ -292,11 +323,11 @@ impl JobPersistenceService {
 
     /// Get resumable jobs that were interrupted
     pub async fn get_resumable_jobs(&self) -> Result<Vec<PersistedJob>, String> {
-        let rows = sqlx::query_as::<_, (String, Option<String>, String, Option<String>, Option<String>, String, String, Option<String>, bool, Option<String>, i32, i32)>(
+        let rows = sqlx::query_as::<_, (String, Option<String>, String, Option<String>, Option<String>, String, String, Option<String>, bool, Option<String>, i32, i32, Option<String>)>(
             r#"
             SELECT job_id, instruction, status, result_data, error_message,
                    started_at, updated_at, completed_at, resumable, resume_checkpoint,
-                   retry_count, max_retries
+                   retry_count, max_retries, account_id
             FROM background_jobs
             WHERE status = 'running' AND resumable = TRUE AND retry_count < max_retries
             ORDER BY started_at ASC
@@ -306,20 +337,21 @@ impl JobPersistenceService {
         .await
         .map_err(|e| format!("Database error: {}", e))?;
 
-        let jobs: Vec<PersistedJob> = rows.into_iter().map(|(job_id, instruction, status, result_data, error_message, started_at, updated_at, completed_at, resumable, resume_checkpoint, retry_count, max_retries)| {
+        let jobs: Vec<PersistedJob> = rows.into_iter().map(|(job_id, instruction, status, result_data, error_message, started_at, updated_at, completed_at, resumable, resume_checkpoint, retry_count, max_retries, account_id)| {
             PersistedJob {
                 job_id,
                 instruction,
                 status,
                 result_data,
                 error_message,
-                started_at: DateTime::parse_from_rfc3339(&started_at).map(|dt| dt.with_timezone(&Utc)).unwrap_or_else(|_| Utc::now()),
-                updated_at: DateTime::parse_from_rfc3339(&updated_at).map(|dt| dt.with_timezone(&Utc)).unwrap_or_else(|_| Utc::now()),
-                completed_at: completed_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+                started_at: parse_sqlite_datetime(&started_at),
+                updated_at: parse_sqlite_datetime(&updated_at),
+                completed_at: completed_at.and_then(|s| parse_sqlite_datetime_opt(&s)),
                 resumable,
                 resume_checkpoint,
                 retry_count,
                 max_retries,
+                account_id,
             }
         }).collect();
 
@@ -406,62 +438,134 @@ impl JobPersistenceService {
         Ok(updated)
     }
 
-    /// Get all jobs with optional status filter, ordered by started_at descending
-    pub async fn get_all_jobs(&self, status_filter: Option<&str>, limit: Option<i64>) -> Result<Vec<PersistedJob>, String> {
+    /// Get all jobs with optional status and account_id filters, ordered by started_at descending
+    pub async fn get_all_jobs(&self, status_filter: Option<&str>, limit: Option<i64>, account_id_filter: Option<&str>) -> Result<Vec<PersistedJob>, String> {
         let limit_val = limit.unwrap_or(100);
 
-        let rows = if let Some(status) = status_filter {
-            sqlx::query_as::<_, (String, Option<String>, String, Option<String>, Option<String>, String, String, Option<String>, bool, Option<String>, i32, i32)>(
-                r#"
-                SELECT job_id, instruction, status, result_data, error_message,
-                       started_at, updated_at, completed_at, resumable, resume_checkpoint,
-                       retry_count, max_retries
-                FROM background_jobs
-                WHERE status = ?
-                ORDER BY started_at DESC
-                LIMIT ?
-                "#
-            )
-            .bind(status)
-            .bind(limit_val)
-            .fetch_all(&self.pool)
-            .await
+        // Build WHERE clauses dynamically
+        let mut conditions = Vec::new();
+        if status_filter.is_some() {
+            conditions.push("status = ?");
+        }
+        if account_id_filter.is_some() {
+            conditions.push("account_id = ?");
+        }
+
+        let where_clause = if conditions.is_empty() {
+            String::new()
         } else {
-            sqlx::query_as::<_, (String, Option<String>, String, Option<String>, Option<String>, String, String, Option<String>, bool, Option<String>, i32, i32)>(
-                r#"
-                SELECT job_id, instruction, status, result_data, error_message,
-                       started_at, updated_at, completed_at, resumable, resume_checkpoint,
-                       retry_count, max_retries
-                FROM background_jobs
-                ORDER BY started_at DESC
-                LIMIT ?
-                "#
-            )
-            .bind(limit_val)
-            .fetch_all(&self.pool)
-            .await
+            format!("WHERE {}", conditions.join(" AND "))
         };
+
+        let sql = format!(
+            "SELECT job_id, instruction, status, result_data, error_message, \
+             started_at, updated_at, completed_at, resumable, resume_checkpoint, \
+             retry_count, max_retries, account_id \
+             FROM background_jobs {} ORDER BY started_at DESC LIMIT ?",
+            where_clause
+        );
+
+        let mut query = sqlx::query_as::<_, (String, Option<String>, String, Option<String>, Option<String>, String, String, Option<String>, bool, Option<String>, i32, i32, Option<String>)>(&sql);
+
+        if let Some(status) = status_filter {
+            query = query.bind(status.to_string());
+        }
+        if let Some(acct_id) = account_id_filter {
+            query = query.bind(acct_id.to_string());
+        }
+        query = query.bind(limit_val);
+
+        let rows = query.fetch_all(&self.pool).await;
 
         let rows = rows.map_err(|e| format!("Database error: {}", e))?;
 
-        let jobs: Vec<PersistedJob> = rows.into_iter().map(|(job_id, instruction, status, result_data, error_message, started_at, updated_at, completed_at, resumable, resume_checkpoint, retry_count, max_retries)| {
+        let jobs: Vec<PersistedJob> = rows.into_iter().map(|(job_id, instruction, status, result_data, error_message, started_at, updated_at, completed_at, resumable, resume_checkpoint, retry_count, max_retries, account_id)| {
             PersistedJob {
                 job_id,
                 instruction,
                 status,
                 result_data,
                 error_message,
-                started_at: DateTime::parse_from_rfc3339(&started_at).map(|dt| dt.with_timezone(&Utc)).unwrap_or_else(|_| Utc::now()),
-                updated_at: DateTime::parse_from_rfc3339(&updated_at).map(|dt| dt.with_timezone(&Utc)).unwrap_or_else(|_| Utc::now()),
-                completed_at: completed_at.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc))),
+                started_at: parse_sqlite_datetime(&started_at),
+                updated_at: parse_sqlite_datetime(&updated_at),
+                completed_at: completed_at.and_then(|s| parse_sqlite_datetime_opt(&s)),
                 resumable,
                 resume_checkpoint,
                 retry_count,
                 max_retries,
+                account_id,
             }
         }).collect();
 
         Ok(jobs)
+    }
+
+    /// Delete all finished (completed, failed, cancelled) jobs
+    pub async fn delete_finished_jobs(&self) -> Result<u64, String> {
+        let result = sqlx::query(
+            "DELETE FROM background_jobs WHERE status IN ('completed', 'failed', 'cancelled')"
+        )
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("Database error: {}", e))?;
+
+        let deleted = result.rows_affected();
+        if deleted > 0 {
+            info!("Deleted {} finished background jobs", deleted);
+        }
+
+        Ok(deleted)
+    }
+
+    /// Get just the status string for a job (lightweight check for pause polling)
+    pub async fn get_job_status(&self, job_id: &str) -> Result<Option<String>, String> {
+        let row = sqlx::query_as::<_, (String,)>(
+            "SELECT status FROM background_jobs WHERE job_id = ?"
+        )
+        .bind(job_id)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|e| format!("Database error: {}", e))?;
+
+        Ok(row.map(|(status,)| status))
+    }
+
+    /// Pause a running job
+    pub async fn pause_job(&self, job_id: &str) -> Result<bool, String> {
+        debug!("Pausing job: {}", job_id);
+
+        let result = sqlx::query(
+            "UPDATE background_jobs SET status = 'paused' WHERE job_id = ? AND status = 'running'"
+        )
+        .bind(job_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("Database error: {}", e))?;
+
+        let updated = result.rows_affected() > 0;
+        if updated {
+            info!("Paused job: {}", job_id);
+        }
+        Ok(updated)
+    }
+
+    /// Resume a paused job
+    pub async fn resume_job(&self, job_id: &str) -> Result<bool, String> {
+        debug!("Resuming job: {}", job_id);
+
+        let result = sqlx::query(
+            "UPDATE background_jobs SET status = 'running' WHERE job_id = ? AND status = 'paused'"
+        )
+        .bind(job_id)
+        .execute(&self.pool)
+        .await
+        .map_err(|e| format!("Database error: {}", e))?;
+
+        let updated = result.rows_affected() > 0;
+        if updated {
+            info!("Resumed job: {}", job_id);
+        }
+        Ok(updated)
     }
 
     /// Cancel a job by updating its status

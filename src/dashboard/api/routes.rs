@@ -81,9 +81,13 @@ pub fn configure_routes() -> Scope {
         .route("/attachments/{message_id}/{filename}", web::get().to(attachments::download_attachment))
         // Jobs management endpoints
         .route("/jobs", web::get().to(handlers::get_jobs))
-        .route("/jobs/{job_id}", web::get().to(handlers::get_job))
+        .route("/jobs/finished", web::delete().to(handlers::clear_finished_jobs))
         .route("/jobs/cancel", web::post().to(handlers::cancel_job))
+        .route("/jobs/pause", web::post().to(handlers::pause_job))
+        .route("/jobs/resume", web::post().to(handlers::resume_job))
         .route("/jobs/process-emails", web::post().to(handlers::start_process_email_instructions))
+        .route("/jobs/{job_id}", web::get().to(handlers::get_job))
+        .route("/jobs/{job_id}", web::delete().to(handlers::delete_job_handler))
         // OAuth endpoints
         .route("/oauth/status", web::get().to(oauth::oauth_status))
         .route("/oauth/microsoft/authorize", web::get().to(oauth::microsoft_authorize))

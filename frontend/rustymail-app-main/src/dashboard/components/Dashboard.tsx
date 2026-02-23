@@ -445,7 +445,7 @@ const Dashboard: React.FC = () => {
 
           {/* Jobs Tab */}
           <TabsContent value="jobs" className="flex-1 flex flex-col min-h-0 mt-0 data-[state=inactive]:hidden">
-            <JobsPanel />
+            <JobsPanel onNavigateToModels={() => setActiveTab('models')} />
           </TabsContent>
 
           {/* Models Tab */}

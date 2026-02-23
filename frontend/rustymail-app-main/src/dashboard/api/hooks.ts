@@ -179,9 +179,9 @@ export function useModelsForProvider(provider: string | null) {
 }
 
 // Hook for fetching jobs list
-export function useJobs(params?: { status?: string; limit?: number }) {
+export function useJobs(params?: { status?: string; limit?: number; account_id?: string }) {
   return useQuery({
-    queryKey: ['jobs', params?.status, params?.limit],
+    queryKey: ['jobs', params?.status, params?.limit, params?.account_id],
     queryFn: async () => {
       return apiClient.getJobs(params);
     },
@@ -214,6 +214,62 @@ export function useCancelJob() {
     },
     onSuccess: () => {
       // Invalidate jobs list to refresh status
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+  });
+}
+
+// Hook for pausing a job
+export function usePauseJob() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (jobId: string) => {
+      return apiClient.pauseJob(jobId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+  });
+}
+
+// Hook for resuming a paused job
+export function useResumeJob() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (jobId: string) => {
+      return apiClient.resumeJob(jobId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+  });
+}
+
+// Hook for deleting a single job
+export function useDeleteJob() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (jobId: string) => {
+      return apiClient.deleteJob(jobId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['jobs'] });
+    },
+  });
+}
+
+// Hook for clearing all finished jobs
+export function useClearFinishedJobs() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      return apiClient.clearFinishedJobs();
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['jobs'] });
     },
   });

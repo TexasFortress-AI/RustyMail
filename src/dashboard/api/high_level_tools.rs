@@ -828,7 +828,7 @@ pub async fn handle_process_email_instructions(state: &DashboardState, arguments
     // Persist job to database for restart survival
     if let Some(ref job_persistence) = state.job_persistence {
         use crate::dashboard::services::jobs::PersistedJob;
-        let persisted = PersistedJob::new_resumable(job_id.clone(), Some(instruction.clone()));
+        let persisted = PersistedJob::new_resumable(job_id.clone(), Some(instruction.clone()), Some(account_id.clone()));
         if let Err(e) = job_persistence.create_job(&persisted).await {
             warn!("Failed to persist job {}: {}", job_id, e);
         }
@@ -840,7 +840,7 @@ pub async fn handle_process_email_instructions(state: &DashboardState, arguments
 
     let handle = tokio::spawn(async move {
         let executor = AgentExecutor::new();
-        let result = executor.execute_with_tools(&pool, &state_clone, &instruction, Some(&account_id), all_tools).await;
+        let result = executor.execute_with_tools(&pool, &state_clone, &instruction, Some(&account_id), all_tools, Some(&job_id_clone)).await;
 
         let final_status = match &result {
             Ok(r) if r.success => JobStatus::Completed(json!(r)),
