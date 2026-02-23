@@ -45,6 +45,7 @@ pub mod outbox_worker;
 pub mod smtp;
 pub mod smtp_auth;
 pub mod sync;
+pub mod token_refresh_worker;
 pub mod jobs;
 
 // Define or import error types if they exist
@@ -71,6 +72,7 @@ pub use events::{EventBus, DashboardEvent};
 pub use health::{HealthService, HealthReport, HealthStatus};
 pub use outbox_queue::{OutboxQueueService, OutboxQueueItem, OutboxStatus};
 pub use outbox_worker::{OutboxWorker};
+pub use token_refresh_worker::TokenRefreshWorker;
 pub use smtp::{SmtpService, SendEmailRequest, SendEmailResponse, SmtpError};
 pub use sync::{SyncService};
 pub use jobs::{JobRecord, JobStatus};

@@ -244,6 +244,16 @@ async fn main() -> std::io::Result<()> {
     });
     info!("Outbox worker started");
 
+    // Start token refresh worker for automatic OAuth token renewal
+    let token_refresh_worker = Arc::new(rustymail::dashboard::services::TokenRefreshWorker::new(
+        Arc::clone(&dashboard_state.account_service),
+        Arc::clone(&dashboard_state.oauth_service),
+    ));
+    tokio::spawn(async move {
+        token_refresh_worker.start().await;
+    });
+    info!("Token refresh worker started");
+
     // Start health monitoring service
     if let Some(ref health_service) = dashboard_state.health_service {
         Arc::clone(health_service).start_monitoring().await;
