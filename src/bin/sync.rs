@@ -309,6 +309,11 @@ async fn sync_folder(
     // Select folder and capture mailbox metadata
     let mailbox_info = client.select_folder(folder_name).await?;
 
+    // Check for UIDVALIDITY change before overwriting metadata
+    if let Err(e) = check_uidvalidity_change(pool, folder_name, account_email, mailbox_info.uid_validity).await {
+        warn!("Failed to check UIDVALIDITY for {}: {}", folder_name, e);
+    }
+
     // Write IMAP mailbox metadata (EXISTS, UIDVALIDITY, UIDNEXT) to the folders table
     if let Err(e) = update_folder_metadata(pool, folder_name, account_email, &mailbox_info).await {
         warn!("Failed to update folder metadata for {}: {}", folder_name, e);
@@ -380,6 +385,66 @@ async fn sync_folder(
     Ok(())
 }
 
+
+/// Detect UIDVALIDITY change (RFC 3501 §2.3.1.1) and flush stale cache.
+/// When UIDVALIDITY changes, all previously-cached UIDs are invalid.
+async fn check_uidvalidity_change(
+    pool: &SqlitePool,
+    folder_name: &str,
+    account_email: &str,
+    new_uidvalidity: Option<u32>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let new_val = match new_uidvalidity {
+        Some(v) => v as i64,
+        None => return Ok(()), // Server didn't provide UIDVALIDITY, skip check
+    };
+
+    // Read old UIDVALIDITY from DB
+    let old_val: Option<i64> = sqlx::query_scalar(
+        "SELECT uidvalidity FROM folders WHERE name = ? AND account_id = ?"
+    )
+    .bind(folder_name)
+    .bind(account_email)
+    .fetch_optional(pool)
+    .await?
+    .flatten();
+
+    // If old value exists and differs from new, flush the folder cache
+    if let Some(old_val) = old_val {
+        if old_val != new_val {
+            warn!(
+                "UIDVALIDITY changed for folder {} ({} -> {}), flushing cached emails",
+                folder_name, old_val, new_val
+            );
+
+            let folder_id: Option<i64> = sqlx::query_scalar(
+                "SELECT id FROM folders WHERE name = ? AND account_id = ?"
+            )
+            .bind(folder_name)
+            .bind(account_email)
+            .fetch_optional(pool)
+            .await?;
+
+            if let Some(fid) = folder_id {
+                sqlx::query("DELETE FROM emails WHERE folder_id = ?")
+                    .bind(fid)
+                    .execute(pool)
+                    .await?;
+
+                sqlx::query("DELETE FROM sync_state WHERE folder_id = ?")
+                    .bind(fid)
+                    .execute(pool)
+                    .await?;
+
+                info!(
+                    "Flushed {} folder cache and sync state due to UIDVALIDITY change",
+                    folder_name
+                );
+            }
+        }
+    }
+    Ok(())
+}
 
 /// Get the last synced UID for a folder
 async fn get_last_uid(pool: &SqlitePool, folder_name: &str, account_id: &str) -> Result<u32, sqlx::Error> {
