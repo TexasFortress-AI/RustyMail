@@ -1306,8 +1306,9 @@
         "testStrategy": "1. Unit test sync_email with duplicate message_ids to verify update behavior\n2. Test constraint violation handling\n3. Create test dataset with known duplicates and verify deduplication\n4. Performance test with large batches to ensure UPSERT doesn't slow sync\n5. Test edge cases like null message_ids",
         "priority": "high",
         "dependencies": [],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-24T17:18:01.725Z"
       },
       {
         "id": "85",
@@ -1396,9 +1397,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-02-23T16:30:05.497Z",
+      "lastModified": "2026-02-24T17:18:01.725Z",
       "taskCount": 91,
-      "completedCount": 78,
+      "completedCount": 79,
       "tags": [
         "master"
       ]
