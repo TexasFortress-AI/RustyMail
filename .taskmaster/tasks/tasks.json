@@ -1368,8 +1368,9 @@
         "testStrategy": "1. Audit all IMAP fetch calls to ensure BODY.PEEK usage\n2. Test sync operation doesn't change server-side \\Seen flags\n3. Manually verify with IMAP client that emails remain unread after sync\n4. Test flag resync function with a test folder\n5. Verify performance impact of PEEK operations",
         "priority": "medium",
         "dependencies": [],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-25T09:17:21.652Z"
       },
       {
         "id": "90",
@@ -1400,9 +1401,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-02-25T09:16:58.981Z",
+      "lastModified": "2026-02-25T09:17:21.652Z",
       "taskCount": 91,
-      "completedCount": 82,
+      "completedCount": 83,
       "tags": [
         "master"
       ]
