@@ -426,6 +426,14 @@ async fn check_uidvalidity_change(
             .await?;
 
             if let Some(fid) = folder_id {
+                // Create forensic archive before flushing
+                if let Err(e) = rustymail::forensic::create_forensic_archive(
+                    pool, fid, folder_name, account_email, old_val, new_val
+                ).await {
+                    error!("Failed to create forensic archive for {}: {}", folder_name, e);
+                    // Continue with flush even if archive fails
+                }
+
                 sqlx::query("DELETE FROM emails WHERE folder_id = ?")
                     .bind(fid)
                     .execute(pool)

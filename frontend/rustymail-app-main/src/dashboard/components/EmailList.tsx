@@ -666,7 +666,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
       <CardHeader className="flex flex-row items-center justify-between flex-shrink-0">
         <CardTitle className="flex items-center gap-3">
           <Mail className="h-5 w-5" />
-          <Select value={currentFolder} onValueChange={setCurrentFolder}>
+          <Select key={currentAccount?.id} value={currentFolder} onValueChange={setCurrentFolder}>
             <SelectTrigger className="w-[180px] h-8">
               <SelectValue />
             </SelectTrigger>

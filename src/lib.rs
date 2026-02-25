@@ -21,6 +21,7 @@ pub mod mcp_attachment_tools;
 pub mod session_manager;
 pub mod connection_pool;
 pub mod utils;
+pub mod forensic;
 
 // Test modules
 #[cfg(test)]
