@@ -619,14 +619,23 @@ async fn cache_email(
 
     let has_attachments = !email.attachments.is_empty();
 
+    // Extract thread headers (matches cache.rs logic)
+    let in_reply_to = email.envelope.as_ref().and_then(|e| e.in_reply_to.clone());
+    let references_header = email.body.as_ref().and_then(|body| {
+        mail_parser::Message::parse(body).and_then(|msg| {
+            msg.header_raw("References").map(|v| v.to_string())
+        })
+    });
+
     // Insert or update email in database (matches cache.rs schema)
     sqlx::query(
         r#"
         INSERT INTO emails (
             folder_id, uid, message_id, subject, from_address, from_name,
             to_addresses, cc_addresses, date, internal_date, size, flags,
-            headers, body_text, body_html, has_attachments
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            headers, body_text, body_html, has_attachments,
+            in_reply_to, references_header
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(folder_id, uid) DO UPDATE SET
             message_id = excluded.message_id,
             subject = excluded.subject,
@@ -642,6 +651,8 @@ async fn cache_email(
             body_text = excluded.body_text,
             body_html = excluded.body_html,
             has_attachments = excluded.has_attachments,
+            in_reply_to = excluded.in_reply_to,
+            references_header = excluded.references_header,
             updated_at = CURRENT_TIMESTAMP
         "#
     )
@@ -661,6 +672,8 @@ async fn cache_email(
     .bind(&email.text_body)
     .bind(&email.html_body)
     .bind(has_attachments)
+    .bind(&in_reply_to)
+    .bind(&references_header)
     .execute(pool)
     .await?;
 
