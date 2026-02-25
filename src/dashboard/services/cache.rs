@@ -1251,7 +1251,16 @@ impl CacheService {
 
         let rows = query.fetch_all(pool).await?;
         let mut emails = Vec::new();
+        let mut seen_message_ids = std::collections::HashSet::new();
         for row in rows {
+            // Defense-in-depth: skip duplicate message_ids in thread results
+            let msg_id: Option<String> = row.get("message_id");
+            if let Some(ref mid) = msg_id {
+                if !seen_message_ids.insert(mid.clone()) {
+                    continue;
+                }
+            }
+
             let to_str: String = row.get("to_addresses");
             let cc_str: String = row.get("cc_addresses");
             let flags_str: String = row.get("flags");
@@ -1259,7 +1268,7 @@ impl CacheService {
                 id: row.get("id"),
                 folder_id: row.get("folder_id"),
                 uid: row.get::<i64, _>("uid") as u32,
-                message_id: row.get("message_id"),
+                message_id: msg_id,
                 subject: row.get("subject"),
                 from_address: row.get("from_address"),
                 from_name: row.get("from_name"),
