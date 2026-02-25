@@ -1371,9 +1371,19 @@ impl CacheService {
         for row in &sender_rows {
             let addr: String = row.get("addr");
             let count: i64 = row.get("cnt");
+
+            // Skip Exchange internal routing addresses (not human-readable)
+            if addr.starts_with("imceaex-") || addr.starts_with("IMCEAEX-") {
+                continue;
+            }
+
             addresses.push(serde_json::json!({"address": addr, "count": count}));
 
             if let Some(domain) = addr.split('@').nth(1) {
+                // Skip bogus Exchange placeholder domains
+                if domain == ".missing-host-name." || domain.is_empty() {
+                    continue;
+                }
                 *domains.entry(domain.to_string()).or_insert(0) += count;
             }
         }

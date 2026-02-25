@@ -549,3 +549,62 @@ async fn test_get_all_cached_folders_for_account() {
 
     cleanup_test_db(test_name);
 }
+
+#[tokio::test]
+#[serial]
+async fn test_address_report_filters_exchange_addresses() {
+    let test_name = "addr_report_exchange";
+    cleanup_test_db(test_name);
+
+    let account_id = "test@account.com";
+    let service = setup_service_with_account(test_name, account_id).await;
+
+    // Cache a normal email
+    let normal_email = create_test_email(1, "Normal", "alice@example.com");
+    service.cache_email("INBOX", &normal_email, account_id).await.unwrap();
+
+    // Insert an email with Exchange IMCEAEX from_address directly
+    use sqlx::Executor;
+    let pool = service.db_pool.as_ref().unwrap();
+    let folder = service.get_or_create_folder_for_account("INBOX", account_id).await.unwrap();
+    sqlx::query(
+        "INSERT INTO emails (folder_id, uid, from_address, subject, has_attachments) VALUES (?, 99, 'imceaex-_o=exchangelabs_ou=group', 'Exchange Bounce', 0)"
+    )
+    .bind(folder.id)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    // Insert an email with .missing-host-name. domain
+    sqlx::query(
+        "INSERT INTO emails (folder_id, uid, from_address, subject, has_attachments) VALUES (?, 100, 'nobody@.missing-host-name.', 'Missing Host', 0)"
+    )
+    .bind(folder.id)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    let report = service.get_address_report(account_id).await.unwrap();
+
+    // IMCEAEX address should be excluded from top_addresses
+    let top_addrs = report["top_addresses"].as_array().unwrap();
+    for entry in top_addrs {
+        let addr = entry["address"].as_str().unwrap();
+        assert!(!addr.starts_with("imceaex-"), "IMCEAEX addresses should be filtered: {}", addr);
+    }
+
+    // .missing-host-name. should be excluded from top_domains
+    let top_domains = report["top_domains"].as_array().unwrap();
+    for entry in top_domains {
+        let domain = entry["domain"].as_str().unwrap();
+        assert_ne!(domain, ".missing-host-name.", "Missing-host-name domain should be filtered");
+    }
+
+    // example.com should be present in domains
+    let domain_names: Vec<&str> = top_domains.iter()
+        .map(|d| d["domain"].as_str().unwrap())
+        .collect();
+    assert!(domain_names.contains(&"example.com"), "Normal domain should be present");
+
+    cleanup_test_db(test_name);
+}

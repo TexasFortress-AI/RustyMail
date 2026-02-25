@@ -1344,8 +1344,9 @@
         "testStrategy": "1. Unit test parser with various Exchange-style addresses\n2. Test with malformed addresses and edge cases\n3. Verify .missing-host-name. is filtered from reports\n4. Test regex extraction of domains from IMCEAEX strings\n5. Verify unresolved_count is accurate",
         "priority": "medium",
         "dependencies": [],
-        "status": "pending",
-        "subtasks": []
+        "status": "done",
+        "subtasks": [],
+        "updatedAt": "2026-02-25T09:15:52.694Z"
       },
       {
         "id": "88",
@@ -1398,9 +1399,9 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-02-25T07:14:12.444Z",
+      "lastModified": "2026-02-25T09:15:52.694Z",
       "taskCount": 91,
-      "completedCount": 80,
+      "completedCount": 81,
       "tags": [
         "master"
       ]
