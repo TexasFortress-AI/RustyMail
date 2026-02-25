@@ -864,6 +864,32 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
                 },
                 "required": ["account_id", "mime_types"]
             }
+        }),
+        serde_json::json!({
+            "name": "export_evidence",
+            "description": "Export emails and attachments into an organized evidence directory for attorney review. Creates JSON email files, copies attachments, generates CSV manifest and markdown summary.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "Optional. Folder name to limit export (e.g., 'INBOX'). If omitted, exports all folders."
+                    },
+                    "search_query": {
+                        "type": "string",
+                        "description": "Optional. Search string to filter emails by subject, sender, body, or attachment name."
+                    },
+                    "output_path": {
+                        "type": "string",
+                        "description": "Optional. Override output directory (default: EVIDENCE_EXPORT_DIR env or data/evidence_exports)."
+                    }
+                },
+                "required": ["account_id"]
+            }
         })
     ]
 }
@@ -1227,6 +1253,16 @@ pub async fn list_mcp_tools(
                 "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
                 "mime_types": "REQUIRED. Array of MIME type patterns (e.g., ['image/*', 'application/pdf'])",
                 "limit": "Optional. Maximum results to return (default: 50)"
+            }
+        }),
+        serde_json::json!({
+            "name": "export_evidence",
+            "description": "Export emails and attachments into an organized evidence directory for attorney review",
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
+                "folder": "Optional. Folder name to limit export. If omitted, exports all folders.",
+                "search_query": "Optional. Search string to filter emails.",
+                "output_path": "Optional. Override output directory (default: EVIDENCE_EXPORT_DIR env or data/evidence_exports)."
             }
         })
     ]
@@ -3370,6 +3406,49 @@ pub async fn execute_mcp_tool_inner(
                         })
                     }
                 }
+            }
+        }
+        "export_evidence" => {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            let folder = params.get("folder").and_then(|v| v.as_str());
+            let search_query = params.get("search_query").and_then(|v| v.as_str());
+            let output_path = params.get("output_path").and_then(|v| v.as_str());
+
+            match state.cache_service.db_pool.as_ref() {
+                Some(pool) => {
+                    let exporter = crate::evidence_export::EvidenceExporter::new(
+                        state.cache_service.clone(), pool.clone()
+                    );
+                    match exporter.export(&account_id, folder, search_query, output_path).await {
+                        Ok(result) => serde_json::json!({
+                            "success": true,
+                            "data": {
+                                "export_path": result.export_path,
+                                "email_count": result.email_count,
+                                "attachment_count": result.attachment_count,
+                            },
+                            "tool": tool_name
+                        }),
+                        Err(e) => serde_json::json!({
+                            "success": false,
+                            "error": format!("Export failed: {}", e),
+                            "tool": tool_name
+                        })
+                    }
+                }
+                None => serde_json::json!({
+                    "success": false,
+                    "error": "Database not available",
+                    "tool": tool_name
+                })
             }
         }
         _ => {

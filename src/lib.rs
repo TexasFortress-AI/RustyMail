@@ -22,6 +22,7 @@ pub mod session_manager;
 pub mod connection_pool;
 pub mod utils;
 pub mod forensic;
+pub mod evidence_export;
 
 // Test modules
 #[cfg(test)]
