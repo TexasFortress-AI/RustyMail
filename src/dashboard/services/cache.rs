@@ -352,7 +352,9 @@ impl CacheService {
         // Serialize arrays to JSON
         let to_addresses = serde_json::to_string(&to).unwrap_or_else(|_| "[]".to_string());
         let cc_addresses = serde_json::to_string(&cc).unwrap_or_else(|_| "[]".to_string());
-        let flags = serde_json::to_string(&email.flags).unwrap_or_else(|_| "[]".to_string());
+        let deduped_flags: Vec<&str> = email.flags.iter().map(|s| s.as_str())
+            .collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+        let flags = serde_json::to_string(&deduped_flags).unwrap_or_else(|_| "[]".to_string());
         let headers = "{}".to_string(); // Headers not directly available
 
         // Determine if email has attachments from MIME structure
@@ -470,7 +472,9 @@ impl CacheService {
     pub async fn update_email_flags(&self, folder_name: &str, uid: u32, flags: &[String], account_id: &str) -> Result<(), CacheError> {
         let folder = self.get_or_create_folder_for_account(folder_name, account_id).await?;
         let pool = self.db_pool.as_ref().ok_or(CacheError::NotInitialized)?;
-        let flags_json = serde_json::to_string(flags).unwrap_or_else(|_| "[]".to_string());
+        let deduped: Vec<&str> = flags.iter().map(|s| s.as_str())
+            .collect::<std::collections::BTreeSet<_>>().into_iter().collect();
+        let flags_json = serde_json::to_string(&deduped).unwrap_or_else(|_| "[]".to_string());
 
         sqlx::query("UPDATE emails SET flags = ?, updated_at = CURRENT_TIMESTAMP WHERE folder_id = ? AND uid = ?")
             .bind(&flags_json)
