@@ -78,6 +78,16 @@ const Dashboard: React.FC = () => {
     localStorage.setItem('rustymail_current_folder', currentFolder);
   }, [currentFolder]);
 
+  // Reset folder to INBOX when switching accounts (skip initial load to preserve localStorage)
+  const isInitialAccountLoad = useRef(true);
+  useEffect(() => {
+    if (isInitialAccountLoad.current) {
+      isInitialAccountLoad.current = false;
+      return;
+    }
+    setCurrentFolder('INBOX');
+  }, [currentAccount?.id]);
+
   // Selected email context (for MCP tools)
   const [selectedEmailContext, setSelectedEmailContext] = useState<EmailContext | undefined>(undefined);
 

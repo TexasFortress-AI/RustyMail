@@ -188,7 +188,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
       }
       const offset = (currentPage - 1) * pageSize;
       const response = await fetch(
-        `${API_BASE_URL}/dashboard/emails?account_id=${currentAccount.id}&folder=${encodeURIComponent(currentFolder)}&limit=${pageSize}&offset=${offset}`,
+        `${API_BASE_URL}/dashboard/emails?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&limit=${pageSize}&offset=${offset}`,
         {
           headers: {
             'X-API-Key': config.api.apiKey
@@ -214,7 +214,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
       }
 
       const response = await fetch(
-        `${API_BASE_URL}/dashboard/cached-folders?account_id=${currentAccount.id}`,
+        `${API_BASE_URL}/dashboard/cached-folders?account_id=${encodeURIComponent(currentAccount.id)}`,
         {
           headers: {
             'X-API-Key': config.api.apiKey
@@ -270,7 +270,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
         description: `Starting sync for ${currentAccount.email_address}`,
       });
 
-      const response = await fetch(`${API_BASE_URL}/dashboard/sync/trigger?account_id=${currentAccount.id}`, {
+      const response = await fetch(`${API_BASE_URL}/dashboard/sync/trigger?account_id=${encodeURIComponent(currentAccount.id)}`, {
         method: 'POST',
         headers: {
           'X-API-Key': config.api.apiKey
@@ -308,7 +308,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     setLoadingAttachments(true);
     try {
       const response = await fetch(
-        `${API_BASE_URL}/dashboard/attachments/list?account_id=${currentAccount.id}&folder=${encodeURIComponent(currentFolder)}&uid=${email.uid}`,
+        `${API_BASE_URL}/dashboard/attachments/list?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&uid=${email.uid}`,
         {
           headers: {
             'X-API-Key': config.api.apiKey
@@ -337,7 +337,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     if (!currentAccount) return;
 
     try {
-      const url = `${API_BASE_URL}/dashboard/attachments/${encodeURIComponent(messageId)}/${encodeURIComponent(filename)}?account_id=${currentAccount.id}`;
+      const url = `${API_BASE_URL}/dashboard/attachments/${encodeURIComponent(messageId)}/${encodeURIComponent(filename)}?account_id=${encodeURIComponent(currentAccount.id)}`;
       window.open(url, '_blank');
     } catch (error) {
       console.error('Error downloading attachment:', error);

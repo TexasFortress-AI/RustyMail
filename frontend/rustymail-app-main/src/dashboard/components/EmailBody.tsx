@@ -152,7 +152,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
       try {
         // Fetch single email by folder and UID
         const response = await fetch(
-          `${API_BASE_URL}/dashboard/emails?account_id=${currentAccount.id}&folder=${encodeURIComponent(currentFolder)}&limit=1&offset=${selectedEmailContext.index}`,
+          `${API_BASE_URL}/dashboard/emails?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&limit=1&offset=${selectedEmailContext.index}`,
           {
             headers: {
               'X-API-Key': config.api.apiKey
@@ -194,7 +194,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
       setLoadingAttachments(true);
       try {
         const response = await fetch(
-          `${API_BASE_URL}/dashboard/attachments/list?account_id=${currentAccount.id}&folder=${encodeURIComponent(currentFolder)}&uid=${email.uid}`,
+          `${API_BASE_URL}/dashboard/attachments/list?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&uid=${email.uid}`,
           {
             headers: {
               'X-API-Key': config.api.apiKey
@@ -231,7 +231,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
     if (!currentAccount) return;
 
     try {
-      const url = `${API_BASE_URL}/dashboard/attachments/${encodeURIComponent(messageId)}/${encodeURIComponent(filename)}?account_id=${currentAccount.id}`;
+      const url = `${API_BASE_URL}/dashboard/attachments/${encodeURIComponent(messageId)}/${encodeURIComponent(filename)}?account_id=${encodeURIComponent(currentAccount.id)}`;
       window.open(url, '_blank');
     } catch (error) {
       console.error('Error downloading attachment:', error);
@@ -247,7 +247,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
     if (!currentAccount || !currentMessageId || attachments.length === 0) return;
 
     try {
-      const url = `${API_BASE_URL}/dashboard/attachments/${encodeURIComponent(currentMessageId)}/zip?account_id=${currentAccount.id}`;
+      const url = `${API_BASE_URL}/dashboard/attachments/${encodeURIComponent(currentMessageId)}/zip?account_id=${encodeURIComponent(currentAccount.id)}`;
       window.open(url, '_blank');
 
       toast({
