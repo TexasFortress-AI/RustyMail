@@ -426,7 +426,8 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, va
                     })
                 },
                 Some(false) | None => {
-                    // Error - extract error message
+                    // Tool-level error: return as MCP content with isError flag
+                    // so the LLM sees the message instead of a protocol error
                     let error_msg = result.get("error")
                         .and_then(|v| v.as_str())
                         .unwrap_or("Tool execution failed");
@@ -434,9 +435,12 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, va
                     json!({
                         "jsonrpc": "2.0",
                         "id": request_id,
-                        "error": {
-                            "code": -32603,
-                            "message": error_msg.to_string()
+                        "result": {
+                            "content": [{
+                                "type": "text",
+                                "text": error_msg.to_string()
+                            }],
+                            "isError": true
                         }
                     })
                 }
