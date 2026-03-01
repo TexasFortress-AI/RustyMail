@@ -3932,7 +3932,7 @@ dependencies = [
  "async-native-tls",
  "async-stream",
  "async-trait",
- "base64 0.21.7",
+ "base64 0.22.1",
  "chrono",
  "clap",
  "config",
