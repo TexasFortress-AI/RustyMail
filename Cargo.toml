@@ -63,7 +63,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # TLS support for async-imap
 tokio-rustls = "0.26"
 tokio-util = { version = "0.7", features = ["compat"] }
-rustls-native-certs = "0.7" # Fix typo
+rustls-native-certs = "0.8" # Fix typo
 
 # Add imap-codec dependency
 # imap-codec = "1.0.0-alpha.5" # Needed for manual command encoding
