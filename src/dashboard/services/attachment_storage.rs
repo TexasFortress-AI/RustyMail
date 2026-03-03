@@ -11,6 +11,7 @@ use log::{info, debug, warn, error};
 use sqlx::SqlitePool;
 use serde::{Serialize, Deserialize};
 use thiserror::Error;
+use serde_json;
 use crate::imap::types::{Email, MimePart};
 
 #[derive(Error, Debug)]
@@ -39,6 +40,18 @@ pub struct AttachmentInfo {
     pub content_id: Option<String>,
     pub downloaded_at: DateTime<Utc>,
     pub storage_path: String,
+}
+
+/// Result from searching emails by attachment content type.
+/// Includes email context (uid, folder, subject) for cross-referencing.
+#[derive(Debug, Clone, Serialize)]
+pub struct AttachmentTypeMatch {
+    pub uid: i64,
+    pub folder: String,
+    pub subject: Option<String>,
+    pub filename: String,
+    pub content_type: String,
+    pub size: i64,
 }
 
 /// Sanitize message-id for safe filesystem use
@@ -459,53 +472,90 @@ pub async fn create_zip_archive(
 /// Search for emails that have attachments matching given MIME types.
 /// Supports wildcard patterns like "image/*" or exact types like "application/pdf".
 /// Returns a list of (message_id, filename, content_type, size_bytes) tuples.
+/// Search ALL synced emails for attachments matching MIME type patterns.
+/// Uses the `attachment_parts` JSON column (populated during sync) instead
+/// of `attachment_metadata` (only populated on download), so results cover
+/// every email—not just ones whose attachments were explicitly downloaded.
 pub async fn search_by_attachment_type(
     pool: &SqlitePool,
     account: &str,
     mime_patterns: &[String],
     limit: usize,
-) -> Result<Vec<AttachmentInfo>, AttachmentError> {
+) -> Result<Vec<AttachmentTypeMatch>, AttachmentError> {
     if mime_patterns.is_empty() {
         return Ok(Vec::new());
     }
 
-    // Build LIKE clauses for each pattern
-    // "image/*" becomes "image/%" for SQL LIKE
-    let like_patterns: Vec<String> = mime_patterns.iter()
-        .map(|p| p.replace('*', "%"))
+    // SQL LIKE patterns for coarse filtering on the JSON text column.
+    // "image/*" → "%image/%" matches any image subtype inside the JSON.
+    let like_clauses: Vec<String> = mime_patterns.iter()
+        .map(|_| "e.attachment_parts LIKE ?".to_string())
         .collect();
+    let where_clause = like_clauses.join(" OR ");
 
-    let placeholders: Vec<String> = like_patterns.iter()
-        .map(|_| "content_type LIKE ?".to_string())
-        .collect();
-    let where_clause = placeholders.join(" OR ");
-
-    let query_str = format!(
-        r#"
-        SELECT filename, size_bytes, content_type, content_id, downloaded_at, storage_path
-        FROM attachment_metadata
-        WHERE account_email = ? AND ({})
-        ORDER BY downloaded_at DESC
-        LIMIT ?
-        "#,
+    let sql = format!(
+        r#"SELECT e.uid, f.name AS folder, e.subject, e.attachment_parts
+           FROM emails e
+           JOIN folders f ON e.folder_id = f.id
+           WHERE f.account_id = ? AND e.has_attachments = 1
+             AND e.attachment_parts IS NOT NULL
+             AND ({})
+           ORDER BY e.date DESC
+           LIMIT ?"#,
         where_clause
     );
 
-    let mut query = sqlx::query_as::<_, (String, i64, Option<String>, Option<String>, DateTime<Utc>, String)>(&query_str)
-        .bind(account);
+    let like_values: Vec<String> = mime_patterns.iter()
+        .map(|p| format!("%{}%", p.replace('*', "")))
+        .collect();
 
-    for pattern in &like_patterns {
-        query = query.bind(pattern);
+    let mut query = sqlx::query_as::<_, (i64, String, Option<String>, String)>(&sql)
+        .bind(account);
+    for val in &like_values {
+        query = query.bind(val);
     }
     query = query.bind(limit as i64);
 
     let rows = query.fetch_all(pool).await?;
 
-    Ok(rows.into_iter()
-        .map(|(filename, size_bytes, content_type, content_id, downloaded_at, storage_path)| AttachmentInfo {
-            filename, size_bytes, content_type, content_id, downloaded_at, storage_path,
-        })
-        .collect())
+    // Fine-filter: parse JSON and match content_type against glob patterns.
+    let mut results = Vec::new();
+    for (uid, folder, subject, parts_json) in rows {
+        let parts: Vec<serde_json::Value> = match serde_json::from_str(&parts_json) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        for part in parts {
+            let ct = part.get("content_type").and_then(|v| v.as_str()).unwrap_or("");
+            if mime_pattern_matches(ct, mime_patterns) {
+                results.push(AttachmentTypeMatch {
+                    uid,
+                    folder: folder.clone(),
+                    subject: subject.clone(),
+                    filename: part.get("filename").and_then(|v| v.as_str())
+                        .unwrap_or("unnamed").to_string(),
+                    content_type: ct.to_string(),
+                    size: part.get("size").and_then(|v| v.as_i64()).unwrap_or(0),
+                });
+            }
+        }
+    }
+
+    Ok(results)
+}
+
+/// Check if a content_type matches any of the MIME patterns.
+/// Supports wildcard like "image/*" matching "image/png".
+fn mime_pattern_matches(content_type: &str, patterns: &[String]) -> bool {
+    let ct_lower = content_type.to_lowercase();
+    patterns.iter().any(|pattern| {
+        let p = pattern.to_lowercase();
+        if p.ends_with("/*") {
+            ct_lower.starts_with(&p[..p.len() - 1])
+        } else {
+            ct_lower == p
+        }
+    })
 }
 
 /// Store attachment metadata during email sync without downloading file contents.
@@ -711,5 +761,34 @@ mod tests {
 
         // Empty filename should be rejected
         assert!(sanitize_filename("").is_err());
+    }
+
+    #[test]
+    fn test_mime_pattern_matches_exact() {
+        let patterns = vec!["application/pdf".to_string()];
+        assert!(mime_pattern_matches("application/pdf", &patterns));
+        assert!(!mime_pattern_matches("image/png", &patterns));
+    }
+
+    #[test]
+    fn test_mime_pattern_matches_wildcard() {
+        let patterns = vec!["image/*".to_string()];
+        assert!(mime_pattern_matches("image/png", &patterns));
+        assert!(mime_pattern_matches("image/jpeg", &patterns));
+        assert!(!mime_pattern_matches("application/pdf", &patterns));
+    }
+
+    #[test]
+    fn test_mime_pattern_matches_case_insensitive() {
+        let patterns = vec!["Application/PDF".to_string()];
+        assert!(mime_pattern_matches("application/pdf", &patterns));
+    }
+
+    #[test]
+    fn test_mime_pattern_matches_multiple() {
+        let patterns = vec!["image/*".to_string(), "application/pdf".to_string()];
+        assert!(mime_pattern_matches("image/png", &patterns));
+        assert!(mime_pattern_matches("application/pdf", &patterns));
+        assert!(!mime_pattern_matches("text/plain", &patterns));
     }
 }
