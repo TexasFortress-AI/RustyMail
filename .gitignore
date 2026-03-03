@@ -103,3 +103,4 @@ test_data/*_accounts_connection_status.json
 
 # Sync process lock file (runtime state)
 data/.sync.lock
+data/forensic_archives/*
