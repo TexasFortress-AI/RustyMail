@@ -2678,12 +2678,29 @@ pub async fn execute_mcp_tool_inner(
 
             // Fast path: read attachment_parts from the emails cache table.
             // This avoids expensive IMAP re-fetch and works for all synced emails.
+            // Enriches with storage_path/downloaded_at from attachment_metadata when available.
             if let (Some(folder), Some(uid)) = (folder_param, uid_param) {
                 if let Ok(Some(cached)) = state.cache_service
                     .get_email_by_uid_for_account(folder, uid, &account_id).await
                 {
                     if let Some(ref parts_json) = cached.attachment_parts {
-                        if let Ok(parts) = serde_json::from_str::<serde_json::Value>(parts_json) {
+                        if let Ok(mut parts) = serde_json::from_str::<serde_json::Value>(parts_json) {
+                            // Enrich with attachment_metadata (storage_path, downloaded_at, etc.)
+                            if let Some(ref msg_id) = cached.message_id {
+                                if let Ok(metas) = attachment_storage::get_attachments_metadata(db_pool, &account_id, msg_id).await {
+                                    if let Some(arr) = parts.as_array_mut() {
+                                        for part in arr.iter_mut() {
+                                            let fname = part.get("filename").and_then(|v| v.as_str()).unwrap_or("");
+                                            if let Some(meta) = metas.iter().find(|m| m.filename == fname) {
+                                                part["storage_path"] = serde_json::json!(meta.storage_path);
+                                                part["downloaded_at"] = serde_json::json!(meta.downloaded_at);
+                                                part["content_id"] = serde_json::json!(meta.content_id);
+                                                part["size_bytes"] = serde_json::json!(meta.size_bytes);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                             return serde_json::json!({
                                 "success": true,
                                 "data": {
@@ -2921,10 +2938,12 @@ pub async fn execute_mcp_tool_inner(
                     Ok(result_path) => {
                         serde_json::json!({
                             "success": true,
-                            "message": "ZIP archive created",
-                            "zip_path": result_path.to_string_lossy(),
-                            "message_id": message_id,
-                            "account_id": account_id,
+                            "data": {
+                                "message": "ZIP archive created",
+                                "zip_path": result_path.to_string_lossy(),
+                                "message_id": message_id,
+                                "account_id": account_id,
+                            },
                             "tool": tool_name
                         })
                     }
@@ -2946,11 +2965,13 @@ pub async fn execute_mcp_tool_inner(
 
                         serde_json::json!({
                             "success": true,
-                            "message": "Attachment paths retrieved",
-                            "paths": paths,
-                            "attachments": attachments,
-                            "message_id": message_id,
-                            "account_id": account_id,
+                            "data": {
+                                "message": "Attachment paths retrieved",
+                                "paths": paths,
+                                "attachments": attachments,
+                                "message_id": message_id,
+                                "account_id": account_id,
+                            },
                             "tool": tool_name
                         })
                     }
