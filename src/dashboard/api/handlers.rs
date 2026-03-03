@@ -990,7 +990,7 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
                     },
                     "max_chars_per_synopsis": {
                         "type": "integer",
-                        "description": "Optional. Hard cap on characters per synopsis (default: 300, max: 800)."
+                        "description": "Optional. Hard cap on characters per synopsis (default: 300, max: 1500)."
                     }
                 },
                 "required": ["account_id", "folder", "uids"]
@@ -1403,7 +1403,7 @@ pub async fn list_mcp_tools(
                 "account_id": "REQUIRED. Email address of the account",
                 "folder": "REQUIRED. Folder name (e.g., 'INBOX')",
                 "uids": "REQUIRED. Array of email UIDs (max 50 per call)",
-                "max_chars_per_synopsis": "Optional. Character cap per synopsis (default: 300, max: 800)"
+                "max_chars_per_synopsis": "Optional. Character cap per synopsis (default: 300, max: 1500)"
             }
         })
     ]

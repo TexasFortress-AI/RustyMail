@@ -21,7 +21,7 @@ const MAX_BATCH_SIZE: usize = 50;
 const DEFAULT_MAX_CHARS: usize = 300;
 
 /// Absolute maximum character limit per synopsis.
-const ABSOLUTE_MAX_CHARS: usize = 800;
+const ABSOLUTE_MAX_CHARS: usize = 1500;
 
 /// One email's synopsis result.
 #[derive(Debug, Serialize)]
@@ -68,7 +68,7 @@ impl BatchSynopsisProcessor {
     /// - `account_id`: email address (required)
     /// - `folder`: folder name (required)
     /// - `uids`: list of UIDs to fetch (max 50)
-    /// - `max_chars`: character cap per synopsis (default: 300, max: 800)
+    /// - `max_chars`: character cap per synopsis (default: 300, max: 1500)
     pub async fn process(
         &self,
         account_id: &str,
