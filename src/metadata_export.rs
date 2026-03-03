@@ -116,12 +116,15 @@ impl MetadataExporter {
         }
     }
 
-    /// Query metadata-only columns, reading attachment names from attachment_parts.
+    /// Query metadata-only columns, reading attachment names from attachment_parts
+    /// with fallback to attachment_metadata for pre-backfill rows.
     async fn query_metadata(
         &self,
         folder_id: i64,
         max_rows: usize,
     ) -> Result<Vec<EmailMetadataRow>, Box<dyn std::error::Error>> {
+        // COALESCE: prefer attachment_parts (populated during sync), fall back
+        // to building JSON from attachment_metadata (for pre-migration-014 rows).
         let sql = r#"
             SELECT
                 e.uid,
@@ -131,7 +134,15 @@ impl MetadataExporter {
                 e.cc_addresses,
                 e.date,
                 e.has_attachments,
-                e.attachment_parts,
+                COALESCE(e.attachment_parts, (
+                    SELECT json_group_array(
+                        json_object('filename', am.filename,
+                                    'content_type', COALESCE(am.content_type, 'application/octet-stream'),
+                                    'size', am.size_bytes))
+                    FROM attachment_metadata am
+                    WHERE am.message_id = e.message_id
+                      AND am.account_email = (SELECT account_id FROM folders WHERE id = ?1)
+                )) as attachment_parts,
                 e.flags,
                 e.size,
                 e.message_id,

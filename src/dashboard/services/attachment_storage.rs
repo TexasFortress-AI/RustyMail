@@ -541,6 +541,51 @@ pub async fn search_by_attachment_type(
         }
     }
 
+    // Fallback: also search attachment_metadata for emails where attachment_parts
+    // is still NULL (pre-backfill rows). This ensures results include all emails
+    // regardless of whether they've been re-synced since migration 013.
+    let remaining = limit.saturating_sub(results.len());
+    if remaining > 0 {
+        let am_like_clauses: Vec<String> = mime_patterns.iter()
+            .map(|_| "am.content_type LIKE ?".to_string())
+            .collect();
+        let am_where = am_like_clauses.join(" OR ");
+        let am_sql = format!(
+            r#"SELECT DISTINCT e.uid, f.name AS folder, e.subject,
+                      am.filename, am.content_type, am.size_bytes
+               FROM attachment_metadata am
+               JOIN emails e ON e.message_id = am.message_id
+               JOIN folders f ON e.folder_id = f.id AND f.account_id = am.account_email
+               WHERE am.account_email = ?
+                 AND (e.attachment_parts IS NULL OR e.attachment_parts = '')
+                 AND ({})
+               ORDER BY e.date DESC
+               LIMIT ?"#,
+            am_where
+        );
+        let am_like_values: Vec<String> = mime_patterns.iter()
+            .map(|p| p.replace('*', "%"))
+            .collect();
+        let mut am_query = sqlx::query_as::<_, (i64, String, Option<String>, String, Option<String>, i64)>(&am_sql)
+            .bind(account);
+        for val in &am_like_values {
+            am_query = am_query.bind(val);
+        }
+        am_query = am_query.bind(remaining as i64);
+        if let Ok(am_rows) = am_query.fetch_all(pool).await {
+            for (uid, folder, subject, filename, content_type, size) in am_rows {
+                results.push(AttachmentTypeMatch {
+                    uid,
+                    folder,
+                    subject,
+                    filename,
+                    content_type: content_type.unwrap_or_else(|| "application/octet-stream".to_string()),
+                    size,
+                });
+            }
+        }
+    }
+
     Ok(results)
 }
 

@@ -1791,6 +1791,26 @@ pub async fn execute_mcp_tool_inner(
                                         data["attachment_parts"] = parts;
                                     }
                                 }
+                                // Fallback: if attachment_parts is still null but has_attachments
+                                // is true, query attachment_metadata table directly.
+                                let parts_is_null = data.get("attachment_parts")
+                                    .map(|v| v.is_null()).unwrap_or(true);
+                                if parts_is_null && email.has_attachments {
+                                    if let (Some(pool), Some(ref msg_id)) = (state.cache_service.db_pool.as_ref(), &email.message_id) {
+                                        if let Ok(metas) = crate::dashboard::services::attachment_storage::get_attachments_metadata(pool, &account_email, msg_id).await {
+                                            if !metas.is_empty() {
+                                                let parts: Vec<serde_json::Value> = metas.iter().map(|m| {
+                                                    serde_json::json!({
+                                                        "filename": m.filename,
+                                                        "content_type": m.content_type,
+                                                        "size": m.size_bytes
+                                                    })
+                                                }).collect();
+                                                data["attachment_parts"] = serde_json::json!(parts);
+                                            }
+                                        }
+                                    }
+                                }
                                 serde_json::json!({
                                     "success": true,
                                     "data": data,
