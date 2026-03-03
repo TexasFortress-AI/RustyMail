@@ -35,6 +35,7 @@ pub struct EmailMetadataRow {
 }
 
 /// Result returned after a successful metadata export.
+#[derive(Debug)]
 pub struct MetadataExportResult {
     pub file_path: String,
     pub email_count: usize,
