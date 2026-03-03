@@ -1780,9 +1780,20 @@ pub async fn execute_mcp_tool_inner(
                     if let Some(uid) = uid {
                         match state.cache_service.get_email_by_uid_for_account(folder, uid, &account_email).await {
                             Ok(Some(email)) => {
+                                // Serialize email and parse attachment_parts from
+                                // JSON string into a proper nested array
+                                let mut data = serde_json::to_value(&email)
+                                    .unwrap_or_else(|_| serde_json::json!({}));
+                                if let Some(parts_str) = data.get("attachment_parts")
+                                    .and_then(|v| v.as_str())
+                                {
+                                    if let Ok(parts) = serde_json::from_str::<serde_json::Value>(parts_str) {
+                                        data["attachment_parts"] = parts;
+                                    }
+                                }
                                 serde_json::json!({
                                     "success": true,
-                                    "data": email,
+                                    "data": data,
                                     "tool": tool_name
                                 })
                             }
@@ -2642,14 +2653,38 @@ pub async fn execute_mcp_tool_inner(
                 })
             };
 
-            // Determine message_id - either directly provided or resolve from folder+uid
-            // Also track folder and uid for potential IMAP fetch
+            let folder_param = params.get("folder").and_then(|v| v.as_str());
+            let uid_param = params.get("uid").and_then(|v| v.as_u64()).map(|u| u as u32);
+
+            // Fast path: read attachment_parts from the emails cache table.
+            // This avoids expensive IMAP re-fetch and works for all synced emails.
+            if let (Some(folder), Some(uid)) = (folder_param, uid_param) {
+                if let Ok(Some(cached)) = state.cache_service
+                    .get_email_by_uid_for_account(folder, uid, &account_id).await
+                {
+                    if let Some(ref parts_json) = cached.attachment_parts {
+                        if let Ok(parts) = serde_json::from_str::<serde_json::Value>(parts_json) {
+                            return serde_json::json!({
+                                "success": true,
+                                "data": {
+                                    "account_id": account_id,
+                                    "folder": folder,
+                                    "uid": uid,
+                                    "attachments": parts,
+                                    "count": parts.as_array().map(|a| a.len()).unwrap_or(0),
+                                },
+                                "tool": tool_name
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Slow path: resolve message_id and query attachment_metadata table
             let (message_id, folder_opt, uid_opt) = if let Some(msg_id) = params.get("message_id").and_then(|v| v.as_str()) {
-                // message_id provided directly - no folder/uid available
                 (msg_id.to_string(), None, None)
             } else {
-                // Resolve from folder + uid
-                let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                let folder = match folder_param {
                     Some(f) => f,
                     None => return serde_json::json!({
                         "success": false,
@@ -2658,8 +2693,8 @@ pub async fn execute_mcp_tool_inner(
                     })
                 };
 
-                let uid = match params.get("uid").and_then(|v| v.as_u64()) {
-                    Some(u) => u as u32,
+                let uid = match uid_param {
+                    Some(u) => u,
                     None => return serde_json::json!({
                         "success": false,
                         "error": "uid parameter required when message_id not provided",
@@ -2667,7 +2702,6 @@ pub async fn execute_mcp_tool_inner(
                     })
                 };
 
-                // Fetch email to get message_id
                 let msg_id = match email_service.fetch_emails_for_account(folder, &[uid], &account_id).await {
                     Ok(mut emails) if !emails.is_empty() => {
                         let email = emails.remove(0);
@@ -2704,17 +2738,17 @@ pub async fn execute_mcp_tool_inner(
             if let (true, Some(folder), Some(uid)) = (attachments.is_empty(), folder_opt, uid_opt) {
                 debug!("No attachments in database for message_id {}. Fetching from IMAP...", message_id);
 
-                // Fetch email with attachments from IMAP (this will save them to DB)
                 match email_service.fetch_email_with_attachments(&folder, uid, &account_id).await {
                     Ok((_, attachment_infos)) => {
-                        // Return the newly fetched attachments
                         serde_json::json!({
                             "success": true,
-                            "message_id": message_id,
-                            "account_id": account_id,
-                            "attachments": attachment_infos,
-                            "count": attachment_infos.len(),
-                            "fetched_from_imap": true,
+                            "data": {
+                                "message_id": message_id,
+                                "account_id": account_id,
+                                "attachments": attachment_infos,
+                                "count": attachment_infos.len(),
+                                "fetched_from_imap": true,
+                            },
                             "tool": tool_name
                         })
                     }
@@ -2727,13 +2761,14 @@ pub async fn execute_mcp_tool_inner(
                     }
                 }
             } else {
-                // Return attachments from database cache
                 serde_json::json!({
                     "success": true,
-                    "message_id": message_id,
-                    "account_id": account_id,
-                    "attachments": attachments,
-                    "count": attachments.len(),
+                    "data": {
+                        "message_id": message_id,
+                        "account_id": account_id,
+                        "attachments": attachments,
+                        "count": attachments.len(),
+                    },
                     "tool": tool_name
                 })
             }

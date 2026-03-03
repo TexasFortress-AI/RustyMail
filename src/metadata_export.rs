@@ -116,14 +116,12 @@ impl MetadataExporter {
         }
     }
 
-    /// Query metadata-only columns with LEFT JOIN for attachment names.
+    /// Query metadata-only columns, reading attachment names from attachment_parts.
     async fn query_metadata(
         &self,
         folder_id: i64,
         max_rows: usize,
     ) -> Result<Vec<EmailMetadataRow>, Box<dyn std::error::Error>> {
-        // We use a subquery approach: first get emails, then join attachments.
-        // GROUP_CONCAT aggregates attachment filenames with '||' separator.
         let sql = r#"
             SELECT
                 e.uid,
@@ -133,19 +131,13 @@ impl MetadataExporter {
                 e.cc_addresses,
                 e.date,
                 e.has_attachments,
-                GROUP_CONCAT(am.filename, '||') as attachment_names,
+                e.attachment_parts,
                 e.flags,
                 e.size,
                 e.message_id,
                 NULL as in_reply_to
             FROM emails e
-            LEFT JOIN attachment_metadata am
-                ON e.message_id = am.message_id
-                AND am.account_email = (
-                    SELECT account_id FROM folders WHERE id = ?1
-                )
             WHERE e.folder_id = ?1
-            GROUP BY e.id
             ORDER BY e.date DESC
             LIMIT ?2
         "#;
@@ -158,7 +150,7 @@ impl MetadataExporter {
             Option<String>,               // cc_addresses
             Option<DateTime<Utc>>,        // date
             bool,                         // has_attachments
-            Option<String>,               // attachment_names
+            Option<String>,               // attachment_parts (JSON)
             Option<String>,               // flags
             Option<i64>,                  // size
             Option<String>,               // message_id
@@ -178,7 +170,7 @@ impl MetadataExporter {
                 cc_addresses: r.4,
                 date: r.5,
                 has_attachments: r.6,
-                attachment_names: r.7,
+                attachment_names: extract_filenames_from_parts(&r.7),
                 flags: r.8,
                 size_bytes: r.9,
                 message_id: r.10,
@@ -240,6 +232,24 @@ impl MetadataExporter {
         field_filter: &Option<Vec<&str>>,
     ) -> String {
         render_metadata_csv(rows, field_filter)
+    }
+}
+
+/// Extract filenames from the attachment_parts JSON column into a '||'-separated string.
+/// Returns None when there are no attachments or the JSON is absent/invalid.
+fn extract_filenames_from_parts(parts_json: &Option<String>) -> Option<String> {
+    let json_str = parts_json.as_deref()?;
+    let arr: Vec<serde_json::Value> = serde_json::from_str(json_str).ok()?;
+    if arr.is_empty() {
+        return None;
+    }
+    let names: Vec<&str> = arr.iter()
+        .filter_map(|v| v.get("filename").and_then(|f| f.as_str()))
+        .collect();
+    if names.is_empty() {
+        None
+    } else {
+        Some(names.join("||"))
     }
 }
 
@@ -383,5 +393,31 @@ mod tests {
         row.subject = Some("Hello, World".to_string());
         let csv = render_metadata_csv(&[row], &None);
         assert!(csv.contains("\"Hello, World\""));
+    }
+
+    #[test]
+    fn test_extract_filenames_from_parts_valid() {
+        let json = Some(r#"[{"filename":"doc.pdf","content_type":"application/pdf","size":100},{"filename":"img.png","content_type":"image/png","size":200}]"#.to_string());
+        assert_eq!(
+            extract_filenames_from_parts(&json),
+            Some("doc.pdf||img.png".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_filenames_from_parts_none() {
+        assert_eq!(extract_filenames_from_parts(&None), None);
+    }
+
+    #[test]
+    fn test_extract_filenames_from_parts_empty_array() {
+        let json = Some("[]".to_string());
+        assert_eq!(extract_filenames_from_parts(&json), None);
+    }
+
+    #[test]
+    fn test_extract_filenames_from_parts_invalid_json() {
+        let json = Some("not json".to_string());
+        assert_eq!(extract_filenames_from_parts(&json), None);
     }
 }

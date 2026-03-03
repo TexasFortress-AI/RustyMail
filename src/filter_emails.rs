@@ -309,4 +309,33 @@ mod tests {
 
         assert!(results[0].matched_patterns.is_empty());
     }
+
+    #[test]
+    fn test_matched_patterns_proper_nouns_and_acronyms() {
+        // Acronyms should match
+        let rows = vec![
+            make_row(1, "FW: NCHCR Candidate DR Saima Yasir inquiring about your Ultrasound Tech"),
+            make_row(2, "MLee Healthcare - Candidate Submittal - Yazen Amra"),
+        ];
+        let patterns = vec!["NCHCR".to_string()];
+        let results = compute_matched_patterns(rows, &patterns);
+        assert_eq!(results[0].matched_patterns, vec!["NCHCR"]);
+        assert!(results[1].matched_patterns.is_empty());
+
+        // Proper names should match
+        let rows = vec![make_row(3, "FW: Kentrail Conyers for Laboratory Leadership")];
+        let patterns = vec!["Kentrail".to_string()];
+        let results = compute_matched_patterns(rows, &patterns);
+        assert_eq!(results[0].matched_patterns, vec!["Kentrail"]);
+
+        // Both a generic term and a proper noun on the same email
+        let rows = vec![
+            make_row(1, "FW: NCHCR Candidate DR Saima Yasir"),
+        ];
+        let patterns = vec!["candidate".to_string(), "NCHCR".to_string()];
+        let results = compute_matched_patterns(rows, &patterns);
+        assert_eq!(results[0].matched_patterns.len(), 2);
+        assert!(results[0].matched_patterns.contains(&"candidate".to_string()));
+        assert!(results[0].matched_patterns.contains(&"NCHCR".to_string()));
+    }
 }
