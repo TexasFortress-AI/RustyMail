@@ -300,7 +300,7 @@ async fn test_mcp_tools_list() {
     assert!(body["result"]["tools"].is_array(), "Result should contain tools array");
 
     let tools = body["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 36, "Should have exactly 36 tools");
+    assert_eq!(tools.len(), 38, "Should have exactly 38 tools");
 
     // Verify each tool has required fields
     let expected_tool_names = vec![
@@ -317,7 +317,8 @@ async fn test_mcp_tools_list() {
         "sync_emails", "search_by_attachment_type", "list_emails_by_flag",
         "get_email_synopsis", "get_email_thread",
         "search_by_domain", "get_address_report",
-        "get_attachment_content", "export_evidence", "export_folder_metadata"
+        "get_attachment_content", "export_evidence", "export_folder_metadata",
+        "filter_emails_by_subject", "batch_get_synopsis"
     ];
 
     for tool in tools {
@@ -788,7 +789,7 @@ async fn test_mcp_dashboard_api_consistency() {
     // Verify same number of tools
     assert_eq!(mcp_tools.len(), dashboard_tools.len(),
                "MCP and Dashboard should expose same number of tools");
-    assert_eq!(mcp_tools.len(), 36, "Should have 36 tools in both interfaces");
+    assert_eq!(mcp_tools.len(), 38, "Should have 38 tools in both interfaces");
 
     // Verify all tool names match
     let mut mcp_tool_names: Vec<String> = mcp_tools.iter()

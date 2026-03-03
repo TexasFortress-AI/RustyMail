@@ -24,6 +24,8 @@ pub mod utils;
 pub mod forensic;
 pub mod evidence_export;
 pub mod metadata_export;
+pub mod filter_emails;
+pub mod batch_synopsis;
 
 // Test modules
 #[cfg(test)]

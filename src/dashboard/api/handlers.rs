@@ -920,6 +920,81 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
                 },
                 "required": ["account_id", "folder"]
             }
+        }),
+        serde_json::json!({
+            "name": "filter_emails_by_subject",
+            "description": "Filter emails by subject line patterns. Returns metadata only (no body content) — ideal for fast triage of large folders. Matches are case-insensitive substrings. Use match_mode 'any' (default) to match emails containing ANY pattern, or 'all' to require ALL patterns.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "REQUIRED. Folder name (e.g., 'INBOX', 'Sent Items')"
+                    },
+                    "subject_patterns": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "REQUIRED. Keywords or substrings to match against subject lines. Case-insensitive."
+                    },
+                    "match_mode": {
+                        "type": "string",
+                        "enum": ["any", "all"],
+                        "description": "Optional. 'any' (default) matches emails with ANY pattern; 'all' requires ALL patterns."
+                    },
+                    "sender_filter": {
+                        "type": "string",
+                        "description": "Optional. Restrict results to a specific sender address or domain."
+                    },
+                    "recipient_filter": {
+                        "type": "string",
+                        "description": "Optional. Restrict results to emails sent to a specific address or domain."
+                    },
+                    "date_after": {
+                        "type": "string",
+                        "description": "Optional. ISO 8601 date. Only return emails on or after this date."
+                    },
+                    "date_before": {
+                        "type": "string",
+                        "description": "Optional. ISO 8601 date. Only return emails on or before this date."
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Optional. Cap on results returned (default: 500)."
+                    }
+                },
+                "required": ["account_id", "folder", "subject_patterns"]
+            }
+        }),
+        serde_json::json!({
+            "name": "batch_get_synopsis",
+            "description": "Get compact one-paragraph synopses for multiple emails in a single call. Accepts a list of UIDs (max 50) and returns metadata + synopsis for each. Dramatically reduces round-trips compared to calling get_email_synopsis per-UID.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "REQUIRED. Folder name (e.g., 'INBOX', 'Sent Items')"
+                    },
+                    "uids": {
+                        "type": "array",
+                        "items": { "type": "integer" },
+                        "description": "REQUIRED. List of email UIDs to retrieve synopses for. Maximum 50 per call."
+                    },
+                    "max_chars_per_synopsis": {
+                        "type": "integer",
+                        "description": "Optional. Hard cap on characters per synopsis (default: 300, max: 800)."
+                    }
+                },
+                "required": ["account_id", "folder", "uids"]
+            }
         })
     ]
 }
@@ -1304,6 +1379,31 @@ pub async fn list_mcp_tools(
                 "format": "Optional. 'json' (default) or 'csv'",
                 "fields": "Optional. Comma-separated field names to include (e.g., 'uid,subject,date')",
                 "limit": "Optional. Max rows to export (default: 10000)"
+            }
+        }),
+        serde_json::json!({
+            "name": "filter_emails_by_subject",
+            "description": "Filter emails by subject line patterns. Returns metadata only (no body content).",
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account",
+                "folder": "REQUIRED. Folder name (e.g., 'INBOX')",
+                "subject_patterns": "REQUIRED. Array of keywords to match against subjects (case-insensitive)",
+                "match_mode": "Optional. 'any' (default) or 'all'",
+                "sender_filter": "Optional. Restrict to sender address/domain",
+                "recipient_filter": "Optional. Restrict to recipient address/domain",
+                "date_after": "Optional. ISO 8601 date lower bound",
+                "date_before": "Optional. ISO 8601 date upper bound",
+                "max_results": "Optional. Max results (default: 500)"
+            }
+        }),
+        serde_json::json!({
+            "name": "batch_get_synopsis",
+            "description": "Get compact synopses for multiple emails in a single call (max 50 UIDs).",
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account",
+                "folder": "REQUIRED. Folder name (e.g., 'INBOX')",
+                "uids": "REQUIRED. Array of email UIDs (max 50 per call)",
+                "max_chars_per_synopsis": "Optional. Character cap per synopsis (default: 300, max: 800)"
             }
         })
     ]
@@ -3488,6 +3588,140 @@ pub async fn execute_mcp_tool_inner(
                         Err(e) => serde_json::json!({
                             "success": false,
                             "error": format!("Metadata export failed: {}", e),
+                            "tool": tool_name
+                        })
+                    }
+                }
+                None => serde_json::json!({
+                    "success": false,
+                    "error": "Database not available",
+                    "tool": tool_name
+                })
+            }
+        }
+        "filter_emails_by_subject" => {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                Some(f) => f.to_string(),
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "folder parameter is required",
+                    "tool": tool_name
+                })
+            };
+
+            let patterns: Vec<String> = match params.get("subject_patterns").and_then(|v| v.as_array()) {
+                Some(arr) => arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect(),
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "subject_patterns parameter is required (array of strings)",
+                    "tool": tool_name
+                })
+            };
+
+            let match_mode = params.get("match_mode").and_then(|v| v.as_str());
+            let sender_filter = params.get("sender_filter").and_then(|v| v.as_str());
+            let recipient_filter = params.get("recipient_filter").and_then(|v| v.as_str());
+            let date_after = params.get("date_after").and_then(|v| v.as_str());
+            let date_before = params.get("date_before").and_then(|v| v.as_str());
+            let max_results = params.get("max_results").and_then(|v| v.as_u64()).map(|v| v as usize);
+
+            match state.cache_service.db_pool.as_ref() {
+                Some(pool) => {
+                    let filter = crate::filter_emails::SubjectFilter::new(pool.clone());
+                    match filter.filter(
+                        &account_id, &folder, &patterns, match_mode,
+                        sender_filter, recipient_filter, date_after, date_before, max_results,
+                    ).await {
+                        Ok(result) => serde_json::json!({
+                            "success": true,
+                            "data": {
+                                "account": result.account,
+                                "folder": result.folder,
+                                "patterns_used": result.patterns_used,
+                                "match_mode": result.match_mode,
+                                "total_matched": result.total_matched,
+                                "results": result.results,
+                            },
+                            "tool": tool_name
+                        }),
+                        Err(e) => serde_json::json!({
+                            "success": false,
+                            "error": format!("Subject filter failed: {}", e),
+                            "tool": tool_name
+                        })
+                    }
+                }
+                None => serde_json::json!({
+                    "success": false,
+                    "error": "Database not available",
+                    "tool": tool_name
+                })
+            }
+        }
+        "batch_get_synopsis" => {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                Some(f) => f.to_string(),
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "folder parameter is required",
+                    "tool": tool_name
+                })
+            };
+
+            let uids: Vec<i64> = match params.get("uids").and_then(|v| v.as_array()) {
+                Some(arr) => arr.iter()
+                    .filter_map(|v| v.as_i64())
+                    .collect(),
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "uids parameter is required (array of integers)",
+                    "tool": tool_name
+                })
+            };
+
+            let max_chars = params.get("max_chars_per_synopsis")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize);
+
+            match state.cache_service.db_pool.as_ref() {
+                Some(pool) => {
+                    let processor = crate::batch_synopsis::BatchSynopsisProcessor::new(pool.clone());
+                    match processor.process(&account_id, &folder, &uids, max_chars).await {
+                        Ok(result) => serde_json::json!({
+                            "success": true,
+                            "data": {
+                                "account": result.account,
+                                "folder": result.folder,
+                                "requested": result.requested,
+                                "returned": result.returned,
+                                "synopses": result.synopses,
+                                "errors": result.errors,
+                            },
+                            "tool": tool_name
+                        }),
+                        Err(e) => serde_json::json!({
+                            "success": false,
+                            "error": format!("Batch synopsis failed: {}", e),
                             "tool": tool_name
                         })
                     }

@@ -65,7 +65,7 @@ fn test_legacy_registry_no_duplicate_names() {
 #[test]
 fn test_low_level_tools_jsonrpc_format() {
     let tools = rustymail::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
-    assert_eq!(tools.len(), 36, "Should have 36 low-level tools, found {}", tools.len());
+    assert_eq!(tools.len(), 38, "Should have 38 low-level tools, found {}", tools.len());
 }
 
 #[test]
