@@ -255,7 +255,7 @@ fn generate_synopsis(body_text: &Option<String>) -> String {
 
 /// RFC 4180 CSV field escaping: wrap in quotes if the field contains commas,
 /// quotes, or newlines. Double any internal quotes.
-fn csv_escape(field: &str) -> String {
+pub(crate) fn csv_escape(field: &str) -> String {
     if field.contains(',') || field.contains('"') || field.contains('\n') {
         let escaped = field.replace('"', "\"\"");
         format!("\"{}\"", escaped)
@@ -267,7 +267,7 @@ fn csv_escape(field: &str) -> String {
 /// Sanitize a string for safe use as a filename component.
 /// Keeps alphanumeric, hyphens, and underscores; replaces everything else.
 /// Truncates to 50 characters.
-fn sanitize_filename(input: &str) -> String {
+pub(crate) fn sanitize_filename(input: &str) -> String {
     let sanitized: String = input.chars().map(|c| {
         if c.is_alphanumeric() || c == '-' || c == '_' {
             c

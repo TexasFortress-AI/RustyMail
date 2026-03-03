@@ -23,6 +23,7 @@ pub mod connection_pool;
 pub mod utils;
 pub mod forensic;
 pub mod evidence_export;
+pub mod metadata_export;
 
 // Test modules
 #[cfg(test)]

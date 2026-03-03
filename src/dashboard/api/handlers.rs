@@ -890,6 +890,36 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
                 },
                 "required": ["account_id"]
             }
+        }),
+        serde_json::json!({
+            "name": "export_folder_metadata",
+            "description": "Export email metadata (no body content) from a folder to a file on disk. Returns only the file path, keeping the context window clean for large folders (1000+ emails). Exports uid, subject, from, to, cc, date, flags, size, attachments, message_id.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "account_id": {
+                        "type": "string",
+                        "description": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                    },
+                    "folder": {
+                        "type": "string",
+                        "description": "REQUIRED. Folder name (e.g., 'INBOX', 'Sent Items')"
+                    },
+                    "format": {
+                        "type": "string",
+                        "description": "Optional. Output format: 'json' (default) or 'csv'."
+                    },
+                    "fields": {
+                        "type": "string",
+                        "description": "Optional. Comma-separated field names to include (e.g., 'uid,subject,date'). All fields if omitted."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Optional. Maximum rows to export (default: 10000)."
+                    }
+                },
+                "required": ["account_id", "folder"]
+            }
         })
     ]
 }
@@ -1263,6 +1293,17 @@ pub async fn list_mcp_tools(
                 "folder": "Optional. Folder name to limit export. If omitted, exports all folders.",
                 "search_query": "Optional. Search string to filter emails.",
                 "output_path": "Optional. Override output directory (default: EVIDENCE_EXPORT_DIR env or data/evidence_exports)."
+            }
+        }),
+        serde_json::json!({
+            "name": "export_folder_metadata",
+            "description": "Export email metadata (no body content) to a file on disk. Returns file path only — ideal for large folders.",
+            "parameters": {
+                "account_id": "REQUIRED. Email address of the account",
+                "folder": "REQUIRED. Folder name (e.g., 'INBOX')",
+                "format": "Optional. 'json' (default) or 'csv'",
+                "fields": "Optional. Comma-separated field names to include (e.g., 'uid,subject,date')",
+                "limit": "Optional. Max rows to export (default: 10000)"
             }
         })
     ]
@@ -3406,6 +3447,56 @@ pub async fn execute_mcp_tool_inner(
                         })
                     }
                 }
+            }
+        }
+        "export_folder_metadata" => {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => return serde_json::json!({
+                    "success": false,
+                    "error": format!("Failed to determine account: {}", e),
+                    "tool": tool_name
+                })
+            };
+
+            let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                Some(f) => f.to_string(),
+                None => return serde_json::json!({
+                    "success": false,
+                    "error": "folder parameter is required",
+                    "tool": tool_name
+                })
+            };
+
+            let format = params.get("format").and_then(|v| v.as_str());
+            let fields = params.get("fields").and_then(|v| v.as_str());
+            let limit = params.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize);
+
+            match state.cache_service.db_pool.as_ref() {
+                Some(pool) => {
+                    let exporter = crate::metadata_export::MetadataExporter::new(pool.clone());
+                    match exporter.export(&account_id, &folder, format, fields, limit).await {
+                        Ok(result) => serde_json::json!({
+                            "success": true,
+                            "data": {
+                                "file_path": result.file_path,
+                                "email_count": result.email_count,
+                                "format": result.format,
+                            },
+                            "tool": tool_name
+                        }),
+                        Err(e) => serde_json::json!({
+                            "success": false,
+                            "error": format!("Metadata export failed: {}", e),
+                            "tool": tool_name
+                        })
+                    }
+                }
+                None => serde_json::json!({
+                    "success": false,
+                    "error": "Database not available",
+                    "tool": tool_name
+                })
             }
         }
         "export_evidence" => {
