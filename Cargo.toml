@@ -78,7 +78,7 @@ tokio-stream = "0.1" # Needed for ReceiverStream
 urlencoding = "2.1"
 
 # Added base64 dependency
-base64 = "0.21"
+base64 = "0.22"
 
 # High-concurrency data structures
 dashmap = "5.5"
