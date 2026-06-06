@@ -683,6 +683,8 @@ impl Email {
             .map(|f| format!("{:?}", f))
             .filter(|f| seen_flags.insert(f.clone()))
             .collect();
+        let body = fetch.body().map(|b| b.to_vec());
+        let parsed_message = body.as_ref().and_then(|body_bytes| mail_parser::Message::parse(body_bytes));
         let envelope = fetch.envelope().map(|env| Envelope {
             date: env.date.as_ref().map(|d| Email::decode_mime_encoded_text(d)),
             subject: env.subject.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
@@ -694,14 +696,11 @@ impl Email {
             bcc: env.bcc.as_ref().unwrap_or(&vec![]).iter().map(Self::convert_address).collect(),
             in_reply_to: env.in_reply_to.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
             message_id: env.message_id.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
-        });
+        }).or_else(|| parsed_message.as_ref().map(Self::envelope_from_message));
 
         let internal_date = fetch.internal_date()
             .and_then(|d| DateTime::parse_from_rfc2822(&d.to_string()).ok())
             .map(|dt| dt.with_timezone(&Utc));
-
-        // Get raw body content
-        let body = fetch.body().map(|b| b.to_vec());
 
         // Parse MIME content if body is available
         let (mime_parts, text_body, html_body, attachments) = if let Some(body_bytes) = &body {
@@ -729,6 +728,46 @@ impl Email {
             // Note: async-imap Address has route field but our Address doesn't
             mailbox: addr.mailbox.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
             host: addr.host.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
+        }
+    }
+
+    fn envelope_from_message(message: &mail_parser::Message<'_>) -> Envelope {
+        Envelope {
+            date: message.date().map(|date| date.to_rfc3339()),
+            subject: message.subject().map(|subject| subject.to_string()),
+            from: Self::convert_header_addresses(message.from()),
+            to: Self::convert_header_addresses(message.to()),
+            cc: Self::convert_header_addresses(message.cc()),
+            bcc: Vec::new(),
+            reply_to: Self::convert_header_addresses(message.reply_to()),
+            in_reply_to: message.in_reply_to().as_text_ref().map(|value| value.to_string()),
+            message_id: message.message_id().map(|value| value.to_string()),
+        }
+    }
+
+    fn convert_header_addresses(value: &mail_parser::HeaderValue<'_>) -> Vec<crate::imap::types::Address> {
+        match value {
+            mail_parser::HeaderValue::Address(addr) => vec![Self::convert_mail_parser_address(addr)],
+            mail_parser::HeaderValue::AddressList(addresses) => addresses.iter().map(Self::convert_mail_parser_address).collect(),
+            mail_parser::HeaderValue::Group(group) => group.addresses.iter().map(Self::convert_mail_parser_address).collect(),
+            mail_parser::HeaderValue::GroupList(groups) => groups.iter()
+                .flat_map(|group| group.addresses.iter())
+                .map(Self::convert_mail_parser_address)
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    fn convert_mail_parser_address(addr: &mail_parser::Addr<'_>) -> crate::imap::types::Address {
+        let (mailbox, host) = addr.address.as_deref()
+            .and_then(|address| address.rsplit_once('@'))
+            .map(|(mailbox, host)| (Some(mailbox.to_string()), Some(host.to_string())))
+            .unwrap_or_else(|| (addr.address.as_ref().map(|address| address.to_string()), None));
+
+        crate::imap::types::Address {
+            name: addr.name.as_ref().map(|name| name.to_string()),
+            mailbox,
+            host,
         }
     }
 

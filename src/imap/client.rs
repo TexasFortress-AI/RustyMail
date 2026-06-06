@@ -18,7 +18,7 @@ use tokio_native_tls::TlsConnector as TokioTlsConnector;
 // use async_trait::async_trait; // Unused
 // use futures_util::stream::StreamExt; // Not directly used here, but used by async_imap::Client::connect
 // use chrono::{DateTime, Utc}; // Unused
-use log::{info}; // Keep used logs
+use log::{info, warn}; // Keep used logs
 
 // TLS and crypto
 // use rustls::{ClientConfig, RootCertStore}; // Unused
@@ -244,7 +244,11 @@ pub async fn connect(
         .map_err(|e| ImapError::Connection(format!("Failed to convert back to tokio stream: {}", e)))?; 
 
     // Setup TLS connector
-    let tls_builder = TlsConnector::builder();
+    let mut tls_builder = TlsConnector::builder();
+    if allow_invalid_mail_certs() {
+        warn!("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS is enabled; IMAP certificate validation is disabled");
+        tls_builder.danger_accept_invalid_certs(true);
+    }
     let native_tls_connector = tls_builder.build()
         .map_err(|e| ImapError::Tls(format!("Failed to build TLS connector: {}", e)))?;
     let tls_connector = TokioTlsConnector::from(native_tls_connector);
@@ -318,7 +322,11 @@ pub async fn connect_with_oauth(
     let tcp_stream = TokioTcpStream::from_std(std_stream)
         .map_err(|e| ImapError::Connection(format!("Failed to convert back: {}", e)))?;
 
-    let tls_builder = TlsConnector::builder();
+    let mut tls_builder = TlsConnector::builder();
+    if allow_invalid_mail_certs() {
+        warn!("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS is enabled; IMAP certificate validation is disabled");
+        tls_builder.danger_accept_invalid_certs(true);
+    }
     let native_tls_connector = tls_builder.build()
         .map_err(|e| ImapError::Tls(format!("Failed to build TLS connector: {}", e)))?;
     let tls_connector = TokioTlsConnector::from(native_tls_connector);
@@ -350,3 +358,8 @@ pub async fn connect_with_oauth(
     Ok(ImapClient::new(wrapped_session))
 }
 
+pub(crate) fn allow_invalid_mail_certs() -> bool {
+    std::env::var("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS")
+        .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
+}

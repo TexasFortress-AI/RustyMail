@@ -51,6 +51,24 @@ export function AccountFormDialog({
   } | null>(null);
   const [autoDiscoveryCompleted, setAutoDiscoveryCompleted] = useState(false);
 
+  const applyRecommendedPorts = (emailAddress: string) => {
+    const host = emailAddress.endsWith('@artistica.work') ? 'mail.artistica.work' : '';
+    const username = emailAddress === 'chris@artistica.work' ? 'chrisodom' : emailAddress;
+
+    setFormData((prev) => ({
+      ...prev,
+      email_address: emailAddress,
+      imap_host: prev.imap_host || host,
+      imap_port: prev.imap_port || 993,
+      imap_user: prev.imap_user || username,
+      smtp_host: prev.smtp_host || host,
+      smtp_port: prev.smtp_port || 465,
+      smtp_user: prev.smtp_user || username,
+      smtp_use_tls: true,
+      smtp_use_starttls: false,
+    }));
+  };
+
   const [formData, setFormData] = useState<AccountFormData>({
     account_name: '',
     email_address: '',
@@ -348,9 +366,7 @@ export function AccountFormDialog({
                     id="email_address"
                     type="email"
                     value={formData.email_address}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email_address: e.target.value })
-                    }
+                    onChange={(e) => applyRecommendedPorts(e.target.value)}
                     placeholder="you@example.com"
                     required
                     disabled={!!account}
@@ -549,7 +565,7 @@ export function AccountFormDialog({
                     type="number"
                     value={formData.imap_port}
                     onChange={(e) =>
-                      setFormData({ ...formData, imap_port: parseInt(e.target.value) })
+                      setFormData({ ...formData, imap_port: parseInt(e.target.value) || 993 })
                     }
                     required
                   />
@@ -593,6 +609,9 @@ export function AccountFormDialog({
                 />
                 <Label htmlFor="imap_use_tls">Use TLS/SSL</Label>
               </div>
+              <p className="text-xs text-muted-foreground">
+                IMAP STARTTLS on port 143 is not supported by RustyMail yet. Use port 993 with TLS/SSL for servers that offer implicit TLS.
+              </p>
             </TabsContent>
 
             <TabsContent value="smtp" className="space-y-4">

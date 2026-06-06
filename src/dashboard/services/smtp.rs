@@ -5,7 +5,10 @@
 
 use lettre::{
     message::{header::ContentType, Mailbox, MultiPart, SinglePart},
-    transport::smtp::authentication::Credentials,
+    transport::smtp::{
+        authentication::Credentials,
+        client::{Tls, TlsParameters},
+    },
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
 };
 use lettre::message::header;
@@ -23,6 +26,26 @@ use crate::prelude::CloneableImapSessionFactory;
 // Folder name constants (can be configured via environment or config file in the future)
 const OUTBOX_FOLDER: &str = "INBOX.Outbox";
 const SENT_FOLDER: &str = "INBOX.Sent";
+
+fn smtp_transport_builder(
+    host: &str,
+    use_starttls: bool,
+) -> Result<lettre::transport::smtp::AsyncSmtpTransportBuilder, SmtpError> {
+    let tls = TlsParameters::builder(host.to_string())
+        .dangerous_accept_invalid_certs(crate::imap::client::allow_invalid_mail_certs())
+        .build()
+        .map_err(|e| SmtpError::ConfigError(format!("SMTP TLS configuration error: {}", e)))?;
+
+    if crate::imap::client::allow_invalid_mail_certs() {
+        log::warn!("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS is enabled; SMTP certificate validation is disabled");
+    }
+
+    if use_starttls {
+        Ok(AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(host).tls(Tls::Required(tls)))
+    } else {
+        Ok(AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(host).tls(Tls::Wrapper(tls)))
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum SmtpError {
@@ -180,19 +203,10 @@ impl SmtpService {
         // Build SMTP transport
         let creds = Credentials::new(smtp_user.clone(), smtp_pass.clone());
 
-        let mailer = if use_starttls {
-            AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(smtp_host)
-                .map_err(|e| SmtpError::ConfigError(format!("SMTP relay error: {}", e)))?
-                .port(smtp_port)
-                .credentials(creds)
-                .build()
-        } else {
-            AsyncSmtpTransport::<Tokio1Executor>::relay(smtp_host)
-                .map_err(|e| SmtpError::ConfigError(format!("SMTP relay error: {}", e)))?
-                .port(smtp_port)
-                .credentials(creds)
-                .build()
-        };
+        let mailer = smtp_transport_builder(smtp_host, use_starttls)?
+            .port(smtp_port)
+            .credentials(creds)
+            .build();
 
         // Convert email to RFC822 format for IMAP operations
         let email_bytes = email.formatted();
@@ -691,19 +705,10 @@ impl SmtpService {
         // Build SMTP transport
         let creds = Credentials::new(smtp_user.clone(), smtp_pass.clone());
 
-        let mailer: AsyncSmtpTransport<Tokio1Executor> = if use_starttls {
-            AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(smtp_host)
-                .map_err(|e| SmtpError::ConfigError(format!("SMTP relay error: {}", e)))?
-                .port(smtp_port)
-                .credentials(creds)
-                .build()
-        } else {
-            AsyncSmtpTransport::<Tokio1Executor>::relay(smtp_host)
-                .map_err(|e| SmtpError::ConfigError(format!("SMTP relay error: {}", e)))?
-                .port(smtp_port)
-                .credentials(creds)
-                .build()
-        };
+        let mailer: AsyncSmtpTransport<Tokio1Executor> = smtp_transport_builder(smtp_host, use_starttls)?
+            .port(smtp_port)
+            .credentials(creds)
+            .build();
 
         // Send via SMTP (no IMAP operations)
         log::info!("Sending email via SMTP only (no IMAP operations)...");
@@ -741,19 +746,10 @@ impl SmtpService {
         // Build SMTP transport
         let creds = Credentials::new(smtp_user.clone(), smtp_pass.clone());
 
-        let mailer: AsyncSmtpTransport<Tokio1Executor> = if use_starttls {
-            AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(smtp_host)
-                .map_err(|e| SmtpError::ConfigError(format!("SMTP relay error: {}", e)))?
-                .port(smtp_port)
-                .credentials(creds)
-                .build()
-        } else {
-            AsyncSmtpTransport::<Tokio1Executor>::relay(smtp_host)
-                .map_err(|e| SmtpError::ConfigError(format!("SMTP relay error: {}", e)))?
-                .port(smtp_port)
-                .credentials(creds)
-                .build()
-        };
+        let mailer: AsyncSmtpTransport<Tokio1Executor> = smtp_transport_builder(smtp_host, use_starttls)?
+            .port(smtp_port)
+            .credentials(creds)
+            .build();
 
         // Test connection
         mailer.test_connection().await?;

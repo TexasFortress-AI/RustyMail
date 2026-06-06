@@ -102,7 +102,11 @@ impl AsyncImapSessionWrapper {
         password: Arc<String>,
         append_timeout: Duration,
     ) -> Result<Self, ImapError> {
-        let tls_builder = native_tls::TlsConnector::builder();
+        let mut tls_builder = native_tls::TlsConnector::builder();
+        if crate::imap::client::allow_invalid_mail_certs() {
+            warn!("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS is enabled; IMAP certificate validation is disabled");
+            tls_builder.danger_accept_invalid_certs(true);
+        }
         let tls = tls_builder.build().map_err(|e| ImapError::Tls(e.to_string()))?;
         let tls_connector = TlsConnector::from(tls);
 
@@ -140,7 +144,11 @@ impl AsyncImapSessionWrapper {
     ) -> Result<Self, ImapError> {
         use crate::imap::xoauth2::XOAuth2Authenticator;
 
-        let tls_builder = native_tls::TlsConnector::builder();
+        let mut tls_builder = native_tls::TlsConnector::builder();
+        if crate::imap::client::allow_invalid_mail_certs() {
+            warn!("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS is enabled; IMAP certificate validation is disabled");
+            tls_builder.danger_accept_invalid_certs(true);
+        }
         let tls = tls_builder.build().map_err(|e| ImapError::Tls(e.to_string()))?;
         let tls_connector = TlsConnector::from(tls);
 
@@ -280,16 +288,43 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
     }
 
     async fn fetch_emails(&self, uids: &[u32]) -> Result<Vec<Email>, ImapError> {
-        let mut session_guard = self.session.lock().await;
-        let sequence = uids.iter().map(|uid| uid.to_string()).collect::<Vec<_>>().join(",");
-        debug!("Fetching {} UIDs: {:?}", uids.len(), uids);
-        let mut fetch_stream = session_guard.uid_fetch(&sequence, "(FLAGS ENVELOPE INTERNALDATE BODY.PEEK[])").await.map_err(ImapError::from)?;
-        let mut emails = Vec::new();
-        while let Some(fetch_result) = fetch_stream.try_next().await.map_err(ImapError::from)? {
-            let email = Email::from_fetch(&fetch_result)?;
-            debug!("Fetched email UID: {}", email.uid);
-            emails.push(email);
+        async fn fetch_sequence(
+            session: &Arc<TokioMutex<TlsImapSession>>,
+            uids: &[u32],
+        ) -> Result<Vec<Email>, ImapError> {
+            let mut session_guard = session.lock().await;
+            let sequence = uids.iter().map(|uid| uid.to_string()).collect::<Vec<_>>().join(",");
+            let mut fetch_stream = session_guard.uid_fetch(&sequence, "(UID INTERNALDATE BODY.PEEK[])").await.map_err(ImapError::from)?;
+            let mut emails = Vec::new();
+            while let Some(fetch_result) = fetch_stream.try_next().await.map_err(ImapError::from)? {
+                let email = Email::from_fetch(&fetch_result)?;
+                debug!("Fetched email UID: {}", email.uid);
+                emails.push(email);
+            }
+            Ok(emails)
         }
+
+        debug!("Fetching {} UIDs: {:?}", uids.len(), uids);
+        // Some IMAP servers return non-standard FLAGS or raw UTF-8 inside
+        // ENVELOPE fields that async-imap's parser rejects. Keep full-message
+        // sync independent from those parsed fields and derive headers from
+        // the RFC822 body instead.
+        let mut emails = match fetch_sequence(&self.session, uids).await {
+            Ok(emails) => emails,
+            Err(err) if uids.len() > 1 => {
+                warn!("Batch fetch failed for {} UIDs, retrying messages individually: {}", uids.len(), err);
+                let mut retry_emails = Vec::new();
+                for uid in uids {
+                    match fetch_sequence(&self.session, &[*uid]).await {
+                        Ok(mut fetched) => retry_emails.append(&mut fetched),
+                        Err(retry_err) => warn!("Skipping UID {} after individual fetch failed: {}", uid, retry_err),
+                    }
+                }
+                retry_emails
+            }
+            Err(err) => return Err(err),
+        };
+        emails.sort_by_key(|email| email.uid);
         debug!("Fetch complete: requested {} UIDs, received {} emails", uids.len(), emails.len());
         if emails.len() != uids.len() {
             warn!("UID mismatch: requested {}, received {}. Missing UIDs: {:?}",

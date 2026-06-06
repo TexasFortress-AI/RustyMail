@@ -91,7 +91,7 @@ export const accountsApi = {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: response.statusText }));
-      throw new Error(error.message || 'Failed to create account');
+      throw new Error(error.message || error.error || 'Failed to create account');
     }
 
     return response.json();
@@ -107,7 +107,7 @@ export const accountsApi = {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: response.statusText }));
-      throw new Error(error.message || 'Failed to update account');
+      throw new Error(error.message || error.error || 'Failed to update account');
     }
   },
 

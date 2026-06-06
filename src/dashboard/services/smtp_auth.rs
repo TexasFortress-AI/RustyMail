@@ -10,13 +10,36 @@
 //! `oauth_provider` field.
 
 use lettre::{
-    transport::smtp::authentication::{Credentials, Mechanism},
+    transport::smtp::{
+        authentication::{Credentials, Mechanism},
+        client::{Tls, TlsParameters},
+    },
     AsyncSmtpTransport, Tokio1Executor,
 };
-use log::info;
+use log::{info, warn};
 
 use super::account::Account;
 use super::smtp::SmtpError;
+
+fn smtp_transport_builder(
+    host: &str,
+    use_starttls: bool,
+) -> Result<lettre::transport::smtp::AsyncSmtpTransportBuilder, SmtpError> {
+    let tls = TlsParameters::builder(host.to_string())
+        .dangerous_accept_invalid_certs(crate::imap::client::allow_invalid_mail_certs())
+        .build()
+        .map_err(|e| SmtpError::ConfigError(format!("SMTP TLS configuration error: {}", e)))?;
+
+    if crate::imap::client::allow_invalid_mail_certs() {
+        warn!("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS is enabled; SMTP certificate validation is disabled");
+    }
+
+    if use_starttls {
+        Ok(AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(host).tls(Tls::Required(tls)))
+    } else {
+        Ok(AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(host).tls(Tls::Wrapper(tls)))
+    }
+}
 
 /// Build an async SMTP transport for the given account.
 ///
@@ -45,21 +68,11 @@ pub fn build_smtp_transport(
 
         info!("Building SMTP transport with XOAUTH2 for {}", account.email_address);
 
-        let mailer = if use_starttls {
-            AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(smtp_host)
-                .map_err(|e| SmtpError::ConfigError(format!("SMTP relay error: {}", e)))?
-                .port(smtp_port)
-                .credentials(creds)
-                .authentication(vec![Mechanism::Xoauth2])
-                .build()
-        } else {
-            AsyncSmtpTransport::<Tokio1Executor>::relay(smtp_host)
-                .map_err(|e| SmtpError::ConfigError(format!("SMTP relay error: {}", e)))?
-                .port(smtp_port)
-                .credentials(creds)
-                .authentication(vec![Mechanism::Xoauth2])
-                .build()
-        };
+        let mailer = smtp_transport_builder(smtp_host, use_starttls)?
+            .port(smtp_port)
+            .credentials(creds)
+            .authentication(vec![Mechanism::Xoauth2])
+            .build();
 
         Ok(mailer)
     } else {
@@ -74,19 +87,10 @@ pub fn build_smtp_transport(
 
         let creds = Credentials::new(smtp_user.clone(), smtp_pass.clone());
 
-        let mailer = if use_starttls {
-            AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(smtp_host)
-                .map_err(|e| SmtpError::ConfigError(format!("SMTP relay error: {}", e)))?
-                .port(smtp_port)
-                .credentials(creds)
-                .build()
-        } else {
-            AsyncSmtpTransport::<Tokio1Executor>::relay(smtp_host)
-                .map_err(|e| SmtpError::ConfigError(format!("SMTP relay error: {}", e)))?
-                .port(smtp_port)
-                .credentials(creds)
-                .build()
-        };
+        let mailer = smtp_transport_builder(smtp_host, use_starttls)?
+            .port(smtp_port)
+            .credentials(creds)
+            .build();
 
         Ok(mailer)
     }
