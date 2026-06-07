@@ -157,6 +157,7 @@ export interface Account {
   imap_port: number;
   imap_user: string;
   imap_use_tls: boolean;
+  imap_use_starttls: boolean;
   smtp_host?: string;
   smtp_port?: number;
   smtp_user?: string;
@@ -175,6 +176,7 @@ export interface AutoConfigResult {
   imap_host?: string;
   imap_port?: number;
   imap_use_tls?: boolean;
+  imap_use_starttls?: boolean;
   smtp_host?: string;
   smtp_port?: number;
   smtp_use_tls?: boolean;
@@ -192,6 +194,7 @@ export interface AccountFormData {
   imap_user: string;
   imap_pass: string;
   imap_use_tls: boolean;
+  imap_use_starttls: boolean;
   smtp_host?: string;
   smtp_port?: number;
   smtp_user?: string;

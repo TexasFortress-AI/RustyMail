@@ -25,6 +25,8 @@ pub struct CreateAccountRequest {
     pub imap_user: String,
     pub imap_pass: String,
     pub imap_use_tls: bool,
+    #[serde(default)]
+    pub imap_use_starttls: bool,
     pub smtp_host: Option<String>,
     pub smtp_port: Option<i64>,
     pub smtp_user: Option<String>,
@@ -47,6 +49,7 @@ pub struct UpdateAccountRequest {
     pub imap_user: Option<String>,
     pub imap_pass: Option<String>,
     pub imap_use_tls: Option<bool>,
+    pub imap_use_starttls: Option<bool>,
     pub smtp_host: Option<String>,
     pub smtp_port: Option<i64>,
     pub smtp_user: Option<String>,
@@ -110,6 +113,7 @@ pub async fn auto_configure(
                 imap_host: Some(config.imap_host),
                 imap_port: Some(config.imap_port as i64),
                 imap_use_tls: Some(config.imap_use_tls),
+                imap_use_starttls: Some(config.imap_use_starttls),
                 smtp_host: config.smtp_host,
                 smtp_port: config.smtp_port.map(|p| p as i64),
                 smtp_use_tls: config.smtp_use_tls,
@@ -153,6 +157,7 @@ pub async fn create_account(
         imap_user: req.imap_user.clone(),
         imap_pass: req.imap_pass.clone(),
         imap_use_tls: req.imap_use_tls,
+        imap_use_starttls: req.imap_use_starttls,
         smtp_host: req.smtp_host.clone(),
         smtp_port: req.smtp_port,
         smtp_user: req.smtp_user.clone(),
@@ -310,6 +315,9 @@ pub async fn update_account(
     }
     if let Some(use_tls) = req.imap_use_tls {
         account.imap_use_tls = use_tls;
+    }
+    if let Some(use_starttls) = req.imap_use_starttls {
+        account.imap_use_starttls = use_starttls;
     }
     if let Some(smtp_host) = &req.smtp_host {
         account.smtp_host = Some(smtp_host.clone());

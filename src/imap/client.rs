@@ -86,6 +86,48 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         Ok(ImapClient::new(session))
     }
 
+    /// Establishes a new IMAP connection with explicit TLS mode selection.
+    pub async fn connect_with_security(
+        server: &str,
+        port: u16,
+        username: &str,
+        password: &str,
+        use_tls: bool,
+        use_starttls: bool,
+    ) -> Result<ImapClient<AsyncImapSessionWrapper>, ImapError> {
+        Self::connect_with_security_and_append_timeout(
+            server,
+            port,
+            username,
+            password,
+            use_tls,
+            use_starttls,
+            Duration::from_secs(35),
+        ).await
+    }
+
+    /// Establishes a new IMAP connection with explicit TLS mode selection and append timeout.
+    pub async fn connect_with_security_and_append_timeout(
+        server: &str,
+        port: u16,
+        username: &str,
+        password: &str,
+        use_tls: bool,
+        use_starttls: bool,
+        append_timeout: Duration,
+    ) -> Result<ImapClient<AsyncImapSessionWrapper>, ImapError> {
+        let session = AsyncImapSessionWrapper::connect_with_transport_security(
+            server,
+            port,
+            Arc::new(username.to_string()),
+            Arc::new(password.to_string()),
+            append_timeout,
+            use_tls,
+            use_starttls,
+        ).await?;
+        Ok(ImapClient::new(session))
+    }
+
     /// Establishes a new IMAP connection using XOAUTH2 authentication (for OAuth2 providers)
     pub async fn connect_with_xoauth2(
         server: &str,
@@ -110,6 +152,27 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
             Arc::new(username.to_string()),
             Arc::new(access_token.to_string()),
             append_timeout,
+        ).await?;
+        Ok(ImapClient::new(session))
+    }
+
+    /// Establishes a new IMAP connection using XOAUTH2 with explicit TLS mode selection.
+    pub async fn connect_with_xoauth2_and_security(
+        server: &str,
+        port: u16,
+        username: &str,
+        access_token: &str,
+        use_tls: bool,
+        use_starttls: bool,
+    ) -> Result<ImapClient<AsyncImapSessionWrapper>, ImapError> {
+        let session = AsyncImapSessionWrapper::connect_with_xoauth2_transport_security(
+            server,
+            port,
+            Arc::new(username.to_string()),
+            Arc::new(access_token.to_string()),
+            Duration::from_secs(35),
+            use_tls,
+            use_starttls,
         ).await?;
         Ok(ImapClient::new(session))
     }

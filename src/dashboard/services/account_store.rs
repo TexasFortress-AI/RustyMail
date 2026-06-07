@@ -37,6 +37,8 @@ pub struct ImapConfig {
     #[serde(skip_serializing_if = "String::is_empty", default)]
     pub password: String,
     pub use_tls: bool,
+    #[serde(default)]
+    pub use_starttls: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

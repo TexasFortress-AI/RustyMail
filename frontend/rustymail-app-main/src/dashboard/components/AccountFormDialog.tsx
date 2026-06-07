@@ -61,6 +61,8 @@ export function AccountFormDialog({
       imap_host: prev.imap_host || host,
       imap_port: prev.imap_port || 993,
       imap_user: prev.imap_user || username,
+      imap_use_tls: true,
+      imap_use_starttls: false,
       smtp_host: prev.smtp_host || host,
       smtp_port: prev.smtp_port || 465,
       smtp_user: prev.smtp_user || username,
@@ -78,6 +80,7 @@ export function AccountFormDialog({
     imap_user: '',
     imap_pass: '',
     imap_use_tls: true,
+    imap_use_starttls: false,
     smtp_host: '',
     smtp_port: 587,
     smtp_user: '',
@@ -117,6 +120,7 @@ export function AccountFormDialog({
         imap_user: account.imap_user,
         imap_pass: '', // Don't pre-fill password for security
         imap_use_tls: account.imap_use_tls,
+        imap_use_starttls: account.imap_use_starttls,
         smtp_host: account.smtp_host,
         smtp_port: account.smtp_port,
         smtp_user: account.smtp_user,
@@ -137,6 +141,7 @@ export function AccountFormDialog({
         imap_user: '',
         imap_pass: '',
         imap_use_tls: true,
+        imap_use_starttls: false,
         smtp_host: '',
         smtp_port: 587,
         smtp_user: '',
@@ -184,6 +189,7 @@ export function AccountFormDialog({
           imap_host: result.imap_host!,
           imap_port: result.imap_port || 993,
           imap_use_tls: result.imap_use_tls !== undefined ? result.imap_use_tls : true,
+          imap_use_starttls: result.imap_use_starttls !== undefined ? result.imap_use_starttls : false,
           imap_user: prev.email_address,
           smtp_host: result.smtp_host || '',
           smtp_port: result.smtp_port || 587,
@@ -604,14 +610,32 @@ export function AccountFormDialog({
                   id="imap_use_tls"
                   checked={formData.imap_use_tls}
                   onCheckedChange={(checked) =>
-                    setFormData({ ...formData, imap_use_tls: checked })
+                    setFormData({
+                      ...formData,
+                      imap_use_tls: checked,
+                      imap_use_starttls: checked ? false : formData.imap_use_starttls,
+                      imap_port: checked && formData.imap_port === 143 ? 993 : formData.imap_port,
+                    })
                   }
                 />
                 <Label htmlFor="imap_use_tls">Use TLS/SSL</Label>
               </div>
-              <p className="text-xs text-muted-foreground">
-                IMAP STARTTLS on port 143 is not supported by RustyMail yet. Use port 993 with TLS/SSL for servers that offer implicit TLS.
-              </p>
+
+              <div className="flex items-center space-x-2">
+                <Switch
+                  id="imap_use_starttls"
+                  checked={formData.imap_use_starttls}
+                  onCheckedChange={(checked) =>
+                    setFormData({
+                      ...formData,
+                      imap_use_starttls: checked,
+                      imap_use_tls: checked ? false : formData.imap_use_tls,
+                      imap_port: checked && formData.imap_port === 993 ? 143 : formData.imap_port,
+                    })
+                  }
+                />
+                <Label htmlFor="imap_use_starttls">Use STARTTLS</Label>
+              </div>
             </TabsContent>
 
             <TabsContent value="smtp" className="space-y-4">

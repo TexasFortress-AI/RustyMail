@@ -81,11 +81,13 @@ impl CloneableImapSessionFactory {
         if account.is_oauth() {
             if let Some(ref token) = account.oauth_access_token {
                 debug!("Using XOAUTH2 authentication for {}", account.email_address);
-                let client = ImapClient::<AsyncImapSessionWrapper>::connect_with_xoauth2(
+                let client = ImapClient::<AsyncImapSessionWrapper>::connect_with_xoauth2_and_security(
                     &account.imap_host,
                     account.imap_port as u16,
                     &account.imap_user,
                     token,
+                    account.imap_use_tls,
+                    account.imap_use_starttls,
                 ).await?;
                 return Ok(client);
             }
@@ -93,11 +95,13 @@ impl CloneableImapSessionFactory {
         }
 
         // Password-based authentication
-        let client = ImapClient::<AsyncImapSessionWrapper>::connect(
+        let client = ImapClient::<AsyncImapSessionWrapper>::connect_with_security(
             &account.imap_host,
             account.imap_port as u16,
             &account.imap_user,
             &account.imap_pass,
+            account.imap_use_tls,
+            account.imap_use_starttls,
         ).await?;
 
         Ok(client)

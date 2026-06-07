@@ -95,21 +95,21 @@ impl AsyncImapSessionWrapper {
         }
     }
 
-    pub async fn connect(
-        server: &str,
-        port: u16,
-        username: Arc<String>,
-        password: Arc<String>,
-        append_timeout: Duration,
-    ) -> Result<Self, ImapError> {
+    fn tls_connector() -> Result<TlsConnector, ImapError> {
         let mut tls_builder = native_tls::TlsConnector::builder();
         if crate::imap::client::allow_invalid_mail_certs() {
             warn!("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS is enabled; IMAP certificate validation is disabled");
             tls_builder.danger_accept_invalid_certs(true);
         }
         let tls = tls_builder.build().map_err(|e| ImapError::Tls(e.to_string()))?;
-        let tls_connector = TlsConnector::from(tls);
+        Ok(TlsConnector::from(tls))
+    }
 
+    async fn tcp_stream_with_timeouts(
+        server: &str,
+        port: u16,
+        append_timeout: Duration,
+    ) -> Result<TokioTcpStream, ImapError> {
         let addr = format!("{}:{}", server, port);
         let tcp_stream = TokioTcpStream::connect(&addr).await.map_err(|e| ImapError::Connection(e.to_string()))?;
 
@@ -118,11 +118,71 @@ impl AsyncImapSessionWrapper {
         let std_stream = tcp_stream.into_std().map_err(|e| ImapError::Connection(format!("Failed to convert to std stream: {}", e)))?;
         std_stream.set_read_timeout(Some(append_timeout)).map_err(|e| ImapError::Connection(format!("Failed to set read timeout: {}", e)))?;
         std_stream.set_write_timeout(Some(append_timeout)).map_err(|e| ImapError::Connection(format!("Failed to set write timeout: {}", e)))?;
-        let tcp_stream = TokioTcpStream::from_std(std_stream).map_err(|e| ImapError::Connection(format!("Failed to convert back to tokio stream: {}", e)))?;
+        TokioTcpStream::from_std(std_stream).map_err(|e| ImapError::Connection(format!("Failed to convert back to tokio stream: {}", e)))
+    }
 
-        let tls_stream = tls_connector.connect(server, tcp_stream).await.map_err(|e| ImapError::Tls(e.to_string()))?;
-        let compat_stream = tls_stream.compat();
+    async fn tls_stream(
+        server: &str,
+        port: u16,
+        append_timeout: Duration,
+        use_starttls: bool,
+    ) -> Result<TlsCompatibleStream, ImapError> {
+        let tls_connector = Self::tls_connector()?;
+        let tcp_stream = Self::tcp_stream_with_timeouts(server, port, append_timeout).await?;
 
+        if use_starttls {
+            info!("Starting IMAP STARTTLS upgrade for {}:{}", server, port);
+            let mut client = async_imap::Client::new(tcp_stream.compat());
+            match client.read_response().await {
+                Some(Ok(_)) => {}
+                Some(Err(e)) => return Err(ImapError::Connection(format!("Failed to read IMAP greeting: {}", e))),
+                None => return Err(ImapError::Connection("IMAP server closed connection before greeting".to_string())),
+            }
+            client.run_command_and_check_ok("STARTTLS", None).await.map_err(ImapError::from)?;
+            let tcp_stream = client.into_inner().into_inner();
+            let tls_stream = tls_connector.connect(server, tcp_stream).await.map_err(|e| ImapError::Tls(e.to_string()))?;
+            info!("IMAP STARTTLS upgrade completed");
+            Ok(tls_stream.compat())
+        } else {
+            let tls_stream = tls_connector.connect(server, tcp_stream).await.map_err(|e| ImapError::Tls(e.to_string()))?;
+            Ok(tls_stream.compat())
+        }
+    }
+
+    pub async fn connect(
+        server: &str,
+        port: u16,
+        username: Arc<String>,
+        password: Arc<String>,
+        append_timeout: Duration,
+    ) -> Result<Self, ImapError> {
+        Self::connect_with_security(server, port, username, password, append_timeout, false).await
+    }
+
+    pub async fn connect_with_security(
+        server: &str,
+        port: u16,
+        username: Arc<String>,
+        password: Arc<String>,
+        append_timeout: Duration,
+        use_starttls: bool,
+    ) -> Result<Self, ImapError> {
+        Self::connect_with_transport_security(server, port, username, password, append_timeout, !use_starttls, use_starttls).await
+    }
+
+    pub async fn connect_with_transport_security(
+        server: &str,
+        port: u16,
+        username: Arc<String>,
+        password: Arc<String>,
+        append_timeout: Duration,
+        use_tls: bool,
+        use_starttls: bool,
+    ) -> Result<Self, ImapError> {
+        if !use_tls && !use_starttls {
+            return Err(ImapError::Connection("Plaintext IMAP is not supported; enable TLS/SSL or STARTTLS".to_string()));
+        }
+        let compat_stream = Self::tls_stream(server, port, append_timeout, use_starttls).await?;
         let client = async_imap::Client::new(compat_stream);
         let session = client.login(&*username, &*password).await.map_err(|(err, _client)| {
             match err {
@@ -142,35 +202,44 @@ impl AsyncImapSessionWrapper {
         access_token: Arc<String>,
         append_timeout: Duration,
     ) -> Result<Self, ImapError> {
+        Self::connect_with_xoauth2_and_security(server, port, username, access_token, append_timeout, false).await
+    }
+
+    pub async fn connect_with_xoauth2_and_security(
+        server: &str,
+        port: u16,
+        username: Arc<String>,
+        access_token: Arc<String>,
+        append_timeout: Duration,
+        use_starttls: bool,
+    ) -> Result<Self, ImapError> {
+        Self::connect_with_xoauth2_transport_security(server, port, username, access_token, append_timeout, !use_starttls, use_starttls).await
+    }
+
+    pub async fn connect_with_xoauth2_transport_security(
+        server: &str,
+        port: u16,
+        username: Arc<String>,
+        access_token: Arc<String>,
+        append_timeout: Duration,
+        use_tls: bool,
+        use_starttls: bool,
+    ) -> Result<Self, ImapError> {
         use crate::imap::xoauth2::XOAuth2Authenticator;
 
-        let mut tls_builder = native_tls::TlsConnector::builder();
-        if crate::imap::client::allow_invalid_mail_certs() {
-            warn!("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS is enabled; IMAP certificate validation is disabled");
-            tls_builder.danger_accept_invalid_certs(true);
+        if !use_tls && !use_starttls {
+            return Err(ImapError::Connection("Plaintext IMAP is not supported; enable TLS/SSL or STARTTLS".to_string()));
         }
-        let tls = tls_builder.build().map_err(|e| ImapError::Tls(e.to_string()))?;
-        let tls_connector = TlsConnector::from(tls);
-
-        let addr = format!("{}:{}", server, port);
-        let tcp_stream = TokioTcpStream::connect(&addr).await.map_err(|e| ImapError::Connection(e.to_string()))?;
-
-        info!("Setting socket timeouts: read={:?}, write={:?}", append_timeout, append_timeout);
-
-        let std_stream = tcp_stream.into_std().map_err(|e| ImapError::Connection(format!("Failed to convert to std stream: {}", e)))?;
-        std_stream.set_read_timeout(Some(append_timeout)).map_err(|e| ImapError::Connection(format!("Failed to set read timeout: {}", e)))?;
-        std_stream.set_write_timeout(Some(append_timeout)).map_err(|e| ImapError::Connection(format!("Failed to set write timeout: {}", e)))?;
-        let tcp_stream = TokioTcpStream::from_std(std_stream).map_err(|e| ImapError::Connection(format!("Failed to convert back to tokio stream: {}", e)))?;
-
-        let tls_stream = tls_connector.connect(server, tcp_stream).await.map_err(|e| ImapError::Tls(e.to_string()))?;
-        let compat_stream = tls_stream.compat();
-
+        let compat_stream = Self::tls_stream(server, port, append_timeout, use_starttls).await?;
         let mut client = async_imap::Client::new(compat_stream);
 
-        // Consume the IMAP server greeting before AUTHENTICATE.
-        // async-imap's login() handles this internally, but authenticate()
-        // expects the greeting to have been read already.
-        let _greeting = client.read_response().await;
+        if !use_starttls {
+            // Consume the IMAP server greeting before AUTHENTICATE.
+            // async-imap's login() handles this internally, but authenticate()
+            // expects the greeting to have been read already. STARTTLS already
+            // consumed the pre-upgrade greeting and has no second greeting.
+            let _greeting = client.read_response().await;
+        }
 
         // Use XOAUTH2 authentication
         let authenticator = XOAuth2Authenticator::new(&username, &access_token);

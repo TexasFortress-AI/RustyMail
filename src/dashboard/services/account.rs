@@ -49,6 +49,8 @@ pub struct Account {
     #[serde(skip_serializing)] // Never serialize passwords
     pub imap_pass: String,
     pub imap_use_tls: bool,
+    #[serde(default)]
+    pub imap_use_starttls: bool,
     pub smtp_host: Option<String>,
     pub smtp_port: Option<i64>,
     pub smtp_user: Option<String>,
@@ -97,6 +99,7 @@ pub struct ProviderTemplate {
     pub imap_host: String,
     pub imap_port: i64,
     pub imap_use_tls: bool,
+    pub imap_use_starttls: bool,
     pub smtp_host: String,
     pub smtp_port: i64,
     pub smtp_use_tls: bool,
@@ -113,6 +116,7 @@ pub struct AutoConfigResult {
     pub imap_host: Option<String>,
     pub imap_port: Option<i64>,
     pub imap_use_tls: Option<bool>,
+    pub imap_use_starttls: Option<bool>,
     pub smtp_host: Option<String>,
     pub smtp_port: Option<i64>,
     pub smtp_use_tls: Option<bool>,
@@ -201,6 +205,7 @@ impl AccountService {
                 username: settings.imap_user.clone(),
                 password: settings.imap_pass.clone(),
                 use_tls: true,
+                use_starttls: false,
             },
             smtp: None,
             oauth_provider: None,
@@ -265,7 +270,7 @@ impl AccountService {
             SELECT
                 display_name, email_address, provider_type,
                 imap_host, imap_port, imap_user, imap_pass, imap_use_tls,
-                smtp_host, smtp_port, smtp_user, smtp_pass,
+                imap_use_starttls, smtp_host, smtp_port, smtp_user, smtp_pass,
                 smtp_use_tls, smtp_use_starttls,
                 is_active, is_default
             FROM accounts
@@ -294,6 +299,7 @@ impl AccountService {
             let imap_user: String = row.get("imap_user");
             let imap_pass: String = row.get("imap_pass");
             let imap_use_tls: i32 = row.get("imap_use_tls");
+            let imap_use_starttls: i32 = row.get("imap_use_starttls");
             let smtp_host: Option<String> = row.get("smtp_host");
             let smtp_port: Option<i64> = row.get("smtp_port");
             let smtp_user: Option<String> = row.get("smtp_user");
@@ -313,6 +319,7 @@ impl AccountService {
                     username: imap_user,
                     password: imap_pass,
                     use_tls: imap_use_tls != 0,
+                    use_starttls: imap_use_starttls != 0,
                 },
                 smtp: smtp_host.map(|host| {
                     super::account_store::SmtpConfig {
@@ -378,7 +385,7 @@ impl AccountService {
                     r#"
                     UPDATE accounts
                     SET display_name = ?, provider_type = ?,
-                        imap_host = ?, imap_port = ?, imap_user = ?, imap_pass = ?, imap_use_tls = ?,
+                        imap_host = ?, imap_port = ?, imap_user = ?, imap_pass = ?, imap_use_tls = ?, imap_use_starttls = ?,
                         smtp_host = ?, smtp_port = ?, smtp_user = ?, smtp_pass = ?,
                         smtp_use_tls = ?, smtp_use_starttls = ?,
                         oauth_provider = ?, oauth_access_token = ?, oauth_refresh_token = ?, oauth_token_expiry = ?,
@@ -393,6 +400,7 @@ impl AccountService {
                 .bind(&account.imap.username)
                 .bind(&account.imap.password)
                 .bind(if account.imap.use_tls { 1 } else { 0 })
+                .bind(if account.imap.use_starttls { 1 } else { 0 })
                 .bind(account.smtp.as_ref().map(|s| &s.host))
                 .bind(account.smtp.as_ref().map(|s| s.port as i64))
                 .bind(account.smtp.as_ref().map(|s| &s.username))
@@ -415,12 +423,12 @@ impl AccountService {
                     r#"
                     INSERT INTO accounts (
                         display_name, email_address, provider_type,
-                        imap_host, imap_port, imap_user, imap_pass, imap_use_tls,
+                        imap_host, imap_port, imap_user, imap_pass, imap_use_tls, imap_use_starttls,
                         smtp_host, smtp_port, smtp_user, smtp_pass,
                         smtp_use_tls, smtp_use_starttls,
                         oauth_provider, oauth_access_token, oauth_refresh_token, oauth_token_expiry,
                         is_active, is_default, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     "#
                 )
                 .bind(&account.display_name)
@@ -431,6 +439,7 @@ impl AccountService {
                 .bind(&account.imap.username)
                 .bind(&account.imap.password)
                 .bind(if account.imap.use_tls { 1 } else { 0 })
+                .bind(if account.imap.use_starttls { 1 } else { 0 })
                 .bind(account.smtp.as_ref().map(|s| &s.host))
                 .bind(account.smtp.as_ref().map(|s| s.port as i64))
                 .bind(account.smtp.as_ref().map(|s| &s.username))
@@ -472,6 +481,7 @@ impl AccountService {
             imap_user: stored.imap.username,
             imap_pass: stored.imap.password,
             imap_use_tls: stored.imap.use_tls,
+            imap_use_starttls: stored.imap.use_starttls,
             smtp_host: stored.smtp.as_ref().map(|s| s.host.clone()),
             smtp_port: stored.smtp.as_ref().map(|s| s.port as i64),
             smtp_user: stored.smtp.as_ref().map(|s| s.username.clone()),
@@ -509,6 +519,7 @@ impl AccountService {
                     imap_host: Some(tmpl.imap_host),
                     imap_port: Some(tmpl.imap_port),
                     imap_use_tls: Some(tmpl.imap_use_tls),
+                    imap_use_starttls: Some(tmpl.imap_use_starttls),
                     smtp_host: Some(tmpl.smtp_host),
                     smtp_port: Some(tmpl.smtp_port),
                     smtp_use_tls: Some(tmpl.smtp_use_tls),
@@ -526,6 +537,7 @@ impl AccountService {
                     imap_host: None,
                     imap_port: None,
                     imap_use_tls: None,
+                    imap_use_starttls: None,
                     smtp_host: None,
                     smtp_port: None,
                     smtp_use_tls: None,
@@ -551,7 +563,7 @@ impl AccountService {
         let db = self.db()?;
 
         // Query all provider templates
-        let rows = sqlx::query!(
+        let rows = sqlx::query(
             r#"
             SELECT
                 provider_type,
@@ -560,6 +572,7 @@ impl AccountService {
                 imap_host,
                 imap_port,
                 imap_use_tls,
+                imap_use_starttls,
                 smtp_host,
                 smtp_port,
                 smtp_use_tls,
@@ -574,23 +587,25 @@ impl AccountService {
 
         // Check each template's domain patterns
         for row in rows {
-            let domain_patterns: Vec<String> = serde_json::from_str(&row.domain_patterns)?;
+            let domain_patterns_json: String = row.get("domain_patterns");
+            let domain_patterns: Vec<String> = serde_json::from_str(&domain_patterns_json)?;
 
             // Check if domain matches any pattern
             if domain_patterns.iter().any(|pattern| domain == pattern) {
                 return Ok(Some(ProviderTemplate {
-                    provider_type: row.provider_type.unwrap(),
-                    display_name: row.display_name,
+                    provider_type: row.get::<Option<String>, _>("provider_type").unwrap(),
+                    display_name: row.get("display_name"),
                     domain_patterns,
-                    imap_host: row.imap_host,
-                    imap_port: row.imap_port,
-                    imap_use_tls: row.imap_use_tls,
-                    smtp_host: row.smtp_host,
-                    smtp_port: row.smtp_port,
-                    smtp_use_tls: row.smtp_use_tls,
-                    smtp_use_starttls: row.smtp_use_starttls,
-                    supports_oauth: row.supports_oauth,
-                    oauth_provider: row.oauth_provider,
+                    imap_host: row.get("imap_host"),
+                    imap_port: row.get("imap_port"),
+                    imap_use_tls: row.get("imap_use_tls"),
+                    imap_use_starttls: row.get("imap_use_starttls"),
+                    smtp_host: row.get("smtp_host"),
+                    smtp_port: row.get("smtp_port"),
+                    smtp_use_tls: row.get("smtp_use_tls"),
+                    smtp_use_starttls: row.get("smtp_use_starttls"),
+                    supports_oauth: row.get("supports_oauth"),
+                    oauth_provider: row.get("oauth_provider"),
                 }));
             }
         }
@@ -611,6 +626,7 @@ impl AccountService {
                 username: account.imap_user.clone(),
                 password: account.imap_pass.clone(),
                 use_tls: account.imap_use_tls,
+                use_starttls: account.imap_use_starttls,
             },
             smtp: account.smtp_host.as_ref().map(|host| {
                 super::account_store::SmtpConfig {
@@ -718,6 +734,7 @@ impl AccountService {
                 username: account.imap_user.clone(),
                 password: account.imap_pass.clone(),
                 use_tls: account.imap_use_tls,
+                use_starttls: account.imap_use_starttls,
             },
             smtp: account.smtp_host.as_ref().map(|host| {
                 super::account_store::SmtpConfig {
@@ -793,11 +810,13 @@ impl AccountService {
             match &account.oauth_access_token {
                 Some(token) => {
                     debug!("Validating OAuth connection for {}", account.email_address);
-                    crate::imap::client::ImapClient::<crate::imap::session::AsyncImapSessionWrapper>::connect_with_xoauth2(
+                    crate::imap::client::ImapClient::<crate::imap::session::AsyncImapSessionWrapper>::connect_with_xoauth2_and_security(
                         &account.imap_host,
                         account.imap_port as u16,
                         &account.imap_user,
                         token,
+                        account.imap_use_tls,
+                        account.imap_use_starttls,
                     ).await
                 }
                 None => {
@@ -807,14 +826,13 @@ impl AccountService {
                 }
             }
         } else {
-            use std::time::Duration;
-            let timeout = Duration::from_secs(10);
-            crate::imap::client::connect(
+            crate::imap::client::ImapClient::<crate::imap::session::AsyncImapSessionWrapper>::connect_with_security(
                 &account.imap_host,
                 account.imap_port as u16,
                 &account.imap_user,
                 &account.imap_pass,
-                timeout,
+                account.imap_use_tls,
+                account.imap_use_starttls,
             ).await
         };
 

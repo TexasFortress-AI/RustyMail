@@ -28,6 +28,7 @@ pub struct EmailConfig {
     pub imap_host: String,
     pub imap_port: u16,
     pub imap_use_tls: bool,
+    pub imap_use_starttls: bool,
     pub smtp_host: Option<String>,
     pub smtp_port: Option<u16>,
     pub smtp_use_tls: Option<bool>,
@@ -106,6 +107,7 @@ impl AutodiscoveryService {
                         imap_host: srv.target().to_string().trim_end_matches('.').to_string(),
                         imap_port: srv.port(),
                         imap_use_tls: true, // IMAPS uses implicit TLS
+                        imap_use_starttls: false,
                         smtp_host: None,
                         smtp_port: None,
                         smtp_use_tls: None,
@@ -139,7 +141,8 @@ impl AutodiscoveryService {
                         let mut config = EmailConfig {
                             imap_host: srv.target().to_string().trim_end_matches('.').to_string(),
                             imap_port: srv.port(),
-                            imap_use_tls: srv.port() == 993, // Port 993 = IMAPS, otherwise STARTTLS
+                            imap_use_tls: srv.port() == 993, // Port 993 = IMAPS
+                            imap_use_starttls: srv.port() != 993,
                             smtp_host: None,
                             smtp_port: None,
                             smtp_use_tls: None,
@@ -261,12 +264,15 @@ impl AutodiscoveryService {
             .ok_or_else(|| AutodiscoveryError::XmlError("No IMAP server found".to_string()))?;
 
         // Parse socket type for TLS settings
-        let imap_use_tls = imap_server.socket_type.to_uppercase() == "SSL";
+        let imap_socket_type = imap_server.socket_type.to_uppercase();
+        let imap_use_tls = imap_socket_type == "SSL";
+        let imap_use_starttls = imap_socket_type == "STARTTLS";
 
         let mut email_config = EmailConfig {
             imap_host: imap_server.hostname.clone(),
             imap_port: imap_server.port,
             imap_use_tls,
+            imap_use_starttls,
             smtp_host: None,
             smtp_port: None,
             smtp_use_tls: None,
