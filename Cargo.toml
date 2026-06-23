@@ -99,7 +99,7 @@ utoipa = { version = "5", features = ["actix_extras", "chrono", "uuid"] }
 utoipa-swagger-ui = { version = "8", features = ["actix-web"] }
 
 # MIME parsing
-mail-parser = "0.8"
+mail-parser = "0.11"
 
 # SMTP sending
 lettre = { version = "0.11", default-features = false, features = ["tokio1", "tokio1-rustls-tls", "builder", "hostname", "smtp-transport"] }
