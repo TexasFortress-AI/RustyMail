@@ -43,7 +43,7 @@ regex = "1.10"
 
 # Configuration
 dotenvy = "0.15"
-config = { version = "0.14", features = ["toml"] }
+config = { version = "0.15", features = ["toml"] }
 toml = "0.8"
 log = "0.4"
 env_logger = "0.11"
