@@ -8,6 +8,7 @@ use std::sync::Arc;
 use serde_json::{Value, json};
 use tokio::sync::Mutex as TokioMutex;
 use crate::mcp::types::{JsonRpcError, McpPortState};
+use crate::utils::folder_arg::resolve_folder_arg;
 use crate::dashboard::services::cache::CacheService;
 use log::{debug, error};
 use crate::prelude::AsyncImapOps;
@@ -30,10 +31,10 @@ pub async fn list_cached_emails_tool(
         .ok_or_else(|| JsonRpcError::internal_error("Cache service not available"))?;
 
     // Extract parameters
+    let folder_arg = resolve_folder_arg(params.as_ref().unwrap_or(&Value::Null))
+        .map_err(|err| JsonRpcError::invalid_params(err.to_string()))?;
     let (folder, limit, offset, preview_mode, account_email) = if let Some(ref p) = params {
-        let folder = p.get("folder")
-            .and_then(|v| v.as_str())
-            .unwrap_or("INBOX");
+        let folder = folder_arg.as_deref().unwrap_or("INBOX");
         let limit = p.get("limit")
             .and_then(|v| v.as_u64())
             .map(|v| v as usize)
@@ -87,9 +88,9 @@ pub async fn get_email_by_uid_tool(
 
     let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
 
-    let folder = params.get("folder")
-        .and_then(|v| v.as_str())
-        .unwrap_or("INBOX");
+    let folder_arg = resolve_folder_arg(&params)
+        .map_err(|err| JsonRpcError::invalid_params(err.to_string()))?;
+    let folder = folder_arg.as_deref().unwrap_or("INBOX");
 
     let uid = params.get("uid")
         .and_then(|v| v.as_u64())
@@ -135,9 +136,9 @@ pub async fn get_email_by_index_tool(
 
     let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
 
-    let folder = params.get("folder")
-        .and_then(|v| v.as_str())
-        .unwrap_or("INBOX");
+    let folder_arg = resolve_folder_arg(&params)
+        .map_err(|err| JsonRpcError::invalid_params(err.to_string()))?;
+    let folder = folder_arg.as_deref().unwrap_or("INBOX");
 
     let index = params.get("index")
         .and_then(|v| v.as_u64())
@@ -183,10 +184,10 @@ pub async fn count_emails_in_folder_tool(
     let cache_service = get_cache_service(&state).await
         .ok_or_else(|| JsonRpcError::internal_error("Cache service not available"))?;
 
+    let folder_arg = resolve_folder_arg(params.as_ref().unwrap_or(&Value::Null))
+        .map_err(|err| JsonRpcError::invalid_params(err.to_string()))?;
     let (folder, account_email) = if let Some(ref p) = params {
-        let folder = p.get("folder")
-            .and_then(|v| v.as_str())
-            .unwrap_or("INBOX");
+        let folder = folder_arg.as_deref().unwrap_or("INBOX");
         let account_email = p.get("account_id")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
@@ -230,9 +231,9 @@ pub async fn get_folder_stats_tool(
 
     let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
 
-    let folder = params.get("folder")
-        .and_then(|v| v.as_str())
-        .unwrap_or("INBOX");
+    let folder_arg = resolve_folder_arg(&params)
+        .map_err(|err| JsonRpcError::invalid_params(err.to_string()))?;
+    let folder = folder_arg.as_deref().unwrap_or("INBOX");
 
     let account_email = params.get("account_id")
         .and_then(|v| v.as_str())
@@ -266,9 +267,9 @@ pub async fn search_cached_emails_tool(
 
     let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
 
-    let folder = params.get("folder")
-        .and_then(|v| v.as_str())
-        .unwrap_or("INBOX");
+    let folder_arg = resolve_folder_arg(&params)
+        .map_err(|err| JsonRpcError::invalid_params(err.to_string()))?;
+    let folder = folder_arg.as_deref().unwrap_or("INBOX");
 
     let query = params.get("query")
         .and_then(|v| v.as_str())

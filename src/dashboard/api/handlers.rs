@@ -3,13 +3,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use actix_web::{web, HttpResponse, Responder};
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
 use actix_web::web::Data;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::convert::Infallible;
 use log::{debug, warn, info, error};
 use crate::dashboard::api::errors::ApiError;
+use crate::utils::folder_arg::{check_folder_query_keys, resolve_folder_arg};
 use crate::dashboard::services::DashboardState;
 use crate::dashboard::api::models::{ChatbotQuery, ServerConfig};
 use crate::dashboard::api::sse::EventType;
@@ -1702,9 +1703,15 @@ pub async fn execute_mcp_tool_inner(
         }
         // Cache-based tools
         "list_cached_emails" => {
-            let folder = params.get("folder")
-                .and_then(|v| v.as_str())
-                .unwrap_or("INBOX");
+            let folder_arg = match resolve_folder_arg(&params) {
+                Ok(folder) => folder,
+                Err(err) => return serde_json::json!({
+                    "success": false,
+                    "error": err.to_string(),
+                    "tool": tool_name
+                }),
+            };
+            let folder = folder_arg.as_deref().unwrap_or("INBOX");
             let limit = params.get("limit")
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize)
@@ -1758,9 +1765,15 @@ pub async fn execute_mcp_tool_inner(
             }
         }
         "get_email_by_uid" => {
-            let folder = params.get("folder")
-                .and_then(|v| v.as_str())
-                .unwrap_or("INBOX");
+            let folder_arg = match resolve_folder_arg(&params) {
+                Ok(folder) => folder,
+                Err(err) => return serde_json::json!({
+                    "success": false,
+                    "error": err.to_string(),
+                    "tool": tool_name
+                }),
+            };
+            let folder = folder_arg.as_deref().unwrap_or("INBOX");
             let uid = params.get("uid")
                 .and_then(|v| v.as_u64())
                 .map(|v| v as u32);
@@ -1850,9 +1863,15 @@ pub async fn execute_mcp_tool_inner(
             }
         }
         "get_email_by_index" => {
-            let folder = params.get("folder")
-                .and_then(|v| v.as_str())
-                .unwrap_or("INBOX");
+            let folder_arg = match resolve_folder_arg(&params) {
+                Ok(folder) => folder,
+                Err(err) => return serde_json::json!({
+                    "success": false,
+                    "error": err.to_string(),
+                    "tool": tool_name
+                }),
+            };
+            let folder = folder_arg.as_deref().unwrap_or("INBOX");
             let index = params.get("index")
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize);
@@ -1913,9 +1932,15 @@ pub async fn execute_mcp_tool_inner(
             }
         }
         "count_emails_in_folder" => {
-            let folder = params.get("folder")
-                .and_then(|v| v.as_str())
-                .unwrap_or("INBOX");
+            let folder_arg = match resolve_folder_arg(&params) {
+                Ok(folder) => folder,
+                Err(err) => return serde_json::json!({
+                    "success": false,
+                    "error": err.to_string(),
+                    "tool": tool_name
+                }),
+            };
+            let folder = folder_arg.as_deref().unwrap_or("INBOX");
 
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state_data).await {
@@ -1960,9 +1985,15 @@ pub async fn execute_mcp_tool_inner(
             }
         }
         "get_folder_stats" => {
-            let folder = params.get("folder")
-                .and_then(|v| v.as_str())
-                .unwrap_or("INBOX");
+            let folder_arg = match resolve_folder_arg(&params) {
+                Ok(folder) => folder,
+                Err(err) => return serde_json::json!({
+                    "success": false,
+                    "error": err.to_string(),
+                    "tool": tool_name
+                }),
+            };
+            let folder = folder_arg.as_deref().unwrap_or("INBOX");
 
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state_data).await {
@@ -2004,9 +2035,15 @@ pub async fn execute_mcp_tool_inner(
             }
         }
         "search_cached_emails" => {
-            let folder = params.get("folder")
-                .and_then(|v| v.as_str())
-                .unwrap_or("INBOX");
+            let folder_arg = match resolve_folder_arg(&params) {
+                Ok(folder) => folder,
+                Err(err) => return serde_json::json!({
+                    "success": false,
+                    "error": err.to_string(),
+                    "tool": tool_name
+                }),
+            };
+            let folder = folder_arg.as_deref().unwrap_or("INBOX");
             let query = params.get("query")
                 .and_then(|v| v.as_str());
             let limit = params.get("limit")
@@ -3118,7 +3155,15 @@ pub async fn execute_mcp_tool_inner(
                 }
                 Err(attachment_storage::AttachmentError::NotFound(msg)) if msg.contains("not yet downloaded") => {
                     // Metadata exists but file not on disk - need IMAP fetch
-                    let folder = params.get("folder").and_then(|v| v.as_str()).unwrap_or("INBOX");
+                    let folder_arg = match resolve_folder_arg(&params) {
+                        Ok(folder) => folder,
+                        Err(err) => return serde_json::json!({
+                            "success": false,
+                            "error": err.to_string(),
+                            "tool": tool_name
+                        }),
+                    };
+                    let folder = folder_arg.as_deref().unwrap_or("INBOX");
                     let uid = params.get("uid").and_then(|v| v.as_u64()).map(|u| u as u32);
 
                     if let Some(uid) = uid {
@@ -3277,7 +3322,15 @@ pub async fn execute_mcp_tool_inner(
                 })
             };
 
-            let folder = params.get("folder").and_then(|v| v.as_str()).unwrap_or("INBOX");
+            let folder_arg = match resolve_folder_arg(&params) {
+                Ok(folder) => folder,
+                Err(err) => return serde_json::json!({
+                    "success": false,
+                    "error": err.to_string(),
+                    "tool": tool_name
+                }),
+            };
+            let folder = folder_arg.as_deref().unwrap_or("INBOX");
             let uid = match params.get("uid").and_then(|v| v.as_u64()).map(|u| u as u32) {
                 Some(u) => u,
                 None => return serde_json::json!({
@@ -3478,7 +3531,15 @@ pub async fn execute_mcp_tool_inner(
                 })
             };
 
-            let folder = params.get("folder").and_then(|v| v.as_str()).unwrap_or("INBOX");
+            let folder_arg = match resolve_folder_arg(&params) {
+                Ok(folder) => folder,
+                Err(err) => return serde_json::json!({
+                    "success": false,
+                    "error": err.to_string(),
+                    "tool": tool_name
+                }),
+            };
+            let folder = folder_arg.as_deref().unwrap_or("INBOX");
             let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
             let offset = params.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
@@ -4759,7 +4820,11 @@ pub async fn sync_flags(
     query: web::Query<serde_json::Value>,
 ) -> Result<impl Responder, ApiError> {
     let account_id = get_account_id_to_use(&query.0, &state).await?;
-    let folder = query.get("folder").and_then(|v| v.as_str()).unwrap_or("INBOX");
+    let folder_arg = match resolve_folder_arg(&query.0) {
+        Ok(folder) => folder,
+        Err(err) => return Err(ApiError::BadRequest(err.to_string())),
+    };
+    let folder = folder_arg.as_deref().unwrap_or("INBOX");
 
     info!("Triggering flag resync for account {} folder {}", account_id, folder);
 
@@ -4783,7 +4848,14 @@ pub async fn sync_flags(
 pub async fn get_sync_status(
     state: Data<DashboardState>,
     query: web::Query<EmailQueryParams>,
+    req: HttpRequest,
 ) -> Result<impl Responder, ApiError> {
+    // `web::Query<EmailQueryParams>` drops unknown keys, so the misnamed-folder check
+    // has to read the raw query string.
+    if let Err(err) = check_folder_query_keys(&req.query_string()) {
+        return Err(ApiError::BadRequest(err.to_string()));
+    }
+
     // Get account ID from query parameters or use default
     let account_id = match query.account_id.as_ref() {
         Some(id) => id.clone(),
@@ -4925,7 +4997,12 @@ pub async fn list_cached_folders(
 pub async fn get_cached_emails(
     state: Data<DashboardState>,
     query: web::Query<EmailQueryParams>,
+    req: HttpRequest,
 ) -> Result<impl Responder, ApiError> {
+    if let Err(err) = check_folder_query_keys(&req.query_string()) {
+        return Err(ApiError::BadRequest(err.to_string()));
+    }
+
     let folder = query.folder.as_deref().unwrap_or("INBOX");
     let limit = query.limit.unwrap_or(50);
     let offset = query.offset.unwrap_or(0);

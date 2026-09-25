@@ -31,6 +31,7 @@ use crate::{ // Group crate imports
         },
     },
     mcp::handler::McpHandler,
+    utils::folder_arg::check_folder_query_keys,
     session_manager::{SessionManager, SessionManagerTrait}, // Import both the struct and trait
 };
 
@@ -368,6 +369,15 @@ async fn search_emails(state: Data<AppState>, req: HttpRequest, query: Query<Sea
     info!("Handling GET /emails/search");
 
     let session = get_session(&state, &req).await?;
+
+    // `web::Query<SearchEmailsQuery>` drops unknown keys, so a misnamed folder
+    // parameter has to be caught from the raw query string before INBOX is assumed.
+    if let Err(err) = check_folder_query_keys(&req.query_string()) {
+        return Err(ApiError::InvalidQueryParam {
+            param: "folder".to_string(),
+            reason: err.to_string(),
+        });
+    }
 
     // Select folder if specified, otherwise use INBOX
     let folder = query.folder.as_deref().unwrap_or("INBOX");
