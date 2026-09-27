@@ -381,6 +381,7 @@ mod tests {
                 username: "test@example.com".to_string(),
                 password: "password".to_string(),
                 use_tls: true,
+                use_starttls: false,
             },
             smtp: None,
             oauth_provider: None,
@@ -430,6 +431,7 @@ mod tests {
                 username: "user@outlook.com".to_string(),
                 password: String::new(), // OAuth accounts don't use passwords
                 use_tls: true,
+                use_starttls: false,
             },
             smtp: None,
             oauth_provider: Some("microsoft".to_string()),
@@ -465,6 +467,7 @@ mod tests {
                 username: "test".to_string(),
                 password: "pass".to_string(),
                 use_tls: true,
+                use_starttls: false,
             },
             smtp: None,
             oauth_provider: None,

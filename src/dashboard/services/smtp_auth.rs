@@ -111,6 +111,7 @@ mod tests {
             imap_user: "user@outlook.com".to_string(),
             imap_pass: String::new(),
             imap_use_tls: true,
+            imap_use_starttls: false,
             smtp_host: Some("smtp.office365.com".to_string()),
             smtp_port: Some(587),
             smtp_user: if oauth { None } else { Some("user@outlook.com".to_string()) },

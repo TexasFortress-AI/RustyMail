@@ -60,6 +60,7 @@ fn create_test_account(email: &str, display_name: &str) -> Account {
         imap_user: email.to_string(),
         imap_pass: "test_password".to_string(),
         imap_use_tls: true,
+        imap_use_starttls: false,
         smtp_host: Some("smtp.gmail.com".to_string()),
         smtp_port: Some(587),
         smtp_user: Some(email.to_string()),
