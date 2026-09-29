@@ -3,11 +3,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use chrono::Utc;
-use rustymail::dashboard::services::account::{Account, AccountError, AccountService};
-use rustymail::dashboard::services::account_store::{
-    AccountStore, ImapConfig, SmtpConfig, StoredAccount,
-};
+use rustymail::dashboard::services::account::{Account, AccountService};
 use serial_test::serial;
 use sqlx::SqlitePool;
 use std::fs;
