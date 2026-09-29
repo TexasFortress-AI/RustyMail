@@ -107,9 +107,10 @@ mod tests {
     #[tokio::test]
     async fn test_config_validation() {
         setup_test_env();
-        let mut settings = Settings::default();
-        // Settings::default() has empty imap_user, which fails validation
-        settings.imap_user = "test@example.com".to_string();
+        let settings = Settings {
+            imap_user: "test@example.com".to_string(),
+            ..Settings::default()
+        };
         let config_service = ConfigService::with_settings(settings.clone(), None);
 
         // Valid configuration should pass

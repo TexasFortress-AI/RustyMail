@@ -177,7 +177,7 @@ mod multi_account_sync_tests {
             cache_service
                 .cache_email("INBOX", &email, ACCOUNT1_EMAIL)
                 .await
-                .expect(&format!("Failed to cache email {} for account 1", i));
+                .unwrap_or_else(|_| panic!("Failed to cache email {} for account 1", i));
         }
 
         // Cache emails for account 2
@@ -186,7 +186,7 @@ mod multi_account_sync_tests {
             cache_service
                 .cache_email("INBOX", &email, ACCOUNT2_EMAIL)
                 .await
-                .expect(&format!("Failed to cache email {} for account 2", i));
+                .unwrap_or_else(|_| panic!("Failed to cache email {} for account 2", i));
         }
 
         // Retrieve emails for account 1
@@ -244,7 +244,7 @@ mod multi_account_sync_tests {
             cache_service
                 .cache_email("INBOX", &email, ACCOUNT1_EMAIL)
                 .await
-                .expect(&format!("Failed to cache email {}", i));
+                .unwrap_or_else(|_| panic!("Failed to cache email {}", i));
         }
 
         // Test pagination: first page (0-9)

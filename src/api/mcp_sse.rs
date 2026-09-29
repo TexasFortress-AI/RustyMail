@@ -129,6 +129,7 @@ impl McpSseState {
         }
     }
 
+    #[allow(dead_code)]
     async fn broadcast(&self, msg: String, msg_type: &str) {
         let event_data = match serde_json::to_string(&json!({ "type": msg_type, "data": msg })) {
             Ok(s) => s,
@@ -149,6 +150,7 @@ impl McpSseState {
         }
     }
 
+    #[allow(dead_code)]
     async fn handle_mcp_request(
         &self,
         session_id: &str,
@@ -359,10 +361,10 @@ impl Actor for WsSession {
                     // Extract the event data and send it as text
                     // The event is already formatted as SSE data
                     match event {
-                        sse::Event::Data(data) => {
+                        sse::Event::Data(_data) => {
                             // The SSE data is already formatted, just send it
                             // Data doesn't have into_string, create a formatted SSE message
-                            let text = format!("data: SSE event\n\n");
+                            let text = "data: SSE event\n\n".to_string();
                             addr.do_send(WsText(text));
                         }
                         _ => {
@@ -378,7 +380,7 @@ impl Actor for WsSession {
         );
     }
 
-    fn stopping(&mut self, ctx: &mut Self::Context) -> Running {
+    fn stopping(&mut self, _ctx: &mut Self::Context) -> Running {
         info!("WebSocket session stopping for SSE: {}", self.id);
         self.state_addr.do_send(Disconnect {
             id: self.id.clone(),

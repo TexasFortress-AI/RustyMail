@@ -317,13 +317,7 @@ impl AgentExecutor {
 
         // Convert tools from OpenAI format to native Ollama format
         // Native format expects tools directly (same structure but without "type": "function" wrapper)
-        let native_tools: Vec<Value> = tools
-            .iter()
-            .map(|tool| {
-                // Native Ollama tool format matches OpenAI format actually
-                tool.clone()
-            })
-            .collect();
+        let native_tools: Vec<Value> = tools.to_vec();
 
         // Build request body with sampler config from database if available
         let request_body = if let Some(cfg) = sampler_config {

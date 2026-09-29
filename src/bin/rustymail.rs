@@ -44,7 +44,7 @@ async fn main() -> std::io::Result<()> {
     let imap_client_result =
         ImapClient::<AsyncImapSessionWrapper>::connect(host, port, user, pass).await;
 
-    let imap_client = match imap_client_result {
+    let _imap_client = match imap_client_result {
         Ok(client) => {
             info!("IMAP connection and client creation successful.");
             Arc::new(client)

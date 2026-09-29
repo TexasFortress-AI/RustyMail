@@ -10,7 +10,7 @@ use crate::dashboard::services::cache::{CacheService, CachedEmail};
 use crate::imap::error::ImapError;
 use crate::imap::types::Email;
 use crate::prelude::CloneableImapSessionFactory;
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::Mutex as TokioMutex;
@@ -33,6 +33,7 @@ pub enum EmailServiceError {
     CacheServiceNotAvailable,
 }
 
+#[allow(dead_code)]
 pub struct EmailService {
     imap_factory: CloneableImapSessionFactory,
     connection_pool: Arc<ConnectionPool>,
@@ -454,7 +455,7 @@ impl EmailService {
                 let parts: Vec<&str> = from_str.split('@').collect();
                 vec![Address {
                     name: cached.from_name.clone(),
-                    mailbox: parts.get(0).map(|s| s.to_string()),
+                    mailbox: parts.first().map(|s| s.to_string()),
                     host: parts.get(1).map(|s| s.to_string()),
                 }]
             } else {
@@ -467,7 +468,7 @@ impl EmailService {
                     let parts: Vec<&str> = addr.split('@').collect();
                     Address {
                         name: None,
-                        mailbox: parts.get(0).map(|s| s.to_string()),
+                        mailbox: parts.first().map(|s| s.to_string()),
                         host: parts.get(1).map(|s| s.to_string()),
                     }
                 })
@@ -479,7 +480,7 @@ impl EmailService {
                     let parts: Vec<&str> = addr.split('@').collect();
                     Address {
                         name: None,
-                        mailbox: parts.get(0).map(|s| s.to_string()),
+                        mailbox: parts.first().map(|s| s.to_string()),
                         host: parts.get(1).map(|s| s.to_string()),
                     }
                 })
@@ -589,7 +590,7 @@ impl EmailService {
 
         use crate::imap::types::FlagOperation;
         client
-            .store_flags(uids, FlagOperation::Add, &vec!["\\Seen".to_string()])
+            .store_flags(uids, FlagOperation::Add, &["\\Seen".to_string()])
             .await?;
 
         // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
@@ -618,7 +619,7 @@ impl EmailService {
 
         use crate::imap::types::FlagOperation;
         client
-            .store_flags(uids, FlagOperation::Remove, &vec!["\\Seen".to_string()])
+            .store_flags(uids, FlagOperation::Remove, &["\\Seen".to_string()])
             .await?;
 
         // IMPORTANT: Logout to release BytePool buffers and prevent memory leak

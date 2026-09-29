@@ -11,7 +11,6 @@
 //! These tests create a real SQLite database with test data and exercise
 //! the tool logic directly (not through HTTP).
 
-use chrono::Utc;
 use serial_test::serial;
 use sqlx::SqlitePool;
 use std::fs;

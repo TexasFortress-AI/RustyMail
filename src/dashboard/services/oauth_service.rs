@@ -20,10 +20,9 @@ use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-use super::encryption::CredentialEncryption;
-use super::oauth_config::{
-    microsoft_auth_url, microsoft_token_url, OAuthConfig, OAuthProviderConfig, MICROSOFT_SCOPES,
-};
+#[cfg(test)]
+use super::oauth_config::OAuthProviderConfig;
+use super::oauth_config::{microsoft_auth_url, microsoft_token_url, OAuthConfig, MICROSOFT_SCOPES};
 
 /// Errors from OAuth2 operations.
 #[derive(Error, Debug)]
@@ -198,7 +197,7 @@ impl OAuthService {
 
         let response = self
             .http_client
-            .post(&microsoft_token_url())
+            .post(microsoft_token_url())
             .form(&params)
             .send()
             .await?;
@@ -247,7 +246,7 @@ impl OAuthService {
 
         let response = self
             .http_client
-            .post(&microsoft_token_url())
+            .post(microsoft_token_url())
             .form(&params)
             .send()
             .await?;

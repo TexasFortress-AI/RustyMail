@@ -6,16 +6,13 @@
 // src/mcp/types.rs
 
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::Value;
 // Use the ErrorCode enum from the dedicated module for consistency
 use crate::dashboard::services::cache::CacheService;
 use crate::imap::error::ImapError;
 use crate::mcp::error_codes::ErrorCode;
 use crate::session_manager::SessionManager;
-use log;
-use std::fmt;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 
 // Error code constants for IMAP errors - these match the enum values in ErrorCode
 pub const CODE_IMAP_CONNECTION_ERROR: i64 = ErrorCode::ImapConnectionError as i64;
@@ -145,7 +142,7 @@ pub struct JsonRpcRequest {
 /// - `result`: Required on success. MUST NOT exist if there was an error.
 /// - `error`: Required on error. MUST NOT exist if there was no error.
 /// - `id`: Must be the same as the value of the id member in the Request Object.
-///         If there was an error in detecting the id in the Request object (e.g. Parse error/Invalid Request), it MUST be Null.
+///   If there was an error in detecting the id in the Request object (e.g. Parse error/Invalid Request), it MUST be Null.
 ///
 /// See: [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification#response_object)
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -323,6 +320,7 @@ impl JsonRpcError {
 /// and a detailed error message string.
 ///
 /// This helps translate internal IMAP issues into standardized MCP/JSON-RPC errors.
+#[allow(dead_code)]
 fn map_imap_err_to_mcp(err: &ImapError) -> (i64, String) {
     match err {
         ImapError::Connection(msg) => (

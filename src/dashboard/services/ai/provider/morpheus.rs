@@ -43,12 +43,14 @@ struct MorpheusChoice {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct MorpheusModelsResponse {
     object: String,
     data: Vec<MorpheusModel>,
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct MorpheusModel {
     id: String,
     #[serde(rename = "blockchainID")]

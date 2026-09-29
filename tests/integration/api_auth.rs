@@ -7,7 +7,6 @@
 
 #[cfg(test)]
 mod auth_tests {
-    use serial_test::serial;
 
     #[cfg(feature = "integration_tests")]
     #[tokio::test]

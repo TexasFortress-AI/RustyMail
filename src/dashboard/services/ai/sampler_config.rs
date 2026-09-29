@@ -637,6 +637,7 @@ pub fn get_recommended_presets() -> Vec<PresetCategory> {
 }
 
 /// Helper to create a preset configuration
+#[allow(clippy::too_many_arguments)]
 fn create_preset(
     provider: &str,
     model_name: &str,

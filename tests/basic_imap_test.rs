@@ -61,10 +61,7 @@ fn test_flag_operations() {
     let _set_op = FlagOperation::Set;
 
     // Just verify they can be created and used in match expressions
-    match add_op {
-        FlagOperation::Add => assert!(true),
-        _ => assert!(false),
-    }
+    assert!(matches!(add_op, FlagOperation::Add));
 }
 
 /// Regression test: IMAP fetches must use BODY.PEEK[] to avoid setting \Seen flag.

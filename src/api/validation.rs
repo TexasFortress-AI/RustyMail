@@ -96,7 +96,7 @@ pub mod validators {
         }
 
         // Check for valid UID values (> 0)
-        if uids.iter().any(|&uid| uid == 0) {
+        if uids.contains(&0) {
             return Err(ValidationError::new("invalid_uid_value"));
         }
 

@@ -132,11 +132,7 @@ impl TestServer {
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         for (key, value) in env_vars {
-            if key.starts_with("IMAP_") {
-                command.env(&key, value);
-            } else if key == "RUST_LOG" {
-                command.env(&key, value);
-            } else if key == "RUST_BACKTRACE" {
+            if key.starts_with("IMAP_") || key == "RUST_LOG" || key == "RUST_BACKTRACE" {
                 command.env(&key, value);
             }
         }
@@ -254,93 +250,81 @@ async fn test_health_check(client: &Client) -> bool {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+#[tokio::test]
+#[ignore = "spawns live server; run manually with --ignored"]
+async fn run_rest_e2e_tests() {
+    println!("--- Starting REST E2E Test Suite ---");
+    let mut server = TestServer::new().await;
+    let client = Client::new();
 
-    #[tokio::test]
-    async fn simple_test_runs() {
-        println!("--- simple_test_runs started ---");
-        assert!(true);
-        println!("--- simple_test_runs finished ---");
-    }
+    let test_run_id = unique_id("testrun");
+    let folder_a = format!("{}{}", TEST_FOLDER_A_BASE, test_run_id);
+    let folder_b = format!("{}{}", TEST_FOLDER_B_BASE, test_run_id);
+    println!("Using folder A: {}, folder B: {}", folder_a, folder_b);
 
-    #[tokio::test]
-    #[ignore]
-    async fn run_rest_e2e_tests() {
-        println!("--- Starting REST E2E Test Suite ---");
-        let mut server = TestServer::new().await;
-        let client = Client::new();
+    // --- Execute Test Steps Sequentially ---
+    println!("Step 1: Listing initial folders...");
+    test_e2e_list_folders(&client).await;
 
-        let test_run_id = unique_id("testrun");
-        let folder_a = format!("{}{}", TEST_FOLDER_A_BASE, test_run_id);
-        let folder_b = format!("{}{}", TEST_FOLDER_B_BASE, test_run_id);
-        println!("Using folder A: {}, folder B: {}", folder_a, folder_b);
+    println!("Step 2: Creating test folder A ({}) ...", folder_a);
+    test_e2e_create_folder(&client, &folder_a).await;
 
-        // --- Execute Test Steps Sequentially ---
-        println!("Step 1: Listing initial folders...");
-        test_e2e_list_folders(&client).await;
+    println!("Step 3: Appending emails...");
+    let subject1 = unique_id("Subject 1 ");
+    let subject2 = unique_id("Subject 2 ");
+    let uid1 = test_e2e_append_email(&client, &folder_a, &subject1).await;
+    let uid2 = test_e2e_append_email(&client, &folder_a, &subject2).await;
+    println!("Appended emails with UIDs: {}, {}", uid1, uid2);
+    assert!(
+        uid1 > 0 && uid2 > 0 && uid1 != uid2,
+        "Append email failed or returned invalid UIDs"
+    );
 
-        println!("Step 2: Creating test folder A ({}) ...", folder_a);
-        test_e2e_create_folder(&client, &folder_a).await;
+    println!("Step 4: Searching email...");
+    test_e2e_search_emails(&client, &folder_a, &subject1, uid1).await;
 
-        println!("Step 3: Appending emails...");
-        let subject1 = unique_id("Subject 1 ");
-        let subject2 = unique_id("Subject 2 ");
-        let uid1 = test_e2e_append_email(&client, &folder_a, &subject1).await;
-        let uid2 = test_e2e_append_email(&client, &folder_a, &subject2).await;
-        println!("Appended emails with UIDs: {}, {}", uid1, uid2);
-        assert!(
-            uid1 > 0 && uid2 > 0 && uid1 != uid2,
-            "Append email failed or returned invalid UIDs"
-        );
+    println!("Step 5: Fetching email...");
+    test_e2e_fetch_emails(
+        &client,
+        &folder_a,
+        vec![uid1, uid2],
+        vec![subject1.clone(), subject2.clone()],
+    )
+    .await;
 
-        println!("Step 4: Searching email...");
-        test_e2e_search_emails(&client, &folder_a, &subject1, uid1).await;
+    println!("Step 6: Flag operations...");
+    test_e2e_flags_operations(&client).await;
 
-        println!("Step 5: Fetching email...");
-        test_e2e_fetch_emails(
-            &client,
-            &folder_a,
-            vec![uid1, uid2],
-            vec![subject1.clone(), subject2.clone()],
-        )
-        .await;
+    println!("Step 7: Creating test folder B ({}) ...", folder_b);
+    test_e2e_create_folder(&client, &folder_b).await;
 
-        println!("Step 6: Flag operations...");
-        test_e2e_flags_operations(&client).await;
+    println!("Step 8: Moving email...");
+    test_e2e_move_email(&client, &folder_a, &folder_b, uid1, &subject1).await;
 
-        println!("Step 7: Creating test folder B ({}) ...", folder_b);
-        test_e2e_create_folder(&client, &folder_b).await;
+    println!("Step 9: Verifying email moved...");
+    test_e2e_verify_email_absence(&client, &folder_a, uid1).await;
+    test_e2e_verify_email_presence(&client, &folder_b, uid1, &subject1).await;
 
-        println!("Step 8: Moving email...");
-        test_e2e_move_email(&client, &folder_a, &folder_b, uid1, &subject1).await;
+    println!("Step 10: Renaming folder A (now empty) to something else...");
+    let renamed_folder_a = format!("{}{}_Renamed", TEST_FOLDER_A_BASE, test_run_id);
+    test_e2e_rename_folder(&client, &folder_a, &renamed_folder_a).await;
 
-        println!("Step 9: Verifying email moved...");
-        test_e2e_verify_email_absence(&client, &folder_a, uid1).await;
-        test_e2e_verify_email_presence(&client, &folder_b, uid1, &subject1).await;
+    println!("Step 11: Selecting folder B...");
+    test_e2e_select_folder(&client, &folder_b).await;
 
-        println!("Step 10: Renaming folder A (now empty) to something else...");
-        let renamed_folder_a = format!("{}{}_Renamed", TEST_FOLDER_A_BASE, test_run_id);
-        test_e2e_rename_folder(&client, &folder_a, &renamed_folder_a).await;
+    println!("Step 12: Testing error cases...");
+    test_e2e_fetch_non_existent_folder(&client).await;
+    test_e2e_fetch_non_existent_uid(&client).await;
+    test_e2e_move_invalid_uid(&client).await;
+    test_e2e_move_invalid_destination(&client).await;
 
-        println!("Step 11: Selecting folder B...");
-        test_e2e_select_folder(&client, &folder_b).await;
+    println!("Step 13: Cleaning up folders...");
+    test_e2e_delete_folder(&client, &renamed_folder_a).await;
+    test_e2e_delete_folder(&client, &folder_b).await;
 
-        println!("Step 12: Testing error cases...");
-        test_e2e_fetch_non_existent_folder(&client).await;
-        test_e2e_fetch_non_existent_uid(&client).await;
-        test_e2e_move_invalid_uid(&client).await;
-        test_e2e_move_invalid_destination(&client).await;
-
-        println!("Step 13: Cleaning up folders...");
-        test_e2e_delete_folder(&client, &renamed_folder_a).await;
-        test_e2e_delete_folder(&client, &folder_b).await;
-
-        // --- Shutdown Server ---
-        server.shutdown().await;
-        println!("--- REST E2E Test Suite Finished ---");
-    }
+    // --- Shutdown Server ---
+    server.shutdown().await;
+    println!("--- REST E2E Test Suite Finished ---");
 }
 
 async fn test_e2e_list_folders(client: &Client) {
@@ -352,7 +336,7 @@ async fn test_e2e_list_folders(client: &Client) {
         .get(&url)
         .send()
         .await
-        .expect(&format!("Request failed: GET {}", url));
+        .unwrap_or_else(|e| panic!("Request failed: GET {}: {}", url, e));
 
     println!("Received response with status: {}", resp.status());
     let body_text = resp
@@ -838,10 +822,12 @@ async fn test_e2e_fetch_emails(
             "Fetch request failed for UID {}",
             uid_to_fetch
         );
-        let emails: Vec<Email> = fetch_resp.json().await.expect(&format!(
-            "Failed to parse fetch response for UID {}",
-            uid_to_fetch
-        ));
+        let emails: Vec<Email> = fetch_resp.json().await.unwrap_or_else(|e| {
+            panic!(
+                "Failed to parse fetch response for UID {}: {}",
+                uid_to_fetch, e
+            )
+        });
 
         // Workaround: Log warning instead of panic if fetch returns 0 results
         if emails.is_empty() {

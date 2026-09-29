@@ -279,8 +279,6 @@ impl OutboxWorker {
         &self,
         item: &crate::dashboard::services::OutboxQueueItem,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        use crate::imap::session::AsyncImapOps;
-
         // Get the account for this email
         let account_service = self.account_service.lock().await;
         let account = account_service
@@ -358,7 +356,6 @@ impl OutboxWorker {
     async fn cleanup_orphaned_outbox_emails(
         &self,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        use crate::imap::session::AsyncImapOps;
         use chrono::{Duration as ChronoDuration, Utc};
 
         info!("Running orphaned outbox email cleanup...");
@@ -391,7 +388,7 @@ impl OutboxWorker {
             };
 
             // Create IMAP session
-            let mut session = match self.imap_factory.create_session_for_account(&account).await {
+            let session = match self.imap_factory.create_session_for_account(&account).await {
                 Ok(s) => s,
                 Err(e) => {
                     warn!(

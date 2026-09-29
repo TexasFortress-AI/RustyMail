@@ -6,8 +6,6 @@
 use crate::config::Settings;
 use crate::dashboard::api::models::{ImapAdapter, ServerConfig};
 use log::{error, info};
-use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -26,6 +24,12 @@ pub struct ConfigService {
     config: RwLock<ConfigData>,
     current_config: Arc<RwLock<Settings>>,
     config_path: Option<PathBuf>,
+}
+
+impl Default for ConfigService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ConfigService {
@@ -218,7 +222,7 @@ impl ConfigService {
 
         // Persist if we have a config path
         if let Some(config_path) = &self.config_path {
-            if let Err(e) = self.persist_settings(&*settings, config_path).await {
+            if let Err(e) = self.persist_settings(&settings, config_path).await {
                 error!("Failed to persist configuration: {}", e);
                 return Err(format!("Failed to save configuration: {}", e));
             }
@@ -251,7 +255,7 @@ impl ConfigService {
 
         // Persist if we have a config path
         if let Some(config_path) = &self.config_path {
-            if let Err(e) = self.persist_settings(&*settings, config_path).await {
+            if let Err(e) = self.persist_settings(&settings, config_path).await {
                 error!("Failed to persist configuration: {}", e);
                 return Err(format!("Failed to save configuration: {}", e));
             }
@@ -294,7 +298,7 @@ impl ConfigService {
 
         // Persist if we have a config path
         if let Some(config_path) = &self.config_path {
-            if let Err(e) = self.persist_settings(&*settings, config_path).await {
+            if let Err(e) = self.persist_settings(&settings, config_path).await {
                 error!("Failed to persist configuration: {}", e);
                 return Err(format!("Failed to save configuration: {}", e));
             }

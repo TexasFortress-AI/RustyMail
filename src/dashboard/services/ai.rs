@@ -17,7 +17,7 @@ use crate::dashboard::api::models::{
     ChatbotQuery, ChatbotResponse, EmailData, EmailFolder, EmailMessage,
 };
 use crate::dashboard::services::ai::nlp_processor::NlpProcessor;
-use crate::dashboard::services::ai::provider::{AiChatMessage, AiProvider};
+use crate::dashboard::services::ai::provider::AiChatMessage;
 use crate::dashboard::services::ai::provider_manager::ProviderManager;
 use log::{debug, error, info, warn};
 use reqwest::Client;
@@ -30,6 +30,7 @@ use uuid::Uuid;
 
 // Conversation history entry
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct ConversationEntry {
     message: AiChatMessage, // Use the common message struct
     timestamp: chrono::DateTime<chrono::Utc>,
@@ -44,11 +45,13 @@ struct Conversation {
 
 // Helper struct to hold both string context and structured email data
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 struct EmailContextData {
     context_string: String,
     email_data: EmailData,
 }
 
+#[allow(dead_code)]
 pub struct AiService {
     conversations: RwLock<HashMap<String, Conversation>>,
     provider_manager: ProviderManager,
@@ -247,6 +250,7 @@ impl AiService {
         })
     }
 
+    #[allow(dead_code)]
     pub async fn process_query(&self, query: ChatbotQuery) -> Result<ChatbotResponse, ApiError> {
         let conversation_id = query
             .conversation_id
@@ -273,7 +277,7 @@ impl AiService {
 
         // Fetch folder list to include in system prompt (so AI doesn't have to query it)
         let folder_context = if let Some(ref acc_id) = account_id {
-            let mut params = json!({"account_id": acc_id});
+            let params = json!({"account_id": acc_id});
             match self.call_mcp_tool("list_folders", params).await {
                 Ok(result) => {
                     if let Some(folders) = result.get("data").and_then(|d| d.as_array()) {
@@ -407,11 +411,8 @@ impl AiService {
                 Ok(text) => text,
                 Err(e) => {
                     error!("AI Service failed: {}", e);
-                    final_response = format!(
-                        "[Error - Provider: {} failed]\n\n{}",
-                        provider_name,
-                        e.to_string()
-                    );
+                    final_response =
+                        format!("[Error - Provider: {} failed]\n\n{}", provider_name, e);
                     break;
                 }
             };
@@ -495,6 +496,7 @@ impl AiService {
     }
 
     // Generate a mock response using MCP tools
+    #[allow(dead_code)]
     fn generate_mock_response(&self, query: &str, account_id: Option<&str>) -> String {
         let query_lower = query.to_lowercase();
 
@@ -857,6 +859,7 @@ impl AiService {
     }
 
     /// Fetch email context using MCP tools
+    #[allow(dead_code)]
     async fn fetch_email_context_mcp(
         &self,
         query: &str,
@@ -979,6 +982,7 @@ impl AiService {
     }
 
     /// Extract folder name from query and map to IMAP folder name
+    #[allow(dead_code)]
     fn extract_folder_from_query(query: &str) -> String {
         let query_lower = query.to_lowercase();
 
@@ -1007,6 +1011,7 @@ impl AiService {
     }
 
     /// Fetch email context with structured data for the chatbot
+    #[allow(dead_code)]
     async fn fetch_email_context_with_data(
         &self,
         query: &str,
@@ -1019,7 +1024,6 @@ impl AiService {
         let query_lower = query.to_lowercase();
         let mut email_messages: Vec<EmailMessage> = Vec::new();
         let mut email_folders: Vec<EmailFolder> = Vec::new();
-        let mut total_count: Option<u32> = None;
 
         // Check if query is about folders
         if query_lower.contains("folder") || query_lower.contains("mailbox") {
@@ -1108,7 +1112,7 @@ impl AiService {
             if let Some(acc_id) = account_id {
                 count_params["account_id"] = json!(acc_id);
             }
-            total_count = match self
+            let total_count = match self
                 .call_mcp_tool("count_emails_in_folder", count_params)
                 .await
             {
@@ -1252,6 +1256,7 @@ impl AiService {
     }
 
     /// Fetch email context based on the query (legacy - uses direct email service)
+    #[allow(dead_code)]
     async fn fetch_email_context(
         &self,
         query: &str,

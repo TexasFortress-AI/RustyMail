@@ -39,6 +39,7 @@ fn default_variant() -> String {
 }
 
 /// Session data with event history for resumability
+#[allow(dead_code)]
 struct SessionData {
     sender: mpsc::Sender<String>,
     last_activity: Instant,
@@ -62,10 +63,12 @@ impl SessionData {
         self.last_activity = Instant::now();
     }
 
+    #[allow(dead_code)]
     fn is_expired(&self) -> bool {
         self.last_activity.elapsed() > SESSION_TIMEOUT
     }
 
+    #[allow(dead_code)]
     async fn send_event(&mut self, data: String) -> Result<(), String> {
         let event_id = self.next_event_id;
         self.next_event_id += 1;
@@ -155,7 +158,7 @@ impl Stream for McpSseStream {
 
         // Send heartbeat if no messages
         if let Poll::Ready(Some(_)) = self.heartbeat.poll_next_unpin(cx) {
-            let heartbeat = format!(": heartbeat\n\n");
+            let heartbeat = ": heartbeat\n\n".to_string();
             cx.waker().wake_by_ref();
             return Poll::Ready(Some(Ok(Bytes::from(heartbeat))));
         }
@@ -346,7 +349,7 @@ async fn handle_mcp_request(
                             "result": {
                                 "content": [{
                                     "type": "text",
-                                    "text": serde_json::to_string(&*job.value()).unwrap_or_default()
+                                    "text": serde_json::to_string(job.value()).unwrap_or_default()
                                 }]
                             }
                         })

@@ -30,7 +30,7 @@ pub struct RestConfig {
     pub port: u16,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct McpStdioConfig {
     pub enabled: bool,
 }
@@ -181,12 +181,6 @@ impl Default for SseConfig {
                 .parse()
                 .expect("SSE_PORT must be a valid port number"),
         }
-    }
-}
-
-impl Default for McpStdioConfig {
-    fn default() -> Self {
-        Self { enabled: false }
     }
 }
 

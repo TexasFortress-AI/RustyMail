@@ -22,7 +22,6 @@ use serde_json::json;
 use serial_test::serial;
 use sqlx::SqlitePool;
 use std::fs;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::Mutex as TokioMutex;
@@ -799,7 +798,7 @@ async fn test_rest_api_key_validation() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(|cfg| rustymail::dashboard::api::init_routes(cfg)),
+            .configure(rustymail::dashboard::api::init_routes),
     )
     .await;
 
@@ -853,8 +852,6 @@ async fn test_no_hardcoded_credentials() {
 /// Test that rate limiting validators exist
 #[tokio::test]
 async fn test_rate_limiting_validators_exist() {
-    use rustymail::api::validation;
-
     println!("=== SECURITY TEST: Rate Limiting Validators ===");
 
     // The rate limiting logic exists but may not be wired into all routes
@@ -982,8 +979,7 @@ async fn test_rate_limit_429_response() {
     assert_eq!(
         resp.headers()
             .get("x-ratelimit-remaining")
-            .map(|v| v.to_str().ok())
-            .flatten(),
+            .and_then(|v| v.to_str().ok()),
         Some("0"),
         "X-RateLimit-Remaining should be 0"
     );

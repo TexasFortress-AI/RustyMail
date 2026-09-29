@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
@@ -53,6 +53,7 @@ pub trait SessionManagerTrait: Send + Sync {
 
 /// Session manager that maintains IMAP client sessions by API key
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct SessionManager {
     sessions: Arc<Mutex<HashMap<String, Arc<ManagedClient>>>>,
     settings: Arc<Settings>,
@@ -245,11 +246,11 @@ pub mod mock {
 
         async fn create_session(
             &self,
-            api_key: &str,
-            username: &str,
-            password: &str,
-            server: &str,
-            port: u16,
+            _api_key: &str,
+            _username: &str,
+            _password: &str,
+            _server: &str,
+            _port: u16,
         ) -> SessionResult<Arc<ManagedClient>> {
             self.create_session_count.fetch_add(1, Ordering::SeqCst);
 
@@ -263,7 +264,7 @@ pub mod mock {
             }
         }
 
-        async fn remove_session(&self, api_key: &str) -> SessionResult<()> {
+        async fn remove_session(&self, _api_key: &str) -> SessionResult<()> {
             self.remove_session_count.fetch_add(1, Ordering::SeqCst);
 
             let response = self.remove_session_response.lock().await;

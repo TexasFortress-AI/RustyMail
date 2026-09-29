@@ -160,6 +160,12 @@ pub struct EventBus {
     max_history_size: usize,
 }
 
+impl Default for EventBus {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventBus {
     pub fn new() -> Self {
         Self {

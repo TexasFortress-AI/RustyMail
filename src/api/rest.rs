@@ -116,7 +116,7 @@ async fn get_session(
         .get("X-API-Key")
         .or_else(|| req.headers().get("Authorization"))
         .and_then(|h| h.to_str().ok())
-        .map(|s| if s.starts_with("Bearer ") { &s[7..] } else { s })
+        .map(|s| s.strip_prefix("Bearer ").unwrap_or(s))
         .ok_or(ApiError::Unauthorized)?;
 
     // Get API key data from store
@@ -237,6 +237,7 @@ async fn create_folder(
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct CreateFolderRequest {
     name: String,
     #[serde(default)]
@@ -373,7 +374,7 @@ async fn get_email(
     let session = get_session(&state, &req).await?;
     let _ = session.select_folder(&folder_name).await?;
 
-    let emails = session.fetch_emails(&vec![uid]).await?;
+    let emails = session.fetch_emails(&[uid]).await?;
 
     if emails.is_empty() {
         return Err(ApiError::EmailNotFound { uid });
@@ -485,7 +486,7 @@ async fn update_email_flags(
         let flag_strings: Vec<String> = flags.items.iter().map(|f| f.to_string()).collect();
         let operation = payload.flag_operation.clone().unwrap_or(FlagOperation::Set);
         session
-            .store_flags(&vec![uid], operation, &flag_strings)
+            .store_flags(&[uid], operation, &flag_strings)
             .await?;
     }
 
@@ -516,11 +517,7 @@ async fn delete_email(
 
     // Mark email as deleted
     session
-        .store_flags(
-            &vec![uid],
-            FlagOperation::Add,
-            &vec!["\\Deleted".to_string()],
-        )
+        .store_flags(&[uid], FlagOperation::Add, &["\\Deleted".to_string()])
         .await?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -743,7 +740,7 @@ async fn expunge_folder(
 
     let session = get_session(&state, &req).await?;
     let _ = session.select_folder(&folder_name).await?;
-    let _ = session.expunge().await?;
+    session.expunge().await?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "folder": folder_name,
@@ -763,7 +760,7 @@ pub async fn run_server(
     let rest_config = settings
         .rest
         .as_ref()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "REST config not found"))?;
+        .ok_or_else(|| std::io::Error::other("REST config not found"))?;
     let bind_address = format!("{}:{}", rest_config.host, rest_config.port);
     info!("Starting REST API server at {}", bind_address);
 

@@ -40,6 +40,7 @@ struct OpenAiChoice {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct OpenAiUsage {
     // Define usage fields if needed
 }

@@ -499,7 +499,7 @@ mod tests {
     fn test_suggestions() {
         let auth_error = ApiError::Unauthorized;
         assert!(auth_error.suggestions().is_some());
-        assert!(auth_error.suggestions().unwrap().len() > 0);
+        assert!(!auth_error.suggestions().unwrap().is_empty());
 
         let rate_error = ApiError::RateLimitExceeded {
             message: "test".to_string(),

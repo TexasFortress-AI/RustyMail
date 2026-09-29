@@ -187,7 +187,7 @@ impl CredentialEncryption {
         let key_bytes =
             hex::decode(&key_hex).map_err(|e| EncryptionError::InvalidKeyHex(e.to_string()))?;
 
-        Ok(Aes256Gcm::new_from_slice(&key_bytes).map_err(|e| EncryptionError::InvalidKeyLength)?)
+        Aes256Gcm::new_from_slice(&key_bytes).map_err(|_e| EncryptionError::InvalidKeyLength)
     }
 }
 

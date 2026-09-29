@@ -11,7 +11,6 @@ use crate::dashboard::services::DashboardState;
 use actix_web::web::Data;
 use actix_web::{web, HttpResponse, Responder};
 use actix_web_lab::sse::{self, Sse};
-use futures_util::StreamExt;
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json;
@@ -1778,7 +1777,7 @@ pub async fn execute_mcp_tool_inner(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state_data).await {
                 Ok(account_id) => {
-                    let account_email = match validate_account_exists(&account_id, &state).await {
+                    let account_email = match validate_account_exists(&account_id, state).await {
                         Ok(id) => id,
                         Err(e) => {
                             return serde_json::json!({
@@ -1835,7 +1834,7 @@ pub async fn execute_mcp_tool_inner(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state_data).await {
                 Ok(account_id) => {
-                    let account_email = match validate_account_exists(&account_id, &state).await {
+                    let account_email = match validate_account_exists(&account_id, state).await {
                         Ok(id) => id,
                         Err(e) => {
                             return serde_json::json!({
@@ -1939,7 +1938,7 @@ pub async fn execute_mcp_tool_inner(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state_data).await {
                 Ok(account_id) => {
-                    let account_email = match validate_account_exists(&account_id, &state).await {
+                    let account_email = match validate_account_exists(&account_id, state).await {
                         Ok(id) => id,
                         Err(e) => {
                             return serde_json::json!({
@@ -2010,7 +2009,7 @@ pub async fn execute_mcp_tool_inner(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state_data).await {
                 Ok(account_id) => {
-                    let account_email = match validate_account_exists(&account_id, &state).await {
+                    let account_email = match validate_account_exists(&account_id, state).await {
                         Ok(id) => id,
                         Err(e) => {
                             return serde_json::json!({
@@ -2062,7 +2061,7 @@ pub async fn execute_mcp_tool_inner(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state_data).await {
                 Ok(account_id) => {
-                    let account_email = match validate_account_exists(&account_id, &state).await {
+                    let account_email = match validate_account_exists(&account_id, state).await {
                         Ok(id) => id,
                         Err(e) => {
                             return serde_json::json!({
@@ -2117,7 +2116,7 @@ pub async fn execute_mcp_tool_inner(
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state_data).await {
                 Ok(account_id) => {
-                    let account_email = match validate_account_exists(&account_id, &state).await {
+                    let account_email = match validate_account_exists(&account_id, state).await {
                         Ok(id) => id,
                         Err(e) => {
                             return serde_json::json!({
@@ -3131,7 +3130,7 @@ pub async fn execute_mcp_tool_inner(
                 };
 
             // Check if attachments exist in database, fetch from IMAP if not
-            let mut attachments = match attachment_storage::get_attachments_metadata(
+            let attachments = match attachment_storage::get_attachments_metadata(
                 db_pool,
                 &account_id,
                 &message_id,
@@ -3169,23 +3168,20 @@ pub async fn execute_mcp_tool_inner(
                             attachment_infos.len()
                         );
 
-                        // Re-query database to get the saved attachments
-                        attachments = match attachment_storage::get_attachments_metadata(
+                        // Re-query to confirm attachments were persisted (ZIP path reloads from DB).
+                        if let Err(e) = attachment_storage::get_attachments_metadata(
                             db_pool,
                             &account_id,
                             &message_id,
                         )
                         .await
                         {
-                            Ok(atts) => atts,
-                            Err(e) => {
-                                return serde_json::json!({
-                                    "success": false,
-                                    "error": format!("Failed to get attachments after IMAP fetch: {}", e),
-                                    "tool": tool_name
-                                })
-                            }
-                        };
+                            return serde_json::json!({
+                                "success": false,
+                                "error": format!("Failed to get attachments after IMAP fetch: {}", e),
+                                "tool": tool_name
+                            });
+                        }
                     }
                     Err(e) => {
                         return serde_json::json!({
@@ -3651,7 +3647,7 @@ pub async fn execute_mcp_tool_inner(
                     let synopsis = match &email.body_text {
                         Some(body) => {
                             let sentences: Vec<&str> = body
-                                .split(|c: char| c == '.' || c == '!' || c == '?')
+                                .split(['.', '!', '?'])
                                 .map(|s| s.trim())
                                 .filter(|s| !s.is_empty() && s.len() > 5)
                                 .take(max_lines)
@@ -4744,7 +4740,7 @@ pub async fn set_ai_provider(
                 model_name.clone(),
             )
             .await
-            .map_err(|e| ApiError::BadRequest(e))?;
+            .map_err(ApiError::BadRequest)?;
 
         info!(
             "Persisted chatbot provider selection to database: provider={}, model={}",
@@ -4757,7 +4753,7 @@ pub async fn set_ai_provider(
             .ai_service
             .set_current_provider(req.provider_name.clone())
             .await
-            .map_err(|e| ApiError::BadRequest(e))?;
+            .map_err(ApiError::BadRequest)?;
     }
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -5271,10 +5267,8 @@ pub async fn trigger_email_sync(
     query: web::Query<serde_json::Value>,
 ) -> Result<impl Responder, ApiError> {
     // Extract optional account and folder from query params
-    let account_id = match get_account_id_to_use(&query.0, &state).await {
-        Ok(id) => Some(id),
-        Err(_) => None, // No account specified, will sync all
-    };
+    // No account specified → sync all
+    let account_id = get_account_id_to_use(&query.0, &state).await.ok();
     let folder = query
         .get("folder")
         .and_then(|v| v.as_str())
@@ -5974,19 +5968,21 @@ pub async fn get_jobs(
     let jobs: Vec<_> = state
         .jobs
         .iter()
-        .filter(|entry| {
-            if let Some(ref status_filter) = query.status {
-                match (&entry.status, status_filter.as_str()) {
-                    (crate::dashboard::services::jobs::JobStatus::Running, "running") => true,
-                    (crate::dashboard::services::jobs::JobStatus::Completed(_), "completed") => {
-                        true
-                    }
-                    (crate::dashboard::services::jobs::JobStatus::Failed(_), "failed") => true,
-                    _ => false,
-                }
-            } else {
-                true
-            }
+        .filter(|entry| match query.status.as_deref() {
+            None => true,
+            Some("running") => matches!(
+                entry.status,
+                crate::dashboard::services::jobs::JobStatus::Running
+            ),
+            Some("completed") => matches!(
+                entry.status,
+                crate::dashboard::services::jobs::JobStatus::Completed(_)
+            ),
+            Some("failed") => matches!(
+                entry.status,
+                crate::dashboard::services::jobs::JobStatus::Failed(_)
+            ),
+            Some(_) => false,
         })
         .take(query.limit.unwrap_or(100) as usize)
         .map(|entry| entry.value().clone())

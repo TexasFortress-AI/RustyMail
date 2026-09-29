@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 // use crate::transport::*;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[allow(dead_code)]
 struct TestMessage {
     id: u32,
     content: String,

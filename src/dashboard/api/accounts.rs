@@ -427,7 +427,7 @@ pub async fn set_default_account(
 }
 
 /// Get default account
-pub async fn get_default_account(state: web::Data<DashboardState>) -> HttpResponse {
+pub async fn get_default_account(_state: web::Data<DashboardState>) -> HttpResponse {
     info!("Getting default account");
 
     HttpResponse::NotImplemented().json(serde_json::json!({

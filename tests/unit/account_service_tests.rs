@@ -3,11 +3,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use chrono::Utc;
-use rustymail::dashboard::services::account::{Account, AccountError, AccountService};
-use rustymail::dashboard::services::account_store::{
-    AccountStore, ImapConfig, SmtpConfig, StoredAccount,
-};
+use rustymail::dashboard::services::account::{Account, AccountService};
 use serial_test::serial;
 use sqlx::SqlitePool;
 use std::fs;
@@ -59,6 +55,7 @@ fn create_test_account(email: &str, display_name: &str) -> Account {
         imap_user: email.to_string(),
         imap_pass: "test_password".to_string(),
         imap_use_tls: true,
+        imap_use_starttls: false,
         smtp_host: Some("smtp.gmail.com".to_string()),
         smtp_port: Some(587),
         smtp_user: Some(email.to_string()),

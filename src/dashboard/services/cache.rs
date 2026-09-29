@@ -3,9 +3,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use crate::imap::types::{Address, Email};
+use crate::imap::types::Email;
 use chrono::{DateTime, Utc};
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use lru::LruCache;
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
@@ -871,7 +871,7 @@ impl CacheService {
             where_clause
         );
 
-        let mut query = sqlx::query(&query_str).bind(folder.id);
+        let query = sqlx::query(&query_str).bind(folder.id);
         // Bind limit and offset
         let rows = query
             .bind(limit as i64)

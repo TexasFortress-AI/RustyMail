@@ -6,7 +6,6 @@
 //! Integration tests for Dashboard API endpoints
 //! Tests all dashboard endpoints including config, stats, accounts, emails, AI, and MCP
 
-use actix_web::{test, web, App};
 use serde_json::json;
 use serial_test::serial;
 
@@ -64,7 +63,7 @@ async fn test_update_imap_config() {
     setup_test_env();
     println!("=== Testing PUT /api/dashboard/config/imap ===");
 
-    let update_request = json!({
+    let _update_request = json!({
         "host": "imap.example.com",
         "port": 993,
         "use_tls": true
@@ -85,7 +84,7 @@ async fn test_update_rest_config() {
     setup_test_env();
     println!("=== Testing PUT /api/dashboard/config/rest ===");
 
-    let update_request = json!({
+    let _update_request = json!({
         "host": "127.0.0.1",
         "port": 9437
     });
@@ -103,7 +102,7 @@ async fn test_update_dashboard_config() {
     setup_test_env();
     println!("=== Testing PUT /api/dashboard/config/dashboard ===");
 
-    let update_request = json!({
+    let _update_request = json!({
         "port": 9439,
         "enabled": true
     });
@@ -199,7 +198,7 @@ async fn test_create_account() {
     setup_test_env();
     println!("=== Testing POST /api/dashboard/accounts ===");
 
-    let create_request = json!({
+    let _create_request = json!({
         "email": "test@example.com",
         "password": "testpass",
         "imap_host": "imap.example.com",
@@ -236,7 +235,7 @@ async fn test_update_account() {
     setup_test_env();
     println!("=== Testing PUT /api/dashboard/accounts/:id ===");
 
-    let update_request = json!({
+    let _update_request = json!({
         "password": "newpass",
         "imap_port": 993
     });
@@ -315,7 +314,7 @@ async fn test_auto_configure_account() {
     setup_test_env();
     println!("=== Testing POST /api/dashboard/accounts/auto-config ===");
 
-    let auto_config_request = json!({
+    let _auto_config_request = json!({
         "email": "test@example.com"
     });
 
@@ -358,7 +357,7 @@ async fn test_trigger_email_sync() {
     setup_test_env();
     println!("=== Testing POST /api/dashboard/sync/trigger ===");
 
-    let sync_request = json!({
+    let _sync_request = json!({
         "account_id": "test@example.com"
     });
 
@@ -410,7 +409,7 @@ async fn test_set_ai_provider() {
     setup_test_env();
     println!("=== Testing POST /api/dashboard/ai/providers/set ===");
 
-    let set_provider_request = json!({
+    let _set_provider_request = json!({
         "provider": "openai"
     });
 
@@ -447,7 +446,7 @@ async fn test_set_ai_model() {
     setup_test_env();
     println!("=== Testing POST /api/dashboard/ai/models/set ===");
 
-    let set_model_request = json!({
+    let _set_model_request = json!({
         "model": "gpt-4"
     });
 
@@ -483,7 +482,7 @@ async fn test_execute_mcp_tool() {
     setup_test_env();
     println!("=== Testing POST /api/dashboard/mcp/execute ===");
 
-    let execute_request = json!({
+    let _execute_request = json!({
         "tool": "list_folders",
         "arguments": {
             "account_id": "test@example.com"
@@ -510,7 +509,7 @@ async fn test_query_chatbot() {
     println!("=== Testing POST /api/dashboard/chatbot/query ===");
 
     // Test with all ChatbotQuery fields
-    let query_request = json!({
+    let _query_request = json!({
         "query": "What is RustyMail?",
         "conversation_id": null,
         "provider_override": null,
@@ -538,7 +537,7 @@ async fn test_stream_chatbot() {
     println!("=== Testing POST /api/dashboard/chatbot/stream ===");
 
     // Test with all ChatbotQuery fields
-    let stream_request = json!({
+    let _stream_request = json!({
         "query": "Explain email protocols",
         "conversation_id": null,
         "provider_override": null,
@@ -611,7 +610,7 @@ async fn test_update_client_subscriptions() {
     setup_test_env();
     println!("=== Testing PUT /api/dashboard/clients/:client_id/subscriptions ===");
 
-    let update_request = json!({
+    let _update_request = json!({
         "subscriptions": ["email_sync", "system_stats"]
     });
 
@@ -629,7 +628,7 @@ async fn test_subscribe_to_event() {
     setup_test_env();
     println!("=== Testing POST /api/dashboard/clients/:client_id/subscribe ===");
 
-    let subscribe_request = json!({
+    let _subscribe_request = json!({
         "event_type": "email_sync"
     });
 
@@ -647,7 +646,7 @@ async fn test_unsubscribe_from_event() {
     setup_test_env();
     println!("=== Testing POST /api/dashboard/clients/:client_id/unsubscribe ===");
 
-    let unsubscribe_request = json!({
+    let _unsubscribe_request = json!({
         "event_type": "email_sync"
     });
 
@@ -695,7 +694,7 @@ async fn test_missing_required_fields() {
     setup_test_env();
     println!("=== Testing Error Handling - Missing Required Fields ===");
 
-    let invalid_request = json!({
+    let _invalid_request = json!({
         // Missing required "email" field
         "password": "testpass"
     });

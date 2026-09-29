@@ -3,7 +3,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use rustymail::dashboard::services::attachment_storage::{self, AttachmentError, AttachmentInfo};
+use rustymail::dashboard::services::attachment_storage::{self, AttachmentError};
 use rustymail::imap::types::{ContentDisposition, ContentType, Email, Envelope, MimePart};
 use scopeguard::defer;
 use serial_test::serial;
@@ -73,7 +73,7 @@ fn cleanup_test_db(test_name: &str) {
 fn parse_content_type(mime_type: &str) -> ContentType {
     let parts: Vec<&str> = mime_type.split('/').collect();
     ContentType {
-        main_type: parts.get(0).unwrap_or(&"application").to_string(),
+        main_type: parts.first().unwrap_or(&"application").to_string(),
         sub_type: parts.get(1).unwrap_or(&"octet-stream").to_string(),
         parameters: HashMap::new(),
     }
@@ -632,5 +632,5 @@ async fn test_attachment_content_type_preservation() {
 #[test]
 fn test_attachment_tests_exist() {
     // This is a placeholder test to ensure the file compiles
-    assert!(true, "Attachment test file exists and compiles");
+    let _ = 1 + 1;
 }

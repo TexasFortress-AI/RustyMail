@@ -19,6 +19,7 @@ const DEFAULT_TEMPERATURE: f32 = 0.7;
 const DEFAULT_TOP_P: f32 = 1.0;
 const DEFAULT_MIN_P: f32 = 0.01; // llama.cpp default is 0.05, we use 0.01
 const DEFAULT_REPEAT_PENALTY: f32 = 1.0; // Disabled
+#[allow(dead_code)]
 const DEFAULT_N_CTX: u32 = 51200; // 50k context window
 
 /// llama.cpp server options for generation
@@ -150,6 +151,7 @@ struct LlamaCppChatResponse {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct LlamaCppChoice {
     message: LlamaCppMessage,
     #[serde(default)]

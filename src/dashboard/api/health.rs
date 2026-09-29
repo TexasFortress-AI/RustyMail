@@ -130,46 +130,36 @@ pub async fn prometheus_metrics(state: web::Data<DashboardState>) -> Result<Http
         let mut metrics = String::new();
 
         // System metrics
-        metrics.push_str(&format!(
-            "# HELP rustymail_cpu_usage CPU usage percentage\n"
-        ));
-        metrics.push_str(&format!("# TYPE rustymail_cpu_usage gauge\n"));
+        metrics.push_str("# HELP rustymail_cpu_usage CPU usage percentage\n");
+        metrics.push_str("# TYPE rustymail_cpu_usage gauge\n");
         metrics.push_str(&format!(
             "rustymail_cpu_usage {:.2}\n",
             resources.cpu_usage_percent
         ));
 
-        metrics.push_str(&format!(
-            "# HELP rustymail_memory_usage Memory usage percentage\n"
-        ));
-        metrics.push_str(&format!("# TYPE rustymail_memory_usage gauge\n"));
+        metrics.push_str("# HELP rustymail_memory_usage Memory usage percentage\n");
+        metrics.push_str("# TYPE rustymail_memory_usage gauge\n");
         metrics.push_str(&format!(
             "rustymail_memory_usage {:.2}\n",
             resources.memory_usage_percent
         ));
 
-        metrics.push_str(&format!(
-            "# HELP rustymail_memory_used_bytes Memory used in bytes\n"
-        ));
-        metrics.push_str(&format!("# TYPE rustymail_memory_used_bytes gauge\n"));
+        metrics.push_str("# HELP rustymail_memory_used_bytes Memory used in bytes\n");
+        metrics.push_str("# TYPE rustymail_memory_used_bytes gauge\n");
         metrics.push_str(&format!(
             "rustymail_memory_used_bytes {}\n",
             resources.memory_used_mb * 1024 * 1024
         ));
 
-        metrics.push_str(&format!(
-            "# HELP rustymail_disk_usage Disk usage percentage\n"
-        ));
-        metrics.push_str(&format!("# TYPE rustymail_disk_usage gauge\n"));
+        metrics.push_str("# HELP rustymail_disk_usage Disk usage percentage\n");
+        metrics.push_str("# TYPE rustymail_disk_usage gauge\n");
         metrics.push_str(&format!(
             "rustymail_disk_usage {:.2}\n",
             resources.disk_usage_percent
         ));
 
-        metrics.push_str(&format!(
-            "# HELP rustymail_thread_count Number of threads\n"
-        ));
-        metrics.push_str(&format!("# TYPE rustymail_thread_count gauge\n"));
+        metrics.push_str("# HELP rustymail_thread_count Number of threads\n");
+        metrics.push_str("# TYPE rustymail_thread_count gauge\n");
         metrics.push_str(&format!(
             "rustymail_thread_count {}\n",
             resources.thread_count
@@ -178,20 +168,16 @@ pub async fn prometheus_metrics(state: web::Data<DashboardState>) -> Result<Http
         // Get health report for component status
         let report = health_service.get_health_report().await;
 
-        metrics.push_str(&format!(
-            "# HELP rustymail_uptime_seconds Service uptime in seconds\n"
-        ));
-        metrics.push_str(&format!("# TYPE rustymail_uptime_seconds counter\n"));
+        metrics.push_str("# HELP rustymail_uptime_seconds Service uptime in seconds\n");
+        metrics.push_str("# TYPE rustymail_uptime_seconds counter\n");
         metrics.push_str(&format!(
             "rustymail_uptime_seconds {}\n",
             report.uptime_seconds
         ));
 
         // Component health status (1 = healthy, 0 = unhealthy)
-        metrics.push_str(&format!(
-            "# HELP rustymail_component_health Component health status\n"
-        ));
-        metrics.push_str(&format!("# TYPE rustymail_component_health gauge\n"));
+        metrics.push_str("# HELP rustymail_component_health Component health status\n");
+        metrics.push_str("# TYPE rustymail_component_health gauge\n");
 
         for (name, component) in report.components {
             let value = match component.status {
@@ -210,25 +196,5 @@ pub async fn prometheus_metrics(state: web::Data<DashboardState>) -> Result<Http
             .body(metrics))
     } else {
         Ok(HttpResponse::ServiceUnavailable().body("# Health monitoring service not available\n"))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use actix_web::{test, App};
-
-    #[actix_web::test]
-    async fn test_liveness_endpoint() {
-        // This would require a mock DashboardState
-        // For now, we just test that the function exists
-        assert!(true);
-    }
-
-    #[actix_web::test]
-    async fn test_readiness_endpoint() {
-        // This would require a mock DashboardState
-        // For now, we just test that the function exists
-        assert!(true);
     }
 }

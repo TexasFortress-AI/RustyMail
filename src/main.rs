@@ -14,13 +14,13 @@ use rustymail::api::auth::ApiKeyStore;
 use rustymail::api::rate_limit::{RateLimitConfig, RateLimitMiddleware};
 use rustymail::api::rest::{configure_rest_service, AppState};
 use std::sync::Arc;
+use std::time::Duration;
 // Remove tool registry creation
 // use rustymail::mcp_port::create_mcp_tool_registry;
 // --- Add McpHandler and SdkMcpAdapter imports ---
 use rustymail::mcp::adapters::sdk::SdkMcpAdapter;
 use rustymail::mcp::handler::McpHandler;
 // --- End imports ---
-use env_logger;
 use rustymail::api::openapi_docs;
 use rustymail::dashboard;
 use rustymail::dashboard::api::SseManager;
@@ -47,7 +47,8 @@ use rustymail::prelude::*; // Import many common types
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 // Use mimalloc allocator (known for better memory return to OS on macOS)
-#[cfg(feature = "mimalloc-alloc")]
+// mimalloc: mutually exclusive with dhat-heap (both define #[global_allocator])
+#[cfg(all(feature = "mimalloc-alloc", not(feature = "dhat-heap")))]
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -164,7 +165,6 @@ async fn main() -> std::io::Result<()> {
 
     // --- Create Connection Pool ---
     use rustymail::connection_pool::{ConnectionFactory, ConnectionPool, PoolConfig};
-    use std::time::Duration;
 
     // Create connection factory that uses our IMAP session factory
     struct ImapConnectionFactory {
@@ -367,7 +367,7 @@ async fn main() -> std::io::Result<()> {
             cors = cors.allowed_origin(origin);
         }
 
-        let mut app = App::new()
+        let app = App::new()
             // --- Register updated state ---
             .app_data(web::Data::new(app_state.clone())) // Core AppState (handler, factory)
             .app_data(web::Data::new(imap_session_factory.clone())) // Pass factory directly for REST handlers
@@ -384,7 +384,7 @@ async fn main() -> std::io::Result<()> {
             .configure(configure_rest_service) // RustyMail REST API
             .configure(openapi_docs::configure_openapi) // OpenAPI/Swagger documentation
             // .configure(configure_sse_service)              // SSE not implemented yet
-            .configure(|cfg| dashboard::api::init_routes(cfg)) // Dashboard API routes
+            .configure(dashboard::api::init_routes) // Dashboard API routes
             .configure(rustymail::api::mcp_http::configure_mcp_routes); // MCP Streamable HTTP transport
 
         // Dashboard static files are served by Vite dev server (port 9439) in development
@@ -417,8 +417,6 @@ async fn main() -> std::io::Result<()> {
 /// The sync process runs in a separate process that exits after each sync cycle,
 /// ensuring all memory allocated during sync is returned to the OS.
 fn start_sync_process_spawner() {
-    use std::time::Duration;
-
     let sync_interval: u64 = std::env::var("SYNC_INTERVAL_SECONDS")
         .ok()
         .and_then(|s| s.parse().ok())

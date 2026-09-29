@@ -8,7 +8,7 @@
 //! concurrent access, connection validation, and pool exhaustion scenarios
 
 use async_trait::async_trait;
-use rustymail::connection_pool::{ConnectionFactory, ConnectionPool, PoolConfig, PoolError};
+use rustymail::connection_pool::{ConnectionFactory, ConnectionPool, PoolConfig};
 use rustymail::imap::{AsyncImapSessionWrapper, ImapClient, ImapError};
 use serial_test::serial;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -135,10 +135,6 @@ async fn test_connection_creation() {
         stats.max_connections == 10,
         "Max connections should be configured"
     );
-    assert!(
-        stats.total_connections >= 0,
-        "Total connections should be non-negative"
-    );
 
     pool.shutdown().await;
     println!("✓ Pool created and configured correctly");
@@ -167,8 +163,8 @@ async fn test_connection_reuse() {
     println!("Initial connections created: {}", initial_created);
 
     // Try to acquire connections (will fail with mock factory but tests the logic)
-    let result1 = Arc::clone(&pool).acquire().await;
-    let result2 = Arc::clone(&pool).acquire().await;
+    let _result1 = Arc::clone(&pool).acquire().await;
+    let _result2 = Arc::clone(&pool).acquire().await;
 
     let final_stats = pool.stats().await;
     println!(
@@ -725,11 +721,6 @@ async fn test_pool_statistics() {
     assert!(
         stats.max_connections == 10,
         "Max connections should match config"
-    );
-    assert!(stats.total_connections >= 0, "Total should be non-negative");
-    assert!(
-        stats.active_connections >= 0,
-        "Active should be non-negative"
     );
 
     println!("✓ Statistics tracked correctly");

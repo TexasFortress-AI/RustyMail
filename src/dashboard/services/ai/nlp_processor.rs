@@ -6,11 +6,10 @@
 // src/dashboard/services/ai/nlp_processor.rs
 // Natural Language Processing Pipeline for converting user queries to MCP operations
 
-use super::provider::{AiChatMessage, AiProvider};
+use super::provider::AiChatMessage;
 use super::provider_manager::{ConversationContext, ProviderManager};
 use crate::api::errors::ApiError as RestApiError;
-use async_trait::async_trait;
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -129,7 +128,7 @@ impl fmt::Display for EmailIntent {
 }
 
 // Extracted entities from natural language
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ExtractedEntities {
     pub folders: Vec<String>,
     pub senders: Vec<String>,
@@ -546,20 +545,6 @@ Respond with the MCP method and parameters in JSON:
         };
 
         Ok(McpOperation { method, params })
-    }
-}
-
-impl Default for ExtractedEntities {
-    fn default() -> Self {
-        Self {
-            folders: Vec::new(),
-            senders: Vec::new(),
-            subjects: Vec::new(),
-            dates: Vec::new(),
-            flags: Vec::new(),
-            counts: Vec::new(),
-            search_terms: Vec::new(),
-        }
     }
 }
 

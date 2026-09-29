@@ -26,6 +26,7 @@ pub struct ClientData {
     pub request_count: usize,
 }
 
+#[allow(dead_code)]
 pub struct ClientManager {
     clients: Arc<RwLock<HashMap<String, ClientData>>>,
     cleanup_interval: Duration,
@@ -156,8 +157,8 @@ impl ClientManager {
             })
             .map(|client| ClientInfo {
                 id: client.id.clone(),
-                r#type: client.client_type.clone(),
-                status: client.status.clone(),
+                r#type: client.client_type,
+                status: client.status,
                 ip_address: client.ip_address.clone(),
                 user_agent: client.user_agent.clone(),
                 connected_at: client.connected_at.to_rfc3339(),

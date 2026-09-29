@@ -438,7 +438,7 @@ async fn test_mcp_tools_call_list_folders() {
     setup_test_env();
     println!("=== Testing MCP tools/call - list_folders ===");
 
-    let request = json!({
+    let _request = json!({
         "jsonrpc": "2.0",
         "id": 3,
         "method": "tools/call",
@@ -464,7 +464,7 @@ async fn test_mcp_tools_call_fetch_emails() {
     setup_test_env();
     println!("=== Testing MCP tools/call - fetch_emails ===");
 
-    let request = json!({
+    let _request = json!({
         "jsonrpc": "2.0",
         "id": 4,
         "method": "tools/call",
@@ -493,7 +493,7 @@ async fn test_mcp_tools_call_search_emails() {
     setup_test_env();
     println!("=== Testing MCP tools/call - search_emails ===");
 
-    let request = json!({
+    let _request = json!({
         "jsonrpc": "2.0",
         "id": 5,
         "method": "tools/call",
@@ -597,7 +597,7 @@ async fn test_mcp_error_handling_invalid_tool_name() {
     setup_test_env();
     println!("=== Testing MCP Error Handling - Invalid Tool Name ===");
 
-    let request = json!({
+    let _request = json!({
         "jsonrpc": "2.0",
         "id": 7,
         "method": "tools/call",
@@ -619,7 +619,7 @@ async fn test_mcp_error_handling_missing_required_params() {
     setup_test_env();
     println!("=== Testing MCP Error Handling - Missing Required Params ===");
 
-    let request = json!({
+    let _request = json!({
         "jsonrpc": "2.0",
         "id": 8,
         "method": "tools/call",
@@ -645,7 +645,7 @@ async fn test_mcp_origin_validation() {
     println!("=== Testing MCP Origin Header Validation ===");
 
     // Test 1: Valid localhost origin
-    let request = json!({
+    let _request = json!({
         "jsonrpc": "2.0",
         "id": 9,
         "method": "initialize",
@@ -682,7 +682,7 @@ async fn test_mcp_accept_header_handling() {
     setup_test_env();
     println!("=== Testing MCP Accept Header Handling ===");
 
-    let request = json!({
+    let _request = json!({
         "jsonrpc": "2.0",
         "id": 10,
         "method": "initialize",
@@ -710,7 +710,7 @@ async fn test_mcp_session_management() {
     println!("=== Testing MCP Session Management ===");
 
     // Test 1: Initialize creates session
-    let init_request = json!({
+    let _init_request = json!({
         "jsonrpc": "2.0",
         "id": 11,
         "method": "initialize",
@@ -811,7 +811,7 @@ async fn test_mcp_jsonrpc_batch_requests() {
     setup_test_env();
     println!("=== Testing MCP JSON-RPC Batch Requests ===");
 
-    let batch_request = json!([
+    let _batch_request = json!([
         {
             "jsonrpc": "2.0",
             "id": 1,
@@ -937,7 +937,7 @@ async fn test_mcp_dashboard_api_consistency() {
         let dashboard_tool = dashboard_tools
             .iter()
             .find(|t| t["name"].as_str().unwrap() == tool_name)
-            .expect(&format!("Dashboard should have tool: {}", tool_name));
+            .unwrap_or_else(|| panic!("Dashboard should have tool: {}", tool_name));
 
         // MCP uses inputSchema.properties, Dashboard uses parameters
         let mcp_params = mcp_tool["inputSchema"]["properties"].as_object().unwrap();

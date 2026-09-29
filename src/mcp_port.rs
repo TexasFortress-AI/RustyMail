@@ -3,7 +3,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use crate::dashboard::services::Account;
 use crate::imap::types::FlagOperation;
 use crate::mcp::types::{JsonRpcError, McpPortState};
 use crate::mcp_attachment_tools::{
@@ -15,9 +14,8 @@ use crate::mcp_cache_tools::{
 };
 use crate::prelude::AsyncImapOps;
 use async_trait::async_trait;
-use base64::{engine::general_purpose, Engine as _};
 use futures_util::future::BoxFuture;
-use log::{debug, error, info, warn};
+use log::info;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::future::Future;
@@ -174,7 +172,7 @@ pub async fn list_folders_tool(
         }
         error
     })?;
-    Ok(serde_json::to_value(folders).map_err(|e| JsonRpcError::internal_error(e.to_string()))?)
+    serde_json::to_value(folders).map_err(|e| JsonRpcError::internal_error(e.to_string()))
 }
 
 /// Tool for listing folders with hierarchical structure
@@ -199,7 +197,7 @@ pub async fn list_folders_hierarchical_tool(
         }
         error
     })?;
-    Ok(serde_json::to_value(folders).map_err(|e| JsonRpcError::internal_error(e.to_string()))?)
+    serde_json::to_value(folders).map_err(|e| JsonRpcError::internal_error(e.to_string()))
 }
 
 /// Tool for structured email search
@@ -236,8 +234,7 @@ pub async fn search_emails_tool(
             error
         })?;
 
-    Ok(serde_json::to_value(message_ids)
-        .map_err(|e| JsonRpcError::internal_error(e.to_string()))?)
+    serde_json::to_value(message_ids).map_err(|e| JsonRpcError::internal_error(e.to_string()))
 }
 
 /// Tool for fetching emails with MIME part handling
@@ -283,7 +280,7 @@ pub async fn fetch_emails_with_mime_tool(
         error
     })?;
 
-    Ok(serde_json::to_value(emails).map_err(|e| JsonRpcError::internal_error(e.to_string()))?)
+    serde_json::to_value(emails).map_err(|e| JsonRpcError::internal_error(e.to_string()))
 }
 
 /// Tool for atomic move operations (single message)
@@ -326,7 +323,7 @@ pub async fn atomic_move_message_tool(
                 if let Some(obj) = data.as_object_mut() {
                     obj.insert(
                         "uid".to_string(),
-                        serde_json::to_value(&uid).unwrap_or_default(),
+                        serde_json::to_value(uid).unwrap_or_default(),
                     );
                     obj.insert(
                         "from_folder".to_string(),
@@ -639,7 +636,7 @@ pub async fn mark_as_read_tool(
 
     // Mark messages as read by adding \Seen flag
     session
-        .store_flags(&uids, FlagOperation::Add, &vec!["\\Seen".to_string()])
+        .store_flags(&uids, FlagOperation::Add, &["\\Seen".to_string()])
         .await
         .map_err(|e| {
             let mut error =
@@ -695,7 +692,7 @@ pub async fn mark_as_unread_tool(
 
     // Mark messages as unread by removing \Seen flag
     session
-        .store_flags(&uids, FlagOperation::Remove, &vec!["\\Seen".to_string()])
+        .store_flags(&uids, FlagOperation::Remove, &["\\Seen".to_string()])
         .await
         .map_err(|e| {
             let mut error =

@@ -3,10 +3,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use crate::dashboard::services::attachment_storage::{self, AttachmentInfo};
+use crate::dashboard::services::attachment_storage::{self};
 use crate::mcp::types::{JsonRpcError, McpPortState};
 use crate::prelude::AsyncImapOps;
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::Arc;

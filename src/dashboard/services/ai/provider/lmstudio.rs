@@ -117,6 +117,7 @@ struct LmStudioChatResponse {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct LmStudioChoice {
     message: LmStudioMessage,
     #[serde(default)]

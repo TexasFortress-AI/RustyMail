@@ -5,7 +5,6 @@
 
 use crate::transport::{Message, MessageKind, Transport, TransportError};
 use serde_json::json;
-use std::error::Error as StdError;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -73,7 +72,7 @@ async fn test_message_creation() {
 
     // Test error message - need to use a proper error type
     use std::io;
-    let test_error = io::Error::new(io::ErrorKind::Other, "Test error");
+    let test_error = io::Error::other("Test error");
     let error = Message::new_error(Some("1".to_string()), test_error);
     assert_eq!(error.id, Some("1".to_string()));
     assert_eq!(error.kind, MessageKind::Error);

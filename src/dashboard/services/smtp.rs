@@ -411,6 +411,7 @@ impl SmtpService {
     }
 
     /// Append an email to the IMAP Outbox folder before sending
+    #[allow(dead_code)]
     async fn append_to_outbox(
         &self,
         account_email: &str,
@@ -580,6 +581,7 @@ impl SmtpService {
     }
 
     /// Append a sent message to the IMAP Sent folder
+    #[allow(dead_code)]
     async fn append_to_sent_folder(
         &self,
         account_email: &str,
@@ -609,7 +611,7 @@ impl SmtpService {
         for folder in &sent_folders {
             // No flags for sent messages
             let flags: Vec<String> = vec![];
-            match session.append(folder, &email_bytes, &flags).await {
+            match session.append(folder, email_bytes, &flags).await {
                 Ok(_) => {
                     log::info!("Successfully saved sent email to folder: {}", folder);
                     // IMPORTANT: Logout to release BytePool buffers and prevent memory leak

@@ -4,7 +4,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use super::connection_status::AccountConnectionStatus;
-use log::{debug, error, info};
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -23,19 +23,11 @@ pub enum ConnectionStatusStoreError {
 }
 
 /// Storage for connection status information
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 struct ConnectionStatusStorage {
     /// Map of email_address to connection status
     #[serde(default)]
     statuses: HashMap<String, AccountConnectionStatus>,
-}
-
-impl Default for ConnectionStatusStorage {
-    fn default() -> Self {
-        Self {
-            statuses: HashMap::new(),
-        }
-    }
 }
 
 /// Store for managing connection status persistence

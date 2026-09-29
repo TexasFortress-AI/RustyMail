@@ -38,6 +38,7 @@ struct AnthropicMessage {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct AnthropicMessagesResponse {
     content: Vec<AnthropicContent>,
     #[serde(default)]
@@ -45,6 +46,7 @@ struct AnthropicMessagesResponse {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct AnthropicContent {
     #[serde(rename = "type")]
     content_type: String,

@@ -18,6 +18,7 @@ use super::{
 
 /// Represents a transaction log entry for rollback support
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 enum TransactionOp {
     Copy {
         uid: u32,
@@ -96,7 +97,11 @@ impl AtomicImapOperations {
         to_folder: &str,
     ) -> Result<(), ImapError> {
         // First, try using the native MOVE command if available
-        if let Ok(_) = self.try_native_move(uid, from_folder, to_folder).await {
+        if self
+            .try_native_move(uid, from_folder, to_folder)
+            .await
+            .is_ok()
+        {
             return Ok(());
         }
 

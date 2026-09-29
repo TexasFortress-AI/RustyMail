@@ -65,6 +65,12 @@ pub struct ProviderManager {
     http_client: Client,
 }
 
+impl Default for ProviderManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProviderManager {
     pub fn new() -> Self {
         Self {
@@ -1249,6 +1255,12 @@ impl ConversationContext {
 pub struct ConversationManager {
     contexts: Arc<RwLock<HashMap<String, ConversationContext>>>,
     max_conversations: usize,
+}
+
+impl Default for ConversationManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ConversationManager {

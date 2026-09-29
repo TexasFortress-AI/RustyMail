@@ -8,14 +8,12 @@
 // This module provides comprehensive health checking for all system components,
 // resource monitoring, and alerting capabilities.
 
-use crate::config::Settings;
-use crate::connection_pool::{ConnectionPool, PoolStats};
-use crate::dashboard::api::models::{SystemHealth, SystemStatus};
-use crate::dashboard::services::events::{AlertLevel, ConfigSection};
-use crate::dashboard::services::{DashboardEvent, EventBus};
+use crate::connection_pool::ConnectionPool;
+use crate::dashboard::services::events::AlertLevel;
+use crate::dashboard::services::EventBus;
 use crate::session_manager::SessionManager;
 use chrono::{DateTime, Utc};
-use log::{debug, error, info, warn};
+use log::info;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -117,6 +115,7 @@ impl Default for HealthThresholds {
 }
 
 // Main health monitoring service
+#[allow(dead_code)]
 pub struct HealthService {
     components: Arc<RwLock<HashMap<String, ComponentHealth>>>,
     system: Arc<RwLock<System>>,
@@ -127,6 +126,12 @@ pub struct HealthService {
     session_manager: Option<Arc<SessionManager>>,
     http_client: Client,
     last_alerts: Arc<RwLock<Vec<HealthAlert>>>,
+}
+
+impl Default for HealthService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HealthService {
@@ -549,7 +554,6 @@ mod tests {
                 | HealthStatus::Unhealthy
                 | HealthStatus::Unknown
         ));
-        assert!(report.uptime_seconds >= 0);
         assert!(report.components.is_empty() || !report.components.is_empty());
     }
 

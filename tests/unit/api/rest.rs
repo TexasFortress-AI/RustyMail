@@ -11,6 +11,6 @@ mod tests {
     #[test]
     fn test_placeholder() {
         // Placeholder to prevent empty test module
-        assert!(true);
+        let _ = 1 + 1;
     }
 }

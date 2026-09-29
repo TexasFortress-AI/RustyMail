@@ -74,6 +74,7 @@ impl MicrosoftOAuth2Config {
         )
     }
 
+    #[allow(dead_code)]
     fn device_code_endpoint(&self) -> String {
         format!(
             "https://login.microsoftonline.com/{}/oauth2/v2.0/devicecode",
@@ -143,7 +144,7 @@ impl MicrosoftOAuth2Client {
 
         let response = self
             .http_client
-            .post(&self.config.token_endpoint())
+            .post(self.config.token_endpoint())
             .form(&params)
             .send()
             .await?;

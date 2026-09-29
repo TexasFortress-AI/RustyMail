@@ -386,6 +386,7 @@ impl SearchCriteria {
     }
 
     /// Creates a NOT search criteria
+    #[allow(clippy::should_implement_trait)]
     pub fn not(criterion: SearchCriteria) -> Self {
         SearchCriteria::Not(Box::new(criterion))
     }
@@ -914,13 +915,12 @@ impl Email {
             .ok_or_else(|| ImapError::Parse("Failed to parse email message".to_string()))?;
 
         let mut mime_parts = Vec::new();
-        let text_body;
-        let html_body;
+
         let mut attachments = Vec::new();
 
         // Extract text and HTML bodies directly from the message
-        text_body = message.body_text(0).map(|s| s.to_string());
-        html_body = message.body_html(0).map(|s| s.to_string());
+        let text_body = message.body_text(0).map(|s| s.to_string());
+        let html_body = message.body_html(0).map(|s| s.to_string());
 
         // DEBUG: Log part count and attachment count
         debug!(
@@ -963,6 +963,7 @@ impl Email {
     }
 
     /// Create a MIME part from an attachment
+    #[allow(dead_code)]
     fn create_attachment_mime_part(attachment: &mail_parser::MessagePart) -> MimePart {
         use mail_parser::MimeHeaders;
 
@@ -1028,6 +1029,7 @@ impl Email {
     }
 
     /// Parse content type from header string (simplified version)
+    #[allow(dead_code)]
     fn parse_content_type_from_header(header: &str) -> ContentType {
         let mut parts = header.split(';');
         let mime_type = parts.next().unwrap_or("application/octet-stream").trim();

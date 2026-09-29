@@ -31,6 +31,7 @@ pub struct OAuthCallbackQuery {
 
 /// Response after successful token exchange.
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 struct CallbackResponse {
     success: bool,
     email: Option<String>,
@@ -257,7 +258,7 @@ pub async fn oauth_status(state: web::Data<DashboardState>) -> HttpResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+    use base64::engine::general_purpose::STANDARD as BASE64;
 
     /// Build a fake JWT with the given JSON payload (no real signature).
     fn fake_jwt(payload_json: &str) -> String {

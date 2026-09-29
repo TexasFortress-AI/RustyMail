@@ -107,6 +107,12 @@ struct RequestCounter {
     hour_reset: DateTime<Utc>,
 }
 
+impl Default for ApiKeyStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ApiKeyStore {
     /// Create a new API key store
     pub fn new() -> Self {
@@ -388,11 +394,7 @@ where
         .and_then(|h| h.to_str().ok())
         .map(|s| {
             // Handle "Bearer " prefix if present
-            if s.starts_with("Bearer ") {
-                &s[7..]
-            } else {
-                s
-            }
+            s.strip_prefix("Bearer ").unwrap_or(s)
         });
 
     let api_key = match api_key {
@@ -443,7 +445,7 @@ pub async fn simple_validate_api_key(
         .get("X-API-Key")
         .or_else(|| req.headers().get("Authorization"))
         .and_then(|h| h.to_str().ok())
-        .map(|s| if s.starts_with("Bearer ") { &s[7..] } else { s });
+        .map(|s| s.strip_prefix("Bearer ").unwrap_or(s));
 
     let api_key = match api_key {
         Some(key) => key,

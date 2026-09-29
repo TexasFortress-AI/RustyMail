@@ -25,9 +25,10 @@ use tokio_stream::wrappers::{IntervalStream, ReceiverStream};
 use uuid::Uuid;
 
 // Event type definitions for subscription filtering
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum EventType {
     Welcome,
+    #[default]
     StatsUpdate,
     ClientConnected,
     ClientDisconnected,
@@ -64,11 +65,6 @@ impl EventType {
 }
 
 // Default subscription: all events except welcome (which is sent once anyway)
-impl Default for EventType {
-    fn default() -> Self {
-        EventType::StatsUpdate
-    }
-}
 
 // SSE Event data structure with ID for replay support
 #[derive(Debug, Clone)]
@@ -123,6 +119,7 @@ impl SseClient {
         }
     }
 
+    #[allow(dead_code)]
     pub fn new_with_subscriptions(
         sender: mpsc::Sender<SseEvent>,
         subscriptions: HashSet<EventType>,
@@ -145,6 +142,7 @@ impl SseClient {
         self.subscriptions.remove(event_type);
     }
 
+    #[allow(dead_code)]
     pub fn get_subscriptions(&self) -> &HashSet<EventType> {
         &self.subscriptions
     }
@@ -394,7 +392,7 @@ impl SseManager {
             };
 
             if should_send {
-                if let Err(_) = client.sender.send(event.clone()).await {
+                if client.sender.send(event.clone()).await.is_err() {
                     debug!("Failed to send event to client {}", client_id);
                     // We'll handle client removal on the next heartbeat
                 } else {
@@ -712,7 +710,7 @@ pub async fn sse_handler(
 ) -> Sse<impl Stream<Item = Result<sse::Event, Infallible>>> {
     let (tx, rx) = mpsc::channel(100);
     let client_id = Uuid::new_v4().to_string();
-    let client_id_clone = client_id.clone(); // Clone for the welcome message
+    let _client_id_clone = client_id.clone(); // Clone for the welcome message
 
     // Register client with the client manager first to get the managed client ID
     let client_manager = Arc::clone(&state.client_manager);
@@ -760,7 +758,7 @@ pub async fn sse_handler(
             last_event_id.is_some()
         ),
     );
-    if let Err(_) = tx.send(welcome_event).await {
+    if tx.send(welcome_event).await.is_err() {
         warn!(
             "Failed to send initial welcome message to client {} in handler",
             managed_client_id
@@ -777,7 +775,7 @@ pub async fn sse_handler(
             .await;
 
         for replay_event in replay_events {
-            if let Err(_) = tx.send(replay_event).await {
+            if tx.send(replay_event).await.is_err() {
                 warn!(
                     "Failed to send replay event to client {}",
                     managed_client_id

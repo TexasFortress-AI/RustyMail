@@ -19,7 +19,7 @@ fn setup_test_env() {
     INIT.call_once(|| {
         // Build the binary once before all tests
         let status = Command::new("cargo")
-            .args(&["build", "--bin", "rustymail-mcp-stdio"])
+            .args(["build", "--bin", "rustymail-mcp-stdio"])
             .status()
             .expect("Failed to build rustymail-mcp-stdio binary");
 
@@ -121,7 +121,7 @@ fn test_stdio_proxy_invalid_timeout_arg() {
     println!("=== Testing rustymail-mcp-stdio with invalid --timeout ===");
 
     let output = Command::new(get_binary_path())
-        .args(&["--timeout", "invalid"])
+        .args(["--timeout", "invalid"])
         .output()
         .expect("Failed to execute binary");
 
@@ -199,7 +199,7 @@ fn test_stdio_proxy_valid_json_rpc_request() {
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        writeln!(stdin, "{}", request.to_string()).expect("Failed to write to stdin");
+        writeln!(stdin, "{}", request).expect("Failed to write to stdin");
         stdin.flush().expect("Failed to flush stdin");
     }
 
@@ -347,9 +347,9 @@ fn test_stdio_proxy_empty_lines_ignored() {
     // Send empty lines and valid request
     {
         let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        writeln!(stdin, "").expect("Failed to write empty line");
+        writeln!(stdin).expect("Failed to write empty line");
         writeln!(stdin, "   ").expect("Failed to write whitespace");
-        writeln!(stdin, "").expect("Failed to write empty line");
+        writeln!(stdin).expect("Failed to write empty line");
         stdin.flush().expect("Failed to flush stdin");
     }
 
@@ -400,7 +400,7 @@ fn test_stdio_proxy_backend_connection_failure() {
 
     {
         let stdin = child.stdin.as_mut().expect("Failed to open stdin");
-        writeln!(stdin, "{}", request.to_string()).expect("Failed to write to stdin");
+        writeln!(stdin, "{}", request).expect("Failed to write to stdin");
         stdin.flush().expect("Failed to flush stdin");
     }
 
@@ -443,7 +443,7 @@ fn test_stdio_proxy_command_line_args_override_env() {
 
     // Override with command-line args
     let output = Command::new(get_binary_path())
-        .args(&["--backend-url", "http://custom:8080/mcp", "--timeout", "60"])
+        .args(["--backend-url", "http://custom:8080/mcp", "--timeout", "60"])
         .env("MCP_BACKEND_URL", "http://localhost:9437/mcp") // Set env var so binary doesn't panic
         .env("MCP_TIMEOUT", "30")
         .stdin(Stdio::piped())

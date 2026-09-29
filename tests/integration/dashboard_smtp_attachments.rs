@@ -228,7 +228,7 @@ async fn test_send_email_rest_endpoint() {
         .set_json(&send_email_request)
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     // Note: This will likely fail without a real SMTP server, but we're testing the endpoint structure
     // In a real scenario, this would connect to a mock SMTP server
@@ -269,7 +269,7 @@ async fn test_send_email_with_account_param() {
         .set_json(&send_email_request)
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     println!("✓ Accepts account_email query parameter");
     println!("✓ Uses specified account for sending");
@@ -349,7 +349,7 @@ async fn test_send_email_with_html_body() {
         .set_json(&send_email_request)
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     println!("✓ Accepts optional body_html field");
     println!("✓ Sends multipart email with both plain and HTML bodies");
@@ -389,7 +389,7 @@ async fn test_send_email_with_cc_bcc() {
         .set_json(&send_email_request)
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     println!("✓ Accepts optional CC field (array of email addresses)");
     println!("✓ Accepts optional BCC field (array of email addresses)");
@@ -424,7 +424,7 @@ async fn test_list_attachments_endpoint() {
         .uri("/api/dashboard/attachments/list?message_id=test-msg-123&account_id=test@example.com")
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     println!("✓ GET /api/dashboard/attachments/list accepts message_id parameter");
     println!("✓ Returns list of attachments for specified message");
@@ -435,7 +435,7 @@ async fn test_list_attachments_endpoint() {
         .uri("/api/dashboard/attachments/list?folder=INBOX&uid=123&account_id=test@example.com")
         .to_request();
 
-    let resp2 = test::call_service(&app, req2).await;
+    let _resp2 = test::call_service(&app, req2).await;
 
     println!("✓ Also accepts folder+uid parameters as alternative");
     println!("✓ Resolves message_id from folder and UID");
@@ -465,7 +465,7 @@ async fn test_download_attachment_endpoint() {
         .uri("/api/dashboard/attachments/test-msg-123/document.pdf?account_id=test@example.com")
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     println!(
         "✓ GET /api/dashboard/attachments/:message_id/:filename downloads specific attachment"
@@ -499,7 +499,7 @@ async fn test_download_attachments_zip() {
         .uri("/api/dashboard/attachments/test-msg-123/zip?account_id=test@example.com")
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     println!("✓ GET /api/dashboard/attachments/:message_id/zip creates ZIP archive");
     println!("✓ Bundles all attachments for message into single ZIP");
@@ -531,7 +531,7 @@ async fn test_attachment_not_found_error() {
         .uri("/api/dashboard/attachments/nonexistent-msg/missing.pdf?account_id=test@example.com")
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     // Should return 404 or error
     println!("✓ Returns 404 for non-existent message_id");
@@ -570,7 +570,7 @@ async fn test_smtp_connection_error_response() {
         .set_json(&send_email_request)
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     // Should return error due to missing SMTP configuration
     println!("✓ Returns appropriate error when SMTP connection fails");

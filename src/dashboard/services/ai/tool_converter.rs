@@ -37,10 +37,7 @@ use serde_json::{json, Value};
 pub fn mcp_to_ollama_tools(mcp_tools: &[Value]) -> Vec<Value> {
     debug!("Converting {} MCP tools to Ollama format", mcp_tools.len());
 
-    mcp_tools
-        .iter()
-        .filter_map(|tool| mcp_tool_to_ollama(tool))
-        .collect()
+    mcp_tools.iter().filter_map(mcp_tool_to_ollama).collect()
 }
 
 /// Convert a single MCP tool to Ollama/OpenAI format

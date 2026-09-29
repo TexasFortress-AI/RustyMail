@@ -5,7 +5,7 @@
 
 use crate::imap::types::{Email, MimePart};
 use chrono::{DateTime, Utc};
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use sqlx::SqlitePool;

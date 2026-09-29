@@ -73,7 +73,7 @@ impl CloneableImapSessionFactory {
     }
 
     /// Create a session using the default factory (credentials from .env)
-    pub fn create_session(&self) -> BoxFuture<ImapSessionFactoryResult> {
+    pub fn create_session(&self) -> BoxFuture<'_, ImapSessionFactoryResult> {
         (self.factory)()
     }
 

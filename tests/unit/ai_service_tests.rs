@@ -15,11 +15,10 @@ use rustymail::dashboard::services::ai::AiService;
 #[tokio::test]
 async fn test_ai_service_new_mock() {
     // Test creating a mock AI service
-    let _service = AiService::new_mock();
+    let service = AiService::new_mock();
 
-    // Verify service is in mock mode
-    // This is implicitly verified by not panicking during creation
-    assert!(true, "Mock service created successfully");
+    // Verify mock service constructed (size_of_val keeps it "used" without assert!(true))
+    let _ = std::mem::size_of_val(&service);
 }
 
 #[tokio::test]
@@ -580,7 +579,7 @@ fn test_sampler_config_effective_methods() {
 
     let min_p = config.effective_min_p();
     assert!(
-        min_p >= 0.0 && min_p <= 1.0,
+        (0.0..=1.0).contains(&min_p),
         "min_p should be in valid range"
     );
 

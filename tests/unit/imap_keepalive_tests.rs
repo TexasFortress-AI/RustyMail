@@ -9,7 +9,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex as TokioMutex;
-use tokio::time::{sleep, Instant};
+use tokio::time::sleep;
 
 use async_trait::async_trait;
 use rustymail::connection_pool::{ConnectionFactory, ConnectionPool, PoolConfig};
@@ -68,14 +68,17 @@ impl MockConnectionFactory {
         }
     }
 
+    #[allow(dead_code)]
     async fn get_create_count(&self) -> u32 {
         *self.create_count.lock().await
     }
 
+    #[allow(dead_code)]
     async fn get_validate_count(&self) -> u32 {
         *self.validate_count.lock().await
     }
 
+    #[allow(dead_code)]
     async fn set_should_create_fail(&self, fail: bool) {
         *self.should_create_fail.lock().await = fail;
     }

@@ -9,20 +9,17 @@ use crate::prelude::CloneableImapSessionFactory;
 use async_trait::async_trait;
 use log::{debug, error, info, warn};
 use serde_json::{json, Value};
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 
 // Import RMCP SDK types
 use rmcp::{model::*, service::RequestContext, RoleServer, ServerHandler};
-use std::convert::TryInto;
 
 // Use our MCP types
 use crate::mcp::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, McpHandler, McpPortState};
 use crate::mcp_port::create_mcp_tool_registry;
 
 // Import session types
-use crate::imap::error::ImapError;
 use tokio::sync::mpsc::UnboundedSender;
 
 // --- RustyMail Service Implementation ---

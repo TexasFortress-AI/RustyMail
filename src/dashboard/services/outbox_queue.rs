@@ -7,6 +7,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use log::{info, warn};
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use std::str::FromStr;
 
 // Helper to convert SQLite NaiveDateTime to DateTime<Utc>
 fn naive_to_utc(naive: NaiveDateTime) -> DateTime<Utc> {
@@ -64,14 +65,18 @@ impl OutboxStatus {
             OutboxStatus::Failed => "failed",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl FromStr for OutboxStatus {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "sending" => OutboxStatus::Sending,
             "sent" => OutboxStatus::Sent,
             "failed" => OutboxStatus::Failed,
             _ => OutboxStatus::Pending,
-        }
+        })
     }
 }
 
@@ -163,7 +168,7 @@ impl OutboxQueueService {
             body_text: r.body_text,
             body_html: r.body_html,
             raw_email_bytes: r.raw_email_bytes,
-            status: OutboxStatus::from_str(&r.status),
+            status: OutboxStatus::from_str(&r.status).unwrap(),
             smtp_sent: r.smtp_sent,
             outbox_saved: r.outbox_saved,
             sent_folder_saved: r.sent_folder_saved,
@@ -322,7 +327,7 @@ impl OutboxQueueService {
                 body_text: r.body_text,
                 body_html: r.body_html,
                 raw_email_bytes: r.raw_email_bytes,
-                status: OutboxStatus::from_str(&r.status),
+                status: OutboxStatus::from_str(&r.status).unwrap(),
                 smtp_sent: r.smtp_sent,
                 outbox_saved: r.outbox_saved,
                 sent_folder_saved: r.sent_folder_saved,

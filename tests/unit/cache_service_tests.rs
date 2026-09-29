@@ -33,8 +33,6 @@ fn cleanup_test_db(test_name: &str) {
 
 // Helper function to create a test account in the database
 async fn create_test_account(service: &CacheService, account_id: &str) -> Result<(), String> {
-    use sqlx::Executor;
-
     let pool = service
         .db_pool
         .as_ref()
@@ -453,7 +451,7 @@ async fn test_search_cached_emails() {
     let service = setup_service_with_account(test_name, account_id).await;
 
     // Cache emails with different subjects
-    let subjects = vec![
+    let subjects = [
         "Meeting tomorrow",
         "Project update",
         "Meeting notes",
@@ -770,7 +768,6 @@ async fn test_address_report_filters_exchange_addresses() {
         .unwrap();
 
     // Insert an email with Exchange IMCEAEX from_address directly
-    use sqlx::Executor;
     let pool = service.db_pool.as_ref().unwrap();
     let folder = service
         .get_or_create_folder_for_account("INBOX", account_id)

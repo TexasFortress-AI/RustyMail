@@ -7,9 +7,6 @@
 
 #[cfg(test)]
 mod rest_api_tests {
-    use actix_web::{test, web, App};
-    use serde_json::json;
-    use serial_test::serial;
 
     #[cfg(feature = "integration_tests")]
     #[tokio::test]

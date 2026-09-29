@@ -171,7 +171,7 @@ impl EventedClientManager {
     ) -> String {
         let client_id = self
             .inner
-            .register_client(client_type.clone(), ip_address.clone(), user_agent.clone())
+            .register_client(client_type, ip_address.clone(), user_agent.clone())
             .await;
 
         // Publish client connected event
@@ -198,12 +198,10 @@ impl EventedClientManager {
             .clients
             .iter()
             .find(|c| c.id == client_id)
-            .map(|c| c.status.clone())
+            .map(|c| c.status)
             .unwrap_or(ClientStatus::Active); // Default to Active if not found
 
-        self.inner
-            .update_client_status(client_id, new_status.clone())
-            .await;
+        self.inner.update_client_status(client_id, new_status).await;
 
         // Publish status change event
         self.event_bus

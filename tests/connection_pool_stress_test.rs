@@ -54,6 +54,7 @@ impl ConnectionFactory for MockConnectionFactory {
 }
 
 /// Simple mock connection factory that always succeeds quickly
+#[allow(dead_code)]
 struct SimpleMockFactory;
 
 #[async_trait]
@@ -238,10 +239,6 @@ async fn test_connection_pool_metrics_accuracy() {
     assert_eq!(
         initial_stats.active_connections, 0,
         "No connections should be active initially"
-    );
-    assert!(
-        initial_stats.total_connections >= 0,
-        "Total connections should be non-negative"
     );
 
     // Test acquire timeout behavior
