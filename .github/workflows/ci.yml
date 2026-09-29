@@ -112,16 +112,8 @@ jobs:
         uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          # Keep in sync with audit.toml — only advisories without a safe upgrade path yet.
-          ignore: |
-            RUSTSEC-2023-0071
-            RUSTSEC-2024-0363
-            RUSTSEC-2026-0189
-            RUSTSEC-2026-0258
-            RUSTSEC-2024-0421
-            RUSTSEC-2026-0104
-            RUSTSEC-2026-0098
-            RUSTSEC-2026-0099
+          # Comma-separated (multiline broke cargo-audit ID parsing). Sync with audit.toml.
+          ignore: RUSTSEC-2023-0071,RUSTSEC-2024-0363,RUSTSEC-2026-0189,RUSTSEC-2026-0258,RUSTSEC-2024-0421,RUSTSEC-2026-0104,RUSTSEC-2026-0098,RUSTSEC-2026-0099
 
   coverage:
     name: Code Coverage
@@ -213,8 +205,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          # Cargo.lock is version 4 (Cargo >= 1.78). Align with Cargo.toml rust-version.
-          toolchain: 1.85.0
+          # Align with Cargo.toml rust-version (deps like hickory 0.26 / time require >=1.88).
+          toolchain: 1.88.0
 
       - name: Check MSRV
         run: cargo check --all-features

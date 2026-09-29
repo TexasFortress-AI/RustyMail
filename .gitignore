@@ -104,3 +104,7 @@ test_data/*_accounts_connection_status.json
 # Sync process lock file (runtime state)
 data/.sync.lock
 data/forensic_archives/*
+
+# Accidental sqlite in-memory URI artefacts (invalid paths on Windows)
+:memory:
+file::memory:?cache=shared

@@ -224,7 +224,7 @@ pub async fn download_email_attachments_tool(
 
         Ok(json!({
             "success": true,
-            "message": format!("ZIP archive created successfully"),
+            "message": "ZIP archive created successfully".to_string(),
             "message_id": message_id,
             "account_id": account_id,
             "destination": result_path.to_string_lossy(),
@@ -341,7 +341,7 @@ pub async fn cleanup_attachments_tool(
 
     Ok(json!({
         "success": true,
-        "message": format!("Attachments deleted successfully"),
+        "message": "Attachments deleted successfully".to_string(),
         "message_id": message_id,
         "account_id": account_id
     }))

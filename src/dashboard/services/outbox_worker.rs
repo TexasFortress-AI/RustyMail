@@ -67,7 +67,7 @@ impl OutboxWorker {
 
             // Periodically clean up orphaned emails in Outbox folders
             iteration_count += 1;
-            if iteration_count % cleanup_interval == 0 {
+            if iteration_count.is_multiple_of(cleanup_interval) {
                 if let Err(e) = self.cleanup_orphaned_outbox_emails().await {
                     error!("Error cleaning up orphaned outbox emails: {}", e);
                 }

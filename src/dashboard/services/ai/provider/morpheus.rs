@@ -180,7 +180,7 @@ impl AiProvider for MorpheusAdapter {
         debug!(
             "Morpheus API key length: {}, first 10 chars: {}",
             self.api_key.len(),
-            &self.api_key.chars().take(10).collect::<String>()
+            self.api_key.chars().take(10).collect::<String>()
         );
 
         let response = self

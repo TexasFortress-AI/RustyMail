@@ -459,7 +459,7 @@ impl CacheService {
                         .content_disposition
                         .as_ref()
                         .and_then(|d| d.filename().cloned())
-                        .unwrap_or_else(|| format!("unnamed.{}", &part.content_type.sub_type));
+                        .unwrap_or_else(|| format!("unnamed.{}", part.content_type.sub_type));
                     serde_json::json!({
                         "filename": filename,
                         "content_type": part.content_type.mime_type(),
