@@ -17,7 +17,7 @@ mod multi_account_sync_tests {
     use serial_test::serial;
     use sqlx::SqlitePool;
 
-    const TEST_DB_PATH: &str = "sqlite:file::memory:?cache=shared";
+    const TEST_DB_PATH: &str = "sqlite:file:multi_account_test?mode=memory&cache=shared";
     const ACCOUNT1_EMAIL: &str = "chris@texasfortress.ai";
     const ACCOUNT2_EMAIL: &str = "shannon@texasfortress.ai";
 

@@ -151,23 +151,35 @@ impl CacheService {
             self.config.database_url
         );
 
-        // Extract the file path from the database URL
-        let db_path = self.config.database_url.replace("sqlite:", "");
-        let path = std::path::Path::new(&db_path);
-
-        // Create data directory if it doesn't exist
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                CacheError::OperationFailed(format!("Failed to create data directory: {}", e))
-            })?;
-        }
-
-        // Create the database file if it doesn't exist
-        if !path.exists() {
-            info!("Database file doesn't exist, creating: {}", db_path);
-            std::fs::File::create(&db_path).map_err(|e| {
-                CacheError::OperationFailed(format!("Failed to create database file: {}", e))
-            })?;
+        // Create on-disk DB file / parent dirs when needed. Skip for in-memory URLs
+        // (sqlite::memory: or mode=memory) — those are invalid filesystem paths on Windows.
+        let db_path = self
+            .config
+            .database_url
+            .strip_prefix("sqlite:")
+            .unwrap_or(self.config.database_url.as_str());
+        let is_memory = db_path == ":memory:"
+            || db_path.starts_with(":memory:")
+            || db_path.contains("mode=memory")
+            || db_path.contains("mode%3Dmemory");
+        if !is_memory {
+            let path = std::path::Path::new(db_path);
+            if let Some(parent) = path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        CacheError::OperationFailed(format!(
+                            "Failed to create data directory: {}",
+                            e
+                        ))
+                    })?;
+                }
+            }
+            if !path.exists() {
+                info!("Database file doesn't exist, creating: {}", db_path);
+                std::fs::File::create(path).map_err(|e| {
+                    CacheError::OperationFailed(format!("Failed to create database file: {}", e))
+                })?;
+            }
         }
 
         // Create database connection pool

@@ -82,9 +82,22 @@ jobs:
         run: cargo test --test '*' -- --test-threads=1
 
       - name: Start backend server
+        env:
+          REST_HOST: 127.0.0.1
+          REST_PORT: "9437"
+          SSE_HOST: 127.0.0.1
+          SSE_PORT: "9438"
+          DASHBOARD_HOST: 127.0.0.1
+          DASHBOARD_PORT: "9439"
+          IMAP_HOST: localhost
+          IMAP_PORT: "993"
+          IMAP_USER: e2e@example.com
+          IMAP_PASS: e2e-test-password
+          RUSTYMAIL_API_KEY: e2e-test-api-key-not-a-secret
+          RUST_LOG: info
         run: |
           # Create test database directory
-          mkdir -p .rustymail
+          mkdir -p .rustymail data
 
           # Start server in background
           ./target/release/rustymail-server > backend.log 2>&1 &
