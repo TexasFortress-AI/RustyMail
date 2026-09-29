@@ -9,12 +9,12 @@
 //! from the `ENCRYPTION_MASTER_KEY` environment variable. If no key is set,
 //! encryption is disabled for backward compatibility.
 
+use aes_gcm::aead::rand_core::RngCore;
 use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
-use aes_gcm::aead::rand_core::RngCore;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use log::{debug, warn};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -65,14 +65,19 @@ impl CredentialEncryption {
         match Self::load_key_from_env() {
             Ok(cipher) => {
                 debug!("Credential encryption initialized with master key");
-                Self { cipher: Some(cipher) }
+                Self {
+                    cipher: Some(cipher),
+                }
             }
             Err(EncryptionError::KeyNotConfigured) => {
                 warn!("ENCRYPTION_MASTER_KEY not set - credentials will be stored in plaintext");
                 Self { cipher: None }
             }
             Err(e) => {
-                warn!("Failed to initialize encryption: {} - credentials will be stored in plaintext", e);
+                warn!(
+                    "Failed to initialize encryption: {} - credentials will be stored in plaintext",
+                    e
+                );
                 Self { cipher: None }
             }
         }
@@ -86,7 +91,9 @@ impl CredentialEncryption {
     /// Create an instance from an explicit 64-hex-character key (used by tests
     /// and tools that must not depend on process environment).
     pub fn from_key_hex(key_hex: &str) -> Result<Self, EncryptionError> {
-        Ok(Self { cipher: Some(Self::cipher_from_hex(key_hex)?) })
+        Ok(Self {
+            cipher: Some(Self::cipher_from_hex(key_hex)?),
+        })
     }
 
     /// Returns true if `value` is in the encrypted `ENC:v1:` format.
@@ -216,8 +223,8 @@ impl CredentialEncryption {
             return Err(EncryptionError::InvalidKeyLength);
         }
 
-        let key_bytes = hex::decode(key_hex)
-            .map_err(|e| EncryptionError::InvalidKeyHex(e.to_string()))?;
+        let key_bytes =
+            hex::decode(key_hex).map_err(|e| EncryptionError::InvalidKeyHex(e.to_string()))?;
 
         Aes256Gcm::new_from_slice(&key_bytes).map_err(|_| EncryptionError::InvalidKeyLength)
     }

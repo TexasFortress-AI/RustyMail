@@ -3,13 +3,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::path::{Path, PathBuf};
-use tokio::fs as async_fs;
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
-use log::{info, debug, warn};
-use thiserror::Error;
 use super::encryption::CredentialEncryption;
+use chrono::{DateTime, Utc};
+use log::{debug, info, warn};
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use thiserror::Error;
+use tokio::fs as async_fs;
 
 #[derive(Error, Debug)]
 pub enum AccountStoreError {
@@ -142,7 +142,10 @@ impl AccountStore {
     /// Initialize the account store, creating the file if it doesn't exist
     pub async fn initialize(&self) -> Result<(), AccountStoreError> {
         if !self.config_path.exists() {
-            info!("Creating new accounts config file at: {:?}", self.config_path);
+            info!(
+                "Creating new accounts config file at: {:?}",
+                self.config_path
+            );
 
             // Create parent directory if it doesn't exist
             if let Some(parent) = self.config_path.parent() {
@@ -255,8 +258,11 @@ impl AccountStore {
         // Atomic rename
         async_fs::rename(&temp_path, &self.config_path).await?;
 
-        info!("Saved {} accounts to config (credentials encrypted: {})",
-            config.accounts.len(), self.encryption.is_enabled());
+        info!(
+            "Saved {} accounts to config (credentials encrypted: {})",
+            config.accounts.len(),
+            self.encryption.is_enabled()
+        );
         Ok(())
     }
 
@@ -265,8 +271,14 @@ impl AccountStore {
         let mut config = self.load_config().await?;
 
         // Check for duplicate email (primary identifier)
-        if config.accounts.iter().any(|a| a.email_address == account.email_address) {
-            return Err(AccountStoreError::DuplicateAccount(account.email_address.clone()));
+        if config
+            .accounts
+            .iter()
+            .any(|a| a.email_address == account.email_address)
+        {
+            return Err(AccountStoreError::DuplicateAccount(
+                account.email_address.clone(),
+            ));
         }
 
         config.accounts.push(account);
@@ -276,10 +288,14 @@ impl AccountStore {
     }
 
     /// Get account by email address
-    pub async fn get_account(&self, email_address: &str) -> Result<StoredAccount, AccountStoreError> {
+    pub async fn get_account(
+        &self,
+        email_address: &str,
+    ) -> Result<StoredAccount, AccountStoreError> {
         let config = self.load_config().await?;
 
-        config.accounts
+        config
+            .accounts
             .into_iter()
             .find(|a| a.email_address == email_address)
             .ok_or_else(|| AccountStoreError::NotFound(email_address.to_string()))
@@ -295,7 +311,8 @@ impl AccountStore {
     pub async fn update_account(&self, account: StoredAccount) -> Result<(), AccountStoreError> {
         let mut config = self.load_config().await?;
 
-        let pos = config.accounts
+        let pos = config
+            .accounts
             .iter()
             .position(|a| a.email_address == account.email_address)
             .ok_or_else(|| AccountStoreError::NotFound(account.email_address.clone()))?;
@@ -332,7 +349,10 @@ impl AccountStore {
         let config = self.load_config().await?;
 
         if let Some(default_email) = &config.default_account_id {
-            Ok(config.accounts.into_iter().find(|a| &a.email_address == default_email))
+            Ok(config
+                .accounts
+                .into_iter()
+                .find(|a| &a.email_address == default_email))
         } else {
             Ok(None)
         }
@@ -343,7 +363,11 @@ impl AccountStore {
         let mut config = self.load_config().await?;
 
         // Verify account exists
-        if !config.accounts.iter().any(|a| a.email_address == email_address) {
+        if !config
+            .accounts
+            .iter()
+            .any(|a| a.email_address == email_address)
+        {
             return Err(AccountStoreError::NotFound(email_address.to_string()));
         }
 
@@ -352,7 +376,6 @@ impl AccountStore {
 
         Ok(())
     }
-
 }
 
 #[cfg(test)]
@@ -448,8 +471,14 @@ mod tests {
         let retrieved = store.get_account("user@outlook.com").await.unwrap();
         assert!(retrieved.is_oauth());
         assert_eq!(retrieved.oauth_provider.as_deref(), Some("microsoft"));
-        assert_eq!(retrieved.oauth_access_token.as_deref(), Some("test-access-token"));
-        assert_eq!(retrieved.oauth_refresh_token.as_deref(), Some("test-refresh-token"));
+        assert_eq!(
+            retrieved.oauth_access_token.as_deref(),
+            Some("test-access-token")
+        );
+        assert_eq!(
+            retrieved.oauth_refresh_token.as_deref(),
+            Some("test-refresh-token")
+        );
         assert_eq!(retrieved.oauth_token_expiry, Some(1700000000));
         // Password should be empty for OAuth accounts
         assert!(retrieved.imap.password.is_empty());

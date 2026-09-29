@@ -5,14 +5,14 @@
 
 //! Comprehensive unit tests for Microsoft 365 OAuth2 support.
 
+use async_imap::Authenticator;
+use chrono::Utc;
+use rustymail::dashboard::services::account_store::*;
 use rustymail::dashboard::services::oauth_config::*;
 use rustymail::dashboard::services::oauth_service::*;
-use rustymail::dashboard::services::account_store::*;
 use rustymail::imap::xoauth2::XOAuth2Authenticator;
-use async_imap::Authenticator;
 use serial_test::serial;
 use tempfile::TempDir;
-use chrono::Utc;
 
 // ============================================================================
 // OAuth Config Tests
@@ -125,7 +125,10 @@ async fn test_oauth_service_generates_valid_auth_url() {
     assert!(url.contains("client_id=test-id"), "Missing client_id");
     assert!(url.contains("response_type=code"), "Missing response_type");
     assert!(url.contains("code_challenge="), "Missing code_challenge");
-    assert!(url.contains("code_challenge_method=S256"), "Missing PKCE method");
+    assert!(
+        url.contains("code_challenge_method=S256"),
+        "Missing PKCE method"
+    );
     assert!(url.contains("scope="), "Missing scope");
 
     // State must be non-empty
@@ -294,8 +297,14 @@ async fn test_oauth_account_store_roundtrip() {
     let retrieved = store.get_account("user@outlook.com").await.unwrap();
     assert!(retrieved.is_oauth());
     assert_eq!(retrieved.oauth_provider.as_deref(), Some("microsoft"));
-    assert_eq!(retrieved.oauth_access_token.as_deref(), Some("access-token-abc"));
-    assert_eq!(retrieved.oauth_refresh_token.as_deref(), Some("refresh-token-xyz"));
+    assert_eq!(
+        retrieved.oauth_access_token.as_deref(),
+        Some("access-token-abc")
+    );
+    assert_eq!(
+        retrieved.oauth_refresh_token.as_deref(),
+        Some("refresh-token-xyz")
+    );
     assert_eq!(retrieved.oauth_token_expiry, Some(1700000000));
 }
 
@@ -358,11 +367,17 @@ async fn test_mixed_accounts_password_and_oauth() {
     let accounts = store.list_accounts().await.unwrap();
     assert_eq!(accounts.len(), 2);
 
-    let gmail = accounts.iter().find(|a| a.email_address == "user@gmail.com").unwrap();
+    let gmail = accounts
+        .iter()
+        .find(|a| a.email_address == "user@gmail.com")
+        .unwrap();
     assert!(!gmail.is_oauth());
     assert_eq!(gmail.imap.password, "app-password");
 
-    let outlook = accounts.iter().find(|a| a.email_address == "user@outlook.com").unwrap();
+    let outlook = accounts
+        .iter()
+        .find(|a| a.email_address == "user@outlook.com")
+        .unwrap();
     assert!(outlook.is_oauth());
     assert!(outlook.imap.password.is_empty());
 }
@@ -408,6 +423,9 @@ async fn test_update_preserves_oauth_fields() {
     let retrieved = store.get_account("user@outlook.com").await.unwrap();
     assert_eq!(retrieved.display_name, "Updated Name");
     assert_eq!(retrieved.oauth_access_token.as_deref(), Some("new-token"));
-    assert_eq!(retrieved.oauth_refresh_token.as_deref(), Some("old-refresh"));
+    assert_eq!(
+        retrieved.oauth_refresh_token.as_deref(),
+        Some("old-refresh")
+    );
     assert_eq!(retrieved.oauth_token_expiry, Some(2000));
 }

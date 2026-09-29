@@ -21,23 +21,31 @@
 //!
 //! The main server spawns this binary periodically. SQLite is the communication channel.
 
+use chrono::Utc;
 use clap::Parser;
-use log::{info, error, warn, debug};
-use sqlx::{SqlitePool, Row};
+use log::{debug, error, info, warn};
+use rustymail::dashboard::services::encryption::{CredentialEncryption, EncryptionError};
+use sqlx::{Row, SqlitePool};
 use std::fs::File;
 use std::io::Write as IoWrite;
-use chrono::Utc;
-use rustymail::dashboard::services::encryption::{CredentialEncryption, EncryptionError};
 
 // Use jemalloc for consistency with main server
-#[cfg(all(not(target_env = "msvc"), not(feature = "system-alloc"), not(feature = "mimalloc-alloc")))]
+#[cfg(all(
+    not(target_env = "msvc"),
+    not(feature = "system-alloc"),
+    not(feature = "mimalloc-alloc")
+))]
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
 #[derive(Parser)]
 #[command(name = "rustymail-sync", about = "Standalone email sync process")]
 struct Cli {
-    #[arg(long, env = "CACHE_DATABASE_URL", default_value = "sqlite:data/email_cache.db")]
+    #[arg(
+        long,
+        env = "CACHE_DATABASE_URL",
+        default_value = "sqlite:data/email_cache.db"
+    )]
     database_url: String,
 
     /// Sync only this specific account (email address)
@@ -87,7 +95,7 @@ fn process_exists(_pid: u32) -> bool {
 /// Result of trying to acquire a lock
 enum LockResult {
     Acquired(File),
-    AlreadyRunning(u32),  // Contains PID of running process
+    AlreadyRunning(u32), // Contains PID of running process
     Error(String),
 }
 
@@ -150,7 +158,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         (Some(acc), None) => format!("account {}", acc),
         (None, _) => "all accounts".to_string(),
     };
-    info!("Starting email sync process (pid: {}) for {}", std::process::id(), mode_desc);
+    info!(
+        "Starting email sync process (pid: {}) for {}",
+        std::process::id(),
+        mode_desc
+    );
 
     // Acquire lock with crash recovery
     let _lock = match acquire_lock() {
@@ -222,7 +234,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         let email_address: String = row.get("email_address");
         let raw_pass: String = row.get("imap_pass");
         let raw_token: Option<String> = row.get("oauth_access_token");
-        let (imap_pass, oauth_access_token) = match decrypt_account_secrets(&encryption, &raw_pass, raw_token.as_deref()) {
+        let (imap_pass, oauth_access_token) = match decrypt_account_secrets(
+            &encryption,
+            &raw_pass,
+            raw_token.as_deref(),
+        ) {
             Ok(v) => v,
             Err(e) => {
                 error!("Cannot decrypt credentials for {} (is ENCRYPTION_MASTER_KEY set correctly?): {}", email_address, e);
@@ -262,12 +278,20 @@ fn decrypt_account_secrets(
     imap_pass: &str,
     oauth_access_token: Option<&str>,
 ) -> Result<(String, Option<String>), EncryptionError> {
-    Ok((encryption.decrypt(imap_pass)?, encryption.decrypt_opt(oauth_access_token)?))
+    Ok((
+        encryption.decrypt(imap_pass)?,
+        encryption.decrypt_opt(oauth_access_token)?,
+    ))
 }
 
 /// Sync folders for a single account
 /// If folder_filter is Some, only sync that specific folder
-async fn sync_account(pool: &SqlitePool, account: &AccountRow, folder_filter: Option<&str>, force: bool) -> Result<(), Box<dyn std::error::Error>> {
+async fn sync_account(
+    pool: &SqlitePool,
+    account: &AccountRow,
+    folder_filter: Option<&str>,
+    force: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mode = match folder_filter {
         Some(f) => format!("folder {}", f),
         None => "all folders".to_string(),
@@ -276,7 +300,9 @@ async fn sync_account(pool: &SqlitePool, account: &AccountRow, folder_filter: Op
 
     // Create IMAP session (XOAUTH2 for OAuth accounts, password for others)
     let client = if account.oauth_provider.is_some() {
-        let token = account.oauth_access_token.as_deref()
+        let token = account
+            .oauth_access_token
+            .as_deref()
             .ok_or("OAuth account has no access token — complete OAuth flow first")?;
         info!("Using XOAUTH2 authentication for {}", account.email_address);
         rustymail::imap::client::ImapClient::<rustymail::imap::session::AsyncImapSessionWrapper>::connect_with_xoauth2_and_security(
@@ -298,7 +324,10 @@ async fn sync_account(pool: &SqlitePool, account: &AccountRow, folder_filter: Op
         ).await?
     };
 
-    info!("Connected to IMAP server {} for {}", account.imap_host, account.email_address);
+    info!(
+        "Connected to IMAP server {} for {}",
+        account.imap_host, account.email_address
+    );
 
     // Determine which folders to sync
     let folders_to_sync: Vec<String> = if let Some(folder) = folder_filter {
@@ -307,14 +336,21 @@ async fn sync_account(pool: &SqlitePool, account: &AccountRow, folder_filter: Op
     } else {
         // All folders mode - list from IMAP
         let folders = client.list_folders().await?;
-        info!("Found {} folders for {}", folders.len(), account.email_address);
+        info!(
+            "Found {} folders for {}",
+            folders.len(),
+            account.email_address
+        );
         folders
     };
 
     // Sync each folder
     for folder in &folders_to_sync {
         if let Err(e) = sync_folder(pool, &client, &account.email_address, folder, force).await {
-            warn!("Failed to sync folder {} for {}: {}", folder, account.email_address, e);
+            warn!(
+                "Failed to sync folder {} for {}: {}",
+                folder, account.email_address, e
+            );
             // Continue with other folders (only relevant in all-folders mode)
         }
     }
@@ -342,18 +378,26 @@ async fn sync_folder(
     let mailbox_info = client.select_folder(folder_name).await?;
 
     // Check for UIDVALIDITY change before overwriting metadata
-    if let Err(e) = check_uidvalidity_change(pool, folder_name, account_email, mailbox_info.uid_validity).await {
+    if let Err(e) =
+        check_uidvalidity_change(pool, folder_name, account_email, mailbox_info.uid_validity).await
+    {
         warn!("Failed to check UIDVALIDITY for {}: {}", folder_name, e);
     }
 
     // Write IMAP mailbox metadata (EXISTS, UIDVALIDITY, UIDNEXT) to the folders table
     if let Err(e) = update_folder_metadata(pool, folder_name, account_email, &mailbox_info).await {
-        warn!("Failed to update folder metadata for {}: {}", folder_name, e);
+        warn!(
+            "Failed to update folder metadata for {}: {}",
+            folder_name, e
+        );
     }
 
     // Get last synced UID (ignored when force=true)
     let last_uid_synced = if force {
-        info!("Force re-sync: ignoring last_uid_synced for folder {}", folder_name);
+        info!(
+            "Force re-sync: ignoring last_uid_synced for folder {}",
+            folder_name
+        );
         0
     } else {
         get_last_uid(pool, folder_name, account_email).await?
@@ -374,7 +418,10 @@ async fn sync_folder(
     }
 
     let total_emails = uids.len() as i64;
-    info!("Syncing {} emails in folder {} for {}", total_emails, folder_name, account_email);
+    info!(
+        "Syncing {} emails in folder {} for {}",
+        total_emails, folder_name, account_email
+    );
 
     // Set initial sync progress
     if let Err(e) = update_sync_progress(pool, folder_name, account_email, 0, total_emails).await {
@@ -402,7 +449,15 @@ async fn sync_folder(
         emails_synced += emails.len() as i64;
 
         // Update sync progress after each batch
-        if let Err(e) = update_sync_progress(pool, folder_name, account_email, emails_synced, total_emails).await {
+        if let Err(e) = update_sync_progress(
+            pool,
+            folder_name,
+            account_email,
+            emails_synced,
+            total_emails,
+        )
+        .await
+        {
             warn!("Failed to update sync progress: {}", e);
         }
 
@@ -416,7 +471,6 @@ async fn sync_folder(
     info!("Synced {} emails in folder {}", uids.len(), folder_name);
     Ok(())
 }
-
 
 /// Detect UIDVALIDITY change (RFC 3501 §2.3.1.1) and flush stale cache.
 /// When UIDVALIDITY changes, all previously-cached UIDs are invalid.
@@ -432,14 +486,13 @@ async fn check_uidvalidity_change(
     };
 
     // Read old UIDVALIDITY from DB
-    let old_val: Option<i64> = sqlx::query_scalar(
-        "SELECT uidvalidity FROM folders WHERE name = ? AND account_id = ?"
-    )
-    .bind(folder_name)
-    .bind(account_email)
-    .fetch_optional(pool)
-    .await?
-    .flatten();
+    let old_val: Option<i64> =
+        sqlx::query_scalar("SELECT uidvalidity FROM folders WHERE name = ? AND account_id = ?")
+            .bind(folder_name)
+            .bind(account_email)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
 
     // If old value exists and differs from new, flush the folder cache
     if let Some(old_val) = old_val {
@@ -449,20 +502,29 @@ async fn check_uidvalidity_change(
                 folder_name, old_val, new_val
             );
 
-            let folder_id: Option<i64> = sqlx::query_scalar(
-                "SELECT id FROM folders WHERE name = ? AND account_id = ?"
-            )
-            .bind(folder_name)
-            .bind(account_email)
-            .fetch_optional(pool)
-            .await?;
+            let folder_id: Option<i64> =
+                sqlx::query_scalar("SELECT id FROM folders WHERE name = ? AND account_id = ?")
+                    .bind(folder_name)
+                    .bind(account_email)
+                    .fetch_optional(pool)
+                    .await?;
 
             if let Some(fid) = folder_id {
                 // Create forensic archive before flushing
                 if let Err(e) = rustymail::forensic::create_forensic_archive(
-                    pool, fid, folder_name, account_email, old_val, new_val
-                ).await {
-                    error!("Failed to create forensic archive for {}: {}", folder_name, e);
+                    pool,
+                    fid,
+                    folder_name,
+                    account_email,
+                    old_val,
+                    new_val,
+                )
+                .await
+                {
+                    error!(
+                        "Failed to create forensic archive for {}: {}",
+                        folder_name, e
+                    );
                     // Continue with flush even if archive fails
                 }
 
@@ -487,33 +549,41 @@ async fn check_uidvalidity_change(
 }
 
 /// Get the last synced UID for a folder
-async fn get_last_uid(pool: &SqlitePool, folder_name: &str, account_id: &str) -> Result<u32, sqlx::Error> {
+async fn get_last_uid(
+    pool: &SqlitePool,
+    folder_name: &str,
+    account_id: &str,
+) -> Result<u32, sqlx::Error> {
     // First get folder_id
-    let folder_id: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM folders WHERE name = ? AND account_id = ?"
-    )
-    .bind(folder_name)
-    .bind(account_id)
-    .fetch_optional(pool)
-    .await?;
+    let folder_id: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM folders WHERE name = ? AND account_id = ?")
+            .bind(folder_name)
+            .bind(account_id)
+            .fetch_optional(pool)
+            .await?;
 
     let folder_id = match folder_id {
         Some(id) => id,
         None => return Ok(0), // Folder doesn't exist yet, start from 0
     };
 
-    let result: Option<i64> = sqlx::query_scalar(
-        "SELECT last_uid_synced FROM sync_state WHERE folder_id = ?"
-    )
-    .bind(folder_id)
-    .fetch_optional(pool)
-    .await?;
+    let result: Option<i64> =
+        sqlx::query_scalar("SELECT last_uid_synced FROM sync_state WHERE folder_id = ?")
+            .bind(folder_id)
+            .fetch_optional(pool)
+            .await?;
 
     Ok(result.unwrap_or(0) as u32)
 }
 
 /// Update sync progress (called during batch processing)
-async fn update_sync_progress(pool: &SqlitePool, folder_name: &str, account_id: &str, emails_synced: i64, emails_total: i64) -> Result<(), sqlx::Error> {
+async fn update_sync_progress(
+    pool: &SqlitePool,
+    folder_name: &str,
+    account_id: &str,
+    emails_synced: i64,
+    emails_total: i64,
+) -> Result<(), sqlx::Error> {
     let folder_id = get_or_create_folder_id(pool, folder_name, account_id).await?;
 
     sqlx::query(
@@ -525,7 +595,7 @@ async fn update_sync_progress(pool: &SqlitePool, folder_name: &str, account_id: 
             emails_synced = excluded.emails_synced,
             emails_total = excluded.emails_total,
             updated_at = datetime('now')
-        "#
+        "#,
     )
     .bind(folder_id)
     .bind(emails_synced)
@@ -553,7 +623,7 @@ async fn update_folder_metadata(
             uidnext = ?,
             last_sync = datetime('now')
         WHERE id = ?
-        "#
+        "#,
     )
     .bind(mailbox_info.exists as i64)
     .bind(mailbox_info.unseen.map(|u| u as i64))
@@ -571,7 +641,12 @@ async fn update_folder_metadata(
 }
 
 /// Update sync state with new last UID (resets progress to 0)
-async fn update_sync_state(pool: &SqlitePool, folder_name: &str, last_uid: u32, account_id: &str) -> Result<(), sqlx::Error> {
+async fn update_sync_state(
+    pool: &SqlitePool,
+    folder_name: &str,
+    last_uid: u32,
+    account_id: &str,
+) -> Result<(), sqlx::Error> {
     // Get folder_id first
     let folder_id = get_or_create_folder_id(pool, folder_name, account_id).await?;
 
@@ -610,20 +685,44 @@ async fn cache_email(
     let (message_id, subject, from_str, from_name_str, to_vec, cc_vec, parsed_date) =
         if let Some(envelope) = &email.envelope {
             let from_addr = envelope.from.first();
-            let from_address = from_addr.map(|a| format!("{}@{}",
-                a.mailbox.as_deref().unwrap_or(""),
-                a.host.as_deref().unwrap_or(""))).unwrap_or_default();
+            let from_address = from_addr
+                .map(|a| {
+                    format!(
+                        "{}@{}",
+                        a.mailbox.as_deref().unwrap_or(""),
+                        a.host.as_deref().unwrap_or("")
+                    )
+                })
+                .unwrap_or_default();
             let from_name = from_addr.and_then(|a| a.name.clone());
 
-            let to_addresses: Vec<String> = envelope.to.iter()
-                .map(|a| format!("{}@{}", a.mailbox.as_deref().unwrap_or(""), a.host.as_deref().unwrap_or("")))
+            let to_addresses: Vec<String> = envelope
+                .to
+                .iter()
+                .map(|a| {
+                    format!(
+                        "{}@{}",
+                        a.mailbox.as_deref().unwrap_or(""),
+                        a.host.as_deref().unwrap_or("")
+                    )
+                })
                 .collect();
-            let cc_addresses: Vec<String> = envelope.cc.iter()
-                .map(|a| format!("{}@{}", a.mailbox.as_deref().unwrap_or(""), a.host.as_deref().unwrap_or("")))
+            let cc_addresses: Vec<String> = envelope
+                .cc
+                .iter()
+                .map(|a| {
+                    format!(
+                        "{}@{}",
+                        a.mailbox.as_deref().unwrap_or(""),
+                        a.host.as_deref().unwrap_or("")
+                    )
+                })
                 .collect();
 
             // Decode MIME-encoded subject if present
-            let decoded_subject = envelope.subject.as_ref()
+            let decoded_subject = envelope
+                .subject
+                .as_ref()
                 .map(|s| rustymail::utils::decode_mime_header(s));
 
             // Parse envelope date string to DateTime<Utc>
@@ -638,8 +737,15 @@ async fn cache_email(
                     })
             });
 
-            (envelope.message_id.clone(), decoded_subject,
-             Some(from_address), from_name, to_addresses, cc_addresses, date)
+            (
+                envelope.message_id.clone(),
+                decoded_subject,
+                Some(from_address),
+                from_name,
+                to_addresses,
+                cc_addresses,
+                date,
+            )
         } else {
             (None, None, None, None, Vec::new(), Vec::new(), None)
         };
@@ -654,9 +760,8 @@ async fn cache_email(
     // Extract thread headers (matches cache.rs logic)
     let in_reply_to = email.envelope.as_ref().and_then(|e| e.in_reply_to.clone());
     let references_header = email.body.as_ref().and_then(|body| {
-        mail_parser::Message::parse(body).and_then(|msg| {
-            msg.header_raw("References").map(|v| v.to_string())
-        })
+        mail_parser::Message::parse(body)
+            .and_then(|msg| msg.header_raw("References").map(|v| v.to_string()))
     });
 
     // Insert or update email in database (matches cache.rs schema)
@@ -686,7 +791,7 @@ async fn cache_email(
             in_reply_to = excluded.in_reply_to,
             references_header = excluded.references_header,
             updated_at = CURRENT_TIMESTAMP
-        "#
+        "#,
     )
     .bind(folder_id)
     .bind(email.uid as i64)
@@ -700,7 +805,7 @@ async fn cache_email(
     .bind(email.internal_date)
     .bind(email.body.as_ref().map(|b| b.len() as i64))
     .bind(&flags_json)
-    .bind("{}")  // headers placeholder
+    .bind("{}") // headers placeholder
     .bind(&email.text_body)
     .bind(&email.html_body)
     .bind(has_attachments)
@@ -713,15 +818,18 @@ async fn cache_email(
 }
 
 /// Get or create a folder_id for the given folder_name and account_id
-async fn get_or_create_folder_id(pool: &SqlitePool, folder_name: &str, account_id: &str) -> Result<i64, sqlx::Error> {
+async fn get_or_create_folder_id(
+    pool: &SqlitePool,
+    folder_name: &str,
+    account_id: &str,
+) -> Result<i64, sqlx::Error> {
     // First try to get existing folder
-    let existing: Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM folders WHERE name = ? AND account_id = ?"
-    )
-    .bind(folder_name)
-    .bind(account_id)
-    .fetch_optional(pool)
-    .await?;
+    let existing: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM folders WHERE name = ? AND account_id = ?")
+            .bind(folder_name)
+            .bind(account_id)
+            .fetch_optional(pool)
+            .await?;
 
     if let Some(id) = existing {
         return Ok(id);
@@ -729,7 +837,7 @@ async fn get_or_create_folder_id(pool: &SqlitePool, folder_name: &str, account_i
 
     // Create the folder
     sqlx::query(
-        "INSERT INTO folders (name, account_id, created_at) VALUES (?, ?, datetime('now'))"
+        "INSERT INTO folders (name, account_id, created_at) VALUES (?, ?, datetime('now'))",
     )
     .bind(folder_name)
     .bind(account_id)
@@ -737,13 +845,11 @@ async fn get_or_create_folder_id(pool: &SqlitePool, folder_name: &str, account_i
     .await?;
 
     // Get the new ID
-    let id: i64 = sqlx::query_scalar(
-        "SELECT id FROM folders WHERE name = ? AND account_id = ?"
-    )
-    .bind(folder_name)
-    .bind(account_id)
-    .fetch_one(pool)
-    .await?;
+    let id: i64 = sqlx::query_scalar("SELECT id FROM folders WHERE name = ? AND account_id = ?")
+        .bind(folder_name)
+        .bind(account_id)
+        .fetch_one(pool)
+        .await?;
 
     Ok(id)
 }

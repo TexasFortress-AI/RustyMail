@@ -56,17 +56,20 @@ pub fn build_smtp_transport(
     let use_starttls = account.smtp_use_starttls.unwrap_or(true);
 
     if account.is_oauth() {
-        let access_token = account
-            .oauth_access_token
-            .as_ref()
-            .ok_or_else(|| SmtpError::MissingCredentials(
-                format!("{} (OAuth token missing)", account.email_address),
-            ))?;
+        let access_token = account.oauth_access_token.as_ref().ok_or_else(|| {
+            SmtpError::MissingCredentials(format!(
+                "{} (OAuth token missing)",
+                account.email_address
+            ))
+        })?;
 
         // For XOAUTH2: user = email, secret = access_token
         let creds = Credentials::new(account.email_address.clone(), access_token.clone());
 
-        info!("Building SMTP transport with XOAUTH2 for {}", account.email_address);
+        info!(
+            "Building SMTP transport with XOAUTH2 for {}",
+            account.email_address
+        );
 
         let mailer = smtp_transport_builder(smtp_host, use_starttls)?
             .port(smtp_port)
@@ -114,13 +117,33 @@ mod tests {
             imap_use_starttls: false,
             smtp_host: Some("smtp.office365.com".to_string()),
             smtp_port: Some(587),
-            smtp_user: if oauth { None } else { Some("user@outlook.com".to_string()) },
-            smtp_pass: if oauth { None } else { Some("password".to_string()) },
+            smtp_user: if oauth {
+                None
+            } else {
+                Some("user@outlook.com".to_string())
+            },
+            smtp_pass: if oauth {
+                None
+            } else {
+                Some("password".to_string())
+            },
             smtp_use_tls: Some(true),
             smtp_use_starttls: Some(true),
-            oauth_provider: if oauth { Some("microsoft".to_string()) } else { None },
-            oauth_access_token: if oauth { Some("test-token".to_string()) } else { None },
-            oauth_refresh_token: if oauth { Some("test-refresh".to_string()) } else { None },
+            oauth_provider: if oauth {
+                Some("microsoft".to_string())
+            } else {
+                None
+            },
+            oauth_access_token: if oauth {
+                Some("test-token".to_string())
+            } else {
+                None
+            },
+            oauth_refresh_token: if oauth {
+                Some("test-refresh".to_string())
+            } else {
+                None
+            },
             oauth_token_expiry: if oauth { Some(9999999999) } else { None },
             is_active: true,
             is_default: false,

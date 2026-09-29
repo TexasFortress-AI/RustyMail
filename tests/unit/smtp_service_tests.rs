@@ -35,10 +35,7 @@ async fn create_test_db_pool(test_name: &str) -> SqlitePool {
     let pool = SqlitePool::connect(&db_url).await.unwrap();
 
     // Run migrations
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .unwrap();
+    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
 
     pool
 }
