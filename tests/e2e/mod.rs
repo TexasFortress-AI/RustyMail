@@ -6,5 +6,5 @@
 // End-to-end tests for RustyMail
 // This module organizes all end-to-end tests
 
+pub mod live;
 pub mod rest;
-pub mod live; 

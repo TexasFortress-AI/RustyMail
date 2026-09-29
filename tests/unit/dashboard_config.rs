@@ -6,8 +6,9 @@
 // Unit tests for dashboard configuration management functionality
 #[cfg(test)]
 mod tests {
-    use rustymail::dashboard::services::config::ConfigService;
     use rustymail::config::Settings;
+    use rustymail::dashboard::services::config::ConfigService;
+    use serial_test::serial;
     use tempfile::TempDir;
 
     /// Set up required environment variables for tests
@@ -22,6 +23,7 @@ mod tests {
         std::env::set_var("IMAP_PORT", "143");
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_config_service_initialization() {
         setup_test_env();
@@ -34,6 +36,7 @@ mod tests {
         assert_eq!(retrieved_settings.imap_port, settings.imap_port);
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_update_imap_config() {
         setup_test_env();
@@ -41,12 +44,14 @@ mod tests {
         let config_service = ConfigService::with_settings(settings, None);
 
         // Update IMAP configuration
-        let result = config_service.update_imap_config(
-            "mail.example.com".to_string(),
-            993,
-            "user@example.com".to_string(),
-            "password123".to_string(),
-        ).await;
+        let result = config_service
+            .update_imap_config(
+                "mail.example.com".to_string(),
+                993,
+                "user@example.com".to_string(),
+                "password123".to_string(),
+            )
+            .await;
 
         assert!(result.is_ok());
 
@@ -58,6 +63,7 @@ mod tests {
         assert_eq!(updated_settings.imap_pass, "password123");
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_update_rest_config() {
         setup_test_env();
@@ -65,11 +71,9 @@ mod tests {
         let config_service = ConfigService::with_settings(settings, None);
 
         // Update REST configuration
-        let result = config_service.update_rest_config(
-            true,
-            "localhost".to_string(),
-            8080,
-        ).await;
+        let result = config_service
+            .update_rest_config(true, "localhost".to_string(), 8080)
+            .await;
 
         assert!(result.is_ok());
 
@@ -82,20 +86,24 @@ mod tests {
         assert_eq!(rest_config.port, 8080);
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_update_dashboard_config() {
         setup_test_env();
         let settings = Settings::default();
         let config_service = ConfigService::with_settings(settings, None);
 
-        // Update dashboard configuration
-        let result = config_service.update_dashboard_config(
-            true,
-            3000,
-            Some("/tmp".to_string()),
-        ).await;
+        // Use a path that exists on all CI OSes (Windows has no /tmp).
+        let existing_path = std::env::temp_dir().to_string_lossy().to_string();
+        let result = config_service
+            .update_dashboard_config(true, 3000, Some(existing_path.clone()))
+            .await;
 
-        assert!(result.is_ok());
+        assert!(
+            result.is_ok(),
+            "update_dashboard_config failed: {:?}",
+            result
+        );
 
         // Verify the update
         let updated_settings = config_service.get_settings().await;
@@ -103,15 +111,17 @@ mod tests {
         let dashboard_config = updated_settings.dashboard.unwrap();
         assert!(dashboard_config.enabled);
         assert_eq!(dashboard_config.port, 3000);
-        assert_eq!(dashboard_config.path, Some("/tmp".to_string()));
+        assert_eq!(dashboard_config.path, Some(existing_path));
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_config_validation() {
         setup_test_env();
-        let mut settings = Settings::default();
-        // Settings::default() has empty imap_user, which fails validation
-        settings.imap_user = "test@example.com".to_string();
+        let settings = Settings {
+            imap_user: "test@example.com".to_string(),
+            ..Settings::default()
+        };
         let config_service = ConfigService::with_settings(settings.clone(), None);
 
         // Valid configuration should pass
@@ -127,11 +137,14 @@ mod tests {
         assert!(result.is_err());
 
         if let Err(errors) = result {
-            assert!(errors.iter().any(|e| e.contains("IMAP host cannot be empty")));
+            assert!(errors
+                .iter()
+                .any(|e| e.contains("IMAP host cannot be empty")));
             assert!(errors.iter().any(|e| e.contains("IMAP port cannot be 0")));
         }
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_invalid_port_validation() {
         setup_test_env();
@@ -139,17 +152,20 @@ mod tests {
         let config_service = ConfigService::with_settings(settings, None);
 
         // Test port 0 rejection
-        let result = config_service.update_imap_config(
-            "mail.example.com".to_string(),
-            0,
-            "user@example.com".to_string(),
-            "password".to_string(),
-        ).await;
+        let result = config_service
+            .update_imap_config(
+                "mail.example.com".to_string(),
+                0,
+                "user@example.com".to_string(),
+                "password".to_string(),
+            )
+            .await;
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Invalid port number");
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_empty_host_validation() {
         setup_test_env();
@@ -157,17 +173,20 @@ mod tests {
         let config_service = ConfigService::with_settings(settings, None);
 
         // Test empty host rejection
-        let result = config_service.update_imap_config(
-            "".to_string(),
-            993,
-            "user@example.com".to_string(),
-            "password".to_string(),
-        ).await;
+        let result = config_service
+            .update_imap_config(
+                "".to_string(),
+                993,
+                "user@example.com".to_string(),
+                "password".to_string(),
+            )
+            .await;
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Host cannot be empty");
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_invalid_dashboard_path() {
         setup_test_env();
@@ -175,16 +194,21 @@ mod tests {
         let config_service = ConfigService::with_settings(settings, None);
 
         // Test non-existent path rejection
-        let result = config_service.update_dashboard_config(
-            true,
-            3000,
-            Some("/this/path/does/not/exist/zzz123".to_string()),
-        ).await;
+        let result = config_service
+            .update_dashboard_config(
+                true,
+                3000,
+                Some("/this/path/does/not/exist/zzz123".to_string()),
+            )
+            .await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Dashboard path does not exist"));
+        assert!(result
+            .unwrap_err()
+            .contains("Dashboard path does not exist"));
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_config_persistence() {
         setup_test_env();
@@ -196,12 +220,15 @@ mod tests {
         let config_service = ConfigService::with_settings(settings, Some(config_path.clone()));
 
         // Update configuration
-        config_service.update_imap_config(
-            "persistent.example.com".to_string(),
-            143,
-            "persistent@example.com".to_string(),
-            "persistpass".to_string(),
-        ).await.unwrap();
+        config_service
+            .update_imap_config(
+                "persistent.example.com".to_string(),
+                143,
+                "persistent@example.com".to_string(),
+                "persistpass".to_string(),
+            )
+            .await
+            .unwrap();
 
         // Verify file was created
         assert!(config_path.exists());

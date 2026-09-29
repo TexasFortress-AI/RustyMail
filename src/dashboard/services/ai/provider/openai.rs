@@ -5,20 +5,19 @@
 
 // src/dashboard/services/ai/providers/openai.rs
 
-use async_trait::async_trait;
-use reqwest::Client;
-use serde::{Serialize, Deserialize};
-use log::{debug, warn, error};
-use super::{AiProvider, AiChatMessage, get_ai_request_timeout}; // Import trait, common message struct, and timeout helper
+use super::{get_ai_request_timeout, AiChatMessage, AiProvider}; // Import trait, common message struct, and timeout helper
 use crate::api::errors::ApiError as RestApiError;
+use async_trait::async_trait;
+use log::{debug, error, warn};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 // Get OpenAI API base URL from environment or use default
 fn get_base_url() -> String {
-    std::env::var("OPENAI_BASE_URL")
-        .unwrap_or_else(|_| "https://api.openai.com/v1".to_string())
+    std::env::var("OPENAI_BASE_URL").unwrap_or_else(|_| "https://api.openai.com/v1".to_string())
 }
 
-const DEFAULT_OPENAI_MODEL: &str = "gpt-4o-mini"; 
+const DEFAULT_OPENAI_MODEL: &str = "gpt-4o-mini";
 
 // --- OpenAI Specific Request/Response Structs ---
 #[derive(Serialize)]
@@ -41,6 +40,7 @@ struct OpenAiChoice {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct OpenAiUsage {
     // Define usage fields if needed
 }
@@ -88,29 +88,43 @@ impl AiProvider for OpenAiAdapter {
         let base_url = get_base_url();
         let models_url = format!("{}/models", base_url);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .get(&models_url)
             .bearer_auth(&self.api_key)
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("OpenAI models: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("OpenAI models: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("OpenAI models API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "OpenAI models API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("OpenAI models API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "OpenAI models API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
-        let response_body = response
-            .json::<OpenAiModelsResponse>()
-            .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize OpenAI models response: {}", e) })?;
+        let response_body = response.json::<OpenAiModelsResponse>().await.map_err(|e| {
+            RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize OpenAI models response: {}", e),
+            }
+        })?;
 
-        let models: Vec<String> = response_body.data
+        let models: Vec<String> = response_body
+            .data
             .into_iter()
             .filter(|model| model.object == "model")
             .map(|model| model.id)
@@ -129,31 +143,48 @@ impl AiProvider for OpenAiAdapter {
             messages: messages.to_vec(), // Clone messages for the request
         };
 
-        debug!("Sending request to OpenAI API: model={}, messages_count={}, url={}",
-               request_payload.model, request_payload.messages.len(), chat_url);
+        debug!(
+            "Sending request to OpenAI API: model={}, messages_count={}, url={}",
+            request_payload.model,
+            request_payload.messages.len(),
+            chat_url
+        );
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&chat_url)
             .bearer_auth(&self.api_key)
             .json(&request_payload)
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("OpenAI: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("OpenAI: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("OpenAI API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "OpenAI API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("OpenAI API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "OpenAI API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
-        let response_body = response
-            .json::<OpenAiChatResponse>()
-            .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize OpenAI response: {}", e) })?;
+        let response_body = response.json::<OpenAiChatResponse>().await.map_err(|e| {
+            RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize OpenAI response: {}", e),
+            }
+        })?;
 
         // Extract the first choice's message content
         if let Some(choice) = response_body.choices.first() {
@@ -161,7 +192,9 @@ impl AiProvider for OpenAiAdapter {
             Ok(choice.message.content.clone())
         } else {
             warn!("OpenAI API response did not contain any choices.");
-            Err(RestApiError::UnprocessableEntity { message: "OpenAI response was empty or missing choices".to_string() })
+            Err(RestApiError::UnprocessableEntity {
+                message: "OpenAI response was empty or missing choices".to_string(),
+            })
         }
     }
-} 
+}

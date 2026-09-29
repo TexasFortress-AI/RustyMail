@@ -3,10 +3,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use rustymail::dashboard::services::attachment_storage::{
-    self, AttachmentError, AttachmentInfo,
-};
-use rustymail::imap::types::{Email, Envelope, MimePart, ContentType, ContentDisposition};
+use rustymail::dashboard::services::attachment_storage::{self, AttachmentError};
+use rustymail::imap::types::{ContentDisposition, ContentType, Email, Envelope, MimePart};
 use scopeguard::defer;
 use serial_test::serial;
 use sqlx::SqlitePool;
@@ -39,10 +37,7 @@ async fn create_test_db_pool(test_name: &str) -> SqlitePool {
     let pool = SqlitePool::connect(&db_url).await.unwrap();
 
     // Run migrations
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .unwrap();
+    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
 
     // Insert test account to satisfy foreign key constraints
     sqlx::query(
@@ -78,7 +73,7 @@ fn cleanup_test_db(test_name: &str) {
 fn parse_content_type(mime_type: &str) -> ContentType {
     let parts: Vec<&str> = mime_type.split('/').collect();
     ContentType {
-        main_type: parts.get(0).unwrap_or(&"application").to_string(),
+        main_type: parts.first().unwrap_or(&"application").to_string(),
         sub_type: parts.get(1).unwrap_or(&"octet-stream").to_string(),
         parameters: HashMap::new(),
     }
@@ -219,8 +214,9 @@ async fn test_get_attachment_path() {
     let path = attachment_storage::get_attachment_path(
         "user@example.com",
         "<msg123@server.com>",
-        "invoice.pdf"
-    ).expect("get_attachment_path should succeed for valid inputs");
+        "invoice.pdf",
+    )
+    .expect("get_attachment_path should succeed for valid inputs");
 
     let path_str = path.to_string_lossy();
     assert!(path_str.contains("attachments"));
@@ -259,10 +255,14 @@ async fn test_save_and_retrieve_attachment() {
     let attachment_info = result.unwrap();
     assert_eq!(attachment_info.filename, "test.pdf");
     assert_eq!(attachment_info.size_bytes, 11); // "PDF content" length
-    assert_eq!(attachment_info.content_type, Some("application/pdf".to_string()));
+    assert_eq!(
+        attachment_info.content_type,
+        Some("application/pdf".to_string())
+    );
 
     // Retrieve the attachment metadata
-    let attachments = attachment_storage::get_attachments_metadata(&pool, account, message_id).await;
+    let attachments =
+        attachment_storage::get_attachments_metadata(&pool, account, message_id).await;
     assert!(attachments.is_ok());
 
     let attachments = attachments.unwrap();
@@ -295,9 +295,15 @@ async fn test_save_multiple_attachments() {
     let png = create_mime_part("image/png", "img.png", b"PNG".to_vec());
     let txt = create_mime_part("text/plain", "note.txt", b"TXT".to_vec());
 
-    attachment_storage::save_attachment(&pool, account, message_id, &pdf).await.unwrap();
-    attachment_storage::save_attachment(&pool, account, message_id, &png).await.unwrap();
-    attachment_storage::save_attachment(&pool, account, message_id, &txt).await.unwrap();
+    attachment_storage::save_attachment(&pool, account, message_id, &pdf)
+        .await
+        .unwrap();
+    attachment_storage::save_attachment(&pool, account, message_id, &png)
+        .await
+        .unwrap();
+    attachment_storage::save_attachment(&pool, account, message_id, &txt)
+        .await
+        .unwrap();
 
     // Retrieve all attachments
     let attachments = attachment_storage::get_attachments_metadata(&pool, account, message_id)
@@ -335,7 +341,9 @@ async fn test_delete_attachments() {
 
     // Save an attachment
     let mime_part = create_mime_part("application/pdf", "delete.pdf", b"DELETE ME".to_vec());
-    attachment_storage::save_attachment(&pool, account, message_id, &mime_part).await.unwrap();
+    attachment_storage::save_attachment(&pool, account, message_id, &mime_part)
+        .await
+        .unwrap();
 
     // Verify it was saved
     let attachments = attachment_storage::get_attachments_metadata(&pool, account, message_id)
@@ -385,7 +393,7 @@ async fn test_attachment_with_special_characters_in_filename() {
     let mime_part = create_mime_part(
         "application/pdf",
         "my file (with) special [chars].pdf",
-        b"CONTENT".to_vec()
+        b"CONTENT".to_vec(),
     );
 
     let result = attachment_storage::save_attachment(&pool, account, message_id, &mime_part).await;
@@ -393,7 +401,10 @@ async fn test_attachment_with_special_characters_in_filename() {
 
     // The filename should be preserved as-is
     let attachment_info = result.unwrap();
-    assert_eq!(attachment_info.filename, "my file (with) special [chars].pdf");
+    assert_eq!(
+        attachment_info.filename,
+        "my file (with) special [chars].pdf"
+    );
 
     cleanup_test_db(test_name);
 }
@@ -462,12 +473,17 @@ async fn test_create_zip_archive() {
     let pdf = create_mime_part("application/pdf", "file1.pdf", b"PDF1".to_vec());
     let txt = create_mime_part("text/plain", "file2.txt", b"TXT2".to_vec());
 
-    attachment_storage::save_attachment(&pool, account, message_id, &pdf).await.unwrap();
-    attachment_storage::save_attachment(&pool, account, message_id, &txt).await.unwrap();
+    attachment_storage::save_attachment(&pool, account, message_id, &pdf)
+        .await
+        .unwrap();
+    attachment_storage::save_attachment(&pool, account, message_id, &txt)
+        .await
+        .unwrap();
 
     // Create ZIP archive
     let zip_path = temp_dir.path().join("attachments.zip");
-    let result = attachment_storage::create_zip_archive(&pool, account, message_id, &zip_path).await;
+    let result =
+        attachment_storage::create_zip_archive(&pool, account, message_id, &zip_path).await;
 
     assert!(result.is_ok());
     assert!(zip_path.exists());
@@ -499,7 +515,8 @@ async fn test_create_zip_with_no_attachments() {
 
     // Try to create ZIP with no attachments
     let zip_path = temp_dir.path().join("empty.zip");
-    let result = attachment_storage::create_zip_archive(&pool, account, message_id, &zip_path).await;
+    let result =
+        attachment_storage::create_zip_archive(&pool, account, message_id, &zip_path).await;
 
     assert!(result.is_err());
     if let Err(AttachmentError::NotFound(_)) = result {
@@ -580,7 +597,9 @@ async fn test_attachment_content_type_preservation() {
 
     for (content_type, filename) in types {
         let mime_part = create_mime_part(content_type, filename, b"DATA".to_vec());
-        attachment_storage::save_attachment(&pool, account, message_id, &mime_part).await.unwrap();
+        attachment_storage::save_attachment(&pool, account, message_id, &mime_part)
+            .await
+            .unwrap();
     }
 
     // Retrieve and verify content types
@@ -613,5 +632,5 @@ async fn test_attachment_content_type_preservation() {
 #[test]
 fn test_attachment_tests_exist() {
     // This is a placeholder test to ensure the file compiles
-    assert!(true, "Attachment test file exists and compiles");
+    let _ = 1 + 1;
 }

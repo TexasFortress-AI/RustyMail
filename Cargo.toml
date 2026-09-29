@@ -1,7 +1,9 @@
 [package]
 name = "rustymail"
+license = "MPL-2.0"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.88"
 description = "A modern IMAP client with multiple interface options"
 authors = ["Your Name <your.email@example.com>"]
 default-run = "rustymail-server"
@@ -14,7 +16,7 @@ default-run = "rustymail-server"
 async-imap = "0.8.0"
 # imap-types removed - using only async-imap now
 
-rustls = "0.23"
+rustls = "0.23.45"
 # Add back rustls-pki-types, likely needed
 rustls-pki-types = "1.1"
 tokio = { version = "1", features = ["full"] }
@@ -102,7 +104,7 @@ utoipa-swagger-ui = { version = "8", features = ["actix-web"] }
 mail-parser = "0.8"
 
 # SMTP sending
-lettre = { version = "0.11", default-features = false, features = ["tokio1", "tokio1-rustls-tls", "builder", "hostname", "smtp-transport"] }
+lettre = { version = "0.11.22", default-features = false, features = ["tokio1", "tokio1-rustls-tls", "builder", "hostname", "smtp-transport"] }
 
 # Database and caching dependencies
 sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono", "uuid", "migrate"] }
@@ -118,8 +120,8 @@ dirs = "5.0"
 sysinfo = "0.30" # For system metrics
 
 # Email autodiscovery
-hickory-resolver = "0.26.0-alpha.1" # DNS SRV record lookups
-quick-xml = { version = "0.36", features = ["serialize"] } # Mozilla Autoconfig XML parsing
+hickory-resolver = "0.26.1" # DNS SRV record lookups
+quick-xml = { version = "0.41", features = ["serialize"] } # Mozilla Autoconfig XML parsing
 
 # Lazy static for MIME decoder
 lazy_static = "1.4"

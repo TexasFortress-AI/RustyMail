@@ -7,14 +7,14 @@
 //! Tests connection creation, reuse, health checks, idle timeout, max session duration,
 //! concurrent access, connection validation, and pool exhaustion scenarios
 
-use rustymail::connection_pool::{ConnectionPool, ConnectionFactory, PoolConfig, PoolError};
-use rustymail::imap::{ImapClient, ImapError, AsyncImapSessionWrapper};
-use std::sync::Arc;
+use async_trait::async_trait;
+use rustymail::connection_pool::{ConnectionFactory, ConnectionPool, PoolConfig};
+use rustymail::imap::{AsyncImapSessionWrapper, ImapClient, ImapError};
+use serial_test::serial;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
-use async_trait::async_trait;
-use serial_test::serial;
 
 /// Mock connection factory for testing that tracks creation count
 struct MockConnectionFactory {
@@ -79,13 +79,17 @@ impl ConnectionFactory for MockConnectionFactory {
         // Fail after N successful creations if configured
         if let Some(fail_after) = self.fail_after {
             if count >= fail_after {
-                return Err(ImapError::Connection("Mock failure after limit".to_string()));
+                return Err(ImapError::Connection(
+                    "Mock failure after limit".to_string(),
+                ));
             }
         }
 
         // For testing, we return an error since we can't create real IMAP clients
         // The pool should handle this gracefully
-        Err(ImapError::Connection("Mock connection - no real IMAP server".to_string()))
+        Err(ImapError::Connection(
+            "Mock connection - no real IMAP server".to_string(),
+        ))
     }
 
     async fn validate(&self, _client: &Arc<ImapClient<AsyncImapSessionWrapper>>) -> bool {
@@ -127,8 +131,10 @@ async fn test_connection_creation() {
 
     // Note: Creation may fail with mock factory, so we just verify the pool exists
     let stats = pool.stats().await;
-    assert!(stats.max_connections == 10, "Max connections should be configured");
-    assert!(stats.total_connections >= 0, "Total connections should be non-negative");
+    assert!(
+        stats.max_connections == 10,
+        "Max connections should be configured"
+    );
 
     pool.shutdown().await;
     println!("✓ Pool created and configured correctly");
@@ -157,12 +163,14 @@ async fn test_connection_reuse() {
     println!("Initial connections created: {}", initial_created);
 
     // Try to acquire connections (will fail with mock factory but tests the logic)
-    let result1 = Arc::clone(&pool).acquire().await;
-    let result2 = Arc::clone(&pool).acquire().await;
+    let _result1 = Arc::clone(&pool).acquire().await;
+    let _result2 = Arc::clone(&pool).acquire().await;
 
     let final_stats = pool.stats().await;
-    println!("Final stats - Created: {}, Acquired: {}, Timeouts: {}",
-             final_stats.total_created, final_stats.total_acquired, final_stats.acquire_timeouts);
+    println!(
+        "Final stats - Created: {}, Acquired: {}, Timeouts: {}",
+        final_stats.total_created, final_stats.total_acquired, final_stats.acquire_timeouts
+    );
 
     println!("✓ Connection reuse logic tested");
     println!("✓ Pool stats tracked correctly");
@@ -224,7 +232,10 @@ async fn test_idle_timeout() {
     sleep(Duration::from_millis(200)).await;
 
     let initial_stats = pool.stats().await;
-    println!("Initial total connections: {}", initial_stats.total_connections);
+    println!(
+        "Initial total connections: {}",
+        initial_stats.total_connections
+    );
 
     // Wait longer than idle timeout
     sleep(Duration::from_secs(2)).await;
@@ -288,7 +299,10 @@ async fn test_acquire_timeout() {
 
     // Should timeout quickly since creation takes 500ms but timeout is 100ms
     assert!(result.is_err(), "Should timeout or fail");
-    assert!(elapsed < Duration::from_millis(200), "Should timeout within configured duration");
+    assert!(
+        elapsed < Duration::from_millis(200),
+        "Should timeout within configured duration"
+    );
 
     println!("✓ Acquire timeout enforced");
     println!("✓ Failed acquisition handled gracefully");
@@ -345,7 +359,10 @@ async fn test_concurrent_acquisition() {
         }
     }
 
-    println!("Concurrent acquisitions - Successes: {}, Failures: {}", successes, failures);
+    println!(
+        "Concurrent acquisitions - Successes: {}, Failures: {}",
+        successes, failures
+    );
 
     let stats = pool.stats().await;
     println!("Pool stats: {:?}", stats);
@@ -431,9 +448,18 @@ async fn test_pool_exhaustion() {
     let result3 = Arc::clone(&pool).acquire().await;
 
     println!("Acquisition results:");
-    println!("  Result 1: {}", if result1.is_ok() { "Success" } else { "Failed" });
-    println!("  Result 2: {}", if result2.is_ok() { "Success" } else { "Failed" });
-    println!("  Result 3: {}", if result3.is_ok() { "Success" } else { "Failed" });
+    println!(
+        "  Result 1: {}",
+        if result1.is_ok() { "Success" } else { "Failed" }
+    );
+    println!(
+        "  Result 2: {}",
+        if result2.is_ok() { "Success" } else { "Failed" }
+    );
+    println!(
+        "  Result 3: {}",
+        if result3.is_ok() { "Success" } else { "Failed" }
+    );
 
     let stats = pool.stats().await;
     println!("Pool stats: {:?}", stats);
@@ -540,8 +566,10 @@ async fn test_respects_max_connections() {
     println!("Total connections: {}", stats.total_connections);
     println!("Maximum allowed: {}", max_connections);
 
-    assert!(stats.total_connections <= max_connections,
-            "Pool should never exceed max_connections");
+    assert!(
+        stats.total_connections <= max_connections,
+        "Pool should never exceed max_connections"
+    );
 
     println!("✓ Maximum connection limit enforced");
     println!("✓ Semaphore correctly limiting connections");
@@ -563,7 +591,10 @@ async fn test_session_handle_lifecycle() {
     let pool = ConnectionPool::new(factory, config);
 
     let initial_stats = pool.stats().await;
-    println!("Initial active connections: {}", initial_stats.active_connections);
+    println!(
+        "Initial active connections: {}",
+        initial_stats.active_connections
+    );
 
     {
         // Session handle will be dropped at end of scope
@@ -631,12 +662,18 @@ async fn test_cleanup_disconnected() {
     sleep(Duration::from_secs(2)).await;
 
     let before_cleanup = pool.stats().await;
-    println!("Connections before cleanup: {}", before_cleanup.total_connections);
+    println!(
+        "Connections before cleanup: {}",
+        before_cleanup.total_connections
+    );
 
     pool.cleanup_disconnected().await;
 
     let after_cleanup = pool.stats().await;
-    println!("Connections after cleanup: {}", after_cleanup.total_connections);
+    println!(
+        "Connections after cleanup: {}",
+        after_cleanup.total_connections
+    );
 
     println!("✓ Cleanup removes unhealthy connections");
     println!("✓ Pool remains operational after cleanup");
@@ -681,9 +718,10 @@ async fn test_pool_statistics() {
     println!("  Acquire timeouts: {}", stats.acquire_timeouts);
     println!("  Creation failures: {}", stats.creation_failures);
 
-    assert!(stats.max_connections == 10, "Max connections should match config");
-    assert!(stats.total_connections >= 0, "Total should be non-negative");
-    assert!(stats.active_connections >= 0, "Active should be non-negative");
+    assert!(
+        stats.max_connections == 10,
+        "Max connections should match config"
+    );
 
     println!("✓ Statistics tracked correctly");
     println!("✓ All metrics accessible");
@@ -737,14 +775,23 @@ async fn test_graceful_shutdown() {
     sleep(Duration::from_millis(200)).await;
 
     let before_shutdown = pool.stats().await;
-    println!("Connections before shutdown: {}", before_shutdown.total_connections);
+    println!(
+        "Connections before shutdown: {}",
+        before_shutdown.total_connections
+    );
 
     pool.shutdown().await;
 
     let after_shutdown = pool.stats().await;
-    println!("Connections after shutdown: {}", after_shutdown.total_connections);
+    println!(
+        "Connections after shutdown: {}",
+        after_shutdown.total_connections
+    );
 
-    assert_eq!(after_shutdown.total_connections, 0, "All connections should be cleared");
+    assert_eq!(
+        after_shutdown.total_connections, 0,
+        "All connections should be cleared"
+    );
 
     println!("✓ Graceful shutdown completes");
     println!("✓ All connections cleared");

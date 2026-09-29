@@ -3,61 +3,61 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use async_imap::error::Error as AsyncImapError;
 use std::error::Error as StdError;
 use thiserror::Error;
-use async_imap::error::Error as AsyncImapError;
 // imap_types imports removed
-use std::fmt;
 use async_imap;
+use std::fmt;
 use tokio_native_tls;
 
 #[derive(Debug, Error, Clone)]
 pub enum ImapError {
     #[error("Connection error: {0}")]
     Connection(String),
-    
+
     #[error("TLS error: {0}")]
     Tls(String),
-    
+
     #[error("Authentication error: {0}")]
     Auth(String),
-    
+
     #[error("Invalid mailbox: {0}")]
     InvalidMailbox(String),
-    
+
     #[error("Folder not found: {0}")]
     FolderNotFound(String),
-    
+
     #[error("Folder already exists: {0}")]
     FolderExists(String),
-    
+
     #[error("Email not found: {0:?}")]
     EmailNotFound(Vec<u32>),
-    
+
     #[error("Envelope not found")]
     EnvelopeNotFound,
-    
+
     #[error("Folder not selected")]
     FolderNotSelected,
-    
+
     #[error("Operation requires folder selection: {0}")]
     RequiresFolderSelection(String),
-    
+
     #[error("Fetch error: {0}")]
     Fetch(String),
-    
+
     #[error("Operation error: {0}")]
     Operation(String),
-    
+
     #[error("Command error: {0}")]
     Command(String),
-    
+
     #[error("Flag error: {0}")]
     Flag(String),
-    
+
     #[error("Invalid search criteria: {0}")]
     InvalidCriteria(String),
-    
+
     #[error("Parse error: {0}")]
     Parse(String),
 
@@ -124,6 +124,3 @@ impl From<std::io::Error> for ImapError {
 }
 
 // Removed imap_types flag::ValidationError conversion
-
-
-

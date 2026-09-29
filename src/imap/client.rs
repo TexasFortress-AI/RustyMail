@@ -59,13 +59,21 @@ pub struct ImapClient<T: AsyncImapOps + Send + Sync + Debug + 'static> {
 impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
     /// Creates a new `ImapClient` wrapping an existing session.
     pub fn new(session: T) -> Self {
-        Self { session: Arc::new(session) }
+        Self {
+            session: Arc::new(session),
+        }
     }
 
     /// Establishes a new IMAP connection with the given server, port, and credentials
     /// Uses default append timeout of 35 seconds
-    pub async fn connect(server: &str, port: u16, username: &str, password: &str) -> Result<ImapClient<AsyncImapSessionWrapper>, ImapError> {
-        Self::connect_with_append_timeout(server, port, username, password, Duration::from_secs(35)).await
+    pub async fn connect(
+        server: &str,
+        port: u16,
+        username: &str,
+        password: &str,
+    ) -> Result<ImapClient<AsyncImapSessionWrapper>, ImapError> {
+        Self::connect_with_append_timeout(server, port, username, password, Duration::from_secs(35))
+            .await
     }
 
     /// Establishes a new IMAP connection with the given server, port, credentials, and append timeout
@@ -74,15 +82,16 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         port: u16,
         username: &str,
         password: &str,
-        append_timeout: Duration
+        append_timeout: Duration,
     ) -> Result<ImapClient<AsyncImapSessionWrapper>, ImapError> {
         let session = AsyncImapSessionWrapper::connect(
             server,
             port,
             Arc::new(username.to_string()),
             Arc::new(password.to_string()),
-            append_timeout
-        ).await?;
+            append_timeout,
+        )
+        .await?;
         Ok(ImapClient::new(session))
     }
 
@@ -103,7 +112,8 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
             use_tls,
             use_starttls,
             Duration::from_secs(35),
-        ).await
+        )
+        .await
     }
 
     /// Establishes a new IMAP connection with explicit TLS mode selection and append timeout.
@@ -124,7 +134,8 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
             append_timeout,
             use_tls,
             use_starttls,
-        ).await?;
+        )
+        .await?;
         Ok(ImapClient::new(session))
     }
 
@@ -135,7 +146,14 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         username: &str,
         access_token: &str,
     ) -> Result<ImapClient<AsyncImapSessionWrapper>, ImapError> {
-        Self::connect_with_xoauth2_and_timeout(server, port, username, access_token, Duration::from_secs(35)).await
+        Self::connect_with_xoauth2_and_timeout(
+            server,
+            port,
+            username,
+            access_token,
+            Duration::from_secs(35),
+        )
+        .await
     }
 
     /// Establishes a new IMAP connection using XOAUTH2 with custom timeout
@@ -152,7 +170,8 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
             Arc::new(username.to_string()),
             Arc::new(access_token.to_string()),
             append_timeout,
-        ).await?;
+        )
+        .await?;
         Ok(ImapClient::new(session))
     }
 
@@ -173,7 +192,8 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
             Duration::from_secs(35),
             use_tls,
             use_starttls,
-        ).await?;
+        )
+        .await?;
         Ok(ImapClient::new(session))
     }
 
@@ -212,7 +232,10 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         self.session.search_emails(criteria).await
     }
 
-    pub async fn fetch_emails(&self, uids: &[u32]) -> Result<Vec<crate::imap::types::Email>, ImapError> {
+    pub async fn fetch_emails(
+        &self,
+        uids: &[u32],
+    ) -> Result<Vec<crate::imap::types::Email>, ImapError> {
         self.session.fetch_emails(uids).await
     }
 
@@ -220,15 +243,30 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         self.session.fetch_flags(uids).await
     }
 
-    pub async fn move_email(&self, uid: u32, from_folder: &str, to_folder: &str) -> Result<(), ImapError> {
+    pub async fn move_email(
+        &self,
+        uid: u32,
+        from_folder: &str,
+        to_folder: &str,
+    ) -> Result<(), ImapError> {
         self.session.move_email(uid, from_folder, to_folder).await
     }
 
-    pub async fn store_flags(&self, uids: &[u32], operation: crate::imap::types::FlagOperation, flags: &[String]) -> Result<(), ImapError> {
+    pub async fn store_flags(
+        &self,
+        uids: &[u32],
+        operation: crate::imap::types::FlagOperation,
+        flags: &[String],
+    ) -> Result<(), ImapError> {
         self.session.store_flags(uids, operation, flags).await
     }
 
-    pub async fn append(&self, folder: &str, content: &[u8], flags: &[String]) -> Result<(), ImapError> {
+    pub async fn append(
+        &self,
+        folder: &str,
+        content: &[u8],
+        flags: &[String],
+    ) -> Result<(), ImapError> {
         self.session.append(folder, content, flags).await
     }
 
@@ -281,7 +319,10 @@ pub async fn connect(
         .unwrap_or(35);
     let append_timeout = Duration::from_secs(append_timeout_seconds);
 
-    info!("Connecting to IMAP server: {} with socket timeout: {:?}", addr, append_timeout);
+    info!(
+        "Connecting to IMAP server: {} with socket timeout: {:?}",
+        addr, append_timeout
+    );
 
     // Establish Tokio TCP connection
     let tcp_stream = tokio::time::timeout(timeout, TokioTcpStream::connect(addr))
@@ -290,21 +331,26 @@ pub async fn connect(
 
     // Set socket-level timeouts to ensure blocking I/O operations timeout
     // This is critical for IMAP APPEND operations which may block indefinitely
-    tcp_stream.set_nodelay(true)
+    tcp_stream
+        .set_nodelay(true)
         .map_err(|e| ImapError::Connection(format!("Failed to set TCP_NODELAY: {}", e)))?;
 
     // Convert to std::net::TcpStream to set SO_RCVTIMEO and SO_SNDTIMEO
-    let std_stream = tcp_stream.into_std()
+    let std_stream = tcp_stream
+        .into_std()
         .map_err(|e| ImapError::Connection(format!("Failed to convert to std stream: {}", e)))?;
 
-    std_stream.set_read_timeout(Some(append_timeout))
+    std_stream
+        .set_read_timeout(Some(append_timeout))
         .map_err(|e| ImapError::Connection(format!("Failed to set read timeout: {}", e)))?;
-    std_stream.set_write_timeout(Some(append_timeout))
+    std_stream
+        .set_write_timeout(Some(append_timeout))
         .map_err(|e| ImapError::Connection(format!("Failed to set write timeout: {}", e)))?;
 
     // Convert back to tokio::net::TcpStream
-    let tcp_stream = TokioTcpStream::from_std(std_stream)
-        .map_err(|e| ImapError::Connection(format!("Failed to convert back to tokio stream: {}", e)))?; 
+    let tcp_stream = TokioTcpStream::from_std(std_stream).map_err(|e| {
+        ImapError::Connection(format!("Failed to convert back to tokio stream: {}", e))
+    })?;
 
     // Setup TLS connector
     let mut tls_builder = TlsConnector::builder();
@@ -312,7 +358,8 @@ pub async fn connect(
         warn!("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS is enabled; IMAP certificate validation is disabled");
         tls_builder.danger_accept_invalid_certs(true);
     }
-    let native_tls_connector = tls_builder.build()
+    let native_tls_connector = tls_builder
+        .build()
         .map_err(|e| ImapError::Tls(format!("Failed to build TLS connector: {}", e)))?;
     let tls_connector = TokioTlsConnector::from(native_tls_connector);
 
@@ -327,19 +374,21 @@ pub async fn connect(
     // Build IMAP client with the TLS stream wrapped in compat for async-imap
     // The client itself is the unauthenticated session - no need to call connect
     let unauthenticated_session = AsyncImapInternalClient::new(tls_stream.compat());
-    
+
     info!("IMAP session established");
 
     // Login with timeout (login returns the authenticated session)
-    let authenticated_session = tokio::time::timeout(timeout, unauthenticated_session.login(username, password))
-        .await
-        .map_err(|_| ImapError::Timeout("Login timed out".to_string()))?
-        .map_err(|(err, _client)| ImapError::from(err))?;
+    let authenticated_session =
+        tokio::time::timeout(timeout, unauthenticated_session.login(username, password))
+            .await
+            .map_err(|_| ImapError::Timeout("Login timed out".to_string()))?
+            .map_err(|(err, _client)| ImapError::from(err))?;
 
     info!("IMAP login successful for user: {}", username);
 
     // Wrap the authenticated session in our mutex wrapper with append timeout
-    let wrapped_session = AsyncImapSessionWrapper::with_append_timeout(authenticated_session, append_timeout);
+    let wrapped_session =
+        AsyncImapSessionWrapper::with_append_timeout(authenticated_session, append_timeout);
 
     // Create our client using the wrapped session
     Ok(ImapClient::new(wrapped_session))
@@ -367,20 +416,27 @@ pub async fn connect_with_oauth(
         .unwrap_or(35);
     let append_timeout = Duration::from_secs(append_timeout_seconds);
 
-    info!("Connecting to IMAP server (XOAUTH2): {} with timeout: {:?}", addr, append_timeout);
+    info!(
+        "Connecting to IMAP server (XOAUTH2): {} with timeout: {:?}",
+        addr, append_timeout
+    );
 
     let tcp_stream = tokio::time::timeout(timeout, TokioTcpStream::connect(addr))
         .await
         .map_err(|_| ImapError::Timeout("Connection timed out".to_string()))??;
 
-    tcp_stream.set_nodelay(true)
+    tcp_stream
+        .set_nodelay(true)
         .map_err(|e| ImapError::Connection(format!("Failed to set TCP_NODELAY: {}", e)))?;
 
-    let std_stream = tcp_stream.into_std()
+    let std_stream = tcp_stream
+        .into_std()
         .map_err(|e| ImapError::Connection(format!("Failed to convert to std stream: {}", e)))?;
-    std_stream.set_read_timeout(Some(append_timeout))
+    std_stream
+        .set_read_timeout(Some(append_timeout))
         .map_err(|e| ImapError::Connection(format!("Failed to set read timeout: {}", e)))?;
-    std_stream.set_write_timeout(Some(append_timeout))
+    std_stream
+        .set_write_timeout(Some(append_timeout))
         .map_err(|e| ImapError::Connection(format!("Failed to set write timeout: {}", e)))?;
     let tcp_stream = TokioTcpStream::from_std(std_stream)
         .map_err(|e| ImapError::Connection(format!("Failed to convert back: {}", e)))?;
@@ -390,7 +446,8 @@ pub async fn connect_with_oauth(
         warn!("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS is enabled; IMAP certificate validation is disabled");
         tls_builder.danger_accept_invalid_certs(true);
     }
-    let native_tls_connector = tls_builder.build()
+    let native_tls_connector = tls_builder
+        .build()
         .map_err(|e| ImapError::Tls(format!("Failed to build TLS connector: {}", e)))?;
     let tls_connector = TokioTlsConnector::from(native_tls_connector);
 
@@ -415,14 +472,18 @@ pub async fn connect_with_oauth(
 
     info!("IMAP XOAUTH2 authentication successful for: {}", email);
 
-    let wrapped_session = AsyncImapSessionWrapper::with_append_timeout(
-        authenticated_session, append_timeout,
-    );
+    let wrapped_session =
+        AsyncImapSessionWrapper::with_append_timeout(authenticated_session, append_timeout);
     Ok(ImapClient::new(wrapped_session))
 }
 
 pub(crate) fn allow_invalid_mail_certs() -> bool {
     std::env::var("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS")
-        .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(false)
 }

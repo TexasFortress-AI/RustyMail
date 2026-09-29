@@ -1,16 +1,16 @@
 // src/dashboard/services/ai/agent_executor.rs
 // Agent executor for running sub-agents with iterative tool calling
 
-use serde::{Serialize, Deserialize};
-use serde_json::{json, Value};
-use reqwest::Client;
-use log::{debug, error, warn, info};
-use sqlx::SqlitePool;
+use super::model_config::{get_model_config, ModelConfiguration};
+use super::sampler_config::{get_sampler_config, SamplerConfig};
+use super::tool_converter::{mcp_to_ollama_tools, parse_ollama_tool_call};
 use crate::api::errors::ApiError;
 use crate::dashboard::services::DashboardState;
-use super::model_config::{get_model_config, ModelConfiguration};
-use super::tool_converter::{mcp_to_ollama_tools, parse_ollama_tool_call};
-use super::sampler_config::{get_sampler_config, SamplerConfig};
+use log::{debug, error, info, warn};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sqlx::SqlitePool;
 
 /// Providers that support tool calling
 /// Note: These providers have been tested with the tool-calling API format
@@ -71,7 +71,7 @@ impl AgentExecutor {
         state: &DashboardState,
         instruction: &str,
         account_id: Option<&str>,
-        tools: Vec<Value>,  // MCP tool definitions
+        tools: Vec<Value>, // MCP tool definitions
         job_id: Option<&str>,
     ) -> Result<AgentResult, ApiError> {
         info!("Executing instruction with {} tools available", tools.len());
@@ -80,18 +80,26 @@ impl AgentExecutor {
         let config = get_model_config(pool, "tool_calling").await?;
 
         // Fetch sampler config from database for this provider/model
-        let sampler_config = get_sampler_config(pool, &config.provider, &config.model_name).await
+        let sampler_config = get_sampler_config(pool, &config.provider, &config.model_name)
+            .await
             .map_err(|e| {
                 warn!("Failed to get sampler config, using defaults: {:?}", e);
-            }).ok();
+            })
+            .ok();
 
         if sampler_config.is_some() {
-            info!("Loaded sampler config from database for {}/{}", config.provider, config.model_name);
+            info!(
+                "Loaded sampler config from database for {}/{}",
+                config.provider, config.model_name
+            );
         }
 
         // Convert MCP tools to Ollama format
         let ollama_tools = mcp_to_ollama_tools(&tools);
-        debug!("Converted {} MCP tools to Ollama format", ollama_tools.len());
+        debug!(
+            "Converted {} MCP tools to Ollama format",
+            ollama_tools.len()
+        );
 
         // Build instruction with account context if provided
         let full_instruction = if let Some(acc_id) = account_id {
@@ -101,12 +109,10 @@ impl AgentExecutor {
         };
 
         // Initialize conversation with user instruction
-        let mut messages = vec![
-            json!({
-                "role": "user",
-                "content": full_instruction
-            })
-        ];
+        let mut messages = vec![json!({
+            "role": "user",
+            "content": full_instruction
+        })];
 
         let mut actions_taken = Vec::new();
         let mut iteration = 0;
@@ -140,31 +146,42 @@ impl AgentExecutor {
                 }
             }
 
-            debug!("Iteration {}: Calling model with {} messages", iteration, messages.len());
+            debug!(
+                "Iteration {}: Calling model with {} messages",
+                iteration,
+                messages.len()
+            );
 
             // Call the model with tools
-            let response = self.call_model_with_tools(&config, &messages, &ollama_tools, sampler_config.as_ref()).await?;
+            let response = self
+                .call_model_with_tools(&config, &messages, &ollama_tools, sampler_config.as_ref())
+                .await?;
 
             // Check if the model wants to call tools
             if let Some(tool_calls) = response.get("tool_calls") {
-                debug!("Model requested {} tool calls", tool_calls.as_array().map(|a| a.len()).unwrap_or(0));
+                debug!(
+                    "Model requested {} tool calls",
+                    tool_calls.as_array().map(|a| a.len()).unwrap_or(0)
+                );
 
                 // Add assistant message with tool calls to conversation
                 messages.push(response.clone());
 
                 // Execute each tool call
-                let tool_calls_array = tool_calls.as_array().ok_or_else(|| {
-                    ApiError::InternalError {
-                        message: "tool_calls is not an array".to_string(),
-                    }
-                })?;
+                let tool_calls_array =
+                    tool_calls
+                        .as_array()
+                        .ok_or_else(|| ApiError::InternalError {
+                            message: "tool_calls is not an array".to_string(),
+                        })?;
 
                 for tool_call in tool_calls_array {
-                    let (tool_name, arguments) = parse_ollama_tool_call(tool_call).ok_or_else(|| {
-                        ApiError::InternalError {
-                            message: "Failed to parse tool call".to_string(),
-                        }
-                    })?;
+                    let (tool_name, arguments) =
+                        parse_ollama_tool_call(tool_call).ok_or_else(|| {
+                            ApiError::InternalError {
+                                message: "Failed to parse tool call".to_string(),
+                            }
+                        })?;
 
                     debug!("Executing tool: {} with args: {:?}", tool_name, arguments);
 
@@ -173,7 +190,8 @@ impl AgentExecutor {
                         state,
                         &tool_name,
                         arguments.clone(),
-                    ).await;
+                    )
+                    .await;
 
                     // Log the action
                     actions_taken.push(ActionLog {
@@ -183,7 +201,8 @@ impl AgentExecutor {
                     });
 
                     // Add tool response to conversation
-                    let tool_call_id = tool_call.get("id")
+                    let tool_call_id = tool_call
+                        .get("id")
                         .and_then(|v| v.as_str())
                         .unwrap_or("unknown");
 
@@ -195,11 +214,16 @@ impl AgentExecutor {
                 }
             } else {
                 // No tool calls - model has finished
-                let final_response = response.get("content")
+                let final_response = response
+                    .get("content")
                     .and_then(|c| c.as_str())
                     .unwrap_or("Task completed");
 
-                info!("Agent completed task in {} iterations with {} actions", iteration, actions_taken.len());
+                info!(
+                    "Agent completed task in {} iterations with {} actions",
+                    iteration,
+                    actions_taken.len()
+                );
 
                 return Ok(AgentResult {
                     success: true,
@@ -221,13 +245,41 @@ impl AgentExecutor {
         sampler_config: Option<&SamplerConfig>,
     ) -> Result<Value, ApiError> {
         match config.provider.as_str() {
-            "ollama" => self.call_ollama_with_tools(config, messages, tools, sampler_config).await,
-            "llamacpp" => self.call_openai_compatible_with_tools(config, messages, tools, sampler_config, "LLAMACPP_BASE_URL").await,
-            "lmstudio" => self.call_openai_compatible_with_tools(config, messages, tools, sampler_config, "LMSTUDIO_BASE_URL").await,
+            "ollama" => {
+                self.call_ollama_with_tools(config, messages, tools, sampler_config)
+                    .await
+            }
+            "llamacpp" => {
+                self.call_openai_compatible_with_tools(
+                    config,
+                    messages,
+                    tools,
+                    sampler_config,
+                    "LLAMACPP_BASE_URL",
+                )
+                .await
+            }
+            "lmstudio" => {
+                self.call_openai_compatible_with_tools(
+                    config,
+                    messages,
+                    tools,
+                    sampler_config,
+                    "LMSTUDIO_BASE_URL",
+                )
+                .await
+            }
             provider => {
-                error!("Unsupported provider for tool calling: {}. Supported providers: {:?}", provider, TOOL_CALLING_PROVIDERS);
+                error!(
+                    "Unsupported provider for tool calling: {}. Supported providers: {:?}",
+                    provider, TOOL_CALLING_PROVIDERS
+                );
                 Err(ApiError::BadRequest {
-                    message: format!("Unsupported tool-calling provider: '{}'. Supported providers: {}", provider, TOOL_CALLING_PROVIDERS.join(", ")),
+                    message: format!(
+                        "Unsupported tool-calling provider: '{}'. Supported providers: {}",
+                        provider,
+                        TOOL_CALLING_PROVIDERS.join(", ")
+                    ),
                 })
             }
         }
@@ -242,25 +294,30 @@ impl AgentExecutor {
         tools: &[Value],
         sampler_config: Option<&SamplerConfig>,
     ) -> Result<Value, ApiError> {
-        let base_url = config.base_url.as_deref()
+        let base_url = config
+            .base_url
+            .as_deref()
             .map(|s| s.to_string())
             .or_else(|| std::env::var("OLLAMA_BASE_URL").ok())
             .ok_or_else(|| ApiError::BadRequest {
-                message: "OLLAMA_BASE_URL environment variable or base_url config must be set".to_string(),
+                message: "OLLAMA_BASE_URL environment variable or base_url config must be set"
+                    .to_string(),
             })?;
         let base_url = base_url.as_str();
 
         // Use native /api/chat endpoint for better tool support
         let url = format!("{}/api/chat", base_url);
 
-        debug!("Calling Ollama native API at {} with model {} and {} tools", url, config.model_name, tools.len());
+        debug!(
+            "Calling Ollama native API at {} with model {} and {} tools",
+            url,
+            config.model_name,
+            tools.len()
+        );
 
         // Convert tools from OpenAI format to native Ollama format
         // Native format expects tools directly (same structure but without "type": "function" wrapper)
-        let native_tools: Vec<Value> = tools.iter().map(|tool| {
-            // Native Ollama tool format matches OpenAI format actually
-            tool.clone()
-        }).collect();
+        let native_tools: Vec<Value> = tools.to_vec();
 
         // Build request body with sampler config from database if available
         let request_body = if let Some(cfg) = sampler_config {
@@ -290,11 +347,12 @@ impl AgentExecutor {
             })
         };
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&request_body)
-            .timeout(std::time::Duration::from_secs(300))  // 5 minutes for large tool contexts
+            .timeout(std::time::Duration::from_secs(300)) // 5 minutes for large tool contexts
             .send()
             .await
             .map_err(|e| {
@@ -306,30 +364,37 @@ impl AgentExecutor {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error>".to_string());
-            error!("Ollama native API returned error {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error>".to_string());
+            error!(
+                "Ollama native API returned error {}: {}",
+                status, error_body
+            );
             return Err(ApiError::ServiceUnavailable {
                 service: format!("Ollama returned status {}: {}", status, error_body),
             });
         }
 
-        let response_body: Value = response.json().await
-            .map_err(|e| {
-                error!("Failed to parse Ollama response: {}", e);
-                ApiError::InternalError {
-                    message: format!("Failed to parse response: {}", e),
-                }
-            })?;
+        let response_body: Value = response.json().await.map_err(|e| {
+            error!("Failed to parse Ollama response: {}", e);
+            ApiError::InternalError {
+                message: format!("Failed to parse response: {}", e),
+            }
+        })?;
 
         // Native API returns message directly, not in choices array
         // Format: {"message": {"role": "assistant", "content": "...", "tool_calls": [...]}}
-        let message = response_body.get("message")
-            .ok_or_else(|| {
-                error!("Ollama native API response missing 'message' field: {:?}", response_body);
-                ApiError::InternalError {
-                    message: "Invalid response format from Ollama native API".to_string(),
-                }
-            })?;
+        let message = response_body.get("message").ok_or_else(|| {
+            error!(
+                "Ollama native API response missing 'message' field: {:?}",
+                response_body
+            );
+            ApiError::InternalError {
+                message: "Invalid response format from Ollama native API".to_string(),
+            }
+        })?;
 
         Ok(message.clone())
     }
@@ -344,21 +409,32 @@ impl AgentExecutor {
         sampler_config: Option<&SamplerConfig>,
         env_var: &str,
     ) -> Result<Value, ApiError> {
-        let base_url = config.base_url.as_deref()
+        let base_url = config
+            .base_url
+            .as_deref()
             .map(|s| s.to_string())
             .or_else(|| std::env::var(env_var).ok())
             .ok_or_else(|| ApiError::BadRequest {
-                message: format!("{} environment variable or base_url config must be set", env_var),
+                message: format!(
+                    "{} environment variable or base_url config must be set",
+                    env_var
+                ),
             })?;
 
         let url = format!("{}/v1/chat/completions", base_url);
 
-        debug!("Calling OpenAI-compatible API at {} with {} tools", url, tools.len());
+        debug!(
+            "Calling OpenAI-compatible API at {} with {} tools",
+            url,
+            tools.len()
+        );
 
         // Build request with sampler config if available
         let mut request_body = if let Some(cfg) = sampler_config {
-            info!("Applying sampler config to OpenAI-compatible tool call: temp={:?}, top_p={:?}",
-                  cfg.temperature, cfg.top_p);
+            info!(
+                "Applying sampler config to OpenAI-compatible tool call: temp={:?}, top_p={:?}",
+                cfg.temperature, cfg.top_p
+            );
             json!({
                 "model": config.model_name,
                 "messages": messages,
@@ -383,11 +459,12 @@ impl AgentExecutor {
             }
         }
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&request_body)
-            .timeout(std::time::Duration::from_secs(300))  // 5 minutes for large tool contexts
+            .timeout(std::time::Duration::from_secs(300)) // 5 minutes for large tool contexts
             .send()
             .await
             .map_err(|e| {
@@ -399,20 +476,28 @@ impl AgentExecutor {
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error>".to_string());
-            error!("OpenAI-compatible API returned error {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error>".to_string());
+            error!(
+                "OpenAI-compatible API returned error {}: {}",
+                status, error_body
+            );
             return Err(ApiError::ServiceUnavailable {
-                service: format!("OpenAI-compatible API returned status {}: {}", status, error_body),
+                service: format!(
+                    "OpenAI-compatible API returned status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
-        let response_body: Value = response.json().await
-            .map_err(|e| {
-                error!("Failed to parse OpenAI-compatible response: {}", e);
-                ApiError::InternalError {
-                    message: format!("Failed to parse response: {}", e),
-                }
-            })?;
+        let response_body: Value = response.json().await.map_err(|e| {
+            error!("Failed to parse OpenAI-compatible response: {}", e);
+            ApiError::InternalError {
+                message: format!("Failed to parse response: {}", e),
+            }
+        })?;
 
         // OpenAI format returns: {"choices": [{"message": {"role": "...", "content": "...", "tool_calls": [...]}}]}
         let message = response_body
@@ -420,7 +505,10 @@ impl AgentExecutor {
             .and_then(|c| c.get(0))
             .and_then(|c| c.get("message"))
             .ok_or_else(|| {
-                error!("OpenAI-compatible API response missing expected fields: {:?}", response_body);
+                error!(
+                    "OpenAI-compatible API response missing expected fields: {:?}",
+                    response_body
+                );
                 ApiError::InternalError {
                     message: "Invalid response format from OpenAI-compatible API".to_string(),
                 }

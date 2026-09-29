@@ -5,7 +5,6 @@
 
 use crate::transport::{Message, MessageKind, Transport, TransportError};
 use serde_json::json;
-use std::error::Error as StdError;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
@@ -35,7 +34,9 @@ impl Transport for MockTransport {
     async fn receive(&self) -> Result<Message, TransportError> {
         let mut messages = self.messages.lock().await;
         if messages.is_empty() {
-            return Err(TransportError::ReceiveError("No messages available".to_string()));
+            return Err(TransportError::ReceiveError(
+                "No messages available".to_string(),
+            ));
         }
         Ok(messages.remove(0))
     }
@@ -71,7 +72,7 @@ async fn test_message_creation() {
 
     // Test error message - need to use a proper error type
     use std::io;
-    let test_error = io::Error::new(io::ErrorKind::Other, "Test error");
+    let test_error = io::Error::other("Test error");
     let error = Message::new_error(Some("1".to_string()), test_error);
     assert_eq!(error.id, Some("1".to_string()));
     assert_eq!(error.kind, MessageKind::Error);
@@ -82,7 +83,7 @@ async fn test_message_creation() {
 #[tokio::test]
 async fn test_transport_send_receive() {
     let transport = MockTransport::new();
-    
+
     // Send a message
     let message = Message::new_request("1".to_string(), json!({"method": "test"}));
     transport.send(message.clone()).await.unwrap();
@@ -97,7 +98,7 @@ async fn test_transport_send_receive() {
 #[tokio::test]
 async fn test_transport_empty_receive() {
     let transport = MockTransport::new();
-    
+
     // Try to receive from empty transport
     let result = transport.receive().await;
     assert!(matches!(result, Err(TransportError::ReceiveError(_))));
@@ -106,10 +107,10 @@ async fn test_transport_empty_receive() {
 #[tokio::test]
 async fn test_transport_connection() {
     let transport = MockTransport::new();
-    
+
     // Check connection status
     assert!(transport.is_connected().await);
-    
+
     // Close connection
     transport.close().await.unwrap();
 }
@@ -117,18 +118,18 @@ async fn test_transport_connection() {
 #[tokio::test]
 async fn test_transport_multiple_messages() {
     let transport = MockTransport::new();
-    
+
     // Send multiple messages
     let message1 = Message::new_request("1".to_string(), json!({"method": "test1"}));
     let message2 = Message::new_request("2".to_string(), json!({"method": "test2"}));
-    
+
     transport.send(message1.clone()).await.unwrap();
     transport.send(message2.clone()).await.unwrap();
 
     // Receive messages in order
     let received1 = transport.receive().await.unwrap();
     assert_eq!(received1.id, message1.id);
-    
+
     let received2 = transport.receive().await.unwrap();
     assert_eq!(received2.id, message2.id);
-} 
+}

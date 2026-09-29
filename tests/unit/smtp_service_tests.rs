@@ -5,9 +5,8 @@
 
 use rustymail::dashboard::services::{
     account::{Account, AccountService},
-    smtp::{SendEmailRequest, SendEmailResponse, SmtpError, SmtpService},
+    smtp::SendEmailRequest,
 };
-use rustymail::prelude::CloneableImapSessionFactory;
 use serial_test::serial;
 use sqlx::SqlitePool;
 use std::fs;
@@ -133,7 +132,7 @@ async fn test_account_not_found_error() {
     account_service.initialize(pool).await.unwrap();
 
     // Create SMTP service without creating any accounts
-    let account_service_arc = Arc::new(TokioMutex::new(account_service));
+    let _account_service_arc = Arc::new(TokioMutex::new(account_service));
 
     // Create a mock IMAP session factory
     // Note: We'll need to implement a mock factory for testing
@@ -160,7 +159,7 @@ async fn test_missing_smtp_credentials_error() {
     let account = create_test_account_without_smtp("test@test.com");
     account_service.create_account(account).await.unwrap();
 
-    let account_service_arc = Arc::new(TokioMutex::new(account_service));
+    let _account_service_arc = Arc::new(TokioMutex::new(account_service));
 
     // TODO: Create SmtpService and test sending email
     // Should fail with SmtpError::MissingCredentials
@@ -283,5 +282,5 @@ async fn test_account_with_smtp_config_creation() {
 fn test_smtp_service_tests_exist() {
     // This is a placeholder test to ensure the file compiles
     // Real tests will be added once mock infrastructure is in place
-    assert!(true, "SMTP service test file exists and compiles");
+    let _ = 1 + 1;
 }

@@ -5,13 +5,9 @@
 
 use crate::config::Settings;
 use crate::imap::client::ImapClient;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::imap::types::MailboxInfo;
     use tokio::test;
 
     #[test]
@@ -42,11 +38,13 @@ async fn test_imap_client_initialization() {
     crate::test_helpers::setup_test_env();
 
     // Create a mock configuration
-    let mut config = Settings::default();
-    config.imap_host = "localhost".to_string();
-    config.imap_port = 143;
-    config.imap_user = "test@example.com".to_string();
-    config.imap_pass = "password".to_string();
+    let config = Settings {
+        imap_host: "localhost".to_string(),
+        imap_port: 143,
+        imap_user: "test@example.com".to_string(),
+        imap_pass: "password".to_string(),
+        ..Settings::default()
+    };
 
     // Test IMAP client connection
     use crate::imap::session::AsyncImapSessionWrapper;
@@ -55,7 +53,8 @@ async fn test_imap_client_initialization() {
         config.imap_port,
         &config.imap_user,
         &config.imap_pass,
-    ).await;
+    )
+    .await;
 
     // The connection should fail since we're not running a real IMAP server
     assert!(result.is_err());

@@ -80,7 +80,7 @@ pub mod validators {
                     return Err(ValidationError::new("content_too_large"));
                 }
                 Ok(())
-            },
+            }
             Err(_) => Err(ValidationError::new("invalid_base64")),
         }
     }
@@ -96,7 +96,7 @@ pub mod validators {
         }
 
         // Check for valid UID values (> 0)
-        if uids.iter().any(|&uid| uid == 0) {
+        if uids.contains(&0) {
             return Err(ValidationError::new("invalid_uid_value"));
         }
 
@@ -111,16 +111,43 @@ pub mod validators {
 
         // Basic IMAP search command validation
         let valid_commands = [
-            "ALL", "ANSWERED", "DELETED", "DRAFT", "FLAGGED", "NEW", "OLD",
-            "RECENT", "SEEN", "UNANSWERED", "UNDELETED", "UNDRAFT", "UNFLAGGED",
-            "UNSEEN", "FROM", "TO", "CC", "BCC", "SUBJECT", "BODY", "TEXT",
-            "KEYWORD", "BEFORE", "ON", "SINCE", "SENTBEFORE", "SENTON", "SENTSINCE",
-            "SMALLER", "LARGER", "UID", "OR", "NOT"
+            "ALL",
+            "ANSWERED",
+            "DELETED",
+            "DRAFT",
+            "FLAGGED",
+            "NEW",
+            "OLD",
+            "RECENT",
+            "SEEN",
+            "UNANSWERED",
+            "UNDELETED",
+            "UNDRAFT",
+            "UNFLAGGED",
+            "UNSEEN",
+            "FROM",
+            "TO",
+            "CC",
+            "BCC",
+            "SUBJECT",
+            "BODY",
+            "TEXT",
+            "KEYWORD",
+            "BEFORE",
+            "ON",
+            "SINCE",
+            "SENTBEFORE",
+            "SENTON",
+            "SENTSINCE",
+            "SMALLER",
+            "LARGER",
+            "UID",
+            "OR",
+            "NOT",
         ];
 
         let query_upper = query.to_uppercase();
-        let has_valid_command = valid_commands.iter()
-            .any(|&cmd| query_upper.contains(cmd));
+        let has_valid_command = valid_commands.iter().any(|&cmd| query_upper.contains(cmd));
 
         if !has_valid_command && query != "*" {
             return Err(ValidationError::new("invalid_search_command"));
@@ -130,7 +157,10 @@ pub mod validators {
     }
 
     /// Validate pagination parameters
-    pub fn validate_pagination(limit: Option<usize>, offset: Option<usize>) -> Result<(usize, usize), ValidationError> {
+    pub fn validate_pagination(
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<(usize, usize), ValidationError> {
         let limit = limit.unwrap_or(50);
         let offset = offset.unwrap_or(0);
 
@@ -254,7 +284,10 @@ pub fn validate_query_params(query: &HashMap<String, String>) -> Result<(), ApiE
 
     for (key, value) in query.iter() {
         let lower_value = value.to_lowercase();
-        if dangerous_patterns.iter().any(|&pattern| lower_value.contains(pattern)) {
+        if dangerous_patterns
+            .iter()
+            .any(|&pattern| lower_value.contains(pattern))
+        {
             return Err(ApiError::InvalidQueryParam {
                 param: key.clone(),
                 reason: "Contains potentially dangerous patterns".to_string(),
@@ -329,14 +362,14 @@ impl EnhancedRateLimiter {
         let mut counters = self.ip_counters.write().await;
         let now = chrono::Utc::now();
 
-        let counter = counters.entry(ip.to_string()).or_insert_with(|| {
-            RequestCounter {
+        let counter = counters
+            .entry(ip.to_string())
+            .or_insert_with(|| RequestCounter {
                 minute_count: 0,
                 minute_reset: now + chrono::Duration::minutes(1),
                 hour_count: 0,
                 hour_reset: now + chrono::Duration::hours(1),
-            }
-        });
+            });
 
         // Reset counters if needed
         if now > counter.minute_reset {
@@ -351,12 +384,18 @@ impl EnhancedRateLimiter {
         // Check limits
         if counter.minute_count >= self.config.per_ip_per_minute {
             return Err(ApiError::RateLimitExceeded {
-                message: format!("IP rate limit exceeded: {} requests per minute", self.config.per_ip_per_minute),
+                message: format!(
+                    "IP rate limit exceeded: {} requests per minute",
+                    self.config.per_ip_per_minute
+                ),
             });
         }
         if counter.hour_count >= self.config.per_ip_per_hour {
             return Err(ApiError::RateLimitExceeded {
-                message: format!("IP rate limit exceeded: {} requests per hour", self.config.per_ip_per_hour),
+                message: format!(
+                    "IP rate limit exceeded: {} requests per hour",
+                    self.config.per_ip_per_hour
+                ),
             });
         }
 
@@ -381,7 +420,10 @@ impl EnhancedRateLimiter {
         // Check limit
         if counter.minute_count >= self.config.global_per_minute {
             return Err(ApiError::RateLimitExceeded {
-                message: format!("Global rate limit exceeded: {} requests per minute", self.config.global_per_minute),
+                message: format!(
+                    "Global rate limit exceeded: {} requests per minute",
+                    self.config.global_per_minute
+                ),
             });
         }
 
@@ -415,10 +457,8 @@ mod tests {
 
     #[test]
     fn test_base64_validation() {
-        let valid_base64 = base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            b"Hello, World!"
-        );
+        let valid_base64 =
+            base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b"Hello, World!");
         assert!(validators::validate_base64(&valid_base64).is_ok());
         assert!(validators::validate_base64("not-base64!@#").is_err());
         assert!(validators::validate_base64("").is_err());

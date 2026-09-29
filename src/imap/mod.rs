@@ -5,7 +5,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-
 // Public Interface for the IMAP module
 
 pub mod atomic;
@@ -21,12 +20,22 @@ pub mod xoauth2;
 
 pub use client::ImapClient;
 pub use error::ImapError;
-pub use oauth2::{MicrosoftOAuth2Client, MicrosoftOAuth2Config, OAuth2Error, StoredToken, TokenResponse};
+pub use oauth2::{
+    MicrosoftOAuth2Client, MicrosoftOAuth2Config, OAuth2Error, StoredToken, TokenResponse,
+};
 pub use session::{AsyncImapOps, AsyncImapSessionWrapper};
 pub use types::{
-    Address, Email, Envelope, FlagOperation, Flags, Folder, MailboxInfo, SearchCriteria,
+    Address,
     // Re-export necessary payload types if they are part of the public API
-    AppendEmailPayload, ModifyFlagsPayload,
+    AppendEmailPayload,
+    Email,
+    Envelope,
+    FlagOperation,
+    Flags,
+    Folder,
+    MailboxInfo,
+    ModifyFlagsPayload,
+    SearchCriteria,
 };
 pub use xoauth2::XOAuth2Authenticator;
 
@@ -35,10 +44,10 @@ pub use xoauth2::XOAuth2Authenticator;
 // Remove unresolved AccountConfig import
 // use crate::config::AccountConfig; // Needed for factory
 use futures::future::BoxFuture; // Needed for factory
-use std::sync::Arc;
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
-use std::fmt;
+use std::sync::Arc;
 
 // Import ImapClientFactory from session module
 use crate::imap::session::ImapClientFactory;
@@ -47,7 +56,8 @@ use crate::imap::session::ImapClientFactory;
 pub type ImapSessionFactoryResult = Result<ImapClient<AsyncImapSessionWrapper>, ImapError>;
 
 // Add ImapSessionFactory as a type alias for ImapClientFactory
-pub type ImapSessionFactory = Box<dyn Fn() -> BoxFuture<'static, ImapSessionFactoryResult> + Send + Sync>;
+pub type ImapSessionFactory =
+    Box<dyn Fn() -> BoxFuture<'static, ImapSessionFactoryResult> + Send + Sync>;
 
 // Cloneable wrapper for ImapSessionFactory
 #[derive(Clone)]
@@ -63,7 +73,7 @@ impl CloneableImapSessionFactory {
     }
 
     /// Create a session using the default factory (credentials from .env)
-    pub fn create_session(&self) -> BoxFuture<ImapSessionFactoryResult> {
+    pub fn create_session(&self) -> BoxFuture<'_, ImapSessionFactoryResult> {
         (self.factory)()
     }
 
@@ -75,23 +85,30 @@ impl CloneableImapSessionFactory {
         use crate::imap::client::ImapClient;
         use log::debug;
 
-        debug!("Creating IMAP session for account: {} ({})", account.email_address, account.imap_host);
+        debug!(
+            "Creating IMAP session for account: {} ({})",
+            account.email_address, account.imap_host
+        );
 
         // Route to XOAUTH2 if account is configured for OAuth and has an access token
         if account.is_oauth() {
             if let Some(ref token) = account.oauth_access_token {
                 debug!("Using XOAUTH2 authentication for {}", account.email_address);
-                let client = ImapClient::<AsyncImapSessionWrapper>::connect_with_xoauth2_and_security(
-                    &account.imap_host,
-                    account.imap_port as u16,
-                    &account.imap_user,
-                    token,
-                    account.imap_use_tls,
-                    account.imap_use_starttls,
-                ).await?;
+                let client =
+                    ImapClient::<AsyncImapSessionWrapper>::connect_with_xoauth2_and_security(
+                        &account.imap_host,
+                        account.imap_port as u16,
+                        &account.imap_user,
+                        token,
+                        account.imap_use_tls,
+                        account.imap_use_starttls,
+                    )
+                    .await?;
                 return Ok(client);
             }
-            return Err(ImapError::Auth("OAuth account has no access token — complete OAuth flow first".to_string()));
+            return Err(ImapError::Auth(
+                "OAuth account has no access token — complete OAuth flow first".to_string(),
+            ));
         }
 
         // Password-based authentication
@@ -102,7 +119,8 @@ impl CloneableImapSessionFactory {
             &account.imap_pass,
             account.imap_use_tls,
             account.imap_use_starttls,
-        ).await?;
+        )
+        .await?;
 
         Ok(client)
     }

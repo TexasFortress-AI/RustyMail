@@ -3,15 +3,16 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 // Comment out unused transport import
 // use crate::transport::*;
 
 #[derive(Serialize, Deserialize, Debug, PartialEq)]
+#[allow(dead_code)]
 struct TestMessage {
     id: u32,
     content: String,
 }
 
 // --- Mock Transport ---
-// ... rest of file ... 
+// ... rest of file ...

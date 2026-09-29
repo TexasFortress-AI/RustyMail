@@ -11,7 +11,7 @@
 #[cfg(test)]
 mod chatbot_integration_tests {
     use rustymail::dashboard::services::ai::AiService;
-    use serde_json::{json, Value};
+    use serde_json::json;
 
     /// Test the tool call parser with various formats
     #[test]
@@ -77,7 +77,7 @@ This shouldn't parse."#;
     /// Test the format_tools_for_prompt method
     #[test]
     fn test_format_tools_for_prompt() {
-        let tools = vec![
+        let _tools = [
             json!({
                 "name": "count_emails_in_folder",
                 "description": "Count emails in a specific folder",
@@ -92,7 +92,7 @@ This shouldn't parse."#;
                 "parameters": {
                     "account_id": "Email account identifier"
                 }
-            })
+            }),
         ];
 
         // We'll need to test this through a public interface or make it pub(crate)
@@ -105,11 +105,11 @@ This shouldn't parse."#;
     /// Test AiService initialization in mock mode
     #[test]
     fn test_ai_service_mock_initialization() {
-        let ai_service = AiService::new_mock();
+        let _ai_service = AiService::new_mock();
 
         // Mock service should initialize without errors
         // This tests that the service can be created for testing
-        assert!(true, "Mock AiService should initialize successfully");
+        let _ = _ai_service; // mock service constructed successfully
     }
 
     /// Test that account_id is properly extracted from ChatbotQuery
@@ -156,7 +156,7 @@ This shouldn't parse."#;
             "folder": "INBOX"
         });
 
-        let tool_call = format!("TOOL_CALL: {} {}", tool_name, params.to_string());
+        let tool_call = format!("TOOL_CALL: {} {}", tool_name, params);
 
         // Verify format matches expected pattern
         assert!(tool_call.starts_with("TOOL_CALL: "));
@@ -180,15 +180,13 @@ This shouldn't parse."#;
 
         // Verify accounts are different
         assert_ne!(
-            account1_params["account_id"],
-            account2_params["account_id"],
+            account1_params["account_id"], account2_params["account_id"],
             "Different accounts should have different IDs"
         );
 
         // Verify same folder name
         assert_eq!(
-            account1_params["folder"],
-            account2_params["folder"],
+            account1_params["folder"], account2_params["folder"],
             "Same folder name should be used for both"
         );
     }
@@ -212,7 +210,7 @@ This shouldn't parse."#;
             }
         });
 
-        let tool_result = format!("TOOL_RESULT {}: {}", tool_name, result.to_string());
+        let tool_result = format!("TOOL_RESULT {}: {}", tool_name, result);
 
         // Verify result format
         assert!(tool_result.starts_with("TOOL_RESULT "));
@@ -237,7 +235,7 @@ This shouldn't parse."#;
     /// Test system prompt structure for folder list
     #[test]
     fn test_system_prompt_folder_list_format() {
-        let folders = vec!["INBOX", "INBOX.Sent", "INBOX.Drafts", "INBOX.Trash"];
+        let folders = ["INBOX", "INBOX.Sent", "INBOX.Drafts", "INBOX.Trash"];
         let folder_list = format!("Available folders: {}", folders.join(", "));
 
         assert!(folder_list.starts_with("Available folders: "));

@@ -8,12 +8,12 @@
 // This module provides a centralized event bus for coordinating events
 // between different dashboard services and broadcasting them to SSE clients.
 
-use std::sync::Arc;
-use tokio::sync::{RwLock, mpsc};
-use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
 use log::{debug, info, warn};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::{mpsc, RwLock};
 use uuid::Uuid;
 
 // Event types that can be broadcast
@@ -160,6 +160,12 @@ pub struct EventBus {
     max_history_size: usize,
 }
 
+impl Default for EventBus {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventBus {
     pub fn new() -> Self {
         Self {
@@ -265,11 +271,15 @@ impl Clone for EventBus {
 
 // Event builder helpers for common events
 impl EventBus {
-    pub async fn publish_metrics_updated(&self, stats: crate::dashboard::api::models::DashboardStats) {
+    pub async fn publish_metrics_updated(
+        &self,
+        stats: crate::dashboard::api::models::DashboardStats,
+    ) {
         self.publish(DashboardEvent::MetricsUpdated {
             stats,
             timestamp: Utc::now(),
-        }).await;
+        })
+        .await;
     }
 
     pub async fn publish_client_connected(
@@ -285,7 +295,8 @@ impl EventBus {
             ip_address,
             user_agent,
             timestamp: Utc::now(),
-        }).await;
+        })
+        .await;
     }
 
     pub async fn publish_client_disconnected(&self, client_id: String, reason: Option<String>) {
@@ -293,16 +304,23 @@ impl EventBus {
             client_id,
             reason,
             timestamp: Utc::now(),
-        }).await;
+        })
+        .await;
     }
 
-    pub async fn publish_system_alert(&self, level: AlertLevel, message: String, details: Option<serde_json::Value>) {
+    pub async fn publish_system_alert(
+        &self,
+        level: AlertLevel,
+        message: String,
+        details: Option<serde_json::Value>,
+    ) {
         self.publish(DashboardEvent::SystemAlert {
             level,
             message,
             details,
             timestamp: Utc::now(),
-        }).await;
+        })
+        .await;
     }
 
     pub async fn publish_configuration_updated(
@@ -314,7 +332,8 @@ impl EventBus {
             section,
             changes,
             timestamp: Utc::now(),
-        }).await;
+        })
+        .await;
     }
 }
 
@@ -330,11 +349,9 @@ mod tests {
         let mut subscription = event_bus.subscribe().await;
 
         // Publish an event
-        event_bus.publish_system_alert(
-            AlertLevel::Info,
-            "Test alert".to_string(),
-            None,
-        ).await;
+        event_bus
+            .publish_system_alert(AlertLevel::Info, "Test alert".to_string(), None)
+            .await;
 
         // Receive the event
         let event = subscription.recv().await;
@@ -355,11 +372,9 @@ mod tests {
 
         // Publish multiple events
         for i in 0..5 {
-            event_bus.publish_system_alert(
-                AlertLevel::Info,
-                format!("Alert {}", i),
-                None,
-            ).await;
+            event_bus
+                .publish_system_alert(AlertLevel::Info, format!("Alert {}", i), None)
+                .await;
         }
 
         // Get history

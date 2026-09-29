@@ -13,4 +13,5 @@ too-many-arguments-threshold = 8
 type-complexity-threshold = 500
 
 # Documentation requirements for public APIs that handle account data
-missing-docs-in-private-items = false
+# renamed in newer clippy; keep docs optional for private items
+missing-docs-in-crate-items = false

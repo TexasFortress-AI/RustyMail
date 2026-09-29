@@ -3,10 +3,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use crate::dashboard::services::{Account, AutoConfigResult, DashboardState};
 use actix_web::{web, HttpResponse};
+use log::{error, info};
 use serde::{Deserialize, Serialize};
-use log::{info, error};
-use crate::dashboard::services::{DashboardState, Account, AutoConfigResult};
 
 #[derive(Debug, Deserialize)]
 pub struct AutoConfigRequest {
@@ -176,7 +176,10 @@ pub async fn create_account(
     // Validate connection if requested
     if req.validate_connection.unwrap_or(true) {
         if let Err(e) = account_service.validate_connection(&new_account).await {
-            error!("Connection validation failed for account {}: {}", req.display_name, e);
+            error!(
+                "Connection validation failed for account {}: {}",
+                req.display_name, e
+            );
             return HttpResponse::BadRequest().json(serde_json::json!({
                 "success": false,
                 "error": format!("Connection validation failed: {}", e)
@@ -187,7 +190,10 @@ pub async fn create_account(
     // Create the account
     match account_service.create_account(new_account.clone()).await {
         Ok(account_id) => {
-            info!("Successfully created account {} with ID {}", req.display_name, account_id);
+            info!(
+                "Successfully created account {} with ID {}",
+                req.display_name, account_id
+            );
 
             // If this is marked as default, set it
             if req.is_default {
@@ -201,7 +207,7 @@ pub async fn create_account(
                 message: "Account created successfully".to_string(),
                 account: Some(new_account),
             })
-        },
+        }
         Err(e) => {
             error!("Failed to create account {}: {}", req.display_name, e);
             HttpResponse::InternalServerError().json(serde_json::json!({
@@ -223,13 +229,11 @@ pub async fn get_account(
     let account_service = state.account_service.lock().await;
 
     match account_service.get_account(&account_id).await {
-        Ok(account) => {
-            HttpResponse::Ok().json(AccountResponse {
-                success: true,
-                message: "Account retrieved successfully".to_string(),
-                account: Some(account),
-            })
-        },
+        Ok(account) => HttpResponse::Ok().json(AccountResponse {
+            success: true,
+            message: "Account retrieved successfully".to_string(),
+            account: Some(account),
+        }),
         Err(e) => {
             error!("Failed to get account {}: {}", account_id, e);
             HttpResponse::NotFound().json(serde_json::json!({
@@ -241,20 +245,16 @@ pub async fn get_account(
 }
 
 /// List all accounts
-pub async fn list_accounts(
-    state: web::Data<DashboardState>,
-) -> HttpResponse {
+pub async fn list_accounts(state: web::Data<DashboardState>) -> HttpResponse {
     info!("Listing all accounts");
 
     let account_service = state.account_service.lock().await;
 
     match account_service.list_accounts().await {
-        Ok(accounts) => {
-            HttpResponse::Ok().json(AccountListResponse {
-                success: true,
-                accounts,
-            })
-        },
+        Ok(accounts) => HttpResponse::Ok().json(AccountListResponse {
+            success: true,
+            accounts,
+        }),
         Err(e) => {
             error!("Failed to list accounts: {}", e);
             HttpResponse::InternalServerError().json(serde_json::json!({
@@ -348,7 +348,10 @@ pub async fn update_account(
     let set_as_default = req.is_default.unwrap_or(false);
 
     // Update the account
-    match account_service.update_account(&account_id, account.clone()).await {
+    match account_service
+        .update_account(&account_id, account.clone())
+        .await
+    {
         Ok(()) => {
             // If setting as default, do that too
             if set_as_default {
@@ -362,7 +365,7 @@ pub async fn update_account(
                 message: "Account updated successfully".to_string(),
                 account: Some(account),
             })
-        },
+        }
         Err(e) => {
             error!("Failed to update account {}: {}", account_id, e);
             HttpResponse::InternalServerError().json(serde_json::json!({
@@ -384,12 +387,10 @@ pub async fn delete_account(
     let account_service = state.account_service.lock().await;
 
     match account_service.delete_account(&account_id).await {
-        Ok(()) => {
-            HttpResponse::Ok().json(serde_json::json!({
-                "success": true,
-                "message": "Account deleted successfully"
-            }))
-        },
+        Ok(()) => HttpResponse::Ok().json(serde_json::json!({
+            "success": true,
+            "message": "Account deleted successfully"
+        })),
         Err(e) => {
             error!("Failed to delete account {}: {}", account_id, e);
             HttpResponse::InternalServerError().json(serde_json::json!({
@@ -411,12 +412,10 @@ pub async fn set_default_account(
     let account_service = state.account_service.lock().await;
 
     match account_service.set_default_account(&account_id).await {
-        Ok(()) => {
-            HttpResponse::Ok().json(serde_json::json!({
-                "success": true,
-                "message": "Default account set successfully"
-            }))
-        },
+        Ok(()) => HttpResponse::Ok().json(serde_json::json!({
+            "success": true,
+            "message": "Default account set successfully"
+        })),
         Err(e) => {
             error!("Failed to set default account {}: {}", account_id, e);
             HttpResponse::InternalServerError().json(serde_json::json!({
@@ -428,9 +427,7 @@ pub async fn set_default_account(
 }
 
 /// Get default account
-pub async fn get_default_account(
-    state: web::Data<DashboardState>,
-) -> HttpResponse {
+pub async fn get_default_account(_state: web::Data<DashboardState>) -> HttpResponse {
     info!("Getting default account");
 
     HttpResponse::NotImplemented().json(serde_json::json!({
@@ -450,14 +447,15 @@ pub async fn get_connection_status(
     let account_service = state.account_service.lock().await;
 
     match account_service.get_connection_status(&account_id).await {
-        Ok(status) => {
-            HttpResponse::Ok().json(serde_json::json!({
-                "success": true,
-                "status": status
-            }))
-        },
+        Ok(status) => HttpResponse::Ok().json(serde_json::json!({
+            "success": true,
+            "status": status
+        })),
         Err(e) => {
-            error!("Failed to get connection status for account {}: {}", account_id, e);
+            error!(
+                "Failed to get connection status for account {}: {}",
+                account_id, e
+            );
             HttpResponse::InternalServerError().json(serde_json::json!({
                 "success": false,
                 "error": format!("Failed to get connection status: {}", e)
@@ -490,14 +488,15 @@ pub async fn validate_connection(
 
     // Then validate the connection
     match account_service.validate_connection(&account).await {
-        Ok(()) => {
-            HttpResponse::Ok().json(serde_json::json!({
-                "success": true,
-                "message": "Connection validated successfully"
-            }))
-        },
+        Ok(()) => HttpResponse::Ok().json(serde_json::json!({
+            "success": true,
+            "message": "Connection validated successfully"
+        })),
         Err(e) => {
-            error!("Connection validation failed for account {}: {}", account_id, e);
+            error!(
+                "Connection validation failed for account {}: {}",
+                account_id, e
+            );
             HttpResponse::BadRequest().json(serde_json::json!({
                 "success": false,
                 "error": format!("Connection validation failed: {}", e)

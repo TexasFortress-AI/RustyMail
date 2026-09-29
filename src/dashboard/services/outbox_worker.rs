@@ -3,13 +3,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use crate::dashboard::services::{AccountService, CacheService, OutboxQueueService, SmtpService};
+use crate::prelude::CloneableImapSessionFactory;
+use log::{error, info, warn};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::sleep;
 use tokio::sync::Mutex as TokioMutex;
-use log::{info, error, warn};
-use crate::dashboard::services::{OutboxQueueService, SmtpService, AccountService, CacheService};
-use crate::prelude::CloneableImapSessionFactory;
+use tokio::time::sleep;
 
 /// Background worker that processes the outbox queue
 pub struct OutboxWorker {
@@ -52,7 +52,10 @@ impl OutboxWorker {
 
     /// Start the background worker loop
     pub async fn start(self: Arc<Self>) {
-        info!("Starting outbox worker with {} second poll interval", self.poll_interval.as_secs());
+        info!(
+            "Starting outbox worker with {} second poll interval",
+            self.poll_interval.as_secs()
+        );
 
         let mut iteration_count = 0u64;
         let cleanup_interval = 12; // Run cleanup every 12 iterations (60 seconds with 5-second poll)
@@ -64,7 +67,7 @@ impl OutboxWorker {
 
             // Periodically clean up orphaned emails in Outbox folders
             iteration_count += 1;
-            if iteration_count % cleanup_interval == 0 {
+            if iteration_count.is_multiple_of(cleanup_interval) {
                 if let Err(e) = self.cleanup_orphaned_outbox_emails().await {
                     error!("Error cleaning up orphaned outbox emails: {}", e);
                 }
@@ -84,7 +87,10 @@ impl OutboxWorker {
 
         let id = item.id.ok_or("Queue item missing ID")?;
 
-        info!("Processing outbox queue item {} for account {}", id, item.account_email);
+        info!(
+            "Processing outbox queue item {} for account {}",
+            id, item.account_email
+        );
 
         // Mark as sending
         if let Err(e) = self.queue_service.mark_sending(id).await {
@@ -97,14 +103,23 @@ impl OutboxWorker {
         if !item.outbox_saved {
             match self.save_to_folder(&item, "INBOX.Outbox").await {
                 Ok(_) => {
-                    info!("Email saved to Outbox folder - user can now see it in their email client");
+                    info!(
+                        "Email saved to Outbox folder - user can now see it in their email client"
+                    );
                     saved_to_outbox = true;
                     if let Err(e) = self.queue_service.mark_outbox_saved(id).await {
                         warn!("Failed to mark outbox saved for item {}: {}", id, e);
                     }
                     // Invalidate Outbox cache so UI shows the new email immediately
-                    if let Err(e) = self.cache_service.clear_folder_cache("INBOX.Outbox", &item.account_email).await {
-                        warn!("Failed to invalidate Outbox cache for {}: {}", item.account_email, e);
+                    if let Err(e) = self
+                        .cache_service
+                        .clear_folder_cache("INBOX.Outbox", &item.account_email)
+                        .await
+                    {
+                        warn!(
+                            "Failed to invalidate Outbox cache for {}: {}",
+                            item.account_email, e
+                        );
                     }
                 }
                 Err(e) => {
@@ -126,7 +141,8 @@ impl OutboxWorker {
                 }
                 Err(e) => {
                     error!("SMTP send failed for item {}: {}", id, e);
-                    self.handle_failure(id, format!("SMTP send failed: {}", e)).await;
+                    self.handle_failure(id, format!("SMTP send failed: {}", e))
+                        .await;
                     return Ok(());
                 }
             }
@@ -155,11 +171,25 @@ impl OutboxWorker {
                     }
 
                     // Invalidate both Sent and Outbox caches so UI reflects the move
-                    if let Err(e) = self.cache_service.clear_folder_cache("INBOX.Sent", &item.account_email).await {
-                        warn!("Failed to invalidate Sent cache for {}: {}", item.account_email, e);
+                    if let Err(e) = self
+                        .cache_service
+                        .clear_folder_cache("INBOX.Sent", &item.account_email)
+                        .await
+                    {
+                        warn!(
+                            "Failed to invalidate Sent cache for {}: {}",
+                            item.account_email, e
+                        );
                     }
-                    if let Err(e) = self.cache_service.clear_folder_cache("INBOX.Outbox", &item.account_email).await {
-                        warn!("Failed to invalidate Outbox cache for {}: {}", item.account_email, e);
+                    if let Err(e) = self
+                        .cache_service
+                        .clear_folder_cache("INBOX.Outbox", &item.account_email)
+                        .await
+                    {
+                        warn!(
+                            "Failed to invalidate Outbox cache for {}: {}",
+                            item.account_email, e
+                        );
                     }
                 }
                 Err(e) => {
@@ -180,7 +210,10 @@ impl OutboxWorker {
     }
 
     /// Send email via SMTP
-    async fn send_via_smtp(&self, item: &crate::dashboard::services::OutboxQueueItem) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn send_via_smtp(
+        &self,
+        item: &crate::dashboard::services::OutboxQueueItem,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Rebuild the send request from the queue item
         let request = crate::dashboard::services::SendEmailRequest {
             to: item.to_addresses.clone(),
@@ -193,13 +226,19 @@ impl OutboxWorker {
 
         // Send using SMTP-only method (no IMAP operations)
         // The worker handles IMAP saves separately
-        self.smtp_service.send_email_smtp_only(&item.account_email, request).await?;
+        self.smtp_service
+            .send_email_smtp_only(&item.account_email, request)
+            .await?;
 
         Ok(())
     }
 
     /// Save email to IMAP folder (Outbox or Sent)
-    async fn save_to_folder(&self, item: &crate::dashboard::services::OutboxQueueItem, folder: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn save_to_folder(
+        &self,
+        item: &crate::dashboard::services::OutboxQueueItem,
+        folder: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Get the account for this email
         let account_service = self.account_service.lock().await;
         let account = account_service
@@ -209,28 +248,37 @@ impl OutboxWorker {
         drop(account_service);
 
         // Create IMAP session for this specific account
-        let session = self.imap_factory.create_session_for_account(&account).await?;
+        let session = self
+            .imap_factory
+            .create_session_for_account(&account)
+            .await?;
 
         // Select folder
         session.select_folder(folder).await?;
 
         // APPEND email with \Seen flag
         let flags = vec!["\\Seen".to_string()];
-        session.append(folder, &item.raw_email_bytes, &flags).await?;
+        session
+            .append(folder, &item.raw_email_bytes, &flags)
+            .await?;
 
         // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
 
-        info!("Saved email to {} folder for account {}", folder, item.account_email);
+        info!(
+            "Saved email to {} folder for account {}",
+            folder, item.account_email
+        );
         Ok(())
     }
 
     /// Remove email from Outbox folder after successful send
-    async fn remove_from_outbox(&self, item: &crate::dashboard::services::OutboxQueueItem) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        use crate::imap::session::AsyncImapOps;
-
+    async fn remove_from_outbox(
+        &self,
+        item: &crate::dashboard::services::OutboxQueueItem,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Get the account for this email
         let account_service = self.account_service.lock().await;
         let account = account_service
@@ -240,7 +288,10 @@ impl OutboxWorker {
         drop(account_service);
 
         // Create IMAP session for this specific account
-        let session = self.imap_factory.create_session_for_account(&account).await?;
+        let session = self
+            .imap_factory
+            .create_session_for_account(&account)
+            .await?;
 
         // Select Outbox folder
         session.select_folder("INBOX.Outbox").await?;
@@ -253,11 +304,18 @@ impl OutboxWorker {
         let uids = session.search_emails(&search_criteria).await?;
 
         if uids.is_empty() {
-            warn!("Email not found in Outbox for removal (subject: {})", item.subject);
+            warn!(
+                "Email not found in Outbox for removal (subject: {})",
+                item.subject
+            );
             return Ok(()); // Not an error - email might have been manually moved
         }
 
-        info!("Found {} message(s) in Outbox matching subject '{}', deleting...", uids.len(), item.subject);
+        info!(
+            "Found {} message(s) in Outbox matching subject '{}', deleting...",
+            uids.len(),
+            item.subject
+        );
 
         // Delete the messages (mark as deleted + expunge)
         session.delete_messages(&uids).await?;
@@ -267,7 +325,10 @@ impl OutboxWorker {
             warn!("Failed to logout IMAP session: {}", e);
         }
 
-        info!("Removed email from Outbox folder for account {}", item.account_email);
+        info!(
+            "Removed email from Outbox folder for account {}",
+            item.account_email
+        );
         Ok(())
     }
 
@@ -292,41 +353,58 @@ impl OutboxWorker {
 
     /// Clean up orphaned emails from Outbox folders
     /// This handles emails that were saved to Outbox but never removed (due to crashes, etc.)
-    async fn cleanup_orphaned_outbox_emails(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        use crate::imap::session::AsyncImapOps;
-        use chrono::{Utc, Duration as ChronoDuration};
+    async fn cleanup_orphaned_outbox_emails(
+        &self,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        use chrono::{Duration as ChronoDuration, Utc};
 
         info!("Running orphaned outbox email cleanup...");
 
         // Get all accounts
         let account_service = self.account_service.lock().await;
-        let accounts = account_service.list_accounts().await.map_err(|e| format!("Failed to list accounts: {}", e))?;
+        let accounts = account_service
+            .list_accounts()
+            .await
+            .map_err(|e| format!("Failed to list accounts: {}", e))?;
         drop(account_service);
 
         for account in accounts {
             let account_email = &account.email_address;
 
             // Get all completed/failed queue items for this account to check against
-            let completed_subjects: Vec<String> = match self.queue_service.get_completed_subjects(account_email).await {
+            let completed_subjects: Vec<String> = match self
+                .queue_service
+                .get_completed_subjects(account_email)
+                .await
+            {
                 Ok(subjects) => subjects,
                 Err(e) => {
-                    warn!("Failed to get completed queue subjects for {}: {}", account_email, e);
+                    warn!(
+                        "Failed to get completed queue subjects for {}: {}",
+                        account_email, e
+                    );
                     continue;
                 }
             };
 
             // Create IMAP session
-            let mut session = match self.imap_factory.create_session_for_account(&account).await {
+            let session = match self.imap_factory.create_session_for_account(&account).await {
                 Ok(s) => s,
                 Err(e) => {
-                    warn!("Failed to create IMAP session for {} during cleanup: {}", account_email, e);
+                    warn!(
+                        "Failed to create IMAP session for {} during cleanup: {}",
+                        account_email, e
+                    );
                     continue;
                 }
             };
 
             // Select Outbox folder
             if let Err(e) = session.select_folder("INBOX.Outbox").await {
-                warn!("Failed to select Outbox folder for {}: {}", account_email, e);
+                warn!(
+                    "Failed to select Outbox folder for {}: {}",
+                    account_email, e
+                );
                 continue;
             }
 
@@ -343,7 +421,11 @@ impl OutboxWorker {
                 continue; // No emails in Outbox
             }
 
-            info!("Found {} emails in Outbox for {}, checking for orphans...", all_uids.len(), account_email);
+            info!(
+                "Found {} emails in Outbox for {}, checking for orphans...",
+                all_uids.len(),
+                account_email
+            );
 
             // Fetch email headers to check dates and subjects
             let emails = match session.fetch_emails(&all_uids).await {
@@ -376,15 +458,33 @@ impl OutboxWorker {
             }
 
             if !orphans_to_delete.is_empty() {
-                info!("Deleting {} orphaned emails from Outbox for {}", orphans_to_delete.len(), account_email);
+                info!(
+                    "Deleting {} orphaned emails from Outbox for {}",
+                    orphans_to_delete.len(),
+                    account_email
+                );
                 if let Err(e) = session.delete_messages(&orphans_to_delete).await {
-                    warn!("Failed to delete orphaned emails from Outbox for {}: {}", account_email, e);
+                    warn!(
+                        "Failed to delete orphaned emails from Outbox for {}: {}",
+                        account_email, e
+                    );
                 } else {
-                    info!("Successfully cleaned up {} orphaned emails from Outbox for {}", orphans_to_delete.len(), account_email);
+                    info!(
+                        "Successfully cleaned up {} orphaned emails from Outbox for {}",
+                        orphans_to_delete.len(),
+                        account_email
+                    );
 
                     // Invalidate cache after cleanup
-                    if let Err(e) = self.cache_service.clear_folder_cache("INBOX.Outbox", account_email).await {
-                        warn!("Failed to invalidate Outbox cache after cleanup for {}: {}", account_email, e);
+                    if let Err(e) = self
+                        .cache_service
+                        .clear_folder_cache("INBOX.Outbox", account_email)
+                        .await
+                    {
+                        warn!(
+                            "Failed to invalidate Outbox cache after cleanup for {}: {}",
+                            account_email, e
+                        );
                     }
                 }
             }

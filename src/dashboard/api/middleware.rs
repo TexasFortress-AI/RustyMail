@@ -3,17 +3,16 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use crate::dashboard::api::models::ClientType;
+use crate::dashboard::services::DashboardState;
 use actix_web::{
     dev::{Service, ServiceRequest, ServiceResponse, Transform},
-    web,
-    Error,
     http::header,
+    web, Error,
 };
 use futures_util::future::{self, LocalBoxFuture, Ready};
 use std::sync::Arc;
 use std::time::Instant;
-use crate::dashboard::services::DashboardState;
-use crate::dashboard::api::models::ClientType;
 
 // Middleware factory
 #[derive(Clone)]
@@ -32,7 +31,9 @@ where
     type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
-        future::ready(Ok(MetricsMiddleware { service: Arc::new(service) }))
+        future::ready(Ok(MetricsMiddleware {
+            service: Arc::new(service),
+        }))
     }
 }
 
@@ -58,7 +59,8 @@ where
         let service = Arc::clone(&self.service);
 
         // Extract client information from request
-        let user_agent = req.headers()
+        let user_agent = req
+            .headers()
             .get(header::USER_AGENT)
             .and_then(|h| h.to_str().ok())
             .map(String::from);
@@ -75,11 +77,10 @@ where
 
                 // Track API client if this is an API request (not SSE)
                 let client_id = if path.starts_with("/api/") && !path.contains("/events") {
-                    let client_id = state.client_manager.register_client(
-                        ClientType::Api,
-                        ip_address,
-                        user_agent,
-                    ).await;
+                    let client_id = state
+                        .client_manager
+                        .register_client(ClientType::Api, ip_address, user_agent)
+                        .await;
                     Some(client_id)
                 } else {
                     None

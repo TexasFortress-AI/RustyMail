@@ -6,20 +6,21 @@
 // src/dashboard/services/ai/providers/llama_cpp.rs
 // llama.cpp server adapter with support for advanced sampling (min-p, top-no, etc.)
 
-use async_trait::async_trait;
-use reqwest::Client;
-use serde::{Serialize, Deserialize};
-use log::{debug, warn, error, info};
-use super::{AiProvider, AiChatMessage, get_ai_request_timeout, get_ai_generation_timeout};
+use super::{get_ai_generation_timeout, get_ai_request_timeout, AiChatMessage, AiProvider};
 use crate::api::errors::ApiError as RestApiError;
 use crate::dashboard::services::ai::sampler_config::SamplerConfig;
+use async_trait::async_trait;
+use log::{debug, error, info, warn};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 // Default sampler settings for tool-calling
 const DEFAULT_TEMPERATURE: f32 = 0.7;
 const DEFAULT_TOP_P: f32 = 1.0;
-const DEFAULT_MIN_P: f32 = 0.01;  // llama.cpp default is 0.05, we use 0.01
-const DEFAULT_REPEAT_PENALTY: f32 = 1.0;  // Disabled
-const DEFAULT_N_CTX: u32 = 51200;  // 50k context window
+const DEFAULT_MIN_P: f32 = 0.01; // llama.cpp default is 0.05, we use 0.01
+const DEFAULT_REPEAT_PENALTY: f32 = 1.0; // Disabled
+#[allow(dead_code)]
+const DEFAULT_N_CTX: u32 = 51200; // 50k context window
 
 /// llama.cpp server options for generation
 /// Supports advanced sampling parameters not available in Ollama
@@ -150,6 +151,7 @@ struct LlamaCppChatResponse {
 }
 
 #[derive(Deserialize, Debug)]
+#[allow(dead_code)]
 struct LlamaCppChoice {
     message: LlamaCppMessage,
     #[serde(default)]
@@ -192,7 +194,7 @@ impl LlamaCppAdapter {
             top_p: Some(DEFAULT_TOP_P),
             min_p: Some(DEFAULT_MIN_P),
             repeat_penalty: Some(DEFAULT_REPEAT_PENALTY),
-            cache_prompt: Some(true),  // Enable prompt caching
+            cache_prompt: Some(true), // Enable prompt caching
             ..Default::default()
         };
 
@@ -252,7 +254,17 @@ impl LlamaCppAdapter {
 
     /// Convert SamplerConfig from database to a request struct
     /// Returns the options ready for use in a chat request
-    fn sampler_config_to_request_options(config: &SamplerConfig) -> (Option<f32>, Option<f32>, Option<u32>, Option<f32>, Option<f32>, Option<i32>, Option<Vec<String>>) {
+    fn sampler_config_to_request_options(
+        config: &SamplerConfig,
+    ) -> (
+        Option<f32>,
+        Option<f32>,
+        Option<u32>,
+        Option<f32>,
+        Option<f32>,
+        Option<i32>,
+        Option<Vec<String>>,
+    ) {
         (
             Some(config.effective_temperature()),
             Some(config.effective_top_p()),
@@ -260,7 +272,11 @@ impl LlamaCppAdapter {
             Some(config.effective_min_p()),
             Some(config.effective_repeat_penalty()),
             config.max_tokens.map(|v| v as i32),
-            if config.stop_sequences.is_empty() { None } else { Some(config.stop_sequences.clone()) },
+            if config.stop_sequences.is_empty() {
+                None
+            } else {
+                Some(config.stop_sequences.clone())
+            },
         )
     }
 }
@@ -272,29 +288,44 @@ impl AiProvider for LlamaCppAdapter {
 
         let url = format!("{}/v1/models", self.base_url);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .get(&url)
             .header("Content-Type", "application/json")
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("llama.cpp models: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("llama.cpp models: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("llama.cpp models API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "llama.cpp models API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("llama.cpp models API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "llama.cpp models API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
         let response_body = response
             .json::<LlamaCppModelsResponse>()
             .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize llama.cpp models response: {}", e) })?;
+            .map_err(|e| RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize llama.cpp models response: {}", e),
+            })?;
 
-        let models: Vec<String> = response_body.data
+        let models: Vec<String> = response_body
+            .data
             .into_iter()
             .map(|model| model.id)
             .collect();
@@ -308,7 +339,8 @@ impl AiProvider for LlamaCppAdapter {
         let url = format!("{}/v1/chat/completions", self.base_url);
 
         // Convert messages to llama.cpp format
-        let llama_messages: Vec<LlamaCppMessage> = messages.iter().map(LlamaCppMessage::from).collect();
+        let llama_messages: Vec<LlamaCppMessage> =
+            messages.iter().map(LlamaCppMessage::from).collect();
 
         let request_payload = LlamaCppChatRequest {
             messages: llama_messages,
@@ -327,38 +359,55 @@ impl AiProvider for LlamaCppAdapter {
         info!("Sending request to llama.cpp server: base_url={}, messages_count={}, temp={:?}, min_p={:?}",
               self.base_url, request_payload.messages.len(), self.options.temperature, self.options.min_p);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&request_payload)
             .timeout(get_ai_generation_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("llama.cpp: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("llama.cpp: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("llama.cpp API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "llama.cpp API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("llama.cpp API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "llama.cpp API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
-        let response_body = response
-            .json::<LlamaCppChatResponse>()
-            .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize llama.cpp response: {}", e) })?;
+        let response_body = response.json::<LlamaCppChatResponse>().await.map_err(|e| {
+            RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize llama.cpp response: {}", e),
+            }
+        })?;
 
         if let Some(choice) = response_body.choices.first() {
             if let Some(usage) = &response_body.usage {
-                info!("llama.cpp response complete. Tokens: prompt={:?}, completion={:?}, total={:?}",
-                      usage.prompt_tokens, usage.completion_tokens, usage.total_tokens);
+                info!(
+                    "llama.cpp response complete. Tokens: prompt={:?}, completion={:?}, total={:?}",
+                    usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
+                );
             }
             Ok(choice.message.content.clone())
         } else {
             warn!("llama.cpp API response did not contain any choices");
-            Err(RestApiError::UnprocessableEntity { message: "llama.cpp response was empty or missing choices".to_string() })
+            Err(RestApiError::UnprocessableEntity {
+                message: "llama.cpp response was empty or missing choices".to_string(),
+            })
         }
     }
 
@@ -370,7 +419,10 @@ impl AiProvider for LlamaCppAdapter {
         // Use database config if provided, otherwise fall back to self.options
         let (temperature, top_p, top_k, min_p, repeat_penalty, n_predict, stop) = match config {
             Some(cfg) => {
-                info!("Using sampler config from database for {}/{}", cfg.provider, cfg.model_name);
+                info!(
+                    "Using sampler config from database for {}/{}",
+                    cfg.provider, cfg.model_name
+                );
                 Self::sampler_config_to_request_options(cfg)
             }
             None => {
@@ -391,7 +443,8 @@ impl AiProvider for LlamaCppAdapter {
         let url = format!("{}/v1/chat/completions", self.base_url);
 
         // Convert messages to llama.cpp format
-        let llama_messages: Vec<LlamaCppMessage> = messages.iter().map(LlamaCppMessage::from).collect();
+        let llama_messages: Vec<LlamaCppMessage> =
+            messages.iter().map(LlamaCppMessage::from).collect();
 
         let request_payload = LlamaCppChatRequest {
             messages: llama_messages,
@@ -410,38 +463,55 @@ impl AiProvider for LlamaCppAdapter {
         info!("Sending request to llama.cpp server with config: base_url={}, messages_count={}, temp={:?}, min_p={:?}",
               self.base_url, request_payload.messages.len(), temperature, min_p);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&request_payload)
             .timeout(get_ai_generation_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("llama.cpp: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("llama.cpp: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("llama.cpp API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "llama.cpp API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("llama.cpp API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "llama.cpp API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
-        let response_body = response
-            .json::<LlamaCppChatResponse>()
-            .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize llama.cpp response: {}", e) })?;
+        let response_body = response.json::<LlamaCppChatResponse>().await.map_err(|e| {
+            RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize llama.cpp response: {}", e),
+            }
+        })?;
 
         if let Some(choice) = response_body.choices.first() {
             if let Some(usage) = &response_body.usage {
-                info!("llama.cpp response complete. Tokens: prompt={:?}, completion={:?}, total={:?}",
-                      usage.prompt_tokens, usage.completion_tokens, usage.total_tokens);
+                info!(
+                    "llama.cpp response complete. Tokens: prompt={:?}, completion={:?}, total={:?}",
+                    usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
+                );
             }
             Ok(choice.message.content.clone())
         } else {
             warn!("llama.cpp API response did not contain any choices");
-            Err(RestApiError::UnprocessableEntity { message: "llama.cpp response was empty or missing choices".to_string() })
+            Err(RestApiError::UnprocessableEntity {
+                message: "llama.cpp response was empty or missing choices".to_string(),
+            })
         }
     }
 }

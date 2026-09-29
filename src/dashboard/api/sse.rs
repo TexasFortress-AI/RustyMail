@@ -3,31 +3,32 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::convert::Infallible;
-use std::time::Duration;
+use crate::dashboard::services::clients::ClientManager;
+use crate::dashboard::services::events::{DashboardEvent, EventBus};
+use crate::dashboard::services::metrics::MetricsService;
+use crate::dashboard::services::DashboardState;
 use actix_web::web;
+use actix_web::HttpRequest;
 use actix_web_lab::sse::{self, Sse};
+use chrono::Utc;
 use futures_util::stream::Stream;
 use futures_util::StreamExt;
-use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
-use tokio::time::interval;
+use log::{debug, error, info, warn};
 use serde_json::json;
 use std::collections::{HashMap, HashSet, VecDeque};
+use std::convert::Infallible;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::sync::{mpsc, RwLock};
+use tokio::time::interval;
+use tokio_stream::wrappers::{IntervalStream, ReceiverStream};
 use uuid::Uuid;
-use log::{info, debug, error, warn};
-use crate::dashboard::services::metrics::MetricsService;
-use crate::dashboard::services::clients::ClientManager;
-use crate::dashboard::services::events::{EventBus, DashboardEvent};
-use chrono::Utc;
-use tokio_stream::wrappers::{ReceiverStream, IntervalStream};
-use crate::dashboard::services::DashboardState;
-use actix_web::HttpRequest;
 
 // Event type definitions for subscription filtering
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub enum EventType {
     Welcome,
+    #[default]
     StatsUpdate,
     ClientConnected,
     ClientDisconnected,
@@ -64,16 +65,11 @@ impl EventType {
 }
 
 // Default subscription: all events except welcome (which is sent once anyway)
-impl Default for EventType {
-    fn default() -> Self {
-        EventType::StatsUpdate
-    }
-}
 
 // SSE Event data structure with ID for replay support
 #[derive(Debug, Clone)]
 pub struct SseEvent {
-    pub id: String,  // Event ID for reconnection support
+    pub id: String, // Event ID for reconnection support
     pub event_type: String,
     pub data: String,
     pub timestamp: chrono::DateTime<chrono::Utc>,
@@ -123,7 +119,11 @@ impl SseClient {
         }
     }
 
-    pub fn new_with_subscriptions(sender: mpsc::Sender<SseEvent>, subscriptions: HashSet<EventType>) -> Self {
+    #[allow(dead_code)]
+    pub fn new_with_subscriptions(
+        sender: mpsc::Sender<SseEvent>,
+        subscriptions: HashSet<EventType>,
+    ) -> Self {
         Self {
             sender,
             subscriptions,
@@ -142,6 +142,7 @@ impl SseClient {
         self.subscriptions.remove(event_type);
     }
 
+    #[allow(dead_code)]
     pub fn get_subscriptions(&self) -> &HashSet<EventType> {
         &self.subscriptions
     }
@@ -156,8 +157,8 @@ struct StoredEvent {
 }
 
 // Constants for event replay
-const MAX_STORED_EVENTS: usize = 100;  // Keep last 100 events
-const EVENT_REPLAY_WINDOW: i64 = 300;  // 5 minutes in seconds
+const MAX_STORED_EVENTS: usize = 100; // Keep last 100 events
+const EVENT_REPLAY_WINDOW: i64 = 300; // 5 minutes in seconds
 
 // SSE Manager that keeps track of connected clients
 pub struct SseManager {
@@ -184,27 +185,27 @@ impl SseManager {
     pub fn set_event_bus(&mut self, event_bus: Arc<EventBus>) {
         self.event_bus = Some(event_bus);
     }
-    
+
     // Get the current count of active SSE clients
     pub async fn get_active_client_count(&self) -> usize {
         self.clients.read().await.len()
     }
-    
+
     // Register a new SSE client
     pub async fn register_client(&self, client_id: String, sender: mpsc::Sender<SseEvent>) {
         let mut clients = self.clients.write().await;
         clients.insert(client_id.clone(), SseClient::new(sender));
-        
+
         // Update metrics
         // self.metrics_service.increment_connections().await; // Removed: Metrics now use IMAP count
-        
+
         info!("New SSE client registered: {}", client_id);
-        
+
         // Don't send welcome message from here anymore
         // // Send welcome message immediately
         // self.send_welcome_message(client_id, sender).await;
     }
-    
+
     // Remove a client when they disconnect
     pub async fn remove_client(&self, client_id: &str) {
         let mut clients = self.clients.write().await;
@@ -212,20 +213,30 @@ impl SseManager {
         // Update metrics
         // self.metrics_service.decrement_connections().await; // Removed: Metrics now use IMAP count
         info!("SSE client disconnected: {}", client_id);
-        
+
         // Broadcast client disconnected event
         self.broadcast_client_disconnected(client_id).await;
     }
 
     // Update client subscription preferences
-    pub async fn update_client_subscriptions(&self, client_id: &str, subscriptions: HashSet<EventType>) -> bool {
+    pub async fn update_client_subscriptions(
+        &self,
+        client_id: &str,
+        subscriptions: HashSet<EventType>,
+    ) -> bool {
         let mut clients = self.clients.write().await;
         if let Some(client) = clients.get_mut(client_id) {
             client.subscriptions = subscriptions;
-            info!("Updated subscriptions for client {}: {:?}", client_id, client.subscriptions);
+            info!(
+                "Updated subscriptions for client {}: {:?}",
+                client_id, client.subscriptions
+            );
             true
         } else {
-            warn!("Tried to update subscriptions for non-existent client: {}", client_id);
+            warn!(
+                "Tried to update subscriptions for non-existent client: {}",
+                client_id
+            );
             false
         }
     }
@@ -244,7 +255,11 @@ impl SseManager {
     }
 
     // Remove subscription for a client
-    pub async fn unsubscribe_client_from_event(&self, client_id: &str, event_type: &EventType) -> bool {
+    pub async fn unsubscribe_client_from_event(
+        &self,
+        client_id: &str,
+        event_type: &EventType,
+    ) -> bool {
         let mut clients = self.clients.write().await;
         if let Some(client) = clients.get_mut(client_id) {
             client.unsubscribe_from(event_type);
@@ -259,7 +274,9 @@ impl SseManager {
     // Get client's current subscriptions
     pub async fn get_client_subscriptions(&self, client_id: &str) -> Option<HashSet<EventType>> {
         let clients = self.clients.read().await;
-        clients.get(client_id).map(|client| client.subscriptions.clone())
+        clients
+            .get(client_id)
+            .map(|client| client.subscriptions.clone())
     }
 
     // Store an event for potential replay
@@ -287,16 +304,25 @@ impl SseManager {
             delivered_to,
         });
 
-        debug!("Stored event {} for replay, store size: {}", event.id, store.len());
+        debug!(
+            "Stored event {} for replay, store size: {}",
+            event.id,
+            store.len()
+        );
     }
 
     // Get events for replay based on Last-Event-ID
-    pub async fn get_replay_events(&self, last_event_id: Option<&str>, client_id: &str) -> Vec<SseEvent> {
+    pub async fn get_replay_events(
+        &self,
+        last_event_id: Option<&str>,
+        client_id: &str,
+    ) -> Vec<SseEvent> {
         let store = self.event_store.read().await;
         let clients = self.clients.read().await;
 
         // Get client's subscriptions for filtering
-        let subscriptions = clients.get(client_id)
+        let subscriptions = clients
+            .get(client_id)
             .map(|c| c.subscriptions.clone())
             .unwrap_or_else(|| {
                 // Default subscriptions if client not found
@@ -333,10 +359,14 @@ impl SseManager {
             }
         }
 
-        info!("Replaying {} events for reconnected client {}", replay_events.len(), client_id);
+        info!(
+            "Replaying {} events for reconnected client {}",
+            replay_events.len(),
+            client_id
+        );
         replay_events
     }
-    
+
     // Broadcast an event to all connected clients with filtering
     pub async fn broadcast(&self, event: SseEvent) {
         let clients = self.clients.read().await;
@@ -353,20 +383,26 @@ impl SseManager {
                 Some(et) => client.is_subscribed_to(et),
                 None => {
                     // Unknown event type - send to all clients (backward compatibility)
-                    warn!("Unknown event type '{}', sending to all clients", event.event_type);
+                    warn!(
+                        "Unknown event type '{}', sending to all clients",
+                        event.event_type
+                    );
                     true
                 }
             };
 
             if should_send {
-                if let Err(_) = client.sender.send(event.clone()).await {
+                if client.sender.send(event.clone()).await.is_err() {
                     debug!("Failed to send event to client {}", client_id);
                     // We'll handle client removal on the next heartbeat
                 } else {
                     delivered_to.insert(client_id.clone());
                 }
             } else {
-                debug!("Filtered out event '{}' for client {} (not subscribed)", event.event_type, client_id);
+                debug!(
+                    "Filtered out event '{}' for client {} (not subscribed)",
+                    event.event_type, client_id
+                );
             }
         }
 
@@ -395,7 +431,7 @@ impl SseManager {
             false
         }
     }
-    
+
     // Broadcast a stats updated event
     pub async fn broadcast_stats_updated(&self) {
         let stats = self.metrics_service.get_current_stats().await;
@@ -415,12 +451,12 @@ impl SseManager {
             serde_json::to_string(&sse_stats).unwrap_or_else(|e| {
                 error!("Failed to serialize stats: {}", e);
                 "{}".to_string()
-            })
+            }),
         );
 
         self.broadcast(event).await;
     }
-    
+
     // Broadcast a client connected event
     pub async fn broadcast_client_connected(&self, client_id: &str) {
         let data = json!({
@@ -431,18 +467,18 @@ impl SseManager {
                 "status": "Active",
             }
         });
-        
+
         let event = SseEvent::new(
             "client_connected".to_string(),
             serde_json::to_string(&data).unwrap_or_else(|e| {
                 error!("Failed to serialize client connected data: {}", e);
                 "{}".to_string()
-            })
+            }),
         );
-        
+
         self.broadcast(event).await;
     }
-    
+
     // Broadcast a client disconnected event
     pub async fn broadcast_client_disconnected(&self, client_id: &str) {
         let data = json!({
@@ -451,18 +487,18 @@ impl SseManager {
                 "disconnectedAt": Utc::now().to_rfc3339(),
             }
         });
-        
+
         let event = SseEvent::new(
             "client_disconnected".to_string(),
             serde_json::to_string(&data).unwrap_or_else(|e| {
                 error!("Failed to serialize client disconnected data: {}", e);
                 "{}".to_string()
-            })
+            }),
         );
-        
+
         self.broadcast(event).await;
     }
-    
+
     // Broadcast a system alert
     pub async fn broadcast_system_alert(&self, alert_type: &str, message: &str) {
         let data = json!({
@@ -470,18 +506,18 @@ impl SseManager {
             "message": message,
             "timestamp": Utc::now().to_rfc3339(),
         });
-        
+
         let event = SseEvent::new(
             "system_alert".to_string(),
             serde_json::to_string(&data).unwrap_or_else(|e| {
                 error!("Failed to serialize system alert data: {}", e);
                 "{}".to_string()
-            })
+            }),
         );
-        
+
         self.broadcast(event).await;
     }
-    
+
     // Start listening to the event bus and forward events to SSE clients
     pub async fn start_event_bus_listener(&self) {
         if let Some(event_bus) = &self.event_bus {
@@ -507,10 +543,16 @@ impl SseManager {
                             });
                             SseEvent::new(
                                 "stats_update".to_string(),
-                                serde_json::to_string(&sse_stats).unwrap_or_default()
+                                serde_json::to_string(&sse_stats).unwrap_or_default(),
                             )
-                        },
-                        DashboardEvent::ClientConnected { client_id, client_type, ip_address, user_agent, timestamp } => {
+                        }
+                        DashboardEvent::ClientConnected {
+                            client_id,
+                            client_type,
+                            ip_address,
+                            user_agent,
+                            timestamp,
+                        } => {
                             let data = json!({
                                 "clientId": client_id,
                                 "clientType": client_type,
@@ -520,10 +562,14 @@ impl SseManager {
                             });
                             SseEvent::new(
                                 "client_connected".to_string(),
-                                serde_json::to_string(&data).unwrap_or_default()
+                                serde_json::to_string(&data).unwrap_or_default(),
                             )
-                        },
-                        DashboardEvent::ClientDisconnected { client_id, reason, timestamp } => {
+                        }
+                        DashboardEvent::ClientDisconnected {
+                            client_id,
+                            reason,
+                            timestamp,
+                        } => {
                             let data = json!({
                                 "clientId": client_id,
                                 "reason": reason,
@@ -531,10 +577,14 @@ impl SseManager {
                             });
                             SseEvent::new(
                                 "client_disconnected".to_string(),
-                                serde_json::to_string(&data).unwrap_or_default()
+                                serde_json::to_string(&data).unwrap_or_default(),
                             )
-                        },
-                        DashboardEvent::ConfigurationUpdated { section, changes, timestamp } => {
+                        }
+                        DashboardEvent::ConfigurationUpdated {
+                            section,
+                            changes,
+                            timestamp,
+                        } => {
                             let data = json!({
                                 "section": section,
                                 "changes": changes,
@@ -542,10 +592,15 @@ impl SseManager {
                             });
                             SseEvent::new(
                                 "configuration_updated".to_string(),
-                                serde_json::to_string(&data).unwrap_or_default()
+                                serde_json::to_string(&data).unwrap_or_default(),
                             )
-                        },
-                        DashboardEvent::SystemAlert { level, message, details, timestamp } => {
+                        }
+                        DashboardEvent::SystemAlert {
+                            level,
+                            message,
+                            details,
+                            timestamp,
+                        } => {
                             let data = json!({
                                 "level": level,
                                 "message": message,
@@ -554,14 +609,14 @@ impl SseManager {
                             });
                             SseEvent::new(
                                 "system_alert".to_string(),
-                                serde_json::to_string(&data).unwrap_or_default()
+                                serde_json::to_string(&data).unwrap_or_default(),
                             )
-                        },
+                        }
                         _ => {
                             // For other events, use a generic format
                             SseEvent::new(
                                 "dashboard_event".to_string(),
-                                serde_json::to_string(&event).unwrap_or_default()
+                                serde_json::to_string(&event).unwrap_or_default(),
                             )
                         }
                     };
@@ -599,7 +654,10 @@ impl SseManager {
     }
 
     // Helper method to broadcast current stats
-    async fn broadcast_current_stats(sse_manager: &Arc<SseManager>, dashboard_state: &web::Data<DashboardState>) {
+    async fn broadcast_current_stats(
+        sse_manager: &Arc<SseManager>,
+        dashboard_state: &web::Data<DashboardState>,
+    ) {
         // Get current stats
         let stats = dashboard_state.metrics_service.get_current_stats().await;
 
@@ -617,11 +675,11 @@ impl SseManager {
         match serde_json::to_string(&sse_stats) {
             Ok(json) => {
                 // Create event and broadcast
-                let event = SseEvent::new(
-                    "stats_update".to_string(),
-                    json
+                let event = SseEvent::new("stats_update".to_string(), json);
+                debug!(
+                    "Broadcasting stats_update event to {} clients",
+                    sse_manager.get_active_client_count().await
                 );
-                debug!("Broadcasting stats_update event to {} clients", sse_manager.get_active_client_count().await);
                 sse_manager.broadcast(event).await;
             }
             Err(e) => {
@@ -652,42 +710,59 @@ pub async fn sse_handler(
 ) -> Sse<impl Stream<Item = Result<sse::Event, Infallible>>> {
     let (tx, rx) = mpsc::channel(100);
     let client_id = Uuid::new_v4().to_string();
-    let client_id_clone = client_id.clone(); // Clone for the welcome message
-    
+    let _client_id_clone = client_id.clone(); // Clone for the welcome message
+
     // Register client with the client manager first to get the managed client ID
     let client_manager = Arc::clone(&state.client_manager);
     // Extract relevant info from request headers
-    let user_agent = req.headers().get(actix_web::http::header::USER_AGENT).and_then(|h| h.to_str().ok()).map(String::from);
+    let user_agent = req
+        .headers()
+        .get(actix_web::http::header::USER_AGENT)
+        .and_then(|h| h.to_str().ok())
+        .map(String::from);
     let ip_address = req.peer_addr().map(|addr| addr.ip().to_string());
 
-    let managed_client_id = client_manager.register_client(
-        crate::dashboard::api::models::ClientType::Sse,
-        ip_address,
-        user_agent
-    ).await;
+    let managed_client_id = client_manager
+        .register_client(
+            crate::dashboard::api::models::ClientType::Sse,
+            ip_address,
+            user_agent,
+        )
+        .await;
 
     // Check for Last-Event-ID header (browser reconnection)
-    let last_event_id = req.headers()
+    let last_event_id = req
+        .headers()
         .get("Last-Event-ID")
         .and_then(|h| h.to_str().ok())
         .map(String::from);
 
     if let Some(ref last_id) = last_event_id {
-        info!("Client {} reconnecting with Last-Event-ID: {}", managed_client_id, last_id);
+        info!(
+            "Client {} reconnecting with Last-Event-ID: {}",
+            managed_client_id, last_id
+        );
     }
 
     // Register client with SSE manager using the managed client ID
-    sse_manager.register_client(managed_client_id.clone(), tx.clone()).await;
+    sse_manager
+        .register_client(managed_client_id.clone(), tx.clone())
+        .await;
 
     // --- Send Welcome Message Immediately ---
     let welcome_event = SseEvent::new(
         "welcome".to_string(),
-        format!(r#"{{"clientId":"{}","message":"Connected to RustyMail SSE","reconnect":{}}}"#,
-                managed_client_id,
-                last_event_id.is_some())
+        format!(
+            r#"{{"clientId":"{}","message":"Connected to RustyMail SSE","reconnect":{}}}"#,
+            managed_client_id,
+            last_event_id.is_some()
+        ),
     );
-    if let Err(_) = tx.send(welcome_event).await {
-        warn!("Failed to send initial welcome message to client {} in handler", managed_client_id);
+    if tx.send(welcome_event).await.is_err() {
+        warn!(
+            "Failed to send initial welcome message to client {} in handler",
+            managed_client_id
+        );
         // If we can't send the first message, probably futile to continue
         // Consider returning an error response or empty stream here
     }
@@ -695,38 +770,38 @@ pub async fn sse_handler(
 
     // Replay missed events if reconnecting
     if last_event_id.is_some() {
-        let replay_events = sse_manager.get_replay_events(
-            last_event_id.as_deref(),
-            &managed_client_id
-        ).await;
+        let replay_events = sse_manager
+            .get_replay_events(last_event_id.as_deref(), &managed_client_id)
+            .await;
 
         for replay_event in replay_events {
-            if let Err(_) = tx.send(replay_event).await {
-                warn!("Failed to send replay event to client {}", managed_client_id);
+            if tx.send(replay_event).await.is_err() {
+                warn!(
+                    "Failed to send replay event to client {}",
+                    managed_client_id
+                );
                 break;
             }
         }
     }
 
     // Convert the receiver to a stream
-    let event_stream = ReceiverStream::new(rx)
-        .map(move |event: SseEvent| {
-            // Create event using Data::new and event type, include ID for reconnection support
-            let sse_event = sse::Event::Data(
-                sse::Data::new(&*event.data)
-                    .event(&*event.event_type)
-                    .id(&*event.id)
-            );
-            Ok::<_, Infallible>(sse_event)
-        });
+    let event_stream = ReceiverStream::new(rx).map(move |event: SseEvent| {
+        // Create event using Data::new and event type, include ID for reconnection support
+        let sse_event = sse::Event::Data(
+            sse::Data::new(&*event.data)
+                .event(&*event.event_type)
+                .id(&*event.id),
+        );
+        Ok::<_, Infallible>(sse_event)
+    });
 
     // Create a heartbeat stream
-    let heartbeat_interval = IntervalStream::new(interval(Duration::from_secs(15)))
-        .map(|_| {
-            // Create event comment
-            let event = sse::Event::Comment("heartbeat".into());
-            Ok::<_, Infallible>(event)
-        });
+    let heartbeat_interval = IntervalStream::new(interval(Duration::from_secs(15))).map(|_| {
+        // Create event comment
+        let event = sse::Event::Comment("heartbeat".into());
+        Ok::<_, Infallible>(event)
+    });
 
     // Merge the event stream and heartbeat stream
     let stream = futures::stream::select(event_stream, heartbeat_interval);
@@ -738,15 +813,25 @@ pub async fn sse_handler(
 
     let cleanup_stream = stream.chain(futures::stream::once(async move {
         // This runs when the stream ends (client disconnects)
-        info!("SSE client {} disconnected - performing cleanup", managed_client_id_for_cleanup);
+        info!(
+            "SSE client {} disconnected - performing cleanup",
+            managed_client_id_for_cleanup
+        );
 
         // Remove from SSE manager
-        sse_manager_for_cleanup.remove_client(&managed_client_id_for_cleanup).await;
+        sse_manager_for_cleanup
+            .remove_client(&managed_client_id_for_cleanup)
+            .await;
 
         // Remove from client manager
-        client_manager_for_cleanup.remove_client(&managed_client_id_for_cleanup).await;
+        client_manager_for_cleanup
+            .remove_client(&managed_client_id_for_cleanup)
+            .await;
 
-        info!("Cleanup completed for disconnected SSE client {}", managed_client_id_for_cleanup);
+        info!(
+            "Cleanup completed for disconnected SSE client {}",
+            managed_client_id_for_cleanup
+        );
 
         // Return a final event (this will never be sent since stream is ending)
         Ok::<_, Infallible>(sse::Event::Comment("cleanup".into()))

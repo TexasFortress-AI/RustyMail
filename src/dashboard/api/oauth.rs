@@ -5,9 +5,9 @@
 
 //! OAuth2 API endpoints for Microsoft 365 account linking.
 
-use actix_web::{web, HttpResponse};
 use actix_web::http::header;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+use actix_web::{web, HttpResponse};
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use log::{error, info, warn};
 use serde::{Deserialize, Serialize};
 
@@ -31,6 +31,7 @@ pub struct OAuthCallbackQuery {
 
 /// Response after successful token exchange.
 #[derive(Debug, Serialize)]
+#[allow(dead_code)]
 struct CallbackResponse {
     success: bool,
     email: Option<String>,
@@ -40,9 +41,7 @@ struct CallbackResponse {
 /// GET /api/dashboard/oauth/microsoft/authorize
 ///
 /// Returns the Microsoft OAuth2 authorization URL for the frontend to redirect to.
-pub async fn microsoft_authorize(
-    state: web::Data<DashboardState>,
-) -> HttpResponse {
+pub async fn microsoft_authorize(state: web::Data<DashboardState>) -> HttpResponse {
     let oauth_service = &state.oauth_service;
 
     if !oauth_service.is_microsoft_configured() {
@@ -87,11 +86,17 @@ pub async fn microsoft_callback(
 
     // Check for error from Microsoft
     if let Some(error) = &query.error {
-        let desc = query.error_description.as_deref().unwrap_or("Unknown error");
+        let desc = query
+            .error_description
+            .as_deref()
+            .unwrap_or("Unknown error");
         error!("Microsoft OAuth callback error: {} - {}", error, desc);
         let encoded_msg = urlencoding::encode(desc);
         return HttpResponse::Found()
-            .insert_header((header::LOCATION, format!("{}/?oauth=error&message={}", base_url, encoded_msg)))
+            .insert_header((
+                header::LOCATION,
+                format!("{}/?oauth=error&message={}", base_url, encoded_msg),
+            ))
             .finish();
     }
 
@@ -99,7 +104,13 @@ pub async fn microsoft_callback(
         Some(c) => c,
         None => {
             return HttpResponse::Found()
-                .insert_header((header::LOCATION, format!("{}/?oauth=error&message=Missing+authorization+code", base_url)))
+                .insert_header((
+                    header::LOCATION,
+                    format!(
+                        "{}/?oauth=error&message=Missing+authorization+code",
+                        base_url
+                    ),
+                ))
                 .finish();
         }
     };
@@ -108,7 +119,10 @@ pub async fn microsoft_callback(
         Some(s) => s,
         None => {
             return HttpResponse::Found()
-                .insert_header((header::LOCATION, format!("{}/?oauth=error&message=Missing+state+parameter", base_url)))
+                .insert_header((
+                    header::LOCATION,
+                    format!("{}/?oauth=error&message=Missing+state+parameter", base_url),
+                ))
                 .finish();
         }
     };
@@ -121,12 +135,18 @@ pub async fn microsoft_callback(
             let msg = format!("Token exchange failed: {}", e);
             let encoded_msg = urlencoding::encode(&msg);
             return HttpResponse::Found()
-                .insert_header((header::LOCATION, format!("{}/?oauth=error&message={}", base_url, encoded_msg)))
+                .insert_header((
+                    header::LOCATION,
+                    format!("{}/?oauth=error&message={}", base_url, encoded_msg),
+                ))
                 .finish();
         }
     };
 
-    info!("Microsoft OAuth2 token exchange successful (expires_in={}s)", token_response.expires_in);
+    info!(
+        "Microsoft OAuth2 token exchange successful (expires_in={}s)",
+        token_response.expires_in
+    );
 
     // Extract email from the JWT access token's preferred_username claim
     let email = match extract_email_from_jwt(&token_response.access_token) {
@@ -134,7 +154,13 @@ pub async fn microsoft_callback(
         None => {
             error!("Could not extract email from access token JWT");
             return HttpResponse::Found()
-                .insert_header((header::LOCATION, format!("{}/?oauth=error&message=Could+not+identify+account+email", base_url)))
+                .insert_header((
+                    header::LOCATION,
+                    format!(
+                        "{}/?oauth=error&message=Could+not+identify+account+email",
+                        base_url
+                    ),
+                ))
                 .finish();
         }
     };
@@ -144,17 +170,23 @@ pub async fn microsoft_callback(
 
     // Persist tokens to the matching account
     let account_service = state.account_service.lock().await;
-    if let Err(e) = account_service.update_oauth_tokens(
-        &email,
-        &token_response.access_token,
-        token_response.refresh_token.as_deref(),
-        expires_at,
-    ).await {
+    if let Err(e) = account_service
+        .update_oauth_tokens(
+            &email,
+            &token_response.access_token,
+            token_response.refresh_token.as_deref(),
+            expires_at,
+        )
+        .await
+    {
         error!("Failed to persist OAuth tokens for {}: {}", email, e);
         let msg = format!("Failed to save tokens: {}", e);
         let encoded_msg = urlencoding::encode(&msg);
         return HttpResponse::Found()
-            .insert_header((header::LOCATION, format!("{}/?oauth=error&message={}", base_url, encoded_msg)))
+            .insert_header((
+                header::LOCATION,
+                format!("{}/?oauth=error&message={}", base_url, encoded_msg),
+            ))
             .finish();
     }
 
@@ -162,18 +194,22 @@ pub async fn microsoft_callback(
 
     // Validate the connection to update the connection status indicator
     match account_service.get_account(&email).await {
-        Ok(account) => {
-            match account_service.validate_connection(&account).await {
-                Ok(()) => info!("OAuth re-auth: connection validated for {}", email),
-                Err(e) => warn!("OAuth re-auth: connection validation failed for {}: {}", email, e),
-            }
-        }
+        Ok(account) => match account_service.validate_connection(&account).await {
+            Ok(()) => info!("OAuth re-auth: connection validated for {}", email),
+            Err(e) => warn!(
+                "OAuth re-auth: connection validation failed for {}: {}",
+                email, e
+            ),
+        },
         Err(e) => warn!("OAuth re-auth: could not fetch account {}: {}", email, e),
     }
 
     let encoded_email = urlencoding::encode(&email);
     HttpResponse::Found()
-        .insert_header((header::LOCATION, format!("{}/?oauth=success&email={}", base_url, encoded_email)))
+        .insert_header((
+            header::LOCATION,
+            format!("{}/?oauth=success&email={}", base_url, encoded_email),
+        ))
         .finish()
 }
 
@@ -190,9 +226,7 @@ fn extract_email_from_jwt(token: &str) -> Option<String> {
 
     // JWT uses base64url encoding (no padding). The base64 crate's STANDARD
     // engine expects standard base64 with padding, so convert URL-safe chars.
-    let payload_b64 = parts[1]
-        .replace('-', "+")
-        .replace('_', "/");
+    let payload_b64 = parts[1].replace('-', "+").replace('_', "/");
 
     // Add padding if needed
     let padded = match payload_b64.len() % 4 {
@@ -205,7 +239,8 @@ fn extract_email_from_jwt(token: &str) -> Option<String> {
     let payload: serde_json::Value = serde_json::from_slice(&decoded).ok()?;
 
     // Microsoft tokens use "preferred_username" for the user's email, or fall back to "upn"
-    payload.get("preferred_username")
+    payload
+        .get("preferred_username")
         .or_else(|| payload.get("upn"))
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
@@ -214,9 +249,7 @@ fn extract_email_from_jwt(token: &str) -> Option<String> {
 /// GET /api/dashboard/oauth/status
 ///
 /// Returns which OAuth providers are configured.
-pub async fn oauth_status(
-    state: web::Data<DashboardState>,
-) -> HttpResponse {
+pub async fn oauth_status(state: web::Data<DashboardState>) -> HttpResponse {
     HttpResponse::Ok().json(serde_json::json!({
         "microsoft": state.oauth_service.is_microsoft_configured(),
     }))
@@ -225,12 +258,13 @@ pub async fn oauth_status(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+    use base64::engine::general_purpose::STANDARD as BASE64;
 
     /// Build a fake JWT with the given JSON payload (no real signature).
     fn fake_jwt(payload_json: &str) -> String {
         let header = BASE64.encode(b"{\"alg\":\"none\"}");
-        let payload = BASE64.encode(payload_json.as_bytes())
+        let payload = BASE64
+            .encode(payload_json.as_bytes())
             .replace('+', "-")
             .replace('/', "_")
             .trim_end_matches('=')
@@ -241,13 +275,19 @@ mod tests {
     #[test]
     fn test_extract_email_preferred_username() {
         let jwt = fake_jwt(r#"{"preferred_username":"user@outlook.com","sub":"abc"}"#);
-        assert_eq!(extract_email_from_jwt(&jwt), Some("user@outlook.com".to_string()));
+        assert_eq!(
+            extract_email_from_jwt(&jwt),
+            Some("user@outlook.com".to_string())
+        );
     }
 
     #[test]
     fn test_extract_email_upn_fallback() {
         let jwt = fake_jwt(r#"{"upn":"admin@contoso.com","sub":"abc"}"#);
-        assert_eq!(extract_email_from_jwt(&jwt), Some("admin@contoso.com".to_string()));
+        assert_eq!(
+            extract_email_from_jwt(&jwt),
+            Some("admin@contoso.com".to_string())
+        );
     }
 
     #[test]

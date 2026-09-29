@@ -3,9 +3,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::collections::VecDeque;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
@@ -17,7 +16,7 @@ use tokio::sync::{Mutex as TokioMutex, Semaphore};
 use tokio::time::sleep;
 use uuid::Uuid;
 
-use crate::imap::{ImapClient, ImapError, AsyncImapSessionWrapper};
+use crate::imap::{AsyncImapSessionWrapper, ImapClient, ImapError};
 
 /// Errors that can occur during pool operations
 #[derive(Debug, Error, Clone)]
@@ -54,7 +53,7 @@ pub struct PoolConfig {
 impl Default for PoolConfig {
     fn default() -> Self {
         Self {
-            min_connections: 5,  // Reduced to limit memory usage
+            min_connections: 5, // Reduced to limit memory usage
             max_connections: std::env::var("MAX_CONNECTIONS")
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -63,25 +62,25 @@ impl Default for PoolConfig {
                 std::env::var("POOL_IDLE_TIMEOUT_SECONDS")
                     .ok()
                     .and_then(|v| v.parse().ok())
-                    .unwrap_or(60)
+                    .unwrap_or(60),
             ),
             health_check_interval: Duration::from_secs(
                 std::env::var("POOL_HEALTH_CHECK_INTERVAL_SECONDS")
                     .ok()
                     .and_then(|v| v.parse().ok())
-                    .unwrap_or(30)
+                    .unwrap_or(30),
             ),
             acquire_timeout: Duration::from_secs(
                 std::env::var("POOL_ACQUIRE_TIMEOUT_SECONDS")
                     .ok()
                     .and_then(|v| v.parse().ok())
-                    .unwrap_or(5)
+                    .unwrap_or(5),
             ),
             max_session_duration: Duration::from_secs(
                 std::env::var("POOL_MAX_SESSION_DURATION_SECONDS")
                     .ok()
                     .and_then(|v| v.parse().ok())
-                    .unwrap_or(300)
+                    .unwrap_or(300),
             ),
             max_concurrent_creations: std::env::var("POOL_MAX_CONCURRENT_CREATIONS")
                 .ok()
@@ -142,7 +141,11 @@ pub struct SessionHandle {
 }
 
 impl SessionHandle {
-    fn new(connection_id: Uuid, client: Arc<ImapClient<AsyncImapSessionWrapper>>, pool: Arc<ConnectionPool>) -> Self {
+    fn new(
+        connection_id: Uuid,
+        client: Arc<ImapClient<AsyncImapSessionWrapper>>,
+        pool: Arc<ConnectionPool>,
+    ) -> Self {
         Self {
             connection_id,
             client,
@@ -204,7 +207,8 @@ impl ConnectionFactory for ImapConnectionFactory {
             self.port,
             &self.username,
             &self.password,
-        ).await?;
+        )
+        .await?;
         Ok(Arc::new(client))
     }
 
@@ -293,11 +297,17 @@ impl ConnectionPool {
     /// Create a new connection and add to pool
     async fn create_connection(&self) -> Result<Uuid, PoolError> {
         // Check connection limit semaphore
-        let _permit = self.semaphore.acquire().await
+        let _permit = self
+            .semaphore
+            .acquire()
+            .await
             .map_err(|_| PoolError::PoolExhausted)?;
 
         // Check creation rate limit semaphore
-        let _creation_permit = self.creation_semaphore.acquire().await
+        let _creation_permit = self
+            .creation_semaphore
+            .acquire()
+            .await
             .map_err(|_| PoolError::PoolExhausted)?;
 
         // Create new connection
@@ -324,7 +334,11 @@ impl ConnectionPool {
         }
 
         self.total_created.fetch_add(1, Ordering::SeqCst);
-        debug!("Created new connection {} (total: {})", conn_id, self.connections.len());
+        debug!(
+            "Created new connection {} (total: {})",
+            conn_id,
+            self.connections.len()
+        );
 
         Ok(conn_id)
     }
@@ -337,7 +351,10 @@ impl ConnectionPool {
             if let Err(e) = conn.client.logout().await {
                 debug!("Logout failed for connection {} during cleanup (may already be disconnected): {}", conn_id, e);
             } else {
-                debug!("Successfully logged out connection {} during cleanup", conn_id);
+                debug!(
+                    "Successfully logged out connection {} during cleanup",
+                    conn_id
+                );
             }
         }
     }
@@ -349,9 +366,15 @@ impl ConnectionPool {
                 // Spawn logout task to avoid blocking the maintenance loop
                 tokio::spawn(async move {
                     if let Err(e) = conn.client.logout().await {
-                        debug!("Logout failed for connection {} during cleanup: {}", conn_id, e);
+                        debug!(
+                            "Logout failed for connection {} during cleanup: {}",
+                            conn_id, e
+                        );
                     } else {
-                        debug!("Successfully logged out connection {} during cleanup", conn_id);
+                        debug!(
+                            "Successfully logged out connection {} during cleanup",
+                            conn_id
+                        );
                     }
                     // Connection is dropped here, releasing the BytePool
                 });
@@ -387,7 +410,10 @@ impl ConnectionPool {
                 } else {
                     // Remove expired/unhealthy connection with logout (non-blocking)
                     if let Some((_, conn)) = self.connections.remove(&conn_id) {
-                        debug!("Removed expired/unhealthy connection {}, spawning logout task", conn_id);
+                        debug!(
+                            "Removed expired/unhealthy connection {}, spawning logout task",
+                            conn_id
+                        );
                         tokio::spawn(async move {
                             if let Err(e) = conn.client.logout().await {
                                 debug!("Logout failed for expired connection {}: {}", conn_id, e);
@@ -413,7 +439,10 @@ impl ConnectionPool {
                         self.total_acquired.fetch_add(1, Ordering::SeqCst);
                         self.current_active.fetch_add(1, Ordering::SeqCst);
 
-                        debug!("Acquired newly created connection {} (slow path)", new_conn_id);
+                        debug!(
+                            "Acquired newly created connection {} (slow path)",
+                            new_conn_id
+                        );
                         return Ok(SessionHandle::new(new_conn_id, client, Arc::clone(&self)));
                     }
                 }
@@ -424,15 +453,21 @@ impl ConnectionPool {
                 Err(_) => {
                     // Timeout
                     self.acquire_timeouts.fetch_add(1, Ordering::SeqCst);
-                    warn!("Connection acquisition timed out after {:?}", start_time.elapsed());
+                    warn!(
+                        "Connection acquisition timed out after {:?}",
+                        start_time.elapsed()
+                    );
                     return Err(PoolError::PoolExhausted);
                 }
             }
         }
 
         // Pool is at capacity
-        warn!("Connection pool exhausted (total: {}, active: {})",
-              self.connections.len(), self.current_active.load(Ordering::SeqCst));
+        warn!(
+            "Connection pool exhausted (total: {}, active: {})",
+            self.connections.len(),
+            self.current_active.load(Ordering::SeqCst)
+        );
         self.acquire_timeouts.fetch_add(1, Ordering::SeqCst);
         Err(PoolError::PoolExhausted)
     }
@@ -446,7 +481,10 @@ impl ConnectionPool {
             // Add back to available queue (lock-free)
             if self.available.push(connection_id).is_err() {
                 // Queue is full - this shouldn't happen in normal operation
-                warn!("Available queue full when releasing connection {}", connection_id);
+                warn!(
+                    "Available queue full when releasing connection {}",
+                    connection_id
+                );
             }
 
             self.total_released.fetch_add(1, Ordering::SeqCst);
@@ -491,7 +529,8 @@ impl ConnectionPool {
                     expired_ids.push(*id);
                 }
                 // Detect stuck in-use connections
-                else if conn.in_use && conn.last_used.elapsed() > self.config.max_session_duration {
+                else if conn.in_use && conn.last_used.elapsed() > self.config.max_session_duration
+                {
                     stuck_ids.push(*id);
                     warn!("Detected stuck connection {} (in use for > 1 hour)", id);
                 }
@@ -499,13 +538,18 @@ impl ConnectionPool {
 
             // Clean up expired connections with proper logout
             if !expired_ids.is_empty() {
-                debug!("Cleaning up {} expired connections with logout", expired_ids.len());
+                debug!(
+                    "Cleaning up {} expired connections with logout",
+                    expired_ids.len()
+                );
                 self.remove_connections_with_logout(expired_ids);
             }
 
             // Periodically rebuild the available queue to remove stale IDs
             // This prevents unbounded queue growth from accumulating stale UUIDs
-            let valid_ids: Vec<Uuid> = self.connections.iter()
+            let valid_ids: Vec<Uuid> = self
+                .connections
+                .iter()
                 .filter(|entry| {
                     let (_, conn) = entry.pair();
                     !conn.in_use && conn.is_healthy && !conn.is_expired(self.config.idle_timeout)
@@ -524,7 +568,10 @@ impl ConnectionPool {
                     warn!("Queue full during rebuild, skipping connection {}", id);
                 }
             }
-            debug!("Rebuilt available queue with {} valid connections", self.available.len());
+            debug!(
+                "Rebuilt available queue with {} valid connections",
+                self.available.len()
+            );
 
             // Force-release stuck connections
             for id in stuck_ids {
@@ -624,14 +671,23 @@ impl ConnectionPool {
                     // Add to available queue (note: ArrayQueue doesn't have retain,
                     // but stale IDs will be filtered out during acquisition)
                     if self.available.push(connection_id).is_err() {
-                        warn!("Available queue full during reconnect for connection {}", connection_id);
+                        warn!(
+                            "Available queue full during reconnect for connection {}",
+                            connection_id
+                        );
                     }
 
-                    info!("Successfully reconnected connection {} on attempt {}", connection_id, attempt);
+                    info!(
+                        "Successfully reconnected connection {} on attempt {}",
+                        connection_id, attempt
+                    );
                     return;
                 }
                 Err(e) => {
-                    warn!("Reconnection attempt {} failed for connection {}: {}", attempt, connection_id, e);
+                    warn!(
+                        "Reconnection attempt {} failed for connection {}: {}",
+                        attempt, connection_id, e
+                    );
                     if attempt < max_retries {
                         sleep(Duration::from_secs(2u64.pow(attempt))).await;
                     }
@@ -639,7 +695,10 @@ impl ConnectionPool {
             }
         }
 
-        error!("Failed to reconnect connection {} after {} attempts", connection_id, max_retries);
+        error!(
+            "Failed to reconnect connection {} after {} attempts",
+            connection_id, max_retries
+        );
     }
 
     /// Shutdown the pool gracefully
@@ -721,7 +780,10 @@ impl ConnectionPool {
 
         // Remove unhealthy connections with proper logout
         if !to_remove.is_empty() {
-            info!("Cleaning up {} unhealthy connections with logout", to_remove.len());
+            info!(
+                "Cleaning up {} unhealthy connections with logout",
+                to_remove.len()
+            );
             self.remove_connections_with_logout(to_remove);
         }
     }
@@ -729,9 +791,10 @@ impl ConnectionPool {
     /// Check if a session is still valid
     pub async fn is_session_valid(&self, session_id: Uuid) -> bool {
         if let Some(conn_ref) = self.connections.get(&session_id) {
-            conn_ref.is_healthy &&
-            !conn_ref.is_expired(self.config.idle_timeout) &&
-            (conn_ref.in_use || conn_ref.last_used.elapsed() < self.config.max_session_duration)
+            conn_ref.is_healthy
+                && !conn_ref.is_expired(self.config.idle_timeout)
+                && (conn_ref.in_use
+                    || conn_ref.last_used.elapsed() < self.config.max_session_duration)
         } else {
             false
         }
@@ -788,6 +851,6 @@ mod tests {
         let pool = ConnectionPool::new(factory, config);
 
         let stats = pool.stats().await;
-        assert_eq!(stats.max_connections, 50);  // Updated to match new memory-optimized default
+        assert_eq!(stats.max_connections, 50); // Updated to match new memory-optimized default
     }
 }

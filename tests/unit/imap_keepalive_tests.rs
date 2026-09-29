@@ -9,11 +9,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex as TokioMutex;
-use tokio::time::{sleep, Instant};
+use tokio::time::sleep;
 
 use async_trait::async_trait;
-use rustymail::imap::{ImapClient, ImapError, AsyncImapSessionWrapper};
 use rustymail::connection_pool::{ConnectionFactory, ConnectionPool, PoolConfig};
+use rustymail::imap::{AsyncImapSessionWrapper, ImapClient, ImapError};
 
 // Mock IMAP session for testing NOOP command
 struct MockImapSession {
@@ -68,14 +68,17 @@ impl MockConnectionFactory {
         }
     }
 
+    #[allow(dead_code)]
     async fn get_create_count(&self) -> u32 {
         *self.create_count.lock().await
     }
 
+    #[allow(dead_code)]
     async fn get_validate_count(&self) -> u32 {
         *self.validate_count.lock().await
     }
 
+    #[allow(dead_code)]
     async fn set_should_create_fail(&self, fail: bool) {
         *self.should_create_fail.lock().await = fail;
     }
@@ -98,7 +101,9 @@ impl ConnectionFactory for MockConnectionFactory {
 
         // For testing purposes, we can't actually create a real ImapClient
         // This is a limitation of unit testing without real IMAP infrastructure
-        Err(ImapError::Connection("Mock client - unit test limitation".to_string()))
+        Err(ImapError::Connection(
+            "Mock client - unit test limitation".to_string(),
+        ))
     }
 
     async fn validate(&self, _client: &Arc<ImapClient<AsyncImapSessionWrapper>>) -> bool {
@@ -144,7 +149,10 @@ async fn test_noop_keeps_connection_alive() {
 
     // Verify NOOP was called multiple times
     let noop_count = mock_session.get_noop_count().await;
-    assert_eq!(noop_count, 3, "NOOP should have been called 3 times to keep connection alive");
+    assert_eq!(
+        noop_count, 3,
+        "NOOP should have been called 3 times to keep connection alive"
+    );
 }
 
 #[tokio::test]
@@ -225,14 +233,20 @@ async fn test_noop_during_idle_connection() {
     mock_session.noop().await.unwrap();
 
     let noop_count = mock_session.get_noop_count().await;
-    assert_eq!(noop_count, 1, "NOOP should be called once during idle period");
+    assert_eq!(
+        noop_count, 1,
+        "NOOP should be called once during idle period"
+    );
 
     // Simulate more idle time and another NOOP
     sleep(Duration::from_millis(50)).await;
     mock_session.noop().await.unwrap();
 
     let noop_count = mock_session.get_noop_count().await;
-    assert_eq!(noop_count, 2, "NOOP should be called again after more idle time");
+    assert_eq!(
+        noop_count, 2,
+        "NOOP should be called again after more idle time"
+    );
 }
 
 #[tokio::test]
@@ -320,8 +334,14 @@ async fn test_pool_stats_tracking() {
     let stats = pool.stats().await;
 
     // Verify initial state (default max_connections is 50)
-    assert_eq!(stats.max_connections, 50, "Max connections should match default config");
-    assert_eq!(stats.total_created, 0, "No connections should be created yet in unit test");
+    assert_eq!(
+        stats.max_connections, 50,
+        "Max connections should match default config"
+    );
+    assert_eq!(
+        stats.total_created, 0,
+        "No connections should be created yet in unit test"
+    );
 }
 
 #[tokio::test]

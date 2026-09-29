@@ -6,12 +6,12 @@
 // src/dashboard/services/ai/providers/azure.rs
 // Azure OpenAI uses a different URL structure and API version
 
-use async_trait::async_trait;
-use reqwest::Client;
-use serde::{Serialize, Deserialize};
-use log::{debug, warn, error};
-use super::{AiProvider, AiChatMessage, get_ai_request_timeout};
+use super::{get_ai_request_timeout, AiChatMessage, AiProvider};
 use crate::api::errors::ApiError as RestApiError;
+use async_trait::async_trait;
+use log::{debug, error, warn};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 const DEFAULT_AZURE_API_VERSION: &str = "2024-10-01";
 const DEFAULT_AZURE_DEPLOYMENT: &str = "gpt-4";
@@ -40,18 +40,20 @@ struct AzureChoice {
 pub struct AzureOpenAIAdapter {
     api_key: String,
     http_client: Client,
-    endpoint: String,          // e.g., https://your-resource.openai.azure.com
-    deployment_name: String,    // The deployment ID/name
-    api_version: String,        // API version
+    endpoint: String,        // e.g., https://your-resource.openai.azure.com
+    deployment_name: String, // The deployment ID/name
+    api_version: String,     // API version
 }
 
 impl AzureOpenAIAdapter {
     pub fn new(api_key: String, http_client: Client) -> Result<Self, RestApiError> {
         // Azure requires AZURE_OPENAI_ENDPOINT to be set
-        let endpoint = std::env::var("AZURE_OPENAI_ENDPOINT")
-            .map_err(|_| RestApiError::UnprocessableEntity {
-                message: "AZURE_OPENAI_ENDPOINT environment variable is required for Azure OpenAI".to_string()
-            })?;
+        let endpoint = std::env::var("AZURE_OPENAI_ENDPOINT").map_err(|_| {
+            RestApiError::UnprocessableEntity {
+                message: "AZURE_OPENAI_ENDPOINT environment variable is required for Azure OpenAI"
+                    .to_string(),
+            }
+        })?;
 
         let deployment_name = std::env::var("AZURE_OPENAI_DEPLOYMENT")
             .unwrap_or_else(|_| DEFAULT_AZURE_DEPLOYMENT.to_string());
@@ -99,38 +101,57 @@ impl AiProvider for AzureOpenAIAdapter {
             max_tokens: Some(2000),
         };
 
-        debug!("Sending request to Azure OpenAI API: deployment={}, messages_count={}, url={}",
-               self.deployment_name, request_payload.messages.len(), url);
+        debug!(
+            "Sending request to Azure OpenAI API: deployment={}, messages_count={}, url={}",
+            self.deployment_name,
+            request_payload.messages.len(),
+            url
+        );
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .header("api-key", &self.api_key)
             .json(&request_payload)
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Azure OpenAI: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("Azure OpenAI: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("Azure OpenAI API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "Azure OpenAI API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("Azure OpenAI API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "Azure OpenAI API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
-        let response_body = response
-            .json::<AzureChatResponse>()
-            .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize Azure OpenAI response: {}", e) })?;
+        let response_body = response.json::<AzureChatResponse>().await.map_err(|e| {
+            RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize Azure OpenAI response: {}", e),
+            }
+        })?;
 
         if let Some(choice) = response_body.choices.first() {
             debug!("Received response from Azure OpenAI API.");
             Ok(choice.message.content.clone())
         } else {
             warn!("Azure OpenAI API response did not contain any choices.");
-            Err(RestApiError::UnprocessableEntity { message: "Azure OpenAI response was empty or missing choices".to_string() })
+            Err(RestApiError::UnprocessableEntity {
+                message: "Azure OpenAI response was empty or missing choices".to_string(),
+            })
         }
     }
 }

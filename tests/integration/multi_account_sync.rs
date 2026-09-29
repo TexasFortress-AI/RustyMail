@@ -10,14 +10,14 @@
 
 #[cfg(test)]
 mod multi_account_sync_tests {
-    use rustymail::dashboard::services::cache::{CacheService, CacheConfig};
+    use chrono::Utc;
     use rustymail::dashboard::services::account::AccountService;
-    use rustymail::imap::types::{Email, Address, Envelope};
+    use rustymail::dashboard::services::cache::{CacheConfig, CacheService};
+    use rustymail::imap::types::{Address, Email, Envelope};
     use serial_test::serial;
     use sqlx::SqlitePool;
-    use chrono::Utc;
 
-    const TEST_DB_PATH: &str = "sqlite:file::memory:?cache=shared";
+    const TEST_DB_PATH: &str = "sqlite:file:multi_account_test?mode=memory&cache=shared";
     const ACCOUNT1_EMAIL: &str = "chris@texasfortress.ai";
     const ACCOUNT2_EMAIL: &str = "shannon@texasfortress.ai";
 
@@ -63,7 +63,10 @@ mod multi_account_sync_tests {
         };
 
         let mut cache_service = CacheService::new(cache_config);
-        cache_service.initialize().await.expect("Failed to initialize cache service");
+        cache_service
+            .initialize()
+            .await
+            .expect("Failed to initialize cache service");
 
         // Create account service
         let account_service = AccountService::new("config/accounts.json");
@@ -130,8 +133,14 @@ mod multi_account_sync_tests {
             .expect("Failed to create folder for account 2");
 
         // Verify folders have different IDs even with same names
-        assert_ne!(folder1_acc1.id, folder1_acc2.id, "INBOX folders should have different IDs for different accounts");
-        assert_ne!(folder2_acc1.id, folder2_acc2.id, "Sent folders should have different IDs for different accounts");
+        assert_ne!(
+            folder1_acc1.id, folder1_acc2.id,
+            "INBOX folders should have different IDs for different accounts"
+        );
+        assert_ne!(
+            folder2_acc1.id, folder2_acc2.id,
+            "Sent folders should have different IDs for different accounts"
+        );
 
         // Verify folder names are correct
         assert_eq!(folder1_acc1.name, "INBOX");
@@ -168,7 +177,7 @@ mod multi_account_sync_tests {
             cache_service
                 .cache_email("INBOX", &email, ACCOUNT1_EMAIL)
                 .await
-                .expect(&format!("Failed to cache email {} for account 1", i));
+                .unwrap_or_else(|_| panic!("Failed to cache email {} for account 1", i));
         }
 
         // Cache emails for account 2
@@ -177,7 +186,7 @@ mod multi_account_sync_tests {
             cache_service
                 .cache_email("INBOX", &email, ACCOUNT2_EMAIL)
                 .await
-                .expect(&format!("Failed to cache email {} for account 2", i));
+                .unwrap_or_else(|_| panic!("Failed to cache email {} for account 2", i));
         }
 
         // Retrieve emails for account 1
@@ -198,13 +207,17 @@ mod multi_account_sync_tests {
 
         // Verify email subjects match expected accounts
         for email in &emails_acc1 {
-            assert!(email.subject.as_ref().unwrap().contains("Account 1"),
-                   "Account 1 emails should not contain Account 2 data");
+            assert!(
+                email.subject.as_ref().unwrap().contains("Account 1"),
+                "Account 1 emails should not contain Account 2 data"
+            );
         }
 
         for email in &emails_acc2 {
-            assert!(email.subject.as_ref().unwrap().contains("Account 2"),
-                   "Account 2 emails should not contain Account 1 data");
+            assert!(
+                email.subject.as_ref().unwrap().contains("Account 2"),
+                "Account 2 emails should not contain Account 1 data"
+            );
         }
 
         println!("✓ Email data properly isolated between accounts");
@@ -231,7 +244,7 @@ mod multi_account_sync_tests {
             cache_service
                 .cache_email("INBOX", &email, ACCOUNT1_EMAIL)
                 .await
-                .expect(&format!("Failed to cache email {}", i));
+                .unwrap_or_else(|_| panic!("Failed to cache email {}", i));
         }
 
         // Test pagination: first page (0-9)
@@ -259,8 +272,14 @@ mod multi_account_sync_tests {
         }
 
         println!("✓ Pagination works correctly per account");
-        println!("  Page 1 UIDs: {:?}", &page1_uids[..std::cmp::min(5, page1_uids.len())]);
-        println!("  Page 2 UIDs: {:?}", &page2_uids[..std::cmp::min(5, page2_uids.len())]);
+        println!(
+            "  Page 1 UIDs: {:?}",
+            &page1_uids[..std::cmp::min(5, page1_uids.len())]
+        );
+        println!(
+            "  Page 2 UIDs: {:?}",
+            &page2_uids[..std::cmp::min(5, page2_uids.len())]
+        );
     }
 
     #[tokio::test]
@@ -295,7 +314,11 @@ mod multi_account_sync_tests {
             .expect("Failed to get emails for account 2");
 
         // Verify account 2 cannot see account 1's emails
-        assert_eq!(emails_acc2.len(), 0, "Account 2 should not see Account 1's emails");
+        assert_eq!(
+            emails_acc2.len(),
+            0,
+            "Account 2 should not see Account 1's emails"
+        );
 
         // Verify account 1 can still see its own email
         let emails_acc1 = cache_service
@@ -307,7 +330,10 @@ mod multi_account_sync_tests {
 
         println!("✓ Cross-account access properly prevented");
         println!("  Account 1 can see: {} emails", emails_acc1.len());
-        println!("  Account 2 can see: {} emails (should be 0)", emails_acc2.len());
+        println!(
+            "  Account 2 can see: {} emails (should be 0)",
+            emails_acc2.len()
+        );
     }
 
     #[tokio::test]
@@ -344,7 +370,10 @@ mod multi_account_sync_tests {
             .get_or_create_folder_for_account("INBOX", TEST_EMAIL)
             .await;
 
-        assert!(result3.is_ok(), "Should handle additional account gracefully");
+        assert!(
+            result3.is_ok(),
+            "Should handle additional account gracefully"
+        );
 
         println!("✓ Email addresses work correctly as account identifiers");
     }
@@ -510,8 +539,16 @@ mod multi_account_sync_tests {
             .expect("Failed to search account 2");
 
         // Verify search results are isolated
-        assert_eq!(results1.len(), 1, "Account 1 should find 1 'Important' email");
-        assert_eq!(results2.len(), 1, "Account 2 should find 1 'Important' email");
+        assert_eq!(
+            results1.len(),
+            1,
+            "Account 1 should find 1 'Important' email"
+        );
+        assert_eq!(
+            results2.len(),
+            1,
+            "Account 2 should find 1 'Important' email"
+        );
 
         // Verify the correct emails were found
         assert!(results1[0].subject.as_ref().unwrap().contains("meeting"));
