@@ -27,6 +27,8 @@ import { SendMailDialog } from './SendMailDialog';
 import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
 import { SyncStatusPanel } from './SyncStatusPanel';
 import { accountsApi } from '../api/accounts';
+import { sanitizeEmailHtml } from '../utils/sanitizeEmailHtml';
+import './EmailBody.css';
 
 interface Email {
   id: number;
@@ -40,6 +42,7 @@ interface Email {
   internal_date: string | null;
   flags: string[];
   body_text: string | null;
+  body_html?: string | null;
   has_attachments: boolean;
 }
 
@@ -74,9 +77,23 @@ interface EmailListProps {
   setCurrentFolder: (folder: string) => void;
   onEmailSelect?: (context: EmailContext | undefined) => void;
   onRefetchReady?: (refetch: () => void) => void;
+  /** Deep-link: UID to select once the matching folder/account list has loaded */
+  pendingSelectUid?: number | null;
+  pendingSelectFolder?: string;
+  pendingSelectAccountId?: string;
+  onPendingSelectConsumed?: () => void;
 }
 
-const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, onEmailSelect, onRefetchReady }) => {
+const EmailList: React.FC<EmailListProps> = ({
+  currentFolder,
+  setCurrentFolder,
+  onEmailSelect,
+  onRefetchReady,
+  pendingSelectUid = null,
+  pendingSelectFolder,
+  pendingSelectAccountId,
+  onPendingSelectConsumed,
+}) => {
   const { currentAccount } = useAccount();
   const { toast } = useToast();
 
@@ -239,6 +256,134 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
       onRefetchReady(() => refetch());
     }
   }, [refetch, onRefetchReady]);
+
+  // Deep-link: select email by UID once list data is available for this account/folder.
+  // If the UID is not on the current page, fetch it via get_email_by_uid and select it.
+  useEffect(() => {
+    if (pendingSelectUid == null || !currentAccount || !data) return;
+    // Wait until account/folder match the deep-link targets (avoids selecting against stale list)
+    if (pendingSelectAccountId && currentAccount.id !== pendingSelectAccountId) return;
+    if (pendingSelectFolder && currentFolder !== pendingSelectFolder) return;
+
+    let cancelled = false;
+
+    const selectByUid = async () => {
+      const offset = (currentPage - 1) * pageSize;
+      const idx = data.emails.findIndex((e) => e.uid === pendingSelectUid);
+      if (idx >= 0) {
+        if (cancelled) return;
+        const email = data.emails[idx];
+        const emailIndex = offset + idx;
+        setSelectedEmail(email);
+        onEmailSelect?.({ uid: email.uid, message_id: email.message_id, index: emailIndex });
+        onPendingSelectConsumed?.();
+        return;
+      }
+
+      // Not on this page — fetch the specific email, then try to jump to its page.
+      try {
+        const response = await fetch(`${API_BASE_URL}/dashboard/mcp/execute`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': config.api.apiKey,
+          },
+          body: JSON.stringify({
+            tool: 'get_email_by_uid',
+            parameters: {
+              uid: pendingSelectUid,
+              folder: currentFolder,
+              account_id: currentAccount.id,
+            },
+          }),
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to fetch email UID ${pendingSelectUid}`);
+        }
+        const result = await response.json();
+        const fetched = (result?.data ?? result) as Email | null;
+        if (cancelled) return;
+        if (!fetched || typeof fetched.uid !== 'number') {
+          toast({
+            title: 'Email not found',
+            description: `No email with UID ${pendingSelectUid} in ${currentFolder}.`,
+            variant: 'destructive',
+          });
+          onPendingSelectConsumed?.();
+          return;
+        }
+
+        setSelectedEmail(fetched);
+        // EmailBody resolves by uid; index is best-effort until we locate the page.
+        onEmailSelect?.({
+          uid: fetched.uid,
+          message_id: fetched.message_id ?? null,
+          index: 0,
+        });
+
+        // Binary-search pages (list is UID descending) so the row is visible.
+        const total = data.count || 0;
+        if (total > 0) {
+          let lo = 1;
+          let hi = Math.max(1, Math.ceil(total / pageSize));
+          let foundPage: number | null = null;
+          while (lo <= hi) {
+            const mid = Math.floor((lo + hi) / 2);
+            const midOffset = (mid - 1) * pageSize;
+            const pageResp = await fetch(
+              `${API_BASE_URL}/dashboard/emails?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&limit=${pageSize}&offset=${midOffset}`,
+              { headers: { 'X-API-Key': config.api.apiKey } }
+            );
+            if (!pageResp.ok) break;
+            const pageData = (await pageResp.json()) as EmailListResponse;
+            if (cancelled) return;
+            const pageIdx = pageData.emails.findIndex((e) => e.uid === pendingSelectUid);
+            if (pageIdx >= 0) {
+              foundPage = mid;
+              const emailIndex = midOffset + pageIdx;
+              onEmailSelect?.({
+                uid: pageData.emails[pageIdx].uid,
+                message_id: pageData.emails[pageIdx].message_id,
+                index: emailIndex,
+              });
+              break;
+            }
+            if (pageData.emails.length === 0) break;
+            const maxUid = Math.max(...pageData.emails.map((e) => e.uid));
+            const minUid = Math.min(...pageData.emails.map((e) => e.uid));
+            if (pendingSelectUid > maxUid) {
+              hi = mid - 1; // higher UIDs are on earlier pages
+            } else if (pendingSelectUid < minUid) {
+              lo = mid + 1;
+            } else {
+              // UID gap on this page — stop searching
+              break;
+            }
+          }
+          if (foundPage != null && foundPage !== currentPage) {
+            setCurrentPage(foundPage);
+          }
+        }
+
+        onPendingSelectConsumed?.();
+      } catch (err) {
+        if (cancelled) return;
+        console.error('Deep-link email select failed:', err);
+        toast({
+          title: 'Failed to open email',
+          description: err instanceof Error ? err.message : 'Unknown error',
+          variant: 'destructive',
+        });
+        onPendingSelectConsumed?.();
+      }
+    };
+
+    void selectByUid();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingSelectUid, pendingSelectFolder, pendingSelectAccountId, data, currentAccount?.id, currentFolder, currentPage]);
 
   // Validate currentFolder exists when folders data loads or account changes
   useEffect(() => {
@@ -895,38 +1040,56 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
           </>
         )}
 
-        {/* Email Preview Modal */}
+        {/* Email Preview Modal — theme tokens (not hardcoded white) so dark mode text stays readable */}
         {selectedEmail && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto relative">
-              {/* Close button in top-right corner */}
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+            <div
+              className="bg-card text-card-foreground rounded-lg p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto relative border shadow-lg"
+              role="dialog"
+              aria-modal="true"
+              aria-label={selectedEmail.subject || 'Email preview'}
+            >
               <button
                 onClick={() => {
                   setSelectedEmail(null);
                   onEmailSelect?.(undefined);
                 }}
-                className="absolute top-4 right-4 p-1 hover:bg-gray-100 rounded-full transition-colors"
+                className="absolute top-4 right-4 p-1 hover:bg-muted rounded-full transition-colors"
                 aria-label="Close"
               >
-                <X className="h-5 w-5 text-gray-500" />
+                <X className="h-5 w-5 text-muted-foreground" />
               </button>
 
               <div className="mb-4 pr-8">
-                <h3 className="text-lg font-semibold">{selectedEmail.subject || '(No subject)'}</h3>
-                <p className="text-sm text-gray-600">
+                <h3 className="text-lg font-semibold text-foreground">
+                  {selectedEmail.subject || '(No subject)'}
+                </h3>
+                <p className="text-sm text-muted-foreground">
                   From: {selectedEmail.from_name || selectedEmail.from_address || 'Unknown'}
                 </p>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm text-muted-foreground">
                   Date: {formatDate(selectedEmail.date, selectedEmail.internal_date)}
                 </p>
               </div>
-              <div className="mb-4 whitespace-pre-wrap">
-                {selectedEmail.body_text || 'No content'}
-              </div>
+              {selectedEmail.body_html ? (
+                <div
+                  className="email-html-content mb-4"
+                  dangerouslySetInnerHTML={{
+                    __html: sanitizeEmailHtml(selectedEmail.body_html, {
+                      showImages: false,
+                      messageId: selectedEmail.message_id || undefined,
+                      accountId: currentAccount?.id,
+                    }),
+                  }}
+                />
+              ) : (
+                <div className="mb-4 whitespace-pre-wrap text-foreground">
+                  {selectedEmail.body_text || 'No content'}
+                </div>
+              )}
 
-              {/* Attachments Section */}
               {loadingAttachments ? (
-                <div className="mb-4 flex items-center gap-2 text-sm text-gray-600">
+                <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
                   <RefreshCw className="h-4 w-4 animate-spin" />
                   Loading attachments...
                 </div>
@@ -940,15 +1103,15 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
                     {attachments.map((attachment, index) => (
                       <div
                         key={index}
-                        className="flex items-center justify-between p-2 bg-gray-50 rounded border"
+                        className="flex items-center justify-between p-2 bg-muted/50 rounded border"
                       >
                         <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <Paperclip className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                          <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                           <div className="flex-1 min-w-0">
                             <div className="text-sm font-medium truncate">
                               {attachment.filename}
                             </div>
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs text-muted-foreground">
                               {formatFileSize(attachment.size_bytes)}
                               {attachment.content_type && ` • ${attachment.content_type}`}
                             </div>
@@ -1011,7 +1174,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
     {/* Folder Move Popup */}
     {folderMovePopup && foldersData && (
       <div
-        className="absolute z-50 bg-white border rounded-lg shadow-lg py-2"
+        className="absolute z-50 bg-popover text-popover-foreground border rounded-lg shadow-lg py-2"
         style={{
           left: `${folderMovePopup.x}px`,
           top: `${folderMovePopup.y}px`,
@@ -1029,7 +1192,7 @@ const EmailList: React.FC<EmailListProps> = ({ currentFolder, setCurrentFolder, 
               <button
                 key={folder}
                 onClick={() => handleMoveToFolder(folderMovePopup.email, folder)}
-                className="w-full px-3 py-2 text-sm text-left hover:bg-gray-100 transition-colors"
+                className="w-full px-3 py-2 text-sm text-left hover:bg-muted transition-colors"
               >
                 {folder}
               </button>
