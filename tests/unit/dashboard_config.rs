@@ -99,7 +99,11 @@ mod tests {
             .update_dashboard_config(true, 3000, Some(existing_path.clone()))
             .await;
 
-        assert!(result.is_ok(), "update_dashboard_config failed: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "update_dashboard_config failed: {:?}",
+            result
+        );
 
         // Verify the update
         let updated_settings = config_service.get_settings().await;
