@@ -162,11 +162,19 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          # vite.config.ts requires these (normally from repo-root .env)
+          DASHBOARD_PORT: "9439"
+          DASHBOARD_HOST: "127.0.0.1"
+          REST_PORT: "9437"
 
       - name: Run tests
         run: npm test -- --watchAll=false || true
         env:
           CI: true
+          DASHBOARD_PORT: "9439"
+          DASHBOARD_HOST: "127.0.0.1"
+          REST_PORT: "9437"
 
   check-licenses:
     name: License Compliance
@@ -192,7 +200,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          toolchain: 1.70.0  # Adjust based on your MSRV
+          # Cargo.lock is version 4 (Cargo >= 1.78). Align with Cargo.toml rust-version.
+          toolchain: 1.85.0
 
       - name: Check MSRV
         run: cargo check --all-features

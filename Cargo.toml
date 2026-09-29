@@ -2,6 +2,7 @@
 name = "rustymail"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.85"
 description = "A modern IMAP client with multiple interface options"
 authors = ["Your Name <your.email@example.com>"]
 default-run = "rustymail-server"
