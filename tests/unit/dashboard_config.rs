@@ -93,12 +93,13 @@ mod tests {
         let settings = Settings::default();
         let config_service = ConfigService::with_settings(settings, None);
 
-        // Update dashboard configuration
+        // Use a path that exists on all CI OSes (Windows has no /tmp).
+        let existing_path = std::env::temp_dir().to_string_lossy().to_string();
         let result = config_service
-            .update_dashboard_config(true, 3000, Some("/tmp".to_string()))
+            .update_dashboard_config(true, 3000, Some(existing_path.clone()))
             .await;
 
-        assert!(result.is_ok());
+        assert!(result.is_ok(), "update_dashboard_config failed: {:?}", result);
 
         // Verify the update
         let updated_settings = config_service.get_settings().await;
@@ -106,7 +107,7 @@ mod tests {
         let dashboard_config = updated_settings.dashboard.unwrap();
         assert!(dashboard_config.enabled);
         assert_eq!(dashboard_config.port, 3000);
-        assert_eq!(dashboard_config.path, Some("/tmp".to_string()));
+        assert_eq!(dashboard_config.path, Some(existing_path));
     }
 
     #[serial]
