@@ -88,7 +88,9 @@ jobs:
         run: cargo fmt -- --check
 
       - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
+        # Note: intentionally not --all-features. Features dhat-heap / mimalloc-alloc
+        # each define a global allocator, and live_tests gates obsolete fixtures.
 
   security:
     name: Security Audit
@@ -106,9 +108,19 @@ jobs:
         run: cargo audit
 
       - name: Check for known vulnerabilities
-        uses: rustsec/audit-check@v1.4.1
+        uses: rustsec/audit-check@v2.0.0
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          # Keep in sync with audit.toml — only advisories without a safe upgrade path yet.
+          ignore: |
+            RUSTSEC-2023-0071
+            RUSTSEC-2024-0363
+            RUSTSEC-2026-0189
+            RUSTSEC-2026-0258
+            RUSTSEC-2024-0421
+            RUSTSEC-2026-0104
+            RUSTSEC-2026-0098
+            RUSTSEC-2026-0099
 
   coverage:
     name: Code Coverage
