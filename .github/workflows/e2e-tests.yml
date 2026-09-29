@@ -67,9 +67,8 @@ jobs:
           pip install -r scripts/requirements.txt
 
       - name: Install frontend dependencies
-        run: |
-          cd frontend
-          npm ci
+        working-directory: frontend/rustymail-app-main
+        run: npm ci
 
       - name: Build Rust binaries
         run: |
@@ -110,10 +109,10 @@ jobs:
 
       - name: Start frontend server
         run: |
-          cd frontend
-          npm run dev > ../frontend.log 2>&1 &
-          echo $! > ../frontend.pid
-          cd ..
+          cd frontend/rustymail-app-main
+          npm run dev > ../../frontend.log 2>&1 &
+          echo $! > ../../frontend.pid
+          cd ../..
 
           # Wait for frontend to be ready
           for i in {1..30}; do

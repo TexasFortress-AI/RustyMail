@@ -8,6 +8,7 @@
 mod tests {
     use rustymail::config::Settings;
     use rustymail::dashboard::services::config::ConfigService;
+    use serial_test::serial;
     use tempfile::TempDir;
 
     /// Set up required environment variables for tests
@@ -22,6 +23,7 @@ mod tests {
         std::env::set_var("IMAP_PORT", "143");
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_config_service_initialization() {
         setup_test_env();
@@ -34,6 +36,7 @@ mod tests {
         assert_eq!(retrieved_settings.imap_port, settings.imap_port);
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_update_imap_config() {
         setup_test_env();
@@ -60,6 +63,7 @@ mod tests {
         assert_eq!(updated_settings.imap_pass, "password123");
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_update_rest_config() {
         setup_test_env();
@@ -82,6 +86,7 @@ mod tests {
         assert_eq!(rest_config.port, 8080);
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_update_dashboard_config() {
         setup_test_env();
@@ -104,6 +109,7 @@ mod tests {
         assert_eq!(dashboard_config.path, Some("/tmp".to_string()));
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_config_validation() {
         setup_test_env();
@@ -133,6 +139,7 @@ mod tests {
         }
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_invalid_port_validation() {
         setup_test_env();
@@ -153,6 +160,7 @@ mod tests {
         assert_eq!(result.unwrap_err(), "Invalid port number");
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_empty_host_validation() {
         setup_test_env();
@@ -173,6 +181,7 @@ mod tests {
         assert_eq!(result.unwrap_err(), "Host cannot be empty");
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_invalid_dashboard_path() {
         setup_test_env();
@@ -194,6 +203,7 @@ mod tests {
             .contains("Dashboard path does not exist"));
     }
 
+    #[serial]
     #[tokio::test]
     async fn test_config_persistence() {
         setup_test_env();

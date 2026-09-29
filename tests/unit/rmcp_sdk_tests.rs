@@ -6,11 +6,13 @@
 //! Tests for the RMCP SDK adapter and legacy tool registry.
 //! Validates tool listings, deduplication, field integrity, and ServerHandler impl.
 
+use serial_test::serial;
 use std::collections::HashSet;
 use std::sync::Arc;
 
 // === Legacy Tool Registry Tests ===
 
+#[serial]
 #[test]
 fn test_legacy_tool_registry_creation() {
     let registry = rustymail::mcp_port::create_mcp_tool_registry();
@@ -18,6 +20,7 @@ fn test_legacy_tool_registry_creation() {
     assert!(!tool_names.is_empty(), "Registry should contain tools");
 }
 
+#[serial]
 #[test]
 fn test_legacy_registry_contains_expected_tools() {
     let registry = rustymail::mcp_port::create_mcp_tool_registry();
@@ -58,6 +61,7 @@ fn test_legacy_registry_contains_expected_tools() {
     }
 }
 
+#[serial]
 #[test]
 fn test_legacy_registry_tool_count() {
     let registry = rustymail::mcp_port::create_mcp_tool_registry();
@@ -69,6 +73,7 @@ fn test_legacy_registry_tool_count() {
     );
 }
 
+#[serial]
 #[test]
 fn test_legacy_registry_no_duplicate_names() {
     let registry = rustymail::mcp_port::create_mcp_tool_registry();
@@ -84,6 +89,7 @@ fn test_legacy_registry_no_duplicate_names() {
 
 // === Low-Level Tool Definition Tests ===
 
+#[serial]
 #[test]
 fn test_low_level_tools_jsonrpc_format() {
     let tools = rustymail::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
@@ -95,6 +101,7 @@ fn test_low_level_tools_jsonrpc_format() {
     );
 }
 
+#[serial]
 #[test]
 fn test_low_level_tools_have_required_fields() {
     let tools = rustymail::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
@@ -129,6 +136,7 @@ fn test_low_level_tools_have_required_fields() {
     }
 }
 
+#[serial]
 #[test]
 fn test_low_level_tools_no_duplicates() {
     let tools = rustymail::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
@@ -146,6 +154,7 @@ fn test_low_level_tools_no_duplicates() {
     }
 }
 
+#[serial]
 #[test]
 fn test_low_level_tools_input_schema_has_properties() {
     let tools = rustymail::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
@@ -174,6 +183,7 @@ fn test_low_level_tools_input_schema_has_properties() {
 
 // === High-Level Tool Definition Tests ===
 
+#[serial]
 #[test]
 fn test_high_level_tools_jsonrpc_format() {
     let tools =
@@ -186,6 +196,7 @@ fn test_high_level_tools_jsonrpc_format() {
     );
 }
 
+#[serial]
 #[test]
 fn test_high_level_tools_have_required_fields() {
     let tools =
@@ -211,6 +222,7 @@ fn test_high_level_tools_have_required_fields() {
     }
 }
 
+#[serial]
 #[test]
 fn test_high_level_tools_no_duplicates() {
     let tools =
@@ -229,6 +241,7 @@ fn test_high_level_tools_no_duplicates() {
     }
 }
 
+#[serial]
 #[test]
 fn test_high_level_contains_expected_categories() {
     let tools =
@@ -314,6 +327,7 @@ fn test_high_level_contains_expected_categories() {
 
 // === SDK Adapter list_tools Deduplication Tests ===
 
+#[serial]
 #[test]
 fn test_sdk_tool_listing_deduplication() {
     // Simulate the same logic used in SdkMcpAdapter::list_tools()
@@ -352,6 +366,7 @@ fn test_sdk_tool_listing_deduplication() {
     );
 }
 
+#[serial]
 #[test]
 fn test_sdk_tool_listing_includes_all_low_level() {
     let low_level = rustymail::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
@@ -378,6 +393,7 @@ fn test_sdk_tool_listing_includes_all_low_level() {
     }
 }
 
+#[serial]
 #[test]
 fn test_sdk_tool_listing_includes_all_high_level() {
     let low_level = rustymail::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
@@ -406,6 +422,7 @@ fn test_sdk_tool_listing_includes_all_high_level() {
 
 // === RMCP Tool Struct Conversion Tests ===
 
+#[serial]
 #[test]
 fn test_rmcp_tool_conversion_from_json() {
     use rmcp::model::Tool;
@@ -467,6 +484,7 @@ fn test_rmcp_tool_conversion_from_json() {
 
 // === ServerHandler get_info Tests ===
 
+#[serial]
 #[test]
 fn test_server_handler_get_info() {
     use rmcp::ServerHandler;
@@ -512,6 +530,7 @@ fn test_server_handler_get_info() {
 
 // === Cross-Layer Consistency Tests ===
 
+#[serial]
 #[test]
 fn test_high_level_browsing_tools_exist_in_low_level() {
     // High-level browsing tools that delegate to execute_mcp_tool_inner must exist in low-level
@@ -545,6 +564,7 @@ fn test_high_level_browsing_tools_exist_in_low_level() {
     }
 }
 
+#[serial]
 #[test]
 fn test_legacy_registry_is_subset_of_low_level() {
     // Every tool in the legacy mcp_port registry should also be in low-level handlers,

@@ -94,6 +94,8 @@ port = 8080
 "#;
         let custom_path = create_config_file(&temp_dir, "custom.toml", custom_content);
 
+        // Re-assert env immediately before load — other tests mutate process env.
+        assert_eq!(env::var("REST_PORT").ok().as_deref(), Some("9090"));
         let settings = Settings::new(Some(&custom_path)).expect("Failed to load custom settings");
 
         assert!(matches!(settings.interface, InterfaceType::Rest));
