@@ -96,8 +96,10 @@ jobs:
           RUSTYMAIL_API_KEY: e2e-test-api-key-not-a-secret
           RUST_LOG: info
         run: |
-          # Create test database directory
-          mkdir -p .rustymail data
+          # Create dirs and seed a default account (accounts.json is gitignored).
+          # Server panics on startup without a default account in accounts.json.
+          mkdir -p .rustymail data config
+          cp config/accounts.json.example config/accounts.json
 
           # Start server in background
           ./target/release/rustymail-server > backend.log 2>&1 &
@@ -121,6 +123,11 @@ jobs:
           fi
 
       - name: Start frontend server
+        env:
+          # vite.config.ts requires these; UI tests hit the Vite port below.
+          DASHBOARD_HOST: 127.0.0.1
+          DASHBOARD_PORT: "5173"
+          REST_PORT: "9437"
         run: |
           cd frontend/rustymail-app-main
           npm run dev > ../../frontend.log 2>&1 &
