@@ -104,3 +104,13 @@ test_data/*_accounts_connection_status.json
 # Sync process lock file (runtime state)
 data/.sync.lock
 data/forensic_archives/*
+
+# Local runtime data (email cache DB, archives, attachments) - never commit
+/data/
+# Stray SQLite files created when a DB URL is misparsed as a filename
+/:memory:
+/file::memory:*
+/email_cache.db
+/rustymail.db
+# Dated backups of local config/data (e.g. accounts.json.old-2026-09-27)
+*.old-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]
