@@ -1,0 +1,21 @@
+# cargo-audit configuration for RustyMail
+# Prefer upgrading dependencies. Entries below are only for advisories that
+# cannot be cleared yet without a large breaking migration; each has rationale.
+
+[advisories]
+ignore = [
+    # No fixed rsa release (Marvin Attack). Transitive via sqlx-mysql; we use SQLite only.
+    "RUSTSEC-2023-0071",
+    # sqlx 0.8 is a breaking migration. Advisory is MySQL binary-protocol truncation; SQLite-only.
+    "RUSTSEC-2024-0363",
+    # rmcp >=1.4 is a breaking MCP SDK upgrade. MCP HTTP is localhost-bound in production configs.
+    "RUSTSEC-2026-0189",
+    # h2 0.3.x pinned by actix-http 3.x (0.4 path already upgraded to 0.4.19).
+    "RUSTSEC-2026-0258",
+    # idna 0.5 via oauth2 → reqwest 0.11; needs oauth2 HTTP-stack upgrade.
+    "RUSTSEC-2024-0421",
+    # rustls-webpki 0.101 only on oauth2/rustls 0.21 path; primary stack is webpki 0.103.15.
+    "RUSTSEC-2026-0104",
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+]

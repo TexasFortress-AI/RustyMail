@@ -17,9 +17,7 @@ allow = [
     "ISC",
     "Zlib",
     "Unicode-3.0",
-    "Unicode-DFS-2016",
     "MPL-2.0",
-    "OpenSSL",
     "CC0-1.0",
     "0BSD",
     "BSL-1.0",
@@ -30,8 +28,6 @@ allow = [
 exceptions = [
     # ring historically used a custom ISC-style notice; newer versions are dual-licensed.
     { allow = ["ISC", "MIT", "OpenSSL"], crate = "ring" },
-    { allow = ["ISC", "MIT", "OpenSSL"], crate = "webpki" },
-    { allow = ["ISC", "MIT", "OpenSSL"], crate = "rustls-webpki" },
 ]
 
 [[licenses.clarify]]
@@ -49,7 +45,17 @@ version = 2
 yanked = "warn"
 # Ignore only when an upgrade is not yet available or would be a large breaking
 # change; prefer upgrading dependencies. Entries must include a rationale.
-ignore = []
+ignore = [
+    # See audit.toml for full rationale. Mirrors cargo-audit ignores.
+    { id = "RUSTSEC-2023-0071", reason = "No fixed rsa release; transitive via sqlx-mysql (SQLite-only usage)" },
+    { id = "RUSTSEC-2024-0363", reason = "sqlx 0.8 breaking migration; advisory is MySQL binary protocol, we use SQLite" },
+    { id = "RUSTSEC-2026-0189", reason = "rmcp 1.x breaking; MCP bound to localhost mitigates DNS rebinding" },
+    { id = "RUSTSEC-2026-0258", reason = "h2 0.3 pinned by actix-http 3.x; primary h2 0.4 path upgraded" },
+    { id = "RUSTSEC-2024-0421", reason = "idna 0.5 via oauth2/reqwest 0.11; needs oauth2 stack upgrade" },
+    { id = "RUSTSEC-2026-0104", reason = "rustls-webpki 0.101 only on oauth2/rustls 0.21 path; primary is 0.103.15" },
+    { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.101 only on oauth2/rustls 0.21 path; primary is 0.103.15" },
+    { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.101 only on oauth2/rustls 0.21 path; primary is 0.103.15" },
+]
 
 [sources]
 unknown-registry = "deny"
