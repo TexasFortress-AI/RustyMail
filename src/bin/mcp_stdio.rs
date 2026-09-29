@@ -3,13 +3,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use clap::Parser;
 /// MCP stdio proxy - A thin JSON-RPC proxy that forwards requests from stdin to the MCP HTTP backend
 ///
 /// This binary acts as a protocol translation layer between line-oriented JSON-RPC-over-stdin/stdout
 /// and HTTP-based JSON-RPC calls to the RustyMail MCP backend server.
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(version, about = "MCP stdio proxy - forwards JSON-RPC over stdin/stdout to HTTP backend", long_about = None)]
@@ -131,11 +131,8 @@ async fn main() {
                     }
                     Err(e) => {
                         eprintln!("Error parsing JSON: {}", e);
-                        let error = create_error_response(
-                            None,
-                            -32700,
-                            &format!("Parse error: {}", e),
-                        );
+                        let error =
+                            create_error_response(None, -32700, &format!("Parse error: {}", e));
                         write_response(&mut stdout, &error).await;
                     }
                 }

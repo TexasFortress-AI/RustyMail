@@ -10,20 +10,19 @@
 //! - Exchanging authorization codes for tokens
 //! - Refreshing expired access tokens
 
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as BASE64URL};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD as BASE64URL, Engine as _};
 use log::{debug, error, info};
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-use super::oauth_config::{
-    OAuthConfig, OAuthProviderConfig, microsoft_auth_url, microsoft_token_url, MICROSOFT_SCOPES,
-};
-use super::encryption::CredentialEncryption;
+#[cfg(test)]
+use super::oauth_config::OAuthProviderConfig;
+use super::oauth_config::{microsoft_auth_url, microsoft_token_url, OAuthConfig, MICROSOFT_SCOPES};
 
 /// Errors from OAuth2 operations.
 #[derive(Error, Debug)]
@@ -105,7 +104,10 @@ impl OAuthService {
     /// Returns the OAuth redirect base URL (e.g., "http://localhost:9439").
     /// Used by the callback handler to redirect back to the frontend after OAuth.
     pub fn redirect_base_url(&self) -> Option<&str> {
-        self.config.microsoft.as_ref().map(|c| c.redirect_base_url.as_str())
+        self.config
+            .microsoft
+            .as_ref()
+            .map(|c| c.redirect_base_url.as_str())
     }
 
     /// Generate a Microsoft OAuth2 authorization URL with PKCE.
@@ -113,7 +115,10 @@ impl OAuthService {
     /// Returns `(authorization_url, state)`. The state is used to correlate
     /// the callback with this request.
     pub async fn generate_microsoft_auth_url(&self) -> Result<(String, String), OAuthError> {
-        let ms_config = self.config.microsoft.as_ref()
+        let ms_config = self
+            .config
+            .microsoft
+            .as_ref()
             .ok_or(OAuthError::NotConfigured)?;
 
         let state = generate_random_string(32);
@@ -123,10 +128,13 @@ impl OAuthService {
         // Store pending auth for callback
         {
             let mut pending = self.pending_auths.lock().await;
-            pending.insert(state.clone(), PendingAuth {
-                code_verifier,
-                provider: "microsoft".to_string(),
-            });
+            pending.insert(
+                state.clone(),
+                PendingAuth {
+                    code_verifier,
+                    provider: "microsoft".to_string(),
+                },
+            );
         }
 
         let scopes = MICROSOFT_SCOPES.join(" ");
@@ -142,7 +150,10 @@ impl OAuthService {
             urlencoding::encode(&code_challenge),
         );
 
-        debug!("Generated Microsoft OAuth2 authorization URL (state={})", &state[..8]);
+        debug!(
+            "Generated Microsoft OAuth2 authorization URL (state={})",
+            &state[..8]
+        );
         Ok((auth_url, state))
     }
 
@@ -154,13 +165,17 @@ impl OAuthService {
         state: &str,
         code: &str,
     ) -> Result<OAuthTokenResponse, OAuthError> {
-        let ms_config = self.config.microsoft.as_ref()
+        let ms_config = self
+            .config
+            .microsoft
+            .as_ref()
             .ok_or(OAuthError::NotConfigured)?;
 
         // Retrieve and remove the pending auth
         let pending = {
             let mut pending_map = self.pending_auths.lock().await;
-            pending_map.remove(state)
+            pending_map
+                .remove(state)
                 .ok_or_else(|| OAuthError::NoPendingAuth(state.to_string()))?
         };
 
@@ -175,10 +190,14 @@ impl OAuthService {
             ("code_verifier", pending.code_verifier.as_str()),
         ];
 
-        info!("Exchanging authorization code for tokens (provider={})", pending.provider);
+        info!(
+            "Exchanging authorization code for tokens (provider={})",
+            pending.provider
+        );
 
-        let response = self.http_client
-            .post(&microsoft_token_url())
+        let response = self
+            .http_client
+            .post(microsoft_token_url())
             .form(&params)
             .send()
             .await?;
@@ -187,12 +206,15 @@ impl OAuthService {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             error!("Token exchange failed: HTTP {} - {}", status, body);
-            return Err(OAuthError::TokenExchangeFailed(
-                format!("HTTP {}: {}", status, body)
-            ));
+            return Err(OAuthError::TokenExchangeFailed(format!(
+                "HTTP {}: {}",
+                status, body
+            )));
         }
 
-        let token_response: OAuthTokenResponse = response.json().await
+        let token_response: OAuthTokenResponse = response
+            .json()
+            .await
             .map_err(|e| OAuthError::TokenExchangeFailed(format!("JSON parse: {}", e)))?;
 
         info!("Successfully exchanged authorization code for tokens");
@@ -204,7 +226,10 @@ impl OAuthService {
         &self,
         refresh_token: &str,
     ) -> Result<OAuthTokenResponse, OAuthError> {
-        let ms_config = self.config.microsoft.as_ref()
+        let ms_config = self
+            .config
+            .microsoft
+            .as_ref()
             .ok_or(OAuthError::NotConfigured)?;
 
         let scopes = MICROSOFT_SCOPES.join(" ");
@@ -219,8 +244,9 @@ impl OAuthService {
 
         debug!("Refreshing Microsoft OAuth2 access token");
 
-        let response = self.http_client
-            .post(&microsoft_token_url())
+        let response = self
+            .http_client
+            .post(microsoft_token_url())
             .form(&params)
             .send()
             .await?;
@@ -229,12 +255,15 @@ impl OAuthService {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
             error!("Token refresh failed: HTTP {} - {}", status, body);
-            return Err(OAuthError::TokenRefreshFailed(
-                format!("HTTP {}: {}", status, body)
-            ));
+            return Err(OAuthError::TokenRefreshFailed(format!(
+                "HTTP {}: {}",
+                status, body
+            )));
         }
 
-        let token_response: OAuthTokenResponse = response.json().await
+        let token_response: OAuthTokenResponse = response
+            .json()
+            .await
             .map_err(|e| OAuthError::TokenRefreshFailed(format!("JSON parse: {}", e)))?;
 
         info!("Successfully refreshed Microsoft OAuth2 access token");
@@ -301,7 +330,9 @@ mod tests {
         // SHA256 = 32 bytes → 43 base64url chars
         assert_eq!(challenge.len(), 43);
         // Should only contain URL-safe base64 chars
-        assert!(challenge.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+        assert!(challenge
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
     }
 
     #[test]
@@ -322,7 +353,10 @@ mod tests {
     #[test]
     fn test_build_xoauth2_token() {
         let token = OAuthService::build_xoauth2_token("user@outlook.com", "my-access-token");
-        assert_eq!(token, "user=user@outlook.com\x01auth=Bearer my-access-token\x01\x01");
+        assert_eq!(
+            token,
+            "user=user@outlook.com\x01auth=Bearer my-access-token\x01\x01"
+        );
     }
 
     #[test]
@@ -403,7 +437,9 @@ mod tests {
         };
         let service = OAuthService::new(config);
 
-        let result = service.exchange_code("nonexistent-state", "some-code").await;
+        let result = service
+            .exchange_code("nonexistent-state", "some-code")
+            .await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), OAuthError::NoPendingAuth(_)));
     }

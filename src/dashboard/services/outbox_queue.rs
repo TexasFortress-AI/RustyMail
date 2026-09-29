@@ -3,10 +3,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use sqlx::SqlitePool;
-use chrono::{DateTime, Utc, NaiveDateTime};
-use serde::{Deserialize, Serialize};
+use chrono::{DateTime, NaiveDateTime, Utc};
 use log::{info, warn};
+use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
+use std::str::FromStr;
 
 // Helper to convert SQLite NaiveDateTime to DateTime<Utc>
 fn naive_to_utc(naive: NaiveDateTime) -> DateTime<Utc> {
@@ -64,14 +65,18 @@ impl OutboxStatus {
             OutboxStatus::Failed => "failed",
         }
     }
+}
 
-    pub fn from_str(s: &str) -> Self {
-        match s {
+impl FromStr for OutboxStatus {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Ok(match s {
             "sending" => OutboxStatus::Sending,
             "sent" => OutboxStatus::Sent,
             "failed" => OutboxStatus::Failed,
             _ => OutboxStatus::Pending,
-        }
+        })
     }
 }
 
@@ -87,8 +92,14 @@ impl OutboxQueueService {
     /// Add a new email to the outbox queue
     pub async fn enqueue(&self, item: OutboxQueueItem) -> Result<i64, sqlx::Error> {
         let to_json = serde_json::to_string(&item.to_addresses).unwrap_or_default();
-        let cc_json = item.cc_addresses.as_ref().map(|cc| serde_json::to_string(cc).unwrap_or_default());
-        let bcc_json = item.bcc_addresses.as_ref().map(|bcc| serde_json::to_string(bcc).unwrap_or_default());
+        let cc_json = item
+            .cc_addresses
+            .as_ref()
+            .map(|cc| serde_json::to_string(cc).unwrap_or_default());
+        let bcc_json = item
+            .bcc_addresses
+            .as_ref()
+            .map(|bcc| serde_json::to_string(bcc).unwrap_or_default());
         let status_str = item.status.as_str().to_string();
 
         let result = sqlx::query!(
@@ -119,7 +130,10 @@ impl OutboxQueueService {
         .execute(&self.pool)
         .await?;
 
-        info!("Enqueued email for {} (subject: {})", item.account_email, item.subject);
+        info!(
+            "Enqueued email for {} (subject: {})",
+            item.account_email, item.subject
+        );
         Ok(result.last_insert_rowid())
     }
 
@@ -147,12 +161,14 @@ impl OutboxQueueService {
             message_id: r.message_id,
             to_addresses: serde_json::from_str(&r.to_addresses).unwrap_or_default(),
             cc_addresses: r.cc_addresses.and_then(|cc| serde_json::from_str(&cc).ok()),
-            bcc_addresses: r.bcc_addresses.and_then(|bcc| serde_json::from_str(&bcc).ok()),
+            bcc_addresses: r
+                .bcc_addresses
+                .and_then(|bcc| serde_json::from_str(&bcc).ok()),
             subject: r.subject,
             body_text: r.body_text,
             body_html: r.body_html,
             raw_email_bytes: r.raw_email_bytes,
-            status: OutboxStatus::from_str(&r.status),
+            status: OutboxStatus::from_str(&r.status).unwrap(),
             smtp_sent: r.smtp_sent,
             outbox_saved: r.outbox_saved,
             sent_folder_saved: r.sent_folder_saved,
@@ -263,7 +279,12 @@ impl OutboxQueueService {
             .execute(&self.pool)
             .await?;
 
-            info!("Retrying queue item {} (attempt {}/{})", id, record.retry_count + 1, record.max_retries);
+            info!(
+                "Retrying queue item {} (attempt {}/{})",
+                id,
+                record.retry_count + 1,
+                record.max_retries
+            );
             Ok(true)
         } else {
             Ok(false)
@@ -271,7 +292,10 @@ impl OutboxQueueService {
     }
 
     /// Get all items for an account
-    pub async fn get_by_account(&self, account_email: &str) -> Result<Vec<OutboxQueueItem>, sqlx::Error> {
+    pub async fn get_by_account(
+        &self,
+        account_email: &str,
+    ) -> Result<Vec<OutboxQueueItem>, sqlx::Error> {
         let records = sqlx::query!(
             r#"
             SELECT id, account_email, message_id, to_addresses, cc_addresses, bcc_addresses,
@@ -288,34 +312,42 @@ impl OutboxQueueService {
         .fetch_all(&self.pool)
         .await?;
 
-        Ok(records.into_iter().map(|r| OutboxQueueItem {
-            id: r.id,
-            account_email: r.account_email,
-            message_id: r.message_id,
-            to_addresses: serde_json::from_str(&r.to_addresses).unwrap_or_default(),
-            cc_addresses: r.cc_addresses.and_then(|cc| serde_json::from_str(&cc).ok()),
-            bcc_addresses: r.bcc_addresses.and_then(|bcc| serde_json::from_str(&bcc).ok()),
-            subject: r.subject,
-            body_text: r.body_text,
-            body_html: r.body_html,
-            raw_email_bytes: r.raw_email_bytes,
-            status: OutboxStatus::from_str(&r.status),
-            smtp_sent: r.smtp_sent,
-            outbox_saved: r.outbox_saved,
-            sent_folder_saved: r.sent_folder_saved,
-            retry_count: r.retry_count as i32,
-            max_retries: r.max_retries as i32,
-            last_error: r.last_error,
-            created_at: r.created_at.map(naive_to_utc).unwrap_or_else(Utc::now),
-            smtp_sent_at: r.smtp_sent_at.map(naive_to_utc),
-            last_retry_at: r.last_retry_at.map(naive_to_utc),
-            completed_at: r.completed_at.map(naive_to_utc),
-        }).collect())
+        Ok(records
+            .into_iter()
+            .map(|r| OutboxQueueItem {
+                id: r.id,
+                account_email: r.account_email,
+                message_id: r.message_id,
+                to_addresses: serde_json::from_str(&r.to_addresses).unwrap_or_default(),
+                cc_addresses: r.cc_addresses.and_then(|cc| serde_json::from_str(&cc).ok()),
+                bcc_addresses: r
+                    .bcc_addresses
+                    .and_then(|bcc| serde_json::from_str(&bcc).ok()),
+                subject: r.subject,
+                body_text: r.body_text,
+                body_html: r.body_html,
+                raw_email_bytes: r.raw_email_bytes,
+                status: OutboxStatus::from_str(&r.status).unwrap(),
+                smtp_sent: r.smtp_sent,
+                outbox_saved: r.outbox_saved,
+                sent_folder_saved: r.sent_folder_saved,
+                retry_count: r.retry_count as i32,
+                max_retries: r.max_retries as i32,
+                last_error: r.last_error,
+                created_at: r.created_at.map(naive_to_utc).unwrap_or_else(Utc::now),
+                smtp_sent_at: r.smtp_sent_at.map(naive_to_utc),
+                last_retry_at: r.last_retry_at.map(naive_to_utc),
+                completed_at: r.completed_at.map(naive_to_utc),
+            })
+            .collect())
     }
 
     /// Get subjects of all completed or failed items for an account
     /// Used for orphan cleanup to identify which emails should be removed from Outbox
-    pub async fn get_completed_subjects(&self, account_email: &str) -> Result<Vec<String>, sqlx::Error> {
+    pub async fn get_completed_subjects(
+        &self,
+        account_email: &str,
+    ) -> Result<Vec<String>, sqlx::Error> {
         let records = sqlx::query!(
             r#"
             SELECT subject

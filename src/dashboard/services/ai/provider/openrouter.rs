@@ -5,12 +5,15 @@
 
 // src/dashboard/services/ai/providers/openrouter.rs
 
-use async_trait::async_trait;
-use reqwest::{Client, header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT}};
-use serde::{Serialize, Deserialize};
-use log::{debug, warn, error};
+use super::{get_ai_generation_timeout, get_ai_request_timeout, AiChatMessage, AiProvider};
 use crate::api::errors::ApiError as RestApiError;
-use super::{AiProvider, AiChatMessage, get_ai_request_timeout, get_ai_generation_timeout}; // Import trait, common message struct, and timeout helpers
+use async_trait::async_trait;
+use log::{debug, error, warn};
+use reqwest::{
+    header::{HeaderMap, HeaderValue, AUTHORIZATION, USER_AGENT},
+    Client,
+};
+use serde::{Deserialize, Serialize}; // Import trait, common message struct, and timeout helpers
 
 // Get OpenRouter API base URL from environment or use default
 fn get_base_url() -> String {
@@ -70,7 +73,10 @@ impl OpenRouterAdapter {
     pub fn new(api_key: String, http_client: Client) -> Self {
         let mut common_headers = HeaderMap::new();
         // Required headers for OpenRouter
-        common_headers.insert("HTTP-Referer", HeaderValue::from_static(REFERER_HEADER_VALUE));
+        common_headers.insert(
+            "HTTP-Referer",
+            HeaderValue::from_static(REFERER_HEADER_VALUE),
+        );
         common_headers.insert("X-Title", HeaderValue::from_static(TITLE_HEADER_VALUE));
         // Add a user agent
         common_headers.insert(USER_AGENT, HeaderValue::from_static("RustyMail/Dashboard"));
@@ -98,30 +104,45 @@ impl AiProvider for OpenRouterAdapter {
         let base_url = get_base_url();
         let models_url = format!("{}/models", base_url);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .get(&models_url)
             .headers(self.common_headers.clone())
             .header(AUTHORIZATION, format!("Bearer {}", self.api_key))
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("OpenRouter models: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("OpenRouter models: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("OpenRouter models API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "OpenRouter models API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("OpenRouter models API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "OpenRouter models API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
         let response_body = response
             .json::<OpenRouterModelsResponse>()
             .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize OpenRouter models response: {}", e) })?;
+            .map_err(|e| RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize OpenRouter models response: {}", e),
+            })?;
 
-        let models: Vec<String> = response_body.data
+        let models: Vec<String> = response_body
+            .data
             .into_iter()
             .map(|model| model.id)
             .collect();
@@ -139,34 +160,52 @@ impl AiProvider for OpenRouterAdapter {
             messages: messages.to_vec(),
         };
 
-        debug!("Sending request to OpenRouter API: model={}, messages_count={}, url={}",
-               request_payload.model, request_payload.messages.len(), chat_url);
+        debug!(
+            "Sending request to OpenRouter API: model={}, messages_count={}, url={}",
+            request_payload.model,
+            request_payload.messages.len(),
+            chat_url
+        );
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&chat_url)
             // Set common headers (Referer, X-Title, User-Agent)
-            .headers(self.common_headers.clone()) 
+            .headers(self.common_headers.clone())
             // Set authorization header
             .header(AUTHORIZATION, format!("Bearer {}", self.api_key))
             .json(&request_payload)
             .timeout(get_ai_generation_timeout()) // Longer timeout for generation
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("OpenRouter: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("OpenRouter: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("OpenRouter API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "OpenRouter API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("OpenRouter API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "OpenRouter API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
         let response_body = response
             .json::<OpenRouterChatResponse>() // Use OpenRouter specific response struct
             .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize OpenRouter response: {}", e) })?;
+            .map_err(|e| RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize OpenRouter response: {}", e),
+            })?;
 
         // Extract the first choice's message content
         if let Some(choice) = response_body.choices.first() {
@@ -174,7 +213,9 @@ impl AiProvider for OpenRouterAdapter {
             Ok(choice.message.content.clone())
         } else {
             warn!("OpenRouter API response did not contain any choices.");
-            Err(RestApiError::UnprocessableEntity { message: "OpenRouter response was empty or missing choices".to_string() })
+            Err(RestApiError::UnprocessableEntity {
+                message: "OpenRouter response was empty or missing choices".to_string(),
+            })
         }
     }
-} 
+}

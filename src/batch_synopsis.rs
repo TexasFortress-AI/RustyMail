@@ -81,11 +81,16 @@ impl BatchSynopsisProcessor {
         }
         if uids.len() > MAX_BATCH_SIZE {
             return Err(format!(
-                "Maximum {} UIDs per batch, got {}", MAX_BATCH_SIZE, uids.len()
-            ).into());
+                "Maximum {} UIDs per batch, got {}",
+                MAX_BATCH_SIZE,
+                uids.len()
+            )
+            .into());
         }
 
-        let char_limit = max_chars.unwrap_or(DEFAULT_MAX_CHARS).min(ABSOLUTE_MAX_CHARS);
+        let char_limit = max_chars
+            .unwrap_or(DEFAULT_MAX_CHARS)
+            .min(ABSOLUTE_MAX_CHARS);
 
         // 1. Resolve folder_id
         let folder_id = self.resolve_folder_id(account_id, folder).await?;
@@ -94,10 +99,7 @@ impl BatchSynopsisProcessor {
         let rows = self.query_emails(folder_id, uids).await?;
 
         // 3. Build a lookup of found UIDs
-        let found_map: HashMap<i64, RawEmailRow> = rows
-            .into_iter()
-            .map(|r| (r.uid, r))
-            .collect();
+        let found_map: HashMap<i64, RawEmailRow> = rows.into_iter().map(|r| (r.uid, r)).collect();
 
         // 4. Build results in input UID order, track errors for missing UIDs
         let mut synopses = Vec::with_capacity(uids.len());
@@ -106,10 +108,7 @@ impl BatchSynopsisProcessor {
         for &uid in uids {
             match found_map.get(&uid) {
                 Some(row) => {
-                    let synopsis = generate_synopsis(
-                        row.body_text.as_deref(),
-                        char_limit,
-                    );
+                    let synopsis = generate_synopsis(row.body_text.as_deref(), char_limit);
                     synopses.push(EmailSynopsis {
                         uid,
                         subject: row.subject.clone(),
@@ -132,7 +131,11 @@ impl BatchSynopsisProcessor {
         let returned = synopses.len();
         info!(
             "Batch synopsis: {}/{} UIDs from {}/{} (max_chars={})",
-            returned, uids.len(), account_id, folder, char_limit
+            returned,
+            uids.len(),
+            account_id,
+            folder,
+            char_limit
         );
 
         Ok(BatchSynopsisResult {
@@ -151,19 +154,20 @@ impl BatchSynopsisProcessor {
         account_id: &str,
         folder_name: &str,
     ) -> Result<i64, Box<dyn std::error::Error>> {
-        let row: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM folders WHERE account_id = ? AND name = ?"
-        )
-        .bind(account_id)
-        .bind(folder_name)
-        .fetch_optional(&self.db_pool)
-        .await?;
+        let row: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM folders WHERE account_id = ? AND name = ?")
+                .bind(account_id)
+                .bind(folder_name)
+                .fetch_optional(&self.db_pool)
+                .await?;
 
         match row {
             Some((id,)) => Ok(id),
             None => Err(format!(
-                "Folder '{}' not found for account '{}'", folder_name, account_id
-            ).into()),
+                "Folder '{}' not found for account '{}'",
+                folder_name, account_id
+            )
+            .into()),
         }
     }
 
@@ -174,10 +178,7 @@ impl BatchSynopsisProcessor {
         uids: &[i64],
     ) -> Result<Vec<RawEmailRow>, Box<dyn std::error::Error>> {
         // Build placeholders for the IN clause
-        let placeholders: String = uids.iter()
-            .map(|_| "?")
-            .collect::<Vec<_>>()
-            .join(",");
+        let placeholders: String = uids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
 
         let sql = format!(
             "SELECT e.uid, e.subject, e.from_address, e.to_addresses, \
@@ -187,8 +188,7 @@ impl BatchSynopsisProcessor {
             placeholders
         );
 
-        let mut query = sqlx::query_as::<_, RawEmailRow>(&sql)
-            .bind(folder_id);
+        let mut query = sqlx::query_as::<_, RawEmailRow>(&sql).bind(folder_id);
 
         for &uid in uids {
             query = query.bind(uid);
@@ -278,14 +278,8 @@ mod tests {
 
     #[test]
     fn test_synopsis_empty_body() {
-        assert_eq!(
-            generate_synopsis(None, 300),
-            "(no body text available)"
-        );
-        assert_eq!(
-            generate_synopsis(Some(""), 300),
-            "(no body text available)"
-        );
+        assert_eq!(generate_synopsis(None, 300), "(no body text available)");
+        assert_eq!(generate_synopsis(Some(""), 300), "(no body text available)");
         assert_eq!(
             generate_synopsis(Some("   \n  \n  "), 300),
             "(no body text available)"
@@ -306,7 +300,7 @@ mod tests {
         // Should break at a space before 20 chars
         assert!(result.ends_with("..."));
         assert!(result.len() <= 23); // 20 + "..."
-        // Should not cut mid-word
+                                     // Should not cut mid-word
         assert!(!result.contains("bro..."));
     }
 

@@ -3,16 +3,16 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::time;
-use tokio::sync::Mutex as TokioMutex;
-use log::{info, error, debug, warn};
+use crate::dashboard::services::account::AccountService;
+use crate::dashboard::services::cache::{CacheService, SyncStatus};
 use crate::imap::error::ImapError;
 use crate::prelude::CloneableImapSessionFactory;
-use crate::dashboard::services::cache::{CacheService, SyncStatus};
-use crate::dashboard::services::account::AccountService;
+use log::{debug, error, info, warn};
+use std::sync::Arc;
+use std::time::Duration;
 use thiserror::Error;
+use tokio::sync::Mutex as TokioMutex;
+use tokio::time;
 
 #[derive(Error, Debug)]
 pub enum SyncError {
@@ -61,9 +61,8 @@ impl SyncService {
                 let account_service = self.account_service.lock().await;
                 match account_service.list_accounts().await {
                     Ok(accounts) => {
-                        let account_emails: Vec<String> = accounts.iter()
-                            .map(|a| a.email_address.clone())
-                            .collect();
+                        let account_emails: Vec<String> =
+                            accounts.iter().map(|a| a.email_address.clone()).collect();
                         drop(account_service); // Release lock before sync
 
                         if account_emails.is_empty() {
@@ -74,7 +73,10 @@ impl SyncService {
                         // Sync all accounts
                         for account_email in account_emails {
                             if let Err(e) = self.sync_all_folders(&account_email).await {
-                                error!("Background sync failed for account {}: {}", account_email, e);
+                                error!(
+                                    "Background sync failed for account {}: {}",
+                                    account_email, e
+                                );
                             }
                         }
                     }
@@ -89,11 +91,16 @@ impl SyncService {
 
     /// Sync all folders for a specific account
     pub async fn sync_all_folders(&self, account_id: &str) -> Result<(), SyncError> {
-        info!("Starting email sync for all folders for account: {}", account_id);
+        info!(
+            "Starting email sync for all folders for account: {}",
+            account_id
+        );
 
         // Get account credentials
         let account_service = self.account_service.lock().await;
-        let account = account_service.get_account(account_id).await
+        let account = account_service
+            .get_account(account_id)
+            .await
             .map_err(|e| SyncError::AccountError(format!("Failed to get account: {}", e)))?;
         drop(account_service); // Release lock before creating session
 
@@ -102,7 +109,14 @@ impl SyncService {
             Ok(s) => {
                 // Record successful IMAP connection
                 let account_service = self.account_service.lock().await;
-                if let Err(e) = account_service.update_imap_status(account_id, true, format!("Successfully connected to {}", account.imap_host)).await {
+                if let Err(e) = account_service
+                    .update_imap_status(
+                        account_id,
+                        true,
+                        format!("Successfully connected to {}", account.imap_host),
+                    )
+                    .await
+                {
                     warn!("Failed to update IMAP connection status: {}", e);
                 }
                 drop(account_service);
@@ -111,7 +125,10 @@ impl SyncService {
             Err(e) => {
                 // Record failed IMAP connection
                 let account_service = self.account_service.lock().await;
-                if let Err(status_err) = account_service.update_imap_status(account_id, false, e.to_string()).await {
+                if let Err(status_err) = account_service
+                    .update_imap_status(account_id, false, e.to_string())
+                    .await
+                {
                     warn!("Failed to update IMAP connection status: {}", status_err);
                 }
                 drop(account_service);
@@ -124,8 +141,14 @@ impl SyncService {
         // IMPORTANT: Reuse the same session for all folders to prevent memory leak
         // Previously, each folder created its own session with separate BytePools
         for folder in folders {
-            if let Err(e) = self.sync_folder_with_session(account_id, &folder, &session).await {
-                warn!("Failed to sync folder {} for account {}: {}", folder, account_id, e);
+            if let Err(e) = self
+                .sync_folder_with_session(account_id, &folder, &session)
+                .await
+            {
+                warn!(
+                    "Failed to sync folder {} for account {}: {}",
+                    folder, account_id, e
+                );
                 // Continue with other folders even if one fails
             }
         }
@@ -135,27 +158,47 @@ impl SyncService {
             warn!("Failed to logout IMAP session: {}", e);
         }
 
-        info!("Email sync completed for all folders for account: {}", account_id);
+        info!(
+            "Email sync completed for all folders for account: {}",
+            account_id
+        );
         Ok(())
     }
 
     /// Sync a specific folder for a specific account
     pub async fn sync_folder(&self, account_id: &str, folder_name: &str) -> Result<(), SyncError> {
-        self.sync_folder_with_limit(account_id, folder_name, None).await
+        self.sync_folder_with_limit(account_id, folder_name, None)
+            .await
     }
 
     /// Sync a specific folder with a provided session (to prevent creating multiple sessions)
-    async fn sync_folder_with_session(&self, account_id: &str, folder_name: &str, session: &crate::imap::client::ImapClient<crate::imap::session::AsyncImapSessionWrapper>) -> Result<(), SyncError> {
-        self.sync_folder_with_session_and_limit(account_id, folder_name, session, None).await
+    async fn sync_folder_with_session(
+        &self,
+        account_id: &str,
+        folder_name: &str,
+        session: &crate::imap::client::ImapClient<crate::imap::session::AsyncImapSessionWrapper>,
+    ) -> Result<(), SyncError> {
+        self.sync_folder_with_session_and_limit(account_id, folder_name, session, None)
+            .await
     }
 
     /// Sync a specific folder with optional limit for a specific account
-    pub async fn sync_folder_with_limit(&self, account_id: &str, folder_name: &str, limit: Option<usize>) -> Result<(), SyncError> {
-        debug!("Syncing folder: {} for account: {} (limit: {:?})", folder_name, account_id, limit);
+    pub async fn sync_folder_with_limit(
+        &self,
+        account_id: &str,
+        folder_name: &str,
+        limit: Option<usize>,
+    ) -> Result<(), SyncError> {
+        debug!(
+            "Syncing folder: {} for account: {} (limit: {:?})",
+            folder_name, account_id, limit
+        );
 
         // Get account credentials first (need account_email for sync state)
         let account_service = self.account_service.lock().await;
-        let account = account_service.get_account(account_id).await
+        let account = account_service
+            .get_account(account_id)
+            .await
             .map_err(|e| SyncError::AccountError(format!("Failed to get account: {}", e)))?;
         drop(account_service); // Release lock before creating session
 
@@ -163,16 +206,29 @@ impl SyncService {
         let account_email = &account.email_address;
 
         // Update sync status
-        if let Err(e) = self.cache_service.update_sync_state(folder_name, 0, SyncStatus::Syncing, account_email).await {
+        if let Err(e) = self
+            .cache_service
+            .update_sync_state(folder_name, 0, SyncStatus::Syncing, account_email)
+            .await
+        {
             warn!("Failed to update sync state: {}", e);
         }
 
         // Run the actual sync, ensuring status is reset on error
-        let result = self.do_sync_folder(account_id, &account, folder_name, account_email, limit).await;
+        let result = self
+            .do_sync_folder(account_id, &account, folder_name, account_email, limit)
+            .await;
 
         if let Err(ref e) = result {
-            warn!("Sync error for folder '{}': {}, resetting status to Idle", folder_name, e);
-            if let Err(reset_err) = self.cache_service.update_sync_state(folder_name, 0, SyncStatus::Idle, account_email).await {
+            warn!(
+                "Sync error for folder '{}': {}, resetting status to Idle",
+                folder_name, e
+            );
+            if let Err(reset_err) = self
+                .cache_service
+                .update_sync_state(folder_name, 0, SyncStatus::Idle, account_email)
+                .await
+            {
                 warn!("Failed to reset sync state after error: {}", reset_err);
             }
         }
@@ -182,12 +238,26 @@ impl SyncService {
 
     /// Inner sync logic for sync_folder_with_limit. Extracted so that the
     /// caller can reset sync status to Idle on any error path.
-    async fn do_sync_folder(&self, account_id: &str, account: &crate::dashboard::services::account::Account, folder_name: &str, account_email: &str, limit: Option<usize>) -> Result<(), SyncError> {
+    async fn do_sync_folder(
+        &self,
+        account_id: &str,
+        account: &crate::dashboard::services::account::Account,
+        folder_name: &str,
+        account_email: &str,
+        limit: Option<usize>,
+    ) -> Result<(), SyncError> {
         // Try to create session and record connection status
         let session = match self.imap_factory.create_session_for_account(account).await {
             Ok(s) => {
                 let account_service = self.account_service.lock().await;
-                if let Err(e) = account_service.update_imap_status(account_id, true, format!("Successfully connected to {} for sync", account.imap_host)).await {
+                if let Err(e) = account_service
+                    .update_imap_status(
+                        account_id,
+                        true,
+                        format!("Successfully connected to {} for sync", account.imap_host),
+                    )
+                    .await
+                {
                     warn!("Failed to update IMAP connection status: {}", e);
                 }
                 drop(account_service);
@@ -195,7 +265,10 @@ impl SyncService {
             }
             Err(e) => {
                 let account_service = self.account_service.lock().await;
-                if let Err(status_err) = account_service.update_imap_status(account_id, false, e.to_string()).await {
+                if let Err(status_err) = account_service
+                    .update_imap_status(account_id, false, e.to_string())
+                    .await
+                {
                     warn!("Failed to update IMAP connection status: {}", status_err);
                 }
                 drop(account_service);
@@ -205,12 +278,25 @@ impl SyncService {
 
         session.select_folder(folder_name).await?;
 
-        if let Err(e) = self.cache_service.get_or_create_folder_for_account(folder_name, account_email).await {
-            error!("Failed to create folder {} for account {}: {}", folder_name, account_email, e);
-            return Err(SyncError::CacheError(format!("Failed to create folder: {}", e)));
+        if let Err(e) = self
+            .cache_service
+            .get_or_create_folder_for_account(folder_name, account_email)
+            .await
+        {
+            error!(
+                "Failed to create folder {} for account {}: {}",
+                folder_name, account_email, e
+            );
+            return Err(SyncError::CacheError(format!(
+                "Failed to create folder: {}",
+                e
+            )));
         }
 
-        let sync_state = self.cache_service.get_sync_state(folder_name, account_email).await
+        let sync_state = self
+            .cache_service
+            .get_sync_state(folder_name, account_email)
+            .await
             .map_err(|e| SyncError::CacheError(e.to_string()))?;
         let last_uid_synced = sync_state.and_then(|s| s.last_uid_synced).unwrap_or(0);
 
@@ -224,7 +310,16 @@ impl SyncService {
 
         if uids.is_empty() {
             debug!("No new emails to sync in folder {}", folder_name);
-            if let Err(e) = self.cache_service.update_sync_state(folder_name, last_uid_synced, SyncStatus::Idle, account_email).await {
+            if let Err(e) = self
+                .cache_service
+                .update_sync_state(
+                    folder_name,
+                    last_uid_synced,
+                    SyncStatus::Idle,
+                    account_email,
+                )
+                .await
+            {
                 warn!("Failed to update sync state: {}", e);
             }
             return Ok(());
@@ -241,7 +336,11 @@ impl SyncService {
             uids
         };
 
-        info!("Syncing {} emails in folder {}", uids_to_sync.len(), folder_name);
+        info!(
+            "Syncing {} emails in folder {}",
+            uids_to_sync.len(),
+            folder_name
+        );
 
         const FETCH_BATCH_SIZE: usize = 100;
         let mut last_uid = last_uid_synced;
@@ -250,31 +349,44 @@ impl SyncService {
             debug!("Fetching batch of {} emails", chunk.len());
             let emails = session.fetch_emails(chunk).await?;
 
-            let total_size: usize = emails.iter()
+            let total_size: usize = emails
+                .iter()
                 .map(|e| {
-                    e.body.as_ref().map_or(0, |b| b.len()) +
-                    e.text_body.as_ref().map_or(0, |s| s.len()) +
-                    e.html_body.as_ref().map_or(0, |s| s.len()) +
-                    e.mime_parts.iter().map(|p| p.body.len()).sum::<usize>() +
-                    e.attachments.iter().map(|a| a.body.len()).sum::<usize>()
+                    e.body.as_ref().map_or(0, |b| b.len())
+                        + e.text_body.as_ref().map_or(0, |s| s.len())
+                        + e.html_body.as_ref().map_or(0, |s| s.len())
+                        + e.mime_parts.iter().map(|p| p.body.len()).sum::<usize>()
+                        + e.attachments.iter().map(|a| a.body.len()).sum::<usize>()
                 })
                 .sum();
-            debug!("Fetched {} emails with total memory footprint: {} MB",
-                   emails.len(), total_size as f64 / 1024.0 / 1024.0);
+            debug!(
+                "Fetched {} emails with total memory footprint: {} MB",
+                emails.len(),
+                total_size as f64 / 1024.0 / 1024.0
+            );
 
             let fetched_uids: Vec<u32> = emails.iter().map(|e| e.uid).collect();
-            let missing_uids: Vec<u32> = chunk.iter()
+            let missing_uids: Vec<u32> = chunk
+                .iter()
                 .filter(|uid| !fetched_uids.contains(uid))
                 .copied()
                 .collect();
 
             if !missing_uids.is_empty() {
-                warn!("Retrying {} missing UIDs individually: {:?}", missing_uids.len(), missing_uids);
+                warn!(
+                    "Retrying {} missing UIDs individually: {:?}",
+                    missing_uids.len(),
+                    missing_uids
+                );
                 for uid in missing_uids {
                     match session.fetch_emails(&[uid]).await {
                         Ok(retry_emails) => {
                             for email in retry_emails {
-                                if let Err(e) = self.cache_service.cache_email(folder_name, &email, account_email).await {
+                                if let Err(e) = self
+                                    .cache_service
+                                    .cache_email(folder_name, &email, account_email)
+                                    .await
+                                {
                                     error!("Failed to cache retried email {}: {}", email.uid, e);
                                 } else {
                                     debug!("Successfully fetched and cached previously missing UID: {}", uid);
@@ -292,7 +404,11 @@ impl SyncService {
             }
 
             for email in &emails {
-                if let Err(e) = self.cache_service.cache_email(folder_name, email, account_email).await {
+                if let Err(e) = self
+                    .cache_service
+                    .cache_email(folder_name, email, account_email)
+                    .await
+                {
                     error!("Failed to cache email {}: {}", email.uid, e);
                 } else {
                     if email.uid > last_uid {
@@ -301,11 +417,18 @@ impl SyncService {
                 }
             }
 
-            debug!("Dropping email batch - should free {} MB", total_size as f64 / 1024.0 / 1024.0);
+            debug!(
+                "Dropping email batch - should free {} MB",
+                total_size as f64 / 1024.0 / 1024.0
+            );
             drop(emails);
         }
 
-        if let Err(e) = self.cache_service.update_sync_state(folder_name, last_uid, SyncStatus::Idle, account_email).await {
+        if let Err(e) = self
+            .cache_service
+            .update_sync_state(folder_name, last_uid, SyncStatus::Idle, account_email)
+            .await
+        {
             warn!("Failed to update sync state: {}", e);
         }
 
@@ -313,18 +436,33 @@ impl SyncService {
             warn!("Failed to logout IMAP session: {}", e);
         }
 
-        info!("Successfully synced {} emails in folder {}", uids_to_sync.len(), folder_name);
+        info!(
+            "Successfully synced {} emails in folder {}",
+            uids_to_sync.len(),
+            folder_name
+        );
         Ok(())
     }
 
     /// Sync a specific folder with a provided session and optional limit
     /// This is used internally to reuse the same IMAP session across folders
-    async fn sync_folder_with_session_and_limit(&self, account_id: &str, folder_name: &str, session: &crate::imap::client::ImapClient<crate::imap::session::AsyncImapSessionWrapper>, limit: Option<usize>) -> Result<(), SyncError> {
-        debug!("Syncing folder: {} for account: {} with shared session (limit: {:?})", folder_name, account_id, limit);
+    async fn sync_folder_with_session_and_limit(
+        &self,
+        account_id: &str,
+        folder_name: &str,
+        session: &crate::imap::client::ImapClient<crate::imap::session::AsyncImapSessionWrapper>,
+        limit: Option<usize>,
+    ) -> Result<(), SyncError> {
+        debug!(
+            "Syncing folder: {} for account: {} with shared session (limit: {:?})",
+            folder_name, account_id, limit
+        );
 
         // Get account credentials first (need account_email for sync state)
         let account_service = self.account_service.lock().await;
-        let account = account_service.get_account(account_id).await
+        let account = account_service
+            .get_account(account_id)
+            .await
             .map_err(|e| SyncError::AccountError(format!("Failed to get account: {}", e)))?;
         drop(account_service); // Release lock
 
@@ -332,16 +470,29 @@ impl SyncService {
         let account_email = &account.email_address;
 
         // Update sync status
-        if let Err(e) = self.cache_service.update_sync_state(folder_name, 0, SyncStatus::Syncing, account_email).await {
+        if let Err(e) = self
+            .cache_service
+            .update_sync_state(folder_name, 0, SyncStatus::Syncing, account_email)
+            .await
+        {
             warn!("Failed to update sync state: {}", e);
         }
 
         // Run the actual sync, ensuring status is reset on error
-        let result = self.do_sync_folder_with_session(folder_name, account_email, session, limit).await;
+        let result = self
+            .do_sync_folder_with_session(folder_name, account_email, session, limit)
+            .await;
 
         if let Err(ref e) = result {
-            warn!("Sync error for folder '{}' (shared session): {}, resetting status to Idle", folder_name, e);
-            if let Err(reset_err) = self.cache_service.update_sync_state(folder_name, 0, SyncStatus::Idle, account_email).await {
+            warn!(
+                "Sync error for folder '{}' (shared session): {}, resetting status to Idle",
+                folder_name, e
+            );
+            if let Err(reset_err) = self
+                .cache_service
+                .update_sync_state(folder_name, 0, SyncStatus::Idle, account_email)
+                .await
+            {
                 warn!("Failed to reset sync state after error: {}", reset_err);
             }
         }
@@ -351,15 +502,34 @@ impl SyncService {
 
     /// Inner sync logic for sync_folder_with_session_and_limit. Extracted so
     /// the caller can reset sync status to Idle on any error path.
-    async fn do_sync_folder_with_session(&self, folder_name: &str, account_email: &str, session: &crate::imap::client::ImapClient<crate::imap::session::AsyncImapSessionWrapper>, limit: Option<usize>) -> Result<(), SyncError> {
+    async fn do_sync_folder_with_session(
+        &self,
+        folder_name: &str,
+        account_email: &str,
+        session: &crate::imap::client::ImapClient<crate::imap::session::AsyncImapSessionWrapper>,
+        limit: Option<usize>,
+    ) -> Result<(), SyncError> {
         session.select_folder(folder_name).await?;
 
-        if let Err(e) = self.cache_service.get_or_create_folder_for_account(folder_name, account_email).await {
-            error!("Failed to create folder {} for account {}: {}", folder_name, account_email, e);
-            return Err(SyncError::CacheError(format!("Failed to create folder: {}", e)));
+        if let Err(e) = self
+            .cache_service
+            .get_or_create_folder_for_account(folder_name, account_email)
+            .await
+        {
+            error!(
+                "Failed to create folder {} for account {}: {}",
+                folder_name, account_email, e
+            );
+            return Err(SyncError::CacheError(format!(
+                "Failed to create folder: {}",
+                e
+            )));
         }
 
-        let sync_state = self.cache_service.get_sync_state(folder_name, account_email).await
+        let sync_state = self
+            .cache_service
+            .get_sync_state(folder_name, account_email)
+            .await
             .map_err(|e| SyncError::CacheError(e.to_string()))?;
         let last_uid_synced = sync_state.and_then(|s| s.last_uid_synced).unwrap_or(0);
 
@@ -373,7 +543,16 @@ impl SyncService {
 
         if uids.is_empty() {
             debug!("No new emails to sync in folder {}", folder_name);
-            if let Err(e) = self.cache_service.update_sync_state(folder_name, last_uid_synced, SyncStatus::Idle, account_email).await {
+            if let Err(e) = self
+                .cache_service
+                .update_sync_state(
+                    folder_name,
+                    last_uid_synced,
+                    SyncStatus::Idle,
+                    account_email,
+                )
+                .await
+            {
                 warn!("Failed to update sync state: {}", e);
             }
             return Ok(());
@@ -390,7 +569,11 @@ impl SyncService {
             uids
         };
 
-        info!("Syncing {} emails in folder {}", uids_to_sync.len(), folder_name);
+        info!(
+            "Syncing {} emails in folder {}",
+            uids_to_sync.len(),
+            folder_name
+        );
 
         const FETCH_BATCH_SIZE: usize = 100;
         let mut last_uid = last_uid_synced;
@@ -399,31 +582,44 @@ impl SyncService {
             debug!("Fetching batch of {} emails", chunk.len());
             let emails = session.fetch_emails(chunk).await?;
 
-            let total_size: usize = emails.iter()
+            let total_size: usize = emails
+                .iter()
                 .map(|e| {
-                    e.body.as_ref().map_or(0, |b| b.len()) +
-                    e.text_body.as_ref().map_or(0, |s| s.len()) +
-                    e.html_body.as_ref().map_or(0, |s| s.len()) +
-                    e.mime_parts.iter().map(|p| p.body.len()).sum::<usize>() +
-                    e.attachments.iter().map(|a| a.body.len()).sum::<usize>()
+                    e.body.as_ref().map_or(0, |b| b.len())
+                        + e.text_body.as_ref().map_or(0, |s| s.len())
+                        + e.html_body.as_ref().map_or(0, |s| s.len())
+                        + e.mime_parts.iter().map(|p| p.body.len()).sum::<usize>()
+                        + e.attachments.iter().map(|a| a.body.len()).sum::<usize>()
                 })
                 .sum();
-            debug!("Fetched {} emails with total memory footprint: {} MB",
-                   emails.len(), total_size as f64 / 1024.0 / 1024.0);
+            debug!(
+                "Fetched {} emails with total memory footprint: {} MB",
+                emails.len(),
+                total_size as f64 / 1024.0 / 1024.0
+            );
 
             let fetched_uids: Vec<u32> = emails.iter().map(|e| e.uid).collect();
-            let missing_uids: Vec<u32> = chunk.iter()
+            let missing_uids: Vec<u32> = chunk
+                .iter()
                 .filter(|uid| !fetched_uids.contains(uid))
                 .copied()
                 .collect();
 
             if !missing_uids.is_empty() {
-                warn!("Retrying {} missing UIDs individually: {:?}", missing_uids.len(), missing_uids);
+                warn!(
+                    "Retrying {} missing UIDs individually: {:?}",
+                    missing_uids.len(),
+                    missing_uids
+                );
                 for uid in missing_uids {
                     match session.fetch_emails(&[uid]).await {
                         Ok(retry_emails) => {
                             for email in retry_emails {
-                                if let Err(e) = self.cache_service.cache_email(folder_name, &email, account_email).await {
+                                if let Err(e) = self
+                                    .cache_service
+                                    .cache_email(folder_name, &email, account_email)
+                                    .await
+                                {
                                     error!("Failed to cache retried email {}: {}", email.uid, e);
                                 } else {
                                     debug!("Successfully fetched and cached previously missing UID: {}", uid);
@@ -441,7 +637,11 @@ impl SyncService {
             }
 
             for email in &emails {
-                if let Err(e) = self.cache_service.cache_email(folder_name, email, account_email).await {
+                if let Err(e) = self
+                    .cache_service
+                    .cache_email(folder_name, email, account_email)
+                    .await
+                {
                     error!("Failed to cache email {}: {}", email.uid, e);
                 } else {
                     if email.uid > last_uid {
@@ -450,33 +650,56 @@ impl SyncService {
                 }
             }
 
-            debug!("Dropping email batch - should free {} MB", total_size as f64 / 1024.0 / 1024.0);
+            debug!(
+                "Dropping email batch - should free {} MB",
+                total_size as f64 / 1024.0 / 1024.0
+            );
             drop(emails);
         }
 
-        if let Err(e) = self.cache_service.update_sync_state(folder_name, last_uid, SyncStatus::Idle, account_email).await {
+        if let Err(e) = self
+            .cache_service
+            .update_sync_state(folder_name, last_uid, SyncStatus::Idle, account_email)
+            .await
+        {
             warn!("Failed to update sync state: {}", e);
         }
 
-        info!("Successfully synced {} emails in folder {}", uids_to_sync.len(), folder_name);
+        info!(
+            "Successfully synced {} emails in folder {}",
+            uids_to_sync.len(),
+            folder_name
+        );
         Ok(())
     }
 
     /// Perform a full sync of a folder (clear cache and re-download) for a specific account
     /// Resync only FLAGS from the server for all cached emails in a folder.
     /// This is lightweight (no body download) and fixes stale read/unread state.
-    pub async fn sync_flags_for_folder(&self, account_id: &str, folder_name: &str) -> Result<(), SyncError> {
-        info!("Resyncing flags for folder: {} account: {}", folder_name, account_id);
+    pub async fn sync_flags_for_folder(
+        &self,
+        account_id: &str,
+        folder_name: &str,
+    ) -> Result<(), SyncError> {
+        info!(
+            "Resyncing flags for folder: {} account: {}",
+            folder_name, account_id
+        );
 
         let account_service = self.account_service.lock().await;
-        let account = account_service.get_account(account_id).await
+        let account = account_service
+            .get_account(account_id)
+            .await
             .map_err(|e| SyncError::AccountError(format!("Failed to get account: {}", e)))?;
         drop(account_service);
 
         let account_email = &account.email_address;
 
         // Get all cached UIDs for this folder
-        let cached_uids = self.cache_service.get_cached_uids(folder_name, account_email).await
+        let cached_uids = self
+            .cache_service
+            .get_cached_uids(folder_name, account_email)
+            .await
             .map_err(|e| SyncError::CacheError(e.to_string()))?;
 
         if cached_uids.is_empty() {
@@ -485,7 +708,10 @@ impl SyncService {
         }
 
         // Create IMAP session
-        let session = self.imap_factory.create_session_for_account(&account).await?;
+        let session = self
+            .imap_factory
+            .create_session_for_account(&account)
+            .await?;
         session.select_folder(folder_name).await?;
 
         // Fetch flags in batches of 500 (FLAGS-only is very lightweight)
@@ -495,7 +721,11 @@ impl SyncService {
         for chunk in cached_uids.chunks(FLAG_BATCH_SIZE) {
             let flag_results = session.fetch_flags(chunk).await?;
             for (uid, flags) in flag_results {
-                if let Err(e) = self.cache_service.update_email_flags(folder_name, uid, &flags, account_email).await {
+                if let Err(e) = self
+                    .cache_service
+                    .update_email_flags(folder_name, uid, &flags, account_email)
+                    .await
+                {
                     warn!("Failed to update flags for UID {}: {}", uid, e);
                 } else {
                     updated += 1;
@@ -503,29 +733,55 @@ impl SyncService {
             }
         }
 
-        info!("Flag resync complete: updated {}/{} emails in {}", updated, cached_uids.len(), folder_name);
+        info!(
+            "Flag resync complete: updated {}/{} emails in {}",
+            updated,
+            cached_uids.len(),
+            folder_name
+        );
         Ok(())
     }
 
-    pub async fn full_sync_folder(&self, account_id: &str, folder_name: &str) -> Result<(), SyncError> {
-        info!("Performing full sync of folder: {} for account: {}", folder_name, account_id);
+    pub async fn full_sync_folder(
+        &self,
+        account_id: &str,
+        folder_name: &str,
+    ) -> Result<(), SyncError> {
+        info!(
+            "Performing full sync of folder: {} for account: {}",
+            folder_name, account_id
+        );
 
         // Clear the folder cache
-        if let Err(e) = self.cache_service.clear_folder_cache(folder_name, account_id).await {
+        if let Err(e) = self
+            .cache_service
+            .clear_folder_cache(folder_name, account_id)
+            .await
+        {
             error!("Failed to clear folder cache: {}", e);
         }
 
         // Perform full sync without limit
-        self.sync_folder_with_limit(account_id, folder_name, None).await
+        self.sync_folder_with_limit(account_id, folder_name, None)
+            .await
     }
 
     /// Handle IMAP IDLE for real-time updates for a specific account
-    pub async fn start_idle_monitoring(&self, account_id: &str, folder_name: &str) -> Result<(), SyncError> {
-        debug!("Starting IDLE monitoring for folder: {} for account: {}", folder_name, account_id);
+    pub async fn start_idle_monitoring(
+        &self,
+        account_id: &str,
+        folder_name: &str,
+    ) -> Result<(), SyncError> {
+        debug!(
+            "Starting IDLE monitoring for folder: {} for account: {}",
+            folder_name, account_id
+        );
 
         // Get account credentials
         let account_service = self.account_service.lock().await;
-        let account = account_service.get_account(account_id).await
+        let account = account_service
+            .get_account(account_id)
+            .await
             .map_err(|e| SyncError::AccountError(format!("Failed to get account: {}", e)))?;
         drop(account_service); // Release lock before creating session
 
@@ -534,7 +790,14 @@ impl SyncService {
             Ok(s) => {
                 // Record successful IMAP connection
                 let account_service = self.account_service.lock().await;
-                if let Err(e) = account_service.update_imap_status(account_id, true, format!("Successfully connected to {} for IDLE", account.imap_host)).await {
+                if let Err(e) = account_service
+                    .update_imap_status(
+                        account_id,
+                        true,
+                        format!("Successfully connected to {} for IDLE", account.imap_host),
+                    )
+                    .await
+                {
                     warn!("Failed to update IMAP connection status: {}", e);
                 }
                 drop(account_service);
@@ -543,7 +806,10 @@ impl SyncService {
             Err(e) => {
                 // Record failed IMAP connection
                 let account_service = self.account_service.lock().await;
-                if let Err(status_err) = account_service.update_imap_status(account_id, false, e.to_string()).await {
+                if let Err(status_err) = account_service
+                    .update_imap_status(account_id, false, e.to_string())
+                    .await
+                {
                     warn!("Failed to update IMAP connection status: {}", status_err);
                 }
                 drop(account_service);

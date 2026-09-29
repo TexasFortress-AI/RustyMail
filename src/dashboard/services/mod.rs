@@ -7,27 +7,24 @@
 //
 // This module contains the core services for the dashboard functionality:
 // - Metrics collection
-// - Client management 
+// - Client management
 // - Configuration management
 // - AI assistant integration
 
-use thiserror::Error;
-use std::sync::Arc;
 use actix_web::web;
-use log::{info, error, warn, debug};
-use actix_web::{web::Data};
+use actix_web::web::Data;
+use log::{debug, error, info, warn};
+use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::Mutex as TokioMutex;
 // Import CloneableImapSessionFactory from prelude
-use crate::prelude::CloneableImapSessionFactory;
 use crate::connection_pool::ConnectionPool;
+use crate::prelude::CloneableImapSessionFactory;
 use sqlx::SqlitePool;
 
 pub mod account;
 pub mod account_store;
 pub mod ai;
-pub mod encryption;
-pub mod oauth_config;
-pub mod oauth_service;
 pub mod attachment_storage;
 pub mod autodiscovery;
 pub mod cache;
@@ -36,49 +33,72 @@ pub mod config;
 pub mod connection_status;
 pub mod connection_status_store;
 pub mod email;
-pub mod events;
+pub mod encryption;
 pub mod event_integration;
+pub mod events;
 pub mod health;
+pub mod jobs;
 pub mod metrics;
+pub mod oauth_config;
+pub mod oauth_service;
 pub mod outbox_queue;
 pub mod outbox_worker;
 pub mod smtp;
 pub mod smtp_auth;
 pub mod sync;
 pub mod token_refresh_worker;
-pub mod jobs;
 
 // Define or import error types if they exist
-#[derive(Error, Debug)] pub enum MetricsError { #[error("Metrics collection failed: {0}")] CollectionFailed(String), #[error("Metrics storage error: {0}")] StorageError(String) }
-#[derive(Error, Debug)] pub enum ClientError { #[error("Client not found: {0}")] NotFound(String), #[error("Client operation failed: {0}")] OperationFailed(String) }
-#[derive(Error, Debug)] pub enum ConfigError { #[error("Configuration loading failed: {0}")] LoadError(String), #[error("Configuration update failed: {0}")] UpdateError(String) }
+#[derive(Error, Debug)]
+pub enum MetricsError {
+    #[error("Metrics collection failed: {0}")]
+    CollectionFailed(String),
+    #[error("Metrics storage error: {0}")]
+    StorageError(String),
+}
+#[derive(Error, Debug)]
+pub enum ClientError {
+    #[error("Client not found: {0}")]
+    NotFound(String),
+    #[error("Client operation failed: {0}")]
+    OperationFailed(String),
+}
+#[derive(Error, Debug)]
+pub enum ConfigError {
+    #[error("Configuration loading failed: {0}")]
+    LoadError(String),
+    #[error("Configuration update failed: {0}")]
+    UpdateError(String),
+}
 
 // Import API models that might be needed
 // Removed unresolved ImapConfiguration import
-// use crate::dashboard::api::models::{ImapConfiguration}; 
+// use crate::dashboard::api::models::{ImapConfiguration};
 
 // Re-export main service types for convenience
-pub use account::{AccountService, Account, ProviderTemplate, AutoConfigResult};
-pub use account_store::{AccountStore, StoredAccount, ImapConfig as StoredImapConfig, SmtpConfig as StoredSmtpConfig};
-pub use attachment_storage::{AttachmentInfo, AttachmentError};
-pub use metrics::{MetricsService};
-pub use cache::{CacheService, CacheConfig};
-pub use clients::{ClientManager};
-pub use config::{ConfigService};
-pub use connection_status::{ConnectionStatus, ConnectionAttempt, AccountConnectionStatus};
-pub use ai::{AiService};
-pub use email::{EmailService};
-pub use events::{EventBus, DashboardEvent};
-pub use health::{HealthService, HealthReport, HealthStatus};
-pub use outbox_queue::{OutboxQueueService, OutboxQueueItem, OutboxStatus};
-pub use outbox_worker::{OutboxWorker};
-pub use token_refresh_worker::TokenRefreshWorker;
-pub use smtp::{SmtpService, SendEmailRequest, SendEmailResponse, SmtpError};
-pub use sync::{SyncService};
-pub use jobs::{JobRecord, JobStatus};
+pub use account::{Account, AccountService, AutoConfigResult, ProviderTemplate};
+pub use account_store::{
+    AccountStore, ImapConfig as StoredImapConfig, SmtpConfig as StoredSmtpConfig, StoredAccount,
+};
+pub use ai::AiService;
+pub use attachment_storage::{AttachmentError, AttachmentInfo};
+pub use cache::{CacheConfig, CacheService};
+pub use clients::ClientManager;
+pub use config::ConfigService;
+pub use connection_status::{AccountConnectionStatus, ConnectionAttempt, ConnectionStatus};
+pub use email::EmailService;
 pub use encryption::{CredentialEncryption, EncryptionError};
+pub use events::{DashboardEvent, EventBus};
+pub use health::{HealthReport, HealthService, HealthStatus};
+pub use jobs::{JobRecord, JobStatus};
+pub use metrics::MetricsService;
 pub use oauth_config::{OAuthConfig, OAuthProviderConfig};
-pub use oauth_service::{OAuthService, OAuthError, OAuthTokens, OAuthTokenResponse};
+pub use oauth_service::{OAuthError, OAuthService, OAuthTokenResponse, OAuthTokens};
+pub use outbox_queue::{OutboxQueueItem, OutboxQueueService, OutboxStatus};
+pub use outbox_worker::OutboxWorker;
+pub use smtp::{SendEmailRequest, SendEmailResponse, SmtpError, SmtpService};
+pub use sync::SyncService;
+pub use token_refresh_worker::TokenRefreshWorker;
 
 // Import the types that were causing privacy issues directly from their source
 // Removed unresolved ImapConfiguration import
@@ -132,7 +152,10 @@ pub async fn init(
     info!("Initializing dashboard services...");
 
     let metrics_interval_duration = Duration::from_secs(5); // Default to 5 seconds interval
-    info!("Dashboard metrics interval: {} seconds", metrics_interval_duration.as_secs());
+    info!(
+        "Dashboard metrics interval: {} seconds",
+        metrics_interval_duration.as_secs()
+    );
 
     let _http_client = Client::new(); // Unused for now
     let client_manager = Arc::new(ClientManager::new(metrics_interval_duration));
@@ -168,7 +191,10 @@ pub async fn init(
     // Initialize Cache Service (this runs database migrations)
     let mut cache_service = CacheService::new(cache_config);
     if let Err(e) = cache_service.initialize().await {
-        warn!("Failed to initialize cache service: {}. Running without cache.", e);
+        warn!(
+            "Failed to initialize cache service: {}. Running without cache.",
+            e
+        );
     }
     let cache_service = Arc::new(cache_service);
 
@@ -188,12 +214,18 @@ pub async fn init(
         .await
         .expect("Failed to create database pool for account service");
 
-    if let Err(e) = account_service_temp.initialize(account_db_pool.clone()).await {
+    if let Err(e) = account_service_temp
+        .initialize(account_db_pool.clone())
+        .await
+    {
         error!("Failed to initialize account service: {}", e);
     }
 
     // Auto-create account from environment variables if none exist
-    if let Err(e) = account_service_temp.ensure_default_account_from_env(&config).await {
+    if let Err(e) = account_service_temp
+        .ensure_default_account_from_env(&config)
+        .await
+    {
         warn!("Failed to create default account from environment: {}", e);
     }
 
@@ -201,12 +233,9 @@ pub async fn init(
 
     // Initialize Email Service with cache and account service
     let email_service = Arc::new(
-        EmailService::new(
-            imap_session_factory.clone(),
-            connection_pool.clone(),
-        )
-        .with_cache(cache_service.clone())
-        .with_account_service(account_service.clone())
+        EmailService::new(imap_session_factory.clone(), connection_pool.clone())
+            .with_cache(cache_service.clone())
+            .with_account_service(account_service.clone()),
     );
 
     // Clone the pool before using it
@@ -241,7 +270,15 @@ pub async fn init(
     let ollama_base_url = std::env::var("OLLAMA_BASE_URL").ok();
     let api_key = std::env::var("RUSTYMAIL_API_KEY").ok();
 
-    let ai_service = match AiService::new(openai_api_key, openrouter_api_key, morpheus_api_key, ollama_base_url, api_key).await {
+    let ai_service = match AiService::new(
+        openai_api_key,
+        openrouter_api_key,
+        morpheus_api_key,
+        ollama_base_url,
+        api_key,
+    )
+    .await
+    {
         Ok(mut service) => {
             // Set the email service so AI can fetch real emails
             service.set_email_service(email_service.clone());
@@ -262,9 +299,12 @@ pub async fn init(
             }
 
             Arc::new(service)
-        },
+        }
         Err(e) => {
-            warn!("Failed to initialize AI service with API keys: {}. Using mock service.", e);
+            warn!(
+                "Failed to initialize AI service with API keys: {}. Using mock service.",
+                e
+            );
             Arc::new(AiService::new_mock())
         }
     };
@@ -277,10 +317,7 @@ pub async fn init(
     let event_bus = Arc::new(EventBus::new());
 
     // Create SSE manager and configure it with event bus
-    let mut sse_manager = SseManager::new(
-        metrics_service.clone(),
-        client_manager.clone(),
-    );
+    let mut sse_manager = SseManager::new(metrics_service.clone(), client_manager.clone());
     sse_manager.set_event_bus(Arc::clone(&event_bus));
     let sse_manager = Arc::new(sse_manager);
 
@@ -288,7 +325,7 @@ pub async fn init(
     let health_service = Arc::new(
         HealthService::new()
             .with_event_bus(Arc::clone(&event_bus))
-            .with_connection_pool(Arc::clone(&connection_pool))
+            .with_connection_pool(Arc::clone(&connection_pool)),
     );
 
     // Initialize job persistence service
@@ -307,7 +344,11 @@ pub async fn init(
     match job_persistence.get_resumable_jobs().await {
         Ok(resumable_jobs) => {
             for persisted in resumable_jobs {
-                info!("Found resumable job: {} - {}", persisted.job_id, persisted.instruction.as_deref().unwrap_or(""));
+                info!(
+                    "Found resumable job: {} - {}",
+                    persisted.job_id,
+                    persisted.instruction.as_deref().unwrap_or("")
+                );
                 // Create in-memory record for resumable jobs
                 let job_record = JobRecord {
                     job_id: persisted.job_id.clone(),

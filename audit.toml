@@ -1,0 +1,20 @@
+# Prefer upgrading deps. Ignores only when a safe upgrade is unavailable or requires
+# a large breaking migration. Rationales:
+# - RUSTSEC-2023-0071: no fixed rsa release; transitive via sqlx-mysql (SQLite-only)
+# - RUSTSEC-2024-0363: sqlx 0.8 breaking; advisory is MySQL binary protocol
+# - RUSTSEC-2026-0189: rmcp 1.x breaking; MCP localhost-bound mitigates DNS rebinding
+# - RUSTSEC-2026-0258: h2 0.3 pinned by actix-http; h2 0.4 path already upgraded
+# - RUSTSEC-2024-0421: idna 0.5 via oauth2/reqwest 0.11
+# - RUSTSEC-2026-0104/0098/0099: rustls-webpki 0.101 only on oauth2/rustls 0.21 path
+
+[advisories]
+ignore = [
+    "RUSTSEC-2023-0071",
+    "RUSTSEC-2024-0363",
+    "RUSTSEC-2026-0189",
+    "RUSTSEC-2026-0258",
+    "RUSTSEC-2024-0421",
+    "RUSTSEC-2026-0104",
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+]

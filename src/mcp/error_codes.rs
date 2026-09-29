@@ -24,10 +24,10 @@ pub enum ErrorCode {
     MethodNotFound = -32601,
     InvalidParams = -32602,
     InternalError = -32603,
-    
+
     // IMAP-specific error codes (implementation-defined range)
     ImapConnectionError = -32000,
-    ImapAuthError = -32001, 
+    ImapAuthError = -32001,
     ImapFolderNotFound = -32002,
     ImapFolderExists = -32003,
     ImapEmailNotFound = -32004,
@@ -49,14 +49,14 @@ pub enum ErrorCode {
     McpMethodNotFound = -32052,
     McpInternalError = -32053,
     McpParseError = -32054,
-    
+
     // Session errors
     SessionNotFound = -32080,
     SessionCreationFailed = -32081,
     SessionAccessDenied = -32082,
-    
+
     // General errors
-    UnknownError = -32099
+    UnknownError = -32099,
 }
 
 impl ErrorCode {
@@ -69,7 +69,7 @@ impl ErrorCode {
             ErrorCode::MethodNotFound => "Method not found",
             ErrorCode::InvalidParams => "Invalid params",
             ErrorCode::InternalError => "Internal error",
-            
+
             // IMAP-specific error messages
             ErrorCode::ImapConnectionError => "IMAP: Connection error",
             ErrorCode::ImapAuthError => "IMAP: Authentication error",
@@ -94,12 +94,12 @@ impl ErrorCode {
             ErrorCode::McpMethodNotFound => "MCP: Method not found",
             ErrorCode::McpInternalError => "MCP: Internal error",
             ErrorCode::McpParseError => "MCP: Parse error",
-            
+
             // Session error messages
             ErrorCode::SessionNotFound => "Session not found",
             ErrorCode::SessionCreationFailed => "Failed to create session",
             ErrorCode::SessionAccessDenied => "Session access denied",
-            
+
             // General error messages
             ErrorCode::UnknownError => "Unknown error",
         }
@@ -111,4 +111,4 @@ pub const PARSE_ERROR: i32 = ErrorCode::ParseError as i32;
 pub const INVALID_REQUEST: i32 = ErrorCode::InvalidRequest as i32;
 pub const METHOD_NOT_FOUND: i32 = ErrorCode::MethodNotFound as i32;
 pub const INVALID_PARAMS: i32 = ErrorCode::InvalidParams as i32;
-pub const INTERNAL_ERROR: i32 = ErrorCode::InternalError as i32; 
+pub const INTERNAL_ERROR: i32 = ErrorCode::InternalError as i32;

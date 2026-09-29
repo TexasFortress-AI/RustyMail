@@ -3,11 +3,12 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use hickory_resolver::proto::rr::{rdata::SRV, RData};
 use hickory_resolver::TokioResolver;
-use log::{info, debug, warn, error};
+use log::{debug, info, warn};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
-use reqwest::Client;
 
 #[derive(Error, Debug)]
 pub enum AutodiscoveryError {
@@ -46,12 +47,13 @@ impl AutodiscoveryService {
         // Use default system resolver configuration with Tokio runtime
         let resolver = TokioResolver::builder_tokio()
             .map_err(|e| AutodiscoveryError::DnsError(e.to_string()))?
-            .build();
+            .build()
+            .map_err(|e| AutodiscoveryError::DnsError(e.to_string()))?;
 
         let http_client = Client::builder()
             .timeout(std::time::Duration::from_secs(10))
             .build()
-            .map_err(|e| AutodiscoveryError::HttpError(e))?;
+            .map_err(AutodiscoveryError::HttpError)?;
 
         Ok(Self {
             resolver,
@@ -82,10 +84,21 @@ impl AutodiscoveryService {
     }
 
     fn extract_domain(&self, email: &str) -> Result<String, AutodiscoveryError> {
-        email.split('@')
+        email
+            .split('@')
             .nth(1)
             .map(|s| s.to_string())
             .ok_or_else(|| AutodiscoveryError::InvalidEmail(email.to_string()))
+    }
+
+    fn first_srv(lookup: &hickory_resolver::lookup::Lookup) -> Option<&SRV> {
+        lookup
+            .answers()
+            .iter()
+            .find_map(|record| match &record.data {
+                RData::SRV(srv) => Some(srv),
+                _ => None,
+            })
     }
 
     /// Try RFC 6186 DNS SRV record lookup
@@ -100,12 +113,15 @@ impl AutodiscoveryService {
 
         match imap_result {
             Ok(srv_records) => {
-                if let Some(srv) = srv_records.iter().next() {
-                    debug!("Found IMAPS SRV record: target={}, port={}", srv.target(), srv.port());
+                if let Some(srv) = Self::first_srv(&srv_records) {
+                    debug!(
+                        "Found IMAPS SRV record: target={}, port={}",
+                        srv.target, srv.port
+                    );
 
                     let mut config = EmailConfig {
-                        imap_host: srv.target().to_string().trim_end_matches('.').to_string(),
-                        imap_port: srv.port(),
+                        imap_host: srv.target.to_string().trim_end_matches('.').to_string(),
+                        imap_port: srv.port,
                         imap_use_tls: true, // IMAPS uses implicit TLS
                         imap_use_starttls: false,
                         smtp_host: None,
@@ -117,12 +133,22 @@ impl AutodiscoveryService {
 
                     // Try to find SMTP submission service
                     if let Ok(smtp_records) = self.resolver.srv_lookup(&smtp_record).await {
-                        if let Some(smtp_srv) = smtp_records.iter().next() {
-                            debug!("Found SMTP submission SRV record: target={}, port={}", smtp_srv.target(), smtp_srv.port());
-                            config.smtp_host = Some(smtp_srv.target().to_string().trim_end_matches('.').to_string());
-                            config.smtp_port = Some(smtp_srv.port());
-                            config.smtp_use_tls = Some(smtp_srv.port() == 465); // Port 465 uses implicit TLS
-                            config.smtp_use_starttls = Some(smtp_srv.port() == 587); // Port 587 uses STARTTLS
+                        if let Some(smtp_srv) = Self::first_srv(&smtp_records) {
+                            debug!(
+                                "Found SMTP submission SRV record: target={}, port={}",
+                                smtp_srv.target, smtp_srv.port
+                            );
+                            config.smtp_host = Some(
+                                smtp_srv
+                                    .target
+                                    .to_string()
+                                    .trim_end_matches('.')
+                                    .to_string(),
+                            );
+                            config.smtp_port = Some(smtp_srv.port);
+                            config.smtp_use_tls = Some(smtp_srv.port == 465); // Port 465 uses implicit TLS
+                            config.smtp_use_starttls = Some(smtp_srv.port == 587);
+                            // Port 587 uses STARTTLS
                         }
                     }
 
@@ -135,14 +161,17 @@ impl AutodiscoveryService {
                 // Fallback: try IMAP with STARTTLS
                 let imap_starttls_record = format!("_imap._tcp.{}", domain);
                 if let Ok(srv_records) = self.resolver.srv_lookup(&imap_starttls_record).await {
-                    if let Some(srv) = srv_records.iter().next() {
-                        debug!("Found IMAP SRV record: target={}, port={}", srv.target(), srv.port());
+                    if let Some(srv) = Self::first_srv(&srv_records) {
+                        debug!(
+                            "Found IMAP SRV record: target={}, port={}",
+                            srv.target, srv.port
+                        );
 
                         let mut config = EmailConfig {
-                            imap_host: srv.target().to_string().trim_end_matches('.').to_string(),
-                            imap_port: srv.port(),
-                            imap_use_tls: srv.port() == 993, // Port 993 = IMAPS
-                            imap_use_starttls: srv.port() != 993,
+                            imap_host: srv.target.to_string().trim_end_matches('.').to_string(),
+                            imap_port: srv.port,
+                            imap_use_tls: srv.port == 993, // Port 993 = IMAPS
+                            imap_use_starttls: srv.port != 993,
                             smtp_host: None,
                             smtp_port: None,
                             smtp_use_tls: None,
@@ -152,11 +181,17 @@ impl AutodiscoveryService {
 
                         // Try to find SMTP submission service
                         if let Ok(smtp_records) = self.resolver.srv_lookup(&smtp_record).await {
-                            if let Some(smtp_srv) = smtp_records.iter().next() {
-                                config.smtp_host = Some(smtp_srv.target().to_string().trim_end_matches('.').to_string());
-                                config.smtp_port = Some(smtp_srv.port());
-                                config.smtp_use_tls = Some(smtp_srv.port() == 465);
-                                config.smtp_use_starttls = Some(smtp_srv.port() == 587);
+                            if let Some(smtp_srv) = Self::first_srv(&smtp_records) {
+                                config.smtp_host = Some(
+                                    smtp_srv
+                                        .target
+                                        .to_string()
+                                        .trim_end_matches('.')
+                                        .to_string(),
+                                );
+                                config.smtp_port = Some(smtp_srv.port);
+                                config.smtp_use_tls = Some(smtp_srv.port == 465);
+                                config.smtp_use_starttls = Some(smtp_srv.port == 587);
                             }
                         }
 
@@ -166,23 +201,39 @@ impl AutodiscoveryService {
             }
         }
 
-        Err(AutodiscoveryError::DnsError(format!("No SRV records found for {}", domain)))
+        Err(AutodiscoveryError::DnsError(format!(
+            "No SRV records found for {}",
+            domain
+        )))
     }
 
     /// Try Mozilla Autoconfig protocol
-    async fn try_mozilla_autoconfig(&self, email: &str, domain: &str) -> Result<EmailConfig, AutodiscoveryError> {
+    async fn try_mozilla_autoconfig(
+        &self,
+        email: &str,
+        domain: &str,
+    ) -> Result<EmailConfig, AutodiscoveryError> {
         debug!("Attempting Mozilla Autoconfig for domain: {}", domain);
 
         // Try autoconfig URLs in order of preference as per Mozilla spec
         let urls = vec![
             // 1. Domain-hosted autoconfig (HTTPS)
-            format!("https://autoconfig.{}/mail/config-v1.1.xml?emailaddress={}", domain, email),
+            format!(
+                "https://autoconfig.{}/mail/config-v1.1.xml?emailaddress={}",
+                domain, email
+            ),
             // 2. Well-known location (HTTPS)
-            format!("https://{}/.well-known/autoconfig/mail/config-v1.1.xml?emailaddress={}", domain, email),
+            format!(
+                "https://{}/.well-known/autoconfig/mail/config-v1.1.xml?emailaddress={}",
+                domain, email
+            ),
             // 3. Mozilla ISPDB (centralized database that Thunderbird uses)
             format!("https://autoconfig.thunderbird.net/v1.1/{}", domain),
             // 4. Fallback to HTTP if HTTPS fails (less secure but some providers only support HTTP)
-            format!("http://autoconfig.{}/mail/config-v1.1.xml?emailaddress={}", domain, email),
+            format!(
+                "http://autoconfig.{}/mail/config-v1.1.xml?emailaddress={}",
+                domain, email
+            ),
         ];
 
         for url in urls {
@@ -202,7 +253,11 @@ impl AutodiscoveryService {
                     }
                 }
                 Ok(response) => {
-                    debug!("Autoconfig URL {} returned status: {}", url, response.status());
+                    debug!(
+                        "Autoconfig URL {} returned status: {}",
+                        url,
+                        response.status()
+                    );
                 }
                 Err(e) => {
                     debug!("Failed to fetch autoconfig from {}: {}", url, e);
@@ -244,6 +299,7 @@ impl AutodiscoveryService {
         }
 
         #[derive(Debug, Deserialize)]
+        #[allow(dead_code)]
         struct OutgoingServer {
             #[serde(rename = "@type")]
             server_type: String,
@@ -254,11 +310,13 @@ impl AutodiscoveryService {
             username: String,
         }
 
-        let config: ClientConfig = from_str(xml)
-            .map_err(|e| AutodiscoveryError::XmlError(e.to_string()))?;
+        let config: ClientConfig =
+            from_str(xml).map_err(|e| AutodiscoveryError::XmlError(e.to_string()))?;
 
         // Find IMAP server (prefer IMAP over POP3)
-        let imap_server = config.email_provider.incoming_servers
+        let imap_server = config
+            .email_provider
+            .incoming_servers
             .iter()
             .find(|s| s.server_type.to_lowercase() == "imap")
             .ok_or_else(|| AutodiscoveryError::XmlError("No IMAP server found".to_string()))?;
@@ -302,8 +360,14 @@ mod tests {
     #[tokio::test]
     async fn test_extract_domain() {
         let service = AutodiscoveryService::new().unwrap();
-        assert_eq!(service.extract_domain("user@example.com").unwrap(), "example.com");
-        assert_eq!(service.extract_domain("test@gmail.com").unwrap(), "gmail.com");
+        assert_eq!(
+            service.extract_domain("user@example.com").unwrap(),
+            "example.com"
+        );
+        assert_eq!(
+            service.extract_domain("test@gmail.com").unwrap(),
+            "gmail.com"
+        );
         assert!(service.extract_domain("invalid-email").is_err());
     }
 
@@ -334,9 +398,9 @@ mod tests {
         let config = service.parse_mozilla_autoconfig(xml).unwrap();
         assert_eq!(config.imap_host, "imap.example.com");
         assert_eq!(config.imap_port, 993);
-        assert_eq!(config.imap_use_tls, true);
+        assert!(config.imap_use_tls);
         assert_eq!(config.smtp_host.unwrap(), "smtp.example.com");
         assert_eq!(config.smtp_port.unwrap(), 587);
-        assert_eq!(config.smtp_use_starttls.unwrap(), true);
+        assert!(config.smtp_use_starttls.unwrap());
     }
 }

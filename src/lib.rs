@@ -1,5 +1,4 @@
 #![recursion_limit = "256"]
-
 // Copyright (c) 2025 TexasFortress.AI
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -9,23 +8,23 @@
 
 // --- Modules ---
 pub mod api;
+pub mod batch_synopsis;
 pub mod config;
+pub mod connection_pool;
 pub mod dashboard;
 pub mod error;
+pub mod evidence_export;
+pub mod filter_emails;
+pub mod forensic;
 pub mod imap;
 pub mod mcp;
-pub mod transport;
-pub mod mcp_port;
-pub mod mcp_cache_tools;
 pub mod mcp_attachment_tools;
-pub mod session_manager;
-pub mod connection_pool;
-pub mod utils;
-pub mod forensic;
-pub mod evidence_export;
+pub mod mcp_cache_tools;
+pub mod mcp_port;
 pub mod metadata_export;
-pub mod filter_emails;
-pub mod batch_synopsis;
+pub mod session_manager;
+pub mod transport;
+pub mod utils;
 
 // Test modules
 #[cfg(test)]
@@ -40,27 +39,24 @@ pub mod prelude {
     pub use crate::imap::{
         client::ImapClient,
         error::ImapError,
-        session::{AsyncImapOps, AsyncImapSessionWrapper, TlsImapSession, ImapClientFactory},
+        session::{AsyncImapOps, AsyncImapSessionWrapper, ImapClientFactory, TlsImapSession},
         types::{
-            Address, AppendEmailPayload, Email, Envelope, FlagOperation, Flags,
-            Folder, MailboxInfo, ModifyFlagsPayload, SearchCriteria,
-            MimePart, ContentType, ContentDisposition,
+            Address, AppendEmailPayload, ContentDisposition, ContentType, Email, Envelope,
+            FlagOperation, Flags, Folder, MailboxInfo, MimePart, ModifyFlagsPayload,
+            SearchCriteria,
         },
-        ImapSessionFactory, CloneableImapSessionFactory,
+        CloneableImapSessionFactory, ImapSessionFactory,
     };
 
     // MCP / JSON-RPC
     pub use crate::mcp::{
-        handler::McpHandler,
-        types::{
-            JsonRpcError, JsonRpcRequest, JsonRpcResponse, McpPortState
-        },
         error_codes::ErrorCode,
+        handler::McpHandler,
+        types::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, McpPortState},
     };
 
     // MCP Tools
-    pub use crate::mcp_port::{McpTool, DefaultMcpTool};
-
+    pub use crate::mcp_port::{DefaultMcpTool, McpTool};
 
     // Common Libs
     pub use log::{debug, error, info, trace, warn};
@@ -71,12 +67,9 @@ pub mod prelude {
 
     // Session management
     pub use crate::session_manager::{
-        SessionManager, 
-        SessionManagerTrait, 
-        SessionError, 
-        SessionResult
+        SessionError, SessionManager, SessionManagerTrait, SessionResult,
     };
-    
+
     #[cfg(test)]
     pub use crate::session_manager::mock::MockSessionManager;
     #[cfg(test)]
@@ -85,11 +78,11 @@ pub mod prelude {
 
 // Test modules and helpers
 #[cfg(test)]
+pub mod client_test;
+#[cfg(test)]
 pub mod test_helpers;
 #[cfg(test)]
 mod transport_test;
-#[cfg(test)]
-pub mod client_test;
 
 // Main binary entry point
 pub mod cli;
@@ -104,7 +97,7 @@ pub use crate::mcp_port::McpToolRegistry;
 // pub mod imap;
 // pub mod mcp;
 // pub mod mcp_port;
-// 
+//
 // // Re-exports for easier access
 // // pub use config::Settings; // Duplicate removed
 // // pub use imap::client::ImapClient; // Duplicate removed
@@ -115,10 +108,10 @@ pub use crate::mcp_port::McpToolRegistry;
 // // pub use mcp::handler::{McpHandler, JsonRpcHandler, MockMcpHandler}; // Duplicate removed
 // // pub use mcp::types::{McpCommand, McpEvent, McpMessage, McpResult}; // Duplicate removed
 // // use crate::imap::session::DEFAULT_MAILBOX_DELIMITER; // Duplicate removed
-// 
+//
 // // Potential entry points or utilities can be defined here
 // // For example, a function to initialize the whole system
 // // pub async fn initialize_system(settings: Settings) -> Result<(), Box<dyn std::error::Error>> {
 // //     // ... initialization logic ...
 // //     Ok(())
-// // } 
+// // }

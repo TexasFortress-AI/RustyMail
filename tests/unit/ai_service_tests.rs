@@ -6,18 +6,19 @@
 // tests/unit/ai_service_tests.rs
 // Unit tests for AI Service and Provider Manager
 
-use rustymail::dashboard::services::ai::AiService;
-use rustymail::dashboard::services::ai::provider_manager::{ProviderManager, ProviderConfig, ProviderType};
 use rustymail::dashboard::api::models::ChatbotQuery;
+use rustymail::dashboard::services::ai::provider_manager::{
+    ProviderConfig, ProviderManager, ProviderType,
+};
+use rustymail::dashboard::services::ai::AiService;
 
 #[tokio::test]
 async fn test_ai_service_new_mock() {
     // Test creating a mock AI service
-    let _service = AiService::new_mock();
+    let service = AiService::new_mock();
 
-    // Verify service is in mock mode
-    // This is implicitly verified by not panicking during creation
-    assert!(true, "Mock service created successfully");
+    // Verify mock service constructed (size_of_val keeps it "used" without assert!(true))
+    let _ = std::mem::size_of_val(&service);
 }
 
 #[tokio::test]
@@ -85,7 +86,10 @@ async fn test_ai_service_accepts_account_context() {
 
     // Service should accept the query with account context
     let response = service.process_query(query).await;
-    assert!(response.is_ok(), "Service should accept account context parameters");
+    assert!(
+        response.is_ok(),
+        "Service should accept account context parameters"
+    );
 }
 
 #[tokio::test]
@@ -139,7 +143,9 @@ async fn test_provider_manager_set_current_provider() {
 
     manager.add_provider(config).await.unwrap();
 
-    let result = manager.set_current_provider("test-provider".to_string()).await;
+    let result = manager
+        .set_current_provider("test-provider".to_string())
+        .await;
     assert!(result.is_ok(), "Should set current provider");
 
     let current_name = manager.get_current_provider_name().await;
@@ -151,7 +157,9 @@ async fn test_provider_manager_set_invalid_provider() {
     // Test setting a provider that doesn't exist
     let manager = ProviderManager::new();
 
-    let result = manager.set_current_provider("nonexistent".to_string()).await;
+    let result = manager
+        .set_current_provider("nonexistent".to_string())
+        .await;
     assert!(result.is_err(), "Should fail for nonexistent provider");
 }
 
@@ -231,13 +239,19 @@ async fn test_provider_manager_enable_disable() {
     manager.add_provider(config).await.unwrap();
 
     // Disable the provider
-    manager.set_provider_enabled("test-provider", false).await.unwrap();
+    manager
+        .set_provider_enabled("test-provider", false)
+        .await
+        .unwrap();
 
     let providers = manager.list_providers().await;
     assert!(!providers[0].enabled, "Provider should be disabled");
 
     // Re-enable the provider
-    manager.set_provider_enabled("test-provider", true).await.unwrap();
+    manager
+        .set_provider_enabled("test-provider", true)
+        .await
+        .unwrap();
 
     let providers = manager.list_providers().await;
     assert!(providers[0].enabled, "Provider should be enabled");
@@ -254,8 +268,12 @@ async fn test_provider_manager_init_from_env_mock_fallback() {
 
     let providers = manager.list_providers().await;
     assert!(!providers.is_empty(), "Should have at least mock provider");
-    assert!(providers.iter().any(|p| p.provider_type == ProviderType::Mock),
-            "Should have mock provider");
+    assert!(
+        providers
+            .iter()
+            .any(|p| p.provider_type == ProviderType::Mock),
+        "Should have mock provider"
+    );
 }
 
 #[tokio::test]
@@ -276,7 +294,10 @@ async fn test_ai_service_get_current_provider() {
     let service = AiService::new_mock();
 
     let provider_name = service.get_current_provider_name().await;
-    assert_eq!(provider_name, None, "Mock service should have no provider set initially");
+    assert_eq!(
+        provider_name, None,
+        "Mock service should have no provider set initially"
+    );
 }
 
 #[tokio::test]
@@ -333,10 +354,16 @@ async fn test_ai_service_followup_suggestions() {
     };
 
     let response = service.process_query(query).await.unwrap();
-    assert!(response.followup_suggestions.is_some(), "Should include suggestions");
+    assert!(
+        response.followup_suggestions.is_some(),
+        "Should include suggestions"
+    );
 
     let suggestions = response.followup_suggestions.unwrap();
-    assert!(!suggestions.is_empty(), "Should have at least one suggestion");
+    assert!(
+        !suggestions.is_empty(),
+        "Should have at least one suggestion"
+    );
 }
 
 #[tokio::test]
@@ -376,7 +403,7 @@ async fn test_ai_service_auto_conversation_id() {
 
     let query = ChatbotQuery {
         query: "Hello".to_string(),
-        conversation_id: None,  // No conversation ID provided
+        conversation_id: None, // No conversation ID provided
         provider_override: None,
         model_override: None,
         current_folder: None,
@@ -385,7 +412,10 @@ async fn test_ai_service_auto_conversation_id() {
     };
 
     let response = service.process_query(query).await.unwrap();
-    assert!(!response.conversation_id.is_empty(), "Should auto-generate conversation ID");
+    assert!(
+        !response.conversation_id.is_empty(),
+        "Should auto-generate conversation ID"
+    );
 }
 
 #[tokio::test]
@@ -443,7 +473,10 @@ async fn test_provider_manager_get_current_model() {
     };
 
     manager.add_provider(config).await.unwrap();
-    manager.set_current_provider("test".to_string()).await.unwrap();
+    manager
+        .set_current_provider("test".to_string())
+        .await
+        .unwrap();
 
     let model_name = manager.get_current_model_name().await;
     assert_eq!(model_name, Some("test-model-123".to_string()));
@@ -458,9 +491,18 @@ fn test_tool_calling_providers_list() {
     // Test that TOOL_CALLING_PROVIDERS constant is defined and includes expected providers
     use rustymail::dashboard::services::ai::agent_executor::TOOL_CALLING_PROVIDERS;
 
-    assert!(TOOL_CALLING_PROVIDERS.contains(&"ollama"), "Ollama should support tool calling");
-    assert!(TOOL_CALLING_PROVIDERS.contains(&"llamacpp"), "llama.cpp should support tool calling");
-    assert!(TOOL_CALLING_PROVIDERS.contains(&"lmstudio"), "LM Studio should support tool calling");
+    assert!(
+        TOOL_CALLING_PROVIDERS.contains(&"ollama"),
+        "Ollama should support tool calling"
+    );
+    assert!(
+        TOOL_CALLING_PROVIDERS.contains(&"llamacpp"),
+        "llama.cpp should support tool calling"
+    );
+    assert!(
+        TOOL_CALLING_PROVIDERS.contains(&"lmstudio"),
+        "LM Studio should support tool calling"
+    );
 }
 
 #[test]
@@ -468,13 +510,28 @@ fn test_supports_tool_calling_function() {
     use rustymail::dashboard::services::ai::agent_executor::supports_tool_calling;
 
     // Test supported providers
-    assert!(supports_tool_calling("ollama"), "Ollama should be supported");
-    assert!(supports_tool_calling("llamacpp"), "llama.cpp should be supported");
-    assert!(supports_tool_calling("lmstudio"), "LM Studio should be supported");
+    assert!(
+        supports_tool_calling("ollama"),
+        "Ollama should be supported"
+    );
+    assert!(
+        supports_tool_calling("llamacpp"),
+        "llama.cpp should be supported"
+    );
+    assert!(
+        supports_tool_calling("lmstudio"),
+        "LM Studio should be supported"
+    );
 
     // Test unsupported providers
-    assert!(!supports_tool_calling("anthropic"), "Anthropic not yet supported");
-    assert!(!supports_tool_calling("unknown"), "Unknown provider should not be supported");
+    assert!(
+        !supports_tool_calling("anthropic"),
+        "Anthropic not yet supported"
+    );
+    assert!(
+        !supports_tool_calling("unknown"),
+        "Unknown provider should not be supported"
+    );
 }
 
 #[test]
@@ -482,10 +539,22 @@ fn test_drafting_providers_list() {
     // Test that DRAFTING_PROVIDERS constant is defined and includes expected providers
     use rustymail::dashboard::services::ai::email_drafter::DRAFTING_PROVIDERS;
 
-    assert!(DRAFTING_PROVIDERS.contains(&"ollama"), "Ollama should support drafting");
-    assert!(DRAFTING_PROVIDERS.contains(&"openai"), "OpenAI should support drafting");
-    assert!(DRAFTING_PROVIDERS.contains(&"llamacpp"), "llama.cpp should support drafting");
-    assert!(DRAFTING_PROVIDERS.contains(&"lmstudio"), "LM Studio should support drafting");
+    assert!(
+        DRAFTING_PROVIDERS.contains(&"ollama"),
+        "Ollama should support drafting"
+    );
+    assert!(
+        DRAFTING_PROVIDERS.contains(&"openai"),
+        "OpenAI should support drafting"
+    );
+    assert!(
+        DRAFTING_PROVIDERS.contains(&"llamacpp"),
+        "llama.cpp should support drafting"
+    );
+    assert!(
+        DRAFTING_PROVIDERS.contains(&"lmstudio"),
+        "LM Studio should support drafting"
+    );
 }
 
 #[test]
@@ -497,16 +566,28 @@ fn test_sampler_config_effective_methods() {
 
     // These methods should return sensible defaults, not panic
     let temp = config.effective_temperature();
-    assert!(temp > 0.0 && temp < 2.0, "Temperature should be in valid range");
+    assert!(
+        temp > 0.0 && temp < 2.0,
+        "Temperature should be in valid range"
+    );
 
     let top_p = config.effective_top_p();
-    assert!(top_p > 0.0 && top_p <= 1.0, "top_p should be in valid range");
+    assert!(
+        top_p > 0.0 && top_p <= 1.0,
+        "top_p should be in valid range"
+    );
 
     let min_p = config.effective_min_p();
-    assert!(min_p >= 0.0 && min_p <= 1.0, "min_p should be in valid range");
+    assert!(
+        (0.0..=1.0).contains(&min_p),
+        "min_p should be in valid range"
+    );
 
     let repeat_penalty = config.effective_repeat_penalty();
-    assert!(repeat_penalty >= 0.0, "repeat_penalty should be non-negative");
+    assert!(
+        repeat_penalty >= 0.0,
+        "repeat_penalty should be non-negative"
+    );
 
     let num_ctx = config.effective_num_ctx();
     assert!(num_ctx >= 2048, "num_ctx should be at least 2048");

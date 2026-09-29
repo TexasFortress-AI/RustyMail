@@ -107,6 +107,12 @@ struct RequestCounter {
     hour_reset: DateTime<Utc>,
 }
 
+impl Default for ApiKeyStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ApiKeyStore {
     /// Create a new API key store
     pub fn new() -> Self {
@@ -231,11 +237,15 @@ impl ApiKeyStore {
             }
             Some(_) => {
                 warn!("Inactive API key used: {}", key);
-                Err(ApiError::InvalidApiKey { reason: "API key is inactive".to_string() })
+                Err(ApiError::InvalidApiKey {
+                    reason: "API key is inactive".to_string(),
+                })
             }
             None => {
                 warn!("Unknown API key: {}", key);
-                Err(ApiError::InvalidApiKey { reason: "Invalid API key".to_string() })
+                Err(ApiError::InvalidApiKey {
+                    reason: "Invalid API key".to_string(),
+                })
             }
         }
     }
@@ -254,14 +264,14 @@ impl ApiKeyStore {
         let mut counters = self.request_counts.write().await;
 
         let now = Utc::now();
-        let counter = counters.entry(key.to_string()).or_insert_with(|| {
-            RequestCounter {
+        let counter = counters
+            .entry(key.to_string())
+            .or_insert_with(|| RequestCounter {
                 minute_count: 0,
                 minute_reset: now + chrono::Duration::minutes(1),
                 hour_count: 0,
                 hour_reset: now + chrono::Duration::hours(1),
-            }
-        });
+            });
 
         // Reset counters if time windows have passed
         if now > counter.minute_reset {
@@ -275,10 +285,14 @@ impl ApiKeyStore {
 
         // Check rate limits
         if counter.minute_count >= api_key.rate_limit.requests_per_minute {
-            return Err(ApiError::RateLimitExceeded { message: "API key rate limit exceeded (per minute)".to_string() });
+            return Err(ApiError::RateLimitExceeded {
+                message: "API key rate limit exceeded (per minute)".to_string(),
+            });
         }
         if counter.hour_count >= api_key.rate_limit.requests_per_hour {
-            return Err(ApiError::RateLimitExceeded { message: "API key rate limit exceeded (per hour)".to_string() });
+            return Err(ApiError::RateLimitExceeded {
+                message: "API key rate limit exceeded (per hour)".to_string(),
+            });
         }
 
         // Increment counters
@@ -339,7 +353,9 @@ impl ApiKeyStore {
                 info!("Revoked API key: {}", key);
                 Ok(())
             }
-            None => Err(ApiError::NotFound { resource: "API key".to_string() })
+            None => Err(ApiError::NotFound {
+                resource: "API key".to_string(),
+            }),
         }
     }
 
@@ -371,17 +387,14 @@ where
     B: actix_web::body::MessageBody,
 {
     // Extract API key from headers
-    let api_key = req.headers()
+    let api_key = req
+        .headers()
         .get("X-API-Key")
         .or_else(|| req.headers().get("Authorization"))
         .and_then(|h| h.to_str().ok())
         .map(|s| {
             // Handle "Bearer " prefix if present
-            if s.starts_with("Bearer ") {
-                &s[7..]
-            } else {
-                s
-            }
+            s.strip_prefix("Bearer ").unwrap_or(s)
         });
 
     let api_key = match api_key {
@@ -393,16 +406,22 @@ where
     };
 
     // Validate the API key
-    let api_key_data = store.validate_key(api_key).await
+    let api_key_data = store
+        .validate_key(api_key)
+        .await
         .map_err(|_| ErrorUnauthorized("Invalid API key"))?;
 
     // Check IP restrictions
     let client_ip = req.peer_addr().map(|addr| addr.ip().to_string());
-    store.check_ip_restriction(api_key, client_ip.as_deref()).await
+    store
+        .check_ip_restriction(api_key, client_ip.as_deref())
+        .await
         .map_err(|_| ErrorUnauthorized("IP not allowed"))?;
 
     // Check rate limits
-    store.check_rate_limit(api_key).await
+    store
+        .check_rate_limit(api_key)
+        .await
         .map_err(|e| ErrorUnauthorized(format!("Rate limit exceeded: {}", e)))?;
 
     // Update last used timestamp
@@ -421,17 +440,12 @@ pub async fn simple_validate_api_key(
     next: Next<impl actix_web::body::MessageBody>,
 ) -> Result<ServiceResponse<impl actix_web::body::MessageBody>, ActixError> {
     // Check for API key in header
-    let api_key = req.headers()
+    let api_key = req
+        .headers()
         .get("X-API-Key")
         .or_else(|| req.headers().get("Authorization"))
         .and_then(|h| h.to_str().ok())
-        .map(|s| {
-            if s.starts_with("Bearer ") {
-                &s[7..]
-            } else {
-                s
-            }
-        });
+        .map(|s| s.strip_prefix("Bearer ").unwrap_or(s));
 
     let api_key = match api_key {
         Some(key) => key,
@@ -458,7 +472,9 @@ pub async fn simple_validate_api_key(
             }
         }
     } else {
-        Err(actix_web::error::ErrorInternalServerError("Server configuration error"))
+        Err(actix_web::error::ErrorInternalServerError(
+            "Server configuration error",
+        ))
     }
 }
 
@@ -470,17 +486,19 @@ mod tests {
     async fn test_api_key_creation() {
         let store = ApiKeyStore::new();
 
-        let key = store.create_api_key(
-            "Test Key".to_string(),
-            "test@example.com".to_string(),
-            ImapCredentials {
-                username: "test".to_string(),
-                password: "pass".to_string(),
-                server: "localhost".to_string(),
-                port: 993,
-            },
-            vec![ApiScope::ReadEmail],
-        ).await;
+        let key = store
+            .create_api_key(
+                "Test Key".to_string(),
+                "test@example.com".to_string(),
+                ImapCredentials {
+                    username: "test".to_string(),
+                    password: "pass".to_string(),
+                    server: "localhost".to_string(),
+                    port: 993,
+                },
+                vec![ApiScope::ReadEmail],
+            )
+            .await;
 
         assert!(key.starts_with("rmail_"));
 
@@ -510,17 +528,19 @@ mod tests {
     async fn test_scope_checking() {
         let store = ApiKeyStore::new();
 
-        let key = store.create_api_key(
-            "Limited Key".to_string(),
-            "limited@example.com".to_string(),
-            ImapCredentials {
-                username: "test".to_string(),
-                password: "pass".to_string(),
-                server: "localhost".to_string(),
-                port: 993,
-            },
-            vec![ApiScope::ReadEmail],
-        ).await;
+        let key = store
+            .create_api_key(
+                "Limited Key".to_string(),
+                "limited@example.com".to_string(),
+                ImapCredentials {
+                    username: "test".to_string(),
+                    password: "pass".to_string(),
+                    server: "localhost".to_string(),
+                    port: 993,
+                },
+                vec![ApiScope::ReadEmail],
+            )
+            .await;
 
         assert!(store.has_scope(&key, &ApiScope::ReadEmail).await);
         assert!(!store.has_scope(&key, &ApiScope::Admin).await);

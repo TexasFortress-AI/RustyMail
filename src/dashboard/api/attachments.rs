@@ -3,13 +3,13 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use actix_web::{web, HttpResponse, Responder, HttpRequest};
-use actix_files::NamedFile;
-use serde::{Deserialize, Serialize};
-use log::{debug, error, info};
 use crate::dashboard::api::errors::ApiError;
-use crate::dashboard::services::DashboardState;
 use crate::dashboard::services::attachment_storage::{self, AttachmentInfo};
+use crate::dashboard::services::DashboardState;
+use actix_files::NamedFile;
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
+use log::{debug, error, info};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 /// Query parameters for listing attachments
@@ -61,10 +61,16 @@ pub async fn list_attachments(
     query: web::Query<ListAttachmentsParams>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling GET /api/attachments/list with params: {:?}", query);
+    debug!(
+        "Handling GET /api/attachments/list with params: {:?}",
+        query
+    );
 
     // Get database pool
-    let db_pool = state.cache_service.db_pool.as_ref()
+    let db_pool = state
+        .cache_service
+        .db_pool
+        .as_ref()
         .ok_or_else(|| ApiError::InternalError("Database not available".to_string()))?;
 
     // Determine message_id - either directly provided or resolve from folder+uid
@@ -72,43 +78,58 @@ pub async fn list_attachments(
         msg_id.clone()
     } else {
         // Resolve from folder + uid
-        let folder = query.folder.as_deref()
-            .ok_or_else(|| ApiError::BadRequest("folder parameter required when message_id not provided".to_string()))?;
+        let folder = query.folder.as_deref().ok_or_else(|| {
+            ApiError::BadRequest(
+                "folder parameter required when message_id not provided".to_string(),
+            )
+        })?;
 
-        let uid = query.uid
-            .ok_or_else(|| ApiError::BadRequest("uid parameter required when message_id not provided".to_string()))?;
+        let uid = query.uid.ok_or_else(|| {
+            ApiError::BadRequest("uid parameter required when message_id not provided".to_string())
+        })?;
 
         // Fetch email to get message_id
-        let emails = state.email_service
+        let emails = state
+            .email_service
             .fetch_emails_for_account(folder, &[uid], &query.account_id)
             .await
             .map_err(|e| ApiError::InternalError(format!("Failed to fetch email: {}", e)))?;
 
-        let email = emails.into_iter().next()
+        let email = emails
+            .into_iter()
+            .next()
             .ok_or_else(|| ApiError::NotFound(format!("Email with UID {} not found", uid)))?;
 
         attachment_storage::ensure_message_id(&email, &query.account_id)
     };
 
     // Get attachments metadata
-    let mut attachments = attachment_storage::get_attachments_metadata(
-        db_pool,
-        &query.account_id,
-        &message_id,
-    )
-    .await
-    .map_err(|e| ApiError::InternalError(format!("Failed to get attachments: {}", e)))?;
+    let mut attachments =
+        attachment_storage::get_attachments_metadata(db_pool, &query.account_id, &message_id)
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Failed to get attachments: {}", e)))?;
 
     // If no attachments found in database and we have folder+uid, fetch from IMAP
-    if let (true, Some(folder), Some(uid)) = (attachments.is_empty(), query.folder.as_ref(), query.uid) {
-
-        debug!("No attachments in database for message_id {}. Fetching from IMAP...", message_id);
+    if let (true, Some(folder), Some(uid)) =
+        (attachments.is_empty(), query.folder.as_ref(), query.uid)
+    {
+        debug!(
+            "No attachments in database for message_id {}. Fetching from IMAP...",
+            message_id
+        );
 
         // Fetch email with attachments from IMAP (this will save them to DB)
-        match state.email_service.fetch_email_with_attachments(folder, uid, &query.account_id).await {
+        match state
+            .email_service
+            .fetch_email_with_attachments(folder, uid, &query.account_id)
+            .await
+        {
             Ok((_, attachment_infos)) => {
                 // Attachments now saved to database
-                debug!("Successfully fetched and saved {} attachments from IMAP", attachment_infos.len());
+                debug!(
+                    "Successfully fetched and saved {} attachments from IMAP",
+                    attachment_infos.len()
+                );
 
                 // Re-query database to get the saved attachments
                 attachments = attachment_storage::get_attachments_metadata(
@@ -117,7 +138,12 @@ pub async fn list_attachments(
                     &message_id,
                 )
                 .await
-                .map_err(|e| ApiError::InternalError(format!("Failed to get attachments after IMAP fetch: {}", e)))?;
+                .map_err(|e| {
+                    ApiError::InternalError(format!(
+                        "Failed to get attachments after IMAP fetch: {}",
+                        e
+                    ))
+                })?;
             }
             Err(e) => {
                 error!("Failed to fetch attachments from IMAP: {}", e);
@@ -126,7 +152,11 @@ pub async fn list_attachments(
         }
     }
 
-    info!("Listed {} attachments for message_id: {}", attachments.len(), message_id);
+    info!(
+        "Listed {} attachments for message_id: {}",
+        attachments.len(),
+        message_id
+    );
 
     let response = ListAttachmentsResponse {
         success: true,
@@ -147,28 +177,33 @@ pub async fn download_attachment(
     state: web::Data<DashboardState>,
     _req: HttpRequest,
 ) -> Result<NamedFile, ApiError> {
-    debug!("Handling GET /api/attachments/{}/{}", path.message_id, path.filename);
+    debug!(
+        "Handling GET /api/attachments/{}/{}",
+        path.message_id, path.filename
+    );
 
     // Get account_id from query parameters
-    let account_id = query.get("account_id")
+    let account_id = query
+        .get("account_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ApiError::BadRequest("account_id parameter required".to_string()))?;
 
     // Get database pool
-    let db_pool = state.cache_service.db_pool.as_ref()
+    let db_pool = state
+        .cache_service
+        .db_pool
+        .as_ref()
         .ok_or_else(|| ApiError::InternalError("Database not available".to_string()))?;
 
     // Get attachment metadata
-    let attachments = attachment_storage::get_attachments_metadata(
-        db_pool,
-        account_id,
-        &path.message_id,
-    )
-    .await
-    .map_err(|e| ApiError::InternalError(format!("Failed to get attachments: {}", e)))?;
+    let attachments =
+        attachment_storage::get_attachments_metadata(db_pool, account_id, &path.message_id)
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Failed to get attachments: {}", e)))?;
 
     // Find the specific attachment
-    let attachment = attachments.iter()
+    let attachment = attachments
+        .iter()
         .find(|a| a.filename == path.filename)
         .ok_or_else(|| ApiError::NotFound(format!("Attachment '{}' not found", path.filename)))?;
 
@@ -176,10 +211,16 @@ pub async fn download_attachment(
     let file_path = PathBuf::from(&attachment.storage_path);
 
     if !file_path.exists() {
-        return Err(ApiError::NotFound(format!("Attachment file not found on disk: {}", path.filename)));
+        return Err(ApiError::NotFound(format!(
+            "Attachment file not found on disk: {}",
+            path.filename
+        )));
     }
 
-    info!("Serving attachment: {} ({})", path.filename, attachment.size_bytes);
+    info!(
+        "Serving attachment: {} ({})",
+        path.filename, attachment.size_bytes
+    );
 
     // Serve the file
     NamedFile::open(&file_path)
@@ -189,7 +230,7 @@ pub async fn download_attachment(
 /// Handler for downloading all attachments as a ZIP file
 /// GET /api/attachments/{message_id}/zip
 pub async fn download_attachments_zip(
-    path: web::Path<String>,  // message_id
+    path: web::Path<String>, // message_id
     query: web::Query<serde_json::Value>,
     state: web::Data<DashboardState>,
 ) -> Result<NamedFile, ApiError> {
@@ -197,30 +238,36 @@ pub async fn download_attachments_zip(
     debug!("Handling GET /api/attachments/{}/zip", message_id);
 
     // Get account_id from query parameters
-    let account_id = query.get("account_id")
+    let account_id = query
+        .get("account_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ApiError::BadRequest("account_id parameter required".to_string()))?;
 
     // Get database pool
-    let db_pool = state.cache_service.db_pool.as_ref()
+    let db_pool = state
+        .cache_service
+        .db_pool
+        .as_ref()
         .ok_or_else(|| ApiError::InternalError("Database not available".to_string()))?;
 
     // Create temporary path for ZIP file
     let temp_dir = std::env::temp_dir();
     let sanitized_message_id = attachment_storage::sanitize_message_id(&message_id);
-    let zip_path = temp_dir.join(format!("rustymail_attachments_{}.zip", sanitized_message_id));
+    let zip_path = temp_dir.join(format!(
+        "rustymail_attachments_{}.zip",
+        sanitized_message_id
+    ));
 
     // Create ZIP archive
-    let result_path = attachment_storage::create_zip_archive(
-        db_pool,
-        account_id,
-        &message_id,
-        &zip_path,
-    )
-    .await
-    .map_err(|e| ApiError::InternalError(format!("Failed to create ZIP: {}", e)))?;
+    let result_path =
+        attachment_storage::create_zip_archive(db_pool, account_id, &message_id, &zip_path)
+            .await
+            .map_err(|e| ApiError::InternalError(format!("Failed to create ZIP: {}", e)))?;
 
-    info!("Created ZIP archive for message_id: {} at {:?}", message_id, result_path);
+    info!(
+        "Created ZIP archive for message_id: {} at {:?}",
+        message_id, result_path
+    );
 
     // Serve the ZIP file
     NamedFile::open(&result_path)
@@ -236,15 +283,22 @@ pub async fn download_inline_attachment(
     state: web::Data<DashboardState>,
     _req: HttpRequest,
 ) -> Result<NamedFile, ApiError> {
-    debug!("Handling GET /api/attachments/{}/inline/{}", path.message_id, path.content_id);
+    debug!(
+        "Handling GET /api/attachments/{}/inline/{}",
+        path.message_id, path.content_id
+    );
 
     // Get account_id from query parameters
-    let account_id = query.get("account_id")
+    let account_id = query
+        .get("account_id")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ApiError::BadRequest("account_id parameter required".to_string()))?;
 
     // Get database pool
-    let db_pool = state.cache_service.db_pool.as_ref()
+    let db_pool = state
+        .cache_service
+        .db_pool
+        .as_ref()
         .ok_or_else(|| ApiError::InternalError("Database not available".to_string()))?;
 
     // Get attachment by Content-ID
@@ -256,16 +310,27 @@ pub async fn download_inline_attachment(
     )
     .await
     .map_err(|e| ApiError::InternalError(format!("Failed to get attachment: {}", e)))?
-    .ok_or_else(|| ApiError::NotFound(format!("Inline attachment with Content-ID '{}' not found", path.content_id)))?;
+    .ok_or_else(|| {
+        ApiError::NotFound(format!(
+            "Inline attachment with Content-ID '{}' not found",
+            path.content_id
+        ))
+    })?;
 
     // Get the file path
     let file_path = PathBuf::from(&attachment.storage_path);
 
     if !file_path.exists() {
-        return Err(ApiError::NotFound(format!("Inline attachment file not found on disk: {}", path.content_id)));
+        return Err(ApiError::NotFound(format!(
+            "Inline attachment file not found on disk: {}",
+            path.content_id
+        )));
     }
 
-    info!("Serving inline attachment: {} (Content-ID: {})", attachment.filename, path.content_id);
+    info!(
+        "Serving inline attachment: {} (Content-ID: {})",
+        attachment.filename, path.content_id
+    );
 
     // Serve the file
     NamedFile::open(&file_path)

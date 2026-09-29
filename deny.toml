@@ -1,0 +1,63 @@
+# cargo-deny configuration for RustyMail
+# https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = true
+
+[licenses]
+version = 2
+confidence-threshold = 0.8
+# Licenses used by RustyMail itself (MPL-2.0) and its Rust dependency graph.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "MPL-2.0",
+    "CC0-1.0",
+    "0BSD",
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+]
+
+# Exceptions for crates with unusual but acceptable licensing.
+exceptions = [
+    # ring historically used a custom ISC-style notice; newer versions are dual-licensed.
+    { allow = ["ISC", "MIT", "OpenSSL"], crate = "ring" },
+]
+
+[[licenses.clarify]]
+name = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+highlight = "all"
+
+[advisories]
+version = 2
+yanked = "warn"
+# Ignore only when an upgrade is not yet available or would be a large breaking
+# change; prefer upgrading dependencies. Entries must include a rationale.
+ignore = [
+    # See audit.toml for full rationale. Mirrors cargo-audit ignores.
+    { id = "RUSTSEC-2023-0071", reason = "No fixed rsa release; transitive via sqlx-mysql (SQLite-only usage)" },
+    { id = "RUSTSEC-2024-0363", reason = "sqlx 0.8 breaking migration; advisory is MySQL binary protocol, we use SQLite" },
+    { id = "RUSTSEC-2026-0189", reason = "rmcp 1.x breaking; MCP bound to localhost mitigates DNS rebinding" },
+    { id = "RUSTSEC-2026-0258", reason = "h2 0.3 pinned by actix-http 3.x; primary h2 0.4 path upgraded" },
+    { id = "RUSTSEC-2024-0421", reason = "idna 0.5 via oauth2/reqwest 0.11; needs oauth2 stack upgrade" },
+    { id = "RUSTSEC-2026-0104", reason = "rustls-webpki 0.101 only on oauth2/rustls 0.21 path; primary is 0.103.15" },
+    { id = "RUSTSEC-2026-0098", reason = "rustls-webpki 0.101 only on oauth2/rustls 0.21 path; primary is 0.103.15" },
+    { id = "RUSTSEC-2026-0099", reason = "rustls-webpki 0.101 only on oauth2/rustls 0.21 path; primary is 0.103.15" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "warn"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

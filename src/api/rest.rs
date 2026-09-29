@@ -4,9 +4,15 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use actix_web::{
+    delete,
+    get,
+    post,
+    put, // Added PUT and DELETE
     web::{self, Data, Json, Path, Query},
-    get, post, delete, put, // Added PUT and DELETE
-    App, HttpRequest, HttpResponse, HttpServer,
+    App,
+    HttpRequest,
+    HttpResponse,
+    HttpServer,
 };
 use actix_web_lab::middleware::from_fn as mw_from_fn;
 use log::info; // Only keep info for now
@@ -15,10 +21,11 @@ use std::sync::Arc;
 use tokio::sync::Mutex as TokioMutex;
 
 // Crate-local imports
-use crate::{ // Group crate imports
+use crate::{
+    // Group crate imports
     api::{
-        auth::{ApiKeyStore, ApiScope, simple_validate_api_key},
-        errors::{ApiError}, // Use new error module
+        auth::{simple_validate_api_key, ApiKeyStore, ApiScope},
+        errors::ApiError, // Use new error module
     },
     config::Settings,
     // dashboard::api::errors::ApiError as DashboardApiError, // Now handled in errors.rs
@@ -26,8 +33,10 @@ use crate::{ // Group crate imports
     imap::{
         client::ImapClient,
         session::AsyncImapSessionWrapper, // Import session type
-        types::{ // Import necessary IMAP types
-            FlagOperation, Flags,
+        types::{
+            // Import necessary IMAP types
+            FlagOperation,
+            Flags,
         },
     },
     mcp::handler::McpHandler,
@@ -55,7 +64,6 @@ impl From<String> for ApiError {
 
 // DashboardApiError conversion is now in errors.rs
 
-
 // --- Route Configuration ---
 
 pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
@@ -79,7 +87,7 @@ pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
             .service(move_email)
             .service(search_emails)
             // Bulk operations
-            .service(expunge_folder)
+            .service(expunge_folder),
     );
 
     // API Key management endpoints (require admin scope)
@@ -89,7 +97,7 @@ pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
             .service(get_api_key_info)
             .service(create_api_key)
             .service(revoke_api_key)
-            .service(list_api_keys)
+            .service(list_api_keys),
     );
 
     // Dashboard routes are configured separately in the main server setup
@@ -98,40 +106,48 @@ pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
 // --- Helper Functions ---
 
 // Helper to get an IMAP session for the account specified by API key
-async fn get_session(state: &AppState, req: &HttpRequest) -> Result<Arc<ImapClient<AsyncImapSessionWrapper>>, ApiError> {
+async fn get_session(
+    state: &AppState,
+    req: &HttpRequest,
+) -> Result<Arc<ImapClient<AsyncImapSessionWrapper>>, ApiError> {
     // Get API key from headers
-    let api_key = req.headers()
+    let api_key = req
+        .headers()
         .get("X-API-Key")
         .or_else(|| req.headers().get("Authorization"))
         .and_then(|h| h.to_str().ok())
-        .map(|s| {
-            if s.starts_with("Bearer ") {
-                &s[7..]
-            } else {
-                s
-            }
-        })
+        .map(|s| s.strip_prefix("Bearer ").unwrap_or(s))
         .ok_or(ApiError::Unauthorized)?;
 
     // Get API key data from store
     let api_key_data = state.api_key_store.validate_key(api_key).await?;
 
     // Try to get existing session
-    let session_result = state.session_manager.as_ref().get_session(&api_key_data.key).await;
+    let session_result = state
+        .session_manager
+        .as_ref()
+        .get_session(&api_key_data.key)
+        .await;
 
     match session_result {
         Ok(session) => Ok(session),
         Err(_) => {
             // Create new session with stored IMAP credentials
             let creds = &api_key_data.imap_credentials;
-            state.session_manager.as_ref().create_session(
-                &api_key_data.key,
-                &creds.username,
-                &creds.password,
-                &creds.server,
-                creds.port,
-            ).await
-            .map_err(|e| ApiError::InternalError { message: format!("Failed to create session: {}", e) })
+            state
+                .session_manager
+                .as_ref()
+                .create_session(
+                    &api_key_data.key,
+                    &creds.username,
+                    &creds.password,
+                    &creds.server,
+                    creds.port,
+                )
+                .await
+                .map_err(|e| ApiError::InternalError {
+                    message: format!("Failed to create session: {}", e),
+                })
         }
     }
 }
@@ -147,13 +163,16 @@ async fn list_folders(state: Data<AppState>, req: HttpRequest) -> Result<HttpRes
     let folders: Vec<String> = session.list_folders().await?;
 
     // Transform to proper REST response format
-    let folder_objects: Vec<serde_json::Value> = folders.iter().map(|name| {
-        serde_json::json!({
-            "name": name,
-            "delimiter": "/",
-            "attributes": [],
+    let folder_objects: Vec<serde_json::Value> = folders
+        .iter()
+        .map(|name| {
+            serde_json::json!({
+                "name": name,
+                "delimiter": "/",
+                "attributes": [],
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "folders": folder_objects,
@@ -162,7 +181,11 @@ async fn list_folders(state: Data<AppState>, req: HttpRequest) -> Result<HttpRes
 }
 
 #[get("/folders/{folder_name}")]
-async fn get_folder(state: Data<AppState>, req: HttpRequest, path: Path<String>) -> Result<HttpResponse, ApiError> {
+async fn get_folder(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: Path<String>,
+) -> Result<HttpResponse, ApiError> {
     let folder_name = path.into_inner();
     info!("Handling GET /folders/{}", folder_name);
     let session = get_session(&state, &req).await?;
@@ -170,7 +193,9 @@ async fn get_folder(state: Data<AppState>, req: HttpRequest, path: Path<String>)
     // Verify folder exists
     let folders = session.list_folders().await?;
     if !folders.contains(&folder_name) {
-        return Err(ApiError::FolderNotFound { folder: folder_name.clone() });
+        return Err(ApiError::FolderNotFound {
+            folder: folder_name.clone(),
+        });
     }
 
     // Select folder - note that actual implementation returns ()
@@ -185,12 +210,18 @@ async fn get_folder(state: Data<AppState>, req: HttpRequest, path: Path<String>)
 }
 
 #[post("/folders")]
-async fn create_folder(state: Data<AppState>, req: HttpRequest, payload: Json<CreateFolderRequest>) -> Result<HttpResponse, ApiError> {
+async fn create_folder(
+    state: Data<AppState>,
+    req: HttpRequest,
+    payload: Json<CreateFolderRequest>,
+) -> Result<HttpResponse, ApiError> {
     info!("Handling POST /folders");
 
     // Validate request
     if payload.name.is_empty() {
-        return Err(ApiError::MissingField { field: "name".to_string() });
+        return Err(ApiError::MissingField {
+            field: "name".to_string(),
+        });
     }
 
     let session = get_session(&state, &req).await?;
@@ -206,6 +237,7 @@ async fn create_folder(state: Data<AppState>, req: HttpRequest, payload: Json<Cr
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct CreateFolderRequest {
     name: String,
     #[serde(default)]
@@ -213,7 +245,11 @@ struct CreateFolderRequest {
 }
 
 #[delete("/folders/{folder_name}")]
-async fn delete_folder(state: Data<AppState>, req: HttpRequest, path: Path<String>) -> Result<HttpResponse, ApiError> {
+async fn delete_folder(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: Path<String>,
+) -> Result<HttpResponse, ApiError> {
     let folder_name = path.into_inner();
     info!("Handling DELETE /folders/{}", folder_name);
     let session = get_session(&state, &req).await?;
@@ -222,7 +258,12 @@ async fn delete_folder(state: Data<AppState>, req: HttpRequest, path: Path<Strin
 }
 
 #[put("/folders/{folder_name}")]
-async fn update_folder(state: Data<AppState>, req: HttpRequest, path: Path<String>, payload: Json<UpdateFolderRequest>) -> Result<HttpResponse, ApiError> {
+async fn update_folder(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: Path<String>,
+    payload: Json<UpdateFolderRequest>,
+) -> Result<HttpResponse, ApiError> {
     let folder_name = path.into_inner();
     info!("Handling PUT /folders/{}", folder_name);
 
@@ -231,7 +272,9 @@ async fn update_folder(state: Data<AppState>, req: HttpRequest, path: Path<Strin
     // Handle rename if new name provided
     if let Some(new_name) = &payload.name {
         if new_name.is_empty() {
-            return Err(ApiError::MissingField { field: "name".to_string() });
+            return Err(ApiError::MissingField {
+                field: "name".to_string(),
+            });
         }
         session.rename_folder(&folder_name, new_name).await?;
 
@@ -255,7 +298,11 @@ struct UpdateFolderRequest {
 }
 
 #[post("/folders/{folder_name}/select")]
-async fn select_folder(state: Data<AppState>, req: HttpRequest, path: Path<String>) -> Result<HttpResponse, ApiError> {
+async fn select_folder(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: Path<String>,
+) -> Result<HttpResponse, ApiError> {
     let folder_name = path.into_inner();
     info!("Handling POST /folders/{}/select", folder_name);
     let session = get_session(&state, &req).await?;
@@ -270,7 +317,12 @@ async fn select_folder(state: Data<AppState>, req: HttpRequest, path: Path<Strin
 // === Email Operations ===
 
 #[get("/folders/{folder_name}/emails")]
-async fn list_emails(state: Data<AppState>, req: HttpRequest, path: Path<String>, query: Query<ListEmailsQuery>) -> Result<HttpResponse, ApiError> {
+async fn list_emails(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: Path<String>,
+    query: Query<ListEmailsQuery>,
+) -> Result<HttpResponse, ApiError> {
     let folder_name = path.into_inner();
     info!("Handling GET /folders/{}/emails", folder_name);
 
@@ -285,11 +337,7 @@ async fn list_emails(state: Data<AppState>, req: HttpRequest, path: Path<String>
     let limit = query.limit.unwrap_or(50).min(100); // Max 100 emails per request
     let offset = query.offset.unwrap_or(0);
 
-    let paginated_uids: Vec<u32> = uids.iter()
-        .skip(offset)
-        .take(limit)
-        .copied()
-        .collect();
+    let paginated_uids: Vec<u32> = uids.iter().skip(offset).take(limit).copied().collect();
 
     // Fetch email headers for the paginated results
     let emails = if !paginated_uids.is_empty() {
@@ -315,14 +363,18 @@ struct ListEmailsQuery {
 }
 
 #[get("/folders/{folder_name}/emails/{uid}")]
-async fn get_email(state: Data<AppState>, req: HttpRequest, path: Path<(String, u32)>) -> Result<HttpResponse, ApiError> {
+async fn get_email(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: Path<(String, u32)>,
+) -> Result<HttpResponse, ApiError> {
     let (folder_name, uid) = path.into_inner();
     info!("Handling GET /folders/{}/emails/{}", folder_name, uid);
 
     let session = get_session(&state, &req).await?;
     let _ = session.select_folder(&folder_name).await?;
 
-    let emails = session.fetch_emails(&vec![uid]).await?;
+    let emails = session.fetch_emails(&[uid]).await?;
 
     if emails.is_empty() {
         return Err(ApiError::EmailNotFound { uid });
@@ -332,7 +384,12 @@ async fn get_email(state: Data<AppState>, req: HttpRequest, path: Path<(String, 
 }
 
 #[post("/folders/{folder_name}/emails")]
-async fn create_email(state: Data<AppState>, req: HttpRequest, path: Path<String>, payload: Json<CreateEmailRequest>) -> Result<HttpResponse, ApiError> {
+async fn create_email(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: Path<String>,
+    payload: Json<CreateEmailRequest>,
+) -> Result<HttpResponse, ApiError> {
     let folder_name = path.into_inner();
     info!("Handling POST /folders/{}/emails", folder_name);
 
@@ -342,19 +399,23 @@ async fn create_email(state: Data<AppState>, req: HttpRequest, path: Path<String
     use base64::Engine;
     let content = base64::engine::general_purpose::STANDARD
         .decode(&payload.content)
-        .map_err(|e| ApiError::InvalidFieldValue { field: "content".to_string(), reason: format!("Invalid base64: {}", e) })?;
+        .map_err(|e| ApiError::InvalidFieldValue {
+            field: "content".to_string(),
+            reason: format!("Invalid base64: {}", e),
+        })?;
 
-    let flags: Vec<String> = payload.flags.as_ref()
+    let flags: Vec<String> = payload
+        .flags
+        .as_ref()
         .map(|f| f.items.iter().map(|flag| flag.to_string()).collect())
         .unwrap_or_default();
 
     session.append(&folder_name, &content, &flags).await?;
 
-    Ok(HttpResponse::Created()
-        .json(serde_json::json!({
-            "message": "Email appended successfully",
-            "folder": folder_name,
-        })))
+    Ok(HttpResponse::Created().json(serde_json::json!({
+        "message": "Email appended successfully",
+        "folder": folder_name,
+    })))
 }
 
 #[derive(Deserialize)]
@@ -364,7 +425,11 @@ struct CreateEmailRequest {
 }
 
 #[get("/emails/search")]
-async fn search_emails(state: Data<AppState>, req: HttpRequest, query: Query<SearchEmailsQuery>) -> Result<HttpResponse, ApiError> {
+async fn search_emails(
+    state: Data<AppState>,
+    req: HttpRequest,
+    query: Query<SearchEmailsQuery>,
+) -> Result<HttpResponse, ApiError> {
     info!("Handling GET /emails/search");
 
     let session = get_session(&state, &req).await?;
@@ -380,11 +445,7 @@ async fn search_emails(state: Data<AppState>, req: HttpRequest, query: Query<Sea
     let limit = query.limit.unwrap_or(50).min(100);
     let offset = query.offset.unwrap_or(0);
 
-    let paginated_uids: Vec<u32> = uids.iter()
-        .skip(offset)
-        .take(limit)
-        .copied()
-        .collect();
+    let paginated_uids: Vec<u32> = uids.iter().skip(offset).take(limit).copied().collect();
 
     let emails = if !paginated_uids.is_empty() {
         session.fetch_emails(&paginated_uids).await?
@@ -409,7 +470,12 @@ struct SearchEmailsQuery {
 }
 
 #[put("/folders/{folder_name}/emails/{uid}")]
-async fn update_email_flags(state: Data<AppState>, req: HttpRequest, path: Path<(String, u32)>, payload: Json<UpdateEmailRequest>) -> Result<HttpResponse, ApiError> {
+async fn update_email_flags(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: Path<(String, u32)>,
+    payload: Json<UpdateEmailRequest>,
+) -> Result<HttpResponse, ApiError> {
     let (folder_name, uid) = path.into_inner();
     info!("Handling PUT /folders/{}/emails/{}", folder_name, uid);
 
@@ -419,7 +485,9 @@ async fn update_email_flags(state: Data<AppState>, req: HttpRequest, path: Path<
     if let Some(flags) = &payload.flags {
         let flag_strings: Vec<String> = flags.items.iter().map(|f| f.to_string()).collect();
         let operation = payload.flag_operation.clone().unwrap_or(FlagOperation::Set);
-        session.store_flags(&vec![uid], operation, &flag_strings).await?;
+        session
+            .store_flags(&[uid], operation, &flag_strings)
+            .await?;
     }
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -436,7 +504,11 @@ struct UpdateEmailRequest {
 }
 
 #[delete("/folders/{folder_name}/emails/{uid}")]
-async fn delete_email(state: Data<AppState>, req: HttpRequest, path: Path<(String, u32)>) -> Result<HttpResponse, ApiError> {
+async fn delete_email(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: Path<(String, u32)>,
+) -> Result<HttpResponse, ApiError> {
     let (folder_name, uid) = path.into_inner();
     info!("Handling DELETE /folders/{}/emails/{}", folder_name, uid);
 
@@ -444,7 +516,9 @@ async fn delete_email(state: Data<AppState>, req: HttpRequest, path: Path<(Strin
     let _ = session.select_folder(&folder_name).await?;
 
     // Mark email as deleted
-    session.store_flags(&vec![uid], FlagOperation::Add, &vec!["\\Deleted".to_string()]).await?;
+    session
+        .store_flags(&[uid], FlagOperation::Add, &["\\Deleted".to_string()])
+        .await?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "uid": uid,
@@ -453,21 +527,32 @@ async fn delete_email(state: Data<AppState>, req: HttpRequest, path: Path<(Strin
     })))
 }
 
-
 #[post("/folders/{folder_name}/emails/{uid}/move")]
-async fn move_email(state: Data<AppState>, req: HttpRequest, path: Path<(String, u32)>, payload: Json<MoveEmailRequest>) -> Result<HttpResponse, ApiError> {
+async fn move_email(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: Path<(String, u32)>,
+    payload: Json<MoveEmailRequest>,
+) -> Result<HttpResponse, ApiError> {
     let (from_folder, uid) = path.into_inner();
     info!("Handling POST /folders/{}/emails/{}/move", from_folder, uid);
 
     if payload.to_folder.is_empty() {
-        return Err(ApiError::MissingField { field: "to_folder".to_string() });
+        return Err(ApiError::MissingField {
+            field: "to_folder".to_string(),
+        });
     }
 
     let session = get_session(&state, &req).await?;
-    session.move_email(uid, &from_folder, &payload.to_folder).await?;
+    session
+        .move_email(uid, &from_folder, &payload.to_folder)
+        .await?;
 
     Ok(HttpResponse::Ok()
-        .insert_header(("Location", format!("/api/v1/folders/{}/emails/{}", payload.to_folder, uid)))
+        .insert_header((
+            "Location",
+            format!("/api/v1/folders/{}/emails/{}", payload.to_folder, uid),
+        ))
         .json(serde_json::json!({
             "uid": uid,
             "from": from_folder,
@@ -484,11 +569,15 @@ struct MoveEmailRequest {
 // === API Key Management ===
 
 #[get("/keys/current")]
-async fn get_api_key_info(state: Data<AppState>, req: HttpRequest) -> Result<HttpResponse, ApiError> {
+async fn get_api_key_info(
+    state: Data<AppState>,
+    req: HttpRequest,
+) -> Result<HttpResponse, ApiError> {
     info!("Handling GET /auth/keys/current");
 
     // Get API key from headers
-    let api_key = req.headers()
+    let api_key = req
+        .headers()
         .get("X-API-Key")
         .and_then(|h| h.to_str().ok())
         .ok_or(ApiError::Unauthorized)?;
@@ -500,16 +589,25 @@ async fn get_api_key_info(state: Data<AppState>, req: HttpRequest) -> Result<Htt
 }
 
 #[post("/keys")]
-async fn create_api_key(state: Data<AppState>, req: HttpRequest, payload: Json<CreateApiKeyRequest>) -> Result<HttpResponse, ApiError> {
+async fn create_api_key(
+    state: Data<AppState>,
+    req: HttpRequest,
+    payload: Json<CreateApiKeyRequest>,
+) -> Result<HttpResponse, ApiError> {
     info!("Handling POST /auth/keys");
 
     // Check if requester has admin scope
-    let api_key = req.headers()
+    let api_key = req
+        .headers()
         .get("X-API-Key")
         .and_then(|h| h.to_str().ok())
         .ok_or(ApiError::Unauthorized)?;
 
-    if !state.api_key_store.has_scope(api_key, &ApiScope::Admin).await {
+    if !state
+        .api_key_store
+        .has_scope(api_key, &ApiScope::Admin)
+        .await
+    {
         return Err(ApiError::Unauthorized);
     }
 
@@ -528,21 +626,26 @@ async fn create_api_key(state: Data<AppState>, req: HttpRequest, payload: Json<C
                     message: "Email is required".to_string(),
                     constraint: Some("required".to_string()),
                 },
-            ]
+            ],
         });
     }
 
     // Create new API key
-    let new_key = state.api_key_store.create_api_key(
-        payload.name.clone(),
-        payload.email.clone(),
-        payload.imap_credentials.clone(),
-        payload.scopes.clone().unwrap_or_else(|| vec![
-            ApiScope::ReadEmail,
-            ApiScope::WriteEmail,
-            ApiScope::ManageFolders,
-        ]),
-    ).await;
+    let new_key = state
+        .api_key_store
+        .create_api_key(
+            payload.name.clone(),
+            payload.email.clone(),
+            payload.imap_credentials.clone(),
+            payload.scopes.clone().unwrap_or_else(|| {
+                vec![
+                    ApiScope::ReadEmail,
+                    ApiScope::WriteEmail,
+                    ApiScope::ManageFolders,
+                ]
+            }),
+        )
+        .await;
 
     Ok(HttpResponse::Created().json(serde_json::json!({
         "api_key": new_key,
@@ -560,23 +663,34 @@ struct CreateApiKeyRequest {
 }
 
 #[delete("/keys/{key}")]
-async fn revoke_api_key(state: Data<AppState>, req: HttpRequest, path: Path<String>) -> Result<HttpResponse, ApiError> {
+async fn revoke_api_key(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: Path<String>,
+) -> Result<HttpResponse, ApiError> {
     let key_to_revoke = path.into_inner();
     info!("Handling DELETE /auth/keys/{}", key_to_revoke);
 
     // Check if requester has admin scope
-    let api_key = req.headers()
+    let api_key = req
+        .headers()
         .get("X-API-Key")
         .and_then(|h| h.to_str().ok())
         .ok_or(ApiError::Unauthorized)?;
 
-    if !state.api_key_store.has_scope(api_key, &ApiScope::Admin).await {
+    if !state
+        .api_key_store
+        .has_scope(api_key, &ApiScope::Admin)
+        .await
+    {
         return Err(ApiError::Unauthorized);
     }
 
     // Don't allow self-revocation
     if api_key == key_to_revoke {
-        return Err(ApiError::BadRequest { message: "Cannot revoke your own API key".to_string() });
+        return Err(ApiError::BadRequest {
+            message: "Cannot revoke your own API key".to_string(),
+        });
     }
 
     state.api_key_store.revoke_key(&key_to_revoke).await?;
@@ -591,12 +705,17 @@ async fn list_api_keys(state: Data<AppState>, req: HttpRequest) -> Result<HttpRe
     info!("Handling GET /auth/keys");
 
     // Check if requester has admin scope
-    let api_key = req.headers()
+    let api_key = req
+        .headers()
         .get("X-API-Key")
         .and_then(|h| h.to_str().ok())
         .ok_or(ApiError::Unauthorized)?;
 
-    if !state.api_key_store.has_scope(api_key, &ApiScope::Admin).await {
+    if !state
+        .api_key_store
+        .has_scope(api_key, &ApiScope::Admin)
+        .await
+    {
         return Err(ApiError::Unauthorized);
     }
 
@@ -611,13 +730,17 @@ async fn list_api_keys(state: Data<AppState>, req: HttpRequest) -> Result<HttpRe
 // === Bulk Operations ===
 
 #[post("/folders/{folder_name}/expunge")]
-async fn expunge_folder(state: Data<AppState>, req: HttpRequest, path: Path<String>) -> Result<HttpResponse, ApiError> {
+async fn expunge_folder(
+    state: Data<AppState>,
+    req: HttpRequest,
+    path: Path<String>,
+) -> Result<HttpResponse, ApiError> {
     let folder_name = path.into_inner();
     info!("Handling POST /folders/{}/expunge", folder_name);
 
     let session = get_session(&state, &req).await?;
     let _ = session.select_folder(&folder_name).await?;
-    let _ = session.expunge().await?;
+    session.expunge().await?;
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
         "folder": folder_name,
@@ -627,10 +750,17 @@ async fn expunge_folder(state: Data<AppState>, req: HttpRequest, path: Path<Stri
 
 // --- Main Server Setup (Optional, if this is the main entry point) ---
 
-pub async fn run_server(settings: Settings, mcp_handler: Arc<dyn McpHandler>, session_manager: Arc<SessionManager>, dashboard_state: Option<Arc<TokioMutex<DashboardState>>>) -> std::io::Result<()> {
+pub async fn run_server(
+    settings: Settings,
+    mcp_handler: Arc<dyn McpHandler>,
+    session_manager: Arc<SessionManager>,
+    dashboard_state: Option<Arc<TokioMutex<DashboardState>>>,
+) -> std::io::Result<()> {
     // Get the REST config and construct bind address
-    let rest_config = settings.rest.as_ref()
-        .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::Other, "REST config not found"))?;
+    let rest_config = settings
+        .rest
+        .as_ref()
+        .ok_or_else(|| std::io::Error::other("REST config not found"))?;
     let bind_address = format!("{}:{}", rest_config.host, rest_config.port);
     info!("Starting REST API server at {}", bind_address);
 
@@ -665,7 +795,7 @@ mod tests {
     use super::*; // Import items from parent module
     use actix_web::{test, App}; // Minimal test imports
     use crate::imap::client::ImapClient;
-    use crate::imap::error::ImapError; 
+    use crate::imap::error::ImapError;
     use crate::imap::session::{AsyncImapOps, AsyncImapSessionWrapper}; // Use correct path
     use crate::imap::types::{Email, Folder, MailboxInfo, SearchCriteria}; // Import necessary types for mocking/assertions
     use crate::mcp::handler::MockMcpHandler; // Assume MockMcpHandler exists

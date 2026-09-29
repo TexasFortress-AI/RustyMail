@@ -39,20 +39,23 @@ pub async fn create_forensic_archive(
         "SELECT uid, message_id, subject, from_address, from_name, \
          to_addresses, cc_addresses, date, body_text, body_html, \
          flags, size, has_attachments \
-         FROM emails WHERE folder_id = ?"
+         FROM emails WHERE folder_id = ?",
     )
     .bind(folder_id)
     .fetch_all(pool)
     .await?;
 
     if rows.is_empty() {
-        info!("No emails to archive for folder '{}' (folder_id={})", folder_name, folder_id);
+        info!(
+            "No emails to archive for folder '{}' (folder_id={})",
+            folder_name, folder_id
+        );
         return Ok(None);
     }
 
     // Determine archive directory
-    let archive_dir = std::env::var("FORENSIC_ARCHIVE_DIR")
-        .unwrap_or_else(|_| DEFAULT_ARCHIVE_DIR.to_string());
+    let archive_dir =
+        std::env::var("FORENSIC_ARCHIVE_DIR").unwrap_or_else(|_| DEFAULT_ARCHIVE_DIR.to_string());
     let archive_dir = PathBuf::from(&archive_dir);
     std::fs::create_dir_all(&archive_dir)?;
 
@@ -111,7 +114,10 @@ pub async fn create_forensic_archive(
     zip.finish()?;
     info!(
         "Created forensic archive: {} ({} emails from '{}' for {})",
-        archive_path.display(), rows.len(), folder_name, account_email
+        archive_path.display(),
+        rows.len(),
+        folder_name,
+        account_email
     );
 
     Ok(Some(archive_path))

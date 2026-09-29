@@ -1,8 +1,8 @@
 // src/dashboard/services/ai/tool_converter.rs
 // Convert MCP tool definitions to Ollama/OpenAI tool format
 
-use serde_json::{json, Value};
 use log::{debug, warn};
+use serde_json::{json, Value};
 
 /// Convert MCP tools to Ollama/OpenAI tool format
 ///
@@ -37,16 +37,14 @@ use log::{debug, warn};
 pub fn mcp_to_ollama_tools(mcp_tools: &[Value]) -> Vec<Value> {
     debug!("Converting {} MCP tools to Ollama format", mcp_tools.len());
 
-    mcp_tools
-        .iter()
-        .filter_map(|tool| mcp_tool_to_ollama(tool))
-        .collect()
+    mcp_tools.iter().filter_map(mcp_tool_to_ollama).collect()
 }
 
 /// Convert a single MCP tool to Ollama/OpenAI format
 fn mcp_tool_to_ollama(mcp_tool: &Value) -> Option<Value> {
     let name = mcp_tool.get("name")?.as_str()?;
-    let description = mcp_tool.get("description")
+    let description = mcp_tool
+        .get("description")
         .and_then(|d| d.as_str())
         .unwrap_or("");
 
@@ -115,7 +113,10 @@ pub fn parse_ollama_tool_call(tool_call: &Value) -> Option<(String, Value)> {
         match serde_json::from_str::<Value>(arguments_str) {
             Ok(args) => args,
             Err(e) => {
-                warn!("Failed to parse tool call arguments string for {}: {}", name, e);
+                warn!(
+                    "Failed to parse tool call arguments string for {}: {}",
+                    name, e
+                );
                 json!({})
             }
         }
@@ -123,7 +124,10 @@ pub fn parse_ollama_tool_call(tool_call: &Value) -> Option<(String, Value)> {
         // Native Ollama format: arguments is already an object
         arguments.clone()
     } else {
-        warn!("Unexpected arguments format for tool {}: {:?}", name, arguments);
+        warn!(
+            "Unexpected arguments format for tool {}: {:?}",
+            name, arguments
+        );
         json!({})
     };
 
@@ -136,26 +140,24 @@ mod tests {
 
     #[test]
     fn test_mcp_to_ollama_conversion() {
-        let mcp_tools = vec![
-            json!({
-                "name": "send_email",
-                "description": "Send an email",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "to": {
-                            "type": "string",
-                            "description": "Recipient email"
-                        },
-                        "subject": {
-                            "type": "string",
-                            "description": "Email subject"
-                        }
+        let mcp_tools = vec![json!({
+            "name": "send_email",
+            "description": "Send an email",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "to": {
+                        "type": "string",
+                        "description": "Recipient email"
                     },
-                    "required": ["to", "subject"]
-                }
-            })
-        ];
+                    "subject": {
+                        "type": "string",
+                        "description": "Email subject"
+                    }
+                },
+                "required": ["to", "subject"]
+            }
+        })];
 
         let ollama_tools = mcp_to_ollama_tools(&mcp_tools);
 
@@ -211,16 +213,14 @@ mod tests {
 
     #[test]
     fn test_invalid_mcp_tool() {
-        let mcp_tools = vec![
-            json!({
-                "name": "bad_tool",
-                "inputSchema": {
-                    "type": "string"  // Invalid: should be "object"
-                }
-            })
-        ];
+        let mcp_tools = vec![json!({
+            "name": "bad_tool",
+            "inputSchema": {
+                "type": "string"  // Invalid: should be "object"
+            }
+        })];
 
         let ollama_tools = mcp_to_ollama_tools(&mcp_tools);
-        assert_eq!(ollama_tools.len(), 0);  // Should be filtered out
+        assert_eq!(ollama_tools.len(), 0); // Should be filtered out
     }
 }

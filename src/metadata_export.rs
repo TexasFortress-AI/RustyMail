@@ -77,9 +77,7 @@ impl MetadataExporter {
         let rows = self.query_metadata(folder_id, max_rows).await?;
 
         // 3. Write to file
-        let file_path = self.write_to_file(
-            &rows, account_id, folder, out_format, fields,
-        )?;
+        let file_path = self.write_to_file(&rows, account_id, folder, out_format, fields)?;
 
         let count = rows.len();
         info!(
@@ -100,19 +98,20 @@ impl MetadataExporter {
         account_id: &str,
         folder_name: &str,
     ) -> Result<i64, Box<dyn std::error::Error>> {
-        let row: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM folders WHERE account_id = ? AND name = ?"
-        )
-        .bind(account_id)
-        .bind(folder_name)
-        .fetch_optional(&self.db_pool)
-        .await?;
+        let row: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM folders WHERE account_id = ? AND name = ?")
+                .bind(account_id)
+                .bind(folder_name)
+                .fetch_optional(&self.db_pool)
+                .await?;
 
         match row {
             Some((id,)) => Ok(id),
             None => Err(format!(
-                "Folder '{}' not found for account '{}'", folder_name, account_id
-            ).into()),
+                "Folder '{}' not found for account '{}'",
+                folder_name, account_id
+            )
+            .into()),
         }
     }
 
@@ -153,27 +152,31 @@ impl MetadataExporter {
             LIMIT ?2
         "#;
 
-        let rows = sqlx::query_as::<_, (
-            i64,                          // uid
-            Option<String>,               // subject
-            Option<String>,               // from_address
-            Option<String>,               // to_addresses
-            Option<String>,               // cc_addresses
-            Option<DateTime<Utc>>,        // date
-            bool,                         // has_attachments
-            Option<String>,               // attachment_parts (JSON)
-            Option<String>,               // flags
-            Option<i64>,                  // size
-            Option<String>,               // message_id
-            Option<String>,               // in_reply_to
-        )>(sql)
+        let rows = sqlx::query_as::<
+            _,
+            (
+                i64,                   // uid
+                Option<String>,        // subject
+                Option<String>,        // from_address
+                Option<String>,        // to_addresses
+                Option<String>,        // cc_addresses
+                Option<DateTime<Utc>>, // date
+                bool,                  // has_attachments
+                Option<String>,        // attachment_parts (JSON)
+                Option<String>,        // flags
+                Option<i64>,           // size
+                Option<String>,        // message_id
+                Option<String>,        // in_reply_to
+            ),
+        >(sql)
         .bind(folder_id)
         .bind(max_rows as i64)
         .fetch_all(&self.db_pool)
         .await?;
 
-        let metadata: Vec<EmailMetadataRow> = rows.into_iter().map(|r| {
-            EmailMetadataRow {
+        let metadata: Vec<EmailMetadataRow> = rows
+            .into_iter()
+            .map(|r| EmailMetadataRow {
                 uid: r.0,
                 subject: r.1,
                 from_address: r.2,
@@ -186,8 +189,8 @@ impl MetadataExporter {
                 size_bytes: r.9,
                 message_id: r.10,
                 in_reply_to: r.11,
-            }
-        }).collect();
+            })
+            .collect();
 
         Ok(metadata)
     }
@@ -206,15 +209,15 @@ impl MetadataExporter {
         let timestamp = Utc::now().format("%Y%m%d_%H%M%S");
         let extension = if format == "csv" { "csv" } else { "json" };
         let filename = format!(
-            "metadata_{}_{}_{}.{}", safe_account, safe_folder, timestamp, extension
+            "metadata_{}_{}_{}.{}",
+            safe_account, safe_folder, timestamp, extension
         );
 
         let out_dir = std::env::temp_dir();
         let file_path = out_dir.join(&filename);
 
-        let field_filter: Option<Vec<&str>> = fields.map(|f| {
-            f.split(',').map(|s| s.trim()).collect()
-        });
+        let field_filter: Option<Vec<&str>> =
+            fields.map(|f| f.split(',').map(|s| s.trim()).collect());
 
         if format == "csv" {
             let content = self.render_csv(rows, &field_filter);
@@ -237,11 +240,7 @@ impl MetadataExporter {
     }
 
     /// Render rows as CSV. Delegates to standalone function.
-    fn render_csv(
-        &self,
-        rows: &[EmailMetadataRow],
-        field_filter: &Option<Vec<&str>>,
-    ) -> String {
+    fn render_csv(&self, rows: &[EmailMetadataRow], field_filter: &Option<Vec<&str>>) -> String {
         render_metadata_csv(rows, field_filter)
     }
 }
@@ -254,7 +253,8 @@ fn extract_filenames_from_parts(parts_json: &Option<String>) -> Option<String> {
     if arr.is_empty() {
         return None;
     }
-    let names: Vec<&str> = arr.iter()
+    let names: Vec<&str> = arr
+        .iter()
         .filter_map(|v| v.get("filename").and_then(|f| f.as_str()))
         .collect();
     if names.is_empty() {
@@ -270,18 +270,21 @@ fn render_metadata_json(
     field_filter: &Option<Vec<&str>>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     if let Some(ref fields) = field_filter {
-        let filtered: Vec<serde_json::Value> = rows.iter().map(|row| {
-            let full = serde_json::to_value(row).unwrap_or(serde_json::Value::Null);
-            if let serde_json::Value::Object(map) = full {
-                let filtered_map: serde_json::Map<String, serde_json::Value> = map
-                    .into_iter()
-                    .filter(|(k, _)| fields.contains(&k.as_str()))
-                    .collect();
-                serde_json::Value::Object(filtered_map)
-            } else {
-                full
-            }
-        }).collect();
+        let filtered: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|row| {
+                let full = serde_json::to_value(row).unwrap_or(serde_json::Value::Null);
+                if let serde_json::Value::Object(map) = full {
+                    let filtered_map: serde_json::Map<String, serde_json::Value> = map
+                        .into_iter()
+                        .filter(|(k, _)| fields.contains(&k.as_str()))
+                        .collect();
+                    serde_json::Value::Object(filtered_map)
+                } else {
+                    full
+                }
+            })
+            .collect();
         Ok(serde_json::to_string_pretty(&filtered)?)
     } else {
         Ok(serde_json::to_string_pretty(&rows)?)
@@ -289,18 +292,28 @@ fn render_metadata_json(
 }
 
 /// Render metadata rows as CSV. If fields filter is set, output only those columns.
-fn render_metadata_csv(
-    rows: &[EmailMetadataRow],
-    field_filter: &Option<Vec<&str>>,
-) -> String {
+fn render_metadata_csv(rows: &[EmailMetadataRow], field_filter: &Option<Vec<&str>>) -> String {
     let all_fields = [
-        "uid", "subject", "from_address", "to_addresses", "cc_addresses",
-        "date", "has_attachments", "attachment_names", "flags",
-        "size_bytes", "message_id", "in_reply_to",
+        "uid",
+        "subject",
+        "from_address",
+        "to_addresses",
+        "cc_addresses",
+        "date",
+        "has_attachments",
+        "attachment_names",
+        "flags",
+        "size_bytes",
+        "message_id",
+        "in_reply_to",
     ];
 
     let active_fields: Vec<&str> = if let Some(ref filter) = field_filter {
-        all_fields.iter().copied().filter(|f| filter.contains(f)).collect()
+        all_fields
+            .iter()
+            .copied()
+            .filter(|f| filter.contains(f))
+            .collect()
     } else {
         all_fields.to_vec()
     };
@@ -309,8 +322,9 @@ fn render_metadata_csv(
     lines.push(active_fields.join(","));
 
     for row in rows {
-        let values: Vec<String> = active_fields.iter().map(|&field| {
-            match field {
+        let values: Vec<String> = active_fields
+            .iter()
+            .map(|&field| match field {
                 "uid" => row.uid.to_string(),
                 "subject" => csv_escape(row.subject.as_deref().unwrap_or("")),
                 "from_address" => csv_escape(row.from_address.as_deref().unwrap_or("")),
@@ -318,16 +332,14 @@ fn render_metadata_csv(
                 "cc_addresses" => csv_escape(row.cc_addresses.as_deref().unwrap_or("")),
                 "date" => row.date.map(|d| d.to_rfc3339()).unwrap_or_default(),
                 "has_attachments" => row.has_attachments.to_string(),
-                "attachment_names" => csv_escape(
-                    row.attachment_names.as_deref().unwrap_or("")
-                ),
+                "attachment_names" => csv_escape(row.attachment_names.as_deref().unwrap_or("")),
                 "flags" => csv_escape(row.flags.as_deref().unwrap_or("")),
                 "size_bytes" => row.size_bytes.map(|s| s.to_string()).unwrap_or_default(),
                 "message_id" => csv_escape(row.message_id.as_deref().unwrap_or("")),
                 "in_reply_to" => csv_escape(row.in_reply_to.as_deref().unwrap_or("")),
                 _ => String::new(),
-            }
-        }).collect();
+            })
+            .collect();
         lines.push(values.join(","));
     }
 

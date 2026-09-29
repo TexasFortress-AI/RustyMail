@@ -3,10 +3,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use async_trait::async_trait;
-use serde::{Serialize, Deserialize};
 use crate::api::errors::ApiError as RestApiError;
 use crate::dashboard::services::ai::sampler_config::SamplerConfig;
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
 /// Get the standard AI request timeout from environment variable or use default (30 seconds)
@@ -15,7 +15,7 @@ pub fn get_ai_request_timeout() -> Duration {
         std::env::var("AI_REQUEST_TIMEOUT_SECONDS")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(30)
+            .unwrap_or(30),
     )
 }
 
@@ -25,23 +25,23 @@ pub fn get_ai_generation_timeout() -> Duration {
         std::env::var("AI_GENERATION_TIMEOUT_SECONDS")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(120)
+            .unwrap_or(120),
     )
 }
 
-pub mod openai;
-pub mod openrouter;
-pub mod morpheus;
-pub mod ollama;
+pub mod anthropic;
+pub mod azure;
+pub mod deepseek;
+pub mod gemini;
 pub mod llama_cpp;
 pub mod lmstudio;
-pub mod anthropic;
-pub mod deepseek;
-pub mod xai;
-pub mod gemini;
 pub mod mistral;
+pub mod morpheus;
+pub mod ollama;
+pub mod openai;
+pub mod openrouter;
 pub mod together;
-pub mod azure;
+pub mod xai;
 
 /// Common message structure for AI chat completion APIs (OpenAI, OpenRouter)
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -88,19 +88,19 @@ pub trait AiProvider: Send + Sync {
 }
 
 // Re-export the provider implementations for easier access
-pub use openai::OpenAiAdapter;
-pub use openrouter::OpenRouterAdapter;
-pub use morpheus::MorpheusAdapter;
-pub use ollama::OllamaAdapter;
+pub use anthropic::AnthropicAdapter;
+pub use azure::AzureOpenAIAdapter;
+pub use deepseek::DeepSeekAdapter;
+pub use gemini::GeminiAdapter;
 pub use llama_cpp::LlamaCppAdapter;
 pub use lmstudio::LmStudioAdapter;
-pub use anthropic::AnthropicAdapter;
-pub use deepseek::DeepSeekAdapter;
-pub use xai::XAIAdapter;
-pub use gemini::GeminiAdapter;
 pub use mistral::MistralAdapter;
+pub use morpheus::MorpheusAdapter;
+pub use ollama::OllamaAdapter;
+pub use openai::OpenAiAdapter;
+pub use openrouter::OpenRouterAdapter;
 pub use together::TogetherAdapter;
-pub use azure::AzureOpenAIAdapter;
+pub use xai::XAIAdapter;
 
 // --- Mock Provider Implementation ---
 #[derive(Debug, Default)]
@@ -135,7 +135,10 @@ impl AiProvider for MockAiProvider {
                 } else if content.contains("search") || content.contains("find") {
                     return Ok("I found 8 emails matching your criteria. The most relevant one is from 'Mike Johnson' about 'Meeting Notes - Product Roadmap'.".to_string());
                 } else if content.contains("compose") || content.contains("write") {
-                    return Ok("I can help you compose an email. What would you like to write about?".to_string());
+                    return Ok(
+                        "I can help you compose an email. What would you like to write about?"
+                            .to_string(),
+                    );
                 } else if content.contains("folder") || content.contains("label") {
                     return Ok("You have the following folders: Inbox (42), Sent (156), Drafts (3), Archive (1,234), Spam (127), and Trash (89).".to_string());
                 } else if content.contains("attachment") {
@@ -156,6 +159,6 @@ impl AiProvider for MockAiProvider {
     }
 }
 
-// --- Comment out mock module as it doesn't exist --- 
-// mod mock; 
-// pub use mock::MockAiProvider; 
+// --- Comment out mock module as it doesn't exist ---
+// mod mock;
+// pub use mock::MockAiProvider;

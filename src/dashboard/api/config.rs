@@ -3,11 +3,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use actix_web::{web, HttpResponse};
-use serde::{Deserialize, Serialize};
 use crate::dashboard::api::errors::ApiError;
 use crate::dashboard::services::DashboardState;
+use actix_web::{web, HttpResponse};
 use log::info;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateImapConfig {
@@ -95,12 +95,16 @@ pub async fn update_imap(
 ) -> Result<HttpResponse, ApiError> {
     info!("Updating IMAP configuration");
 
-    match state.config_service.update_imap_config(
-        config.host.clone(),
-        config.port,
-        config.user.clone(),
-        config.pass.clone(),
-    ).await {
+    match state
+        .config_service
+        .update_imap_config(
+            config.host.clone(),
+            config.port,
+            config.user.clone(),
+            config.pass.clone(),
+        )
+        .await
+    {
         Ok(()) => {
             info!("IMAP configuration updated successfully");
             Ok(HttpResponse::Ok().json(ConfigUpdateResponse {
@@ -108,12 +112,10 @@ pub async fn update_imap(
                 message: "IMAP configuration updated successfully".to_string(),
             }))
         }
-        Err(e) => {
-            Ok(HttpResponse::BadRequest().json(ConfigUpdateResponse {
-                success: false,
-                message: e,
-            }))
-        }
+        Err(e) => Ok(HttpResponse::BadRequest().json(ConfigUpdateResponse {
+            success: false,
+            message: e,
+        })),
     }
 }
 
@@ -123,11 +125,11 @@ pub async fn update_rest(
 ) -> Result<HttpResponse, ApiError> {
     info!("Updating REST configuration");
 
-    match state.config_service.update_rest_config(
-        config.enabled,
-        config.host.clone(),
-        config.port,
-    ).await {
+    match state
+        .config_service
+        .update_rest_config(config.enabled, config.host.clone(), config.port)
+        .await
+    {
         Ok(()) => {
             info!("REST configuration updated successfully");
             Ok(HttpResponse::Ok().json(ConfigUpdateResponse {
@@ -135,12 +137,10 @@ pub async fn update_rest(
                 message: "REST configuration updated successfully".to_string(),
             }))
         }
-        Err(e) => {
-            Ok(HttpResponse::BadRequest().json(ConfigUpdateResponse {
-                success: false,
-                message: e,
-            }))
-        }
+        Err(e) => Ok(HttpResponse::BadRequest().json(ConfigUpdateResponse {
+            success: false,
+            message: e,
+        })),
     }
 }
 
@@ -150,11 +150,11 @@ pub async fn update_dashboard(
 ) -> Result<HttpResponse, ApiError> {
     info!("Updating dashboard configuration");
 
-    match state.config_service.update_dashboard_config(
-        config.enabled,
-        config.port,
-        config.path.clone(),
-    ).await {
+    match state
+        .config_service
+        .update_dashboard_config(config.enabled, config.port, config.path.clone())
+        .await
+    {
         Ok(()) => {
             info!("Dashboard configuration updated successfully");
             Ok(HttpResponse::Ok().json(ConfigUpdateResponse {
@@ -162,12 +162,10 @@ pub async fn update_dashboard(
                 message: "Dashboard configuration updated successfully".to_string(),
             }))
         }
-        Err(e) => {
-            Ok(HttpResponse::BadRequest().json(ConfigUpdateResponse {
-                success: false,
-                message: e,
-            }))
-        }
+        Err(e) => Ok(HttpResponse::BadRequest().json(ConfigUpdateResponse {
+            success: false,
+            message: e,
+        })),
     }
 }
 
@@ -175,17 +173,13 @@ pub async fn validate_config(state: web::Data<DashboardState>) -> Result<HttpRes
     let settings = state.config_service.get_settings().await;
 
     match state.config_service.validate_config(&settings).await {
-        Ok(()) => {
-            Ok(HttpResponse::Ok().json(ConfigUpdateResponse {
-                success: true,
-                message: "Configuration is valid".to_string(),
-            }))
-        }
-        Err(errors) => {
-            Ok(HttpResponse::BadRequest().json(ConfigUpdateResponse {
-                success: false,
-                message: errors.join(", "),
-            }))
-        }
+        Ok(()) => Ok(HttpResponse::Ok().json(ConfigUpdateResponse {
+            success: true,
+            message: "Configuration is valid".to_string(),
+        })),
+        Err(errors) => Ok(HttpResponse::BadRequest().json(ConfigUpdateResponse {
+            success: false,
+            message: errors.join(", "),
+        })),
     }
 }

@@ -8,21 +8,19 @@
 // This module provides comprehensive health checking for all system components,
 // resource monitoring, and alerting capabilities.
 
+use crate::connection_pool::ConnectionPool;
+use crate::dashboard::services::events::AlertLevel;
+use crate::dashboard::services::EventBus;
+use crate::session_manager::SessionManager;
+use chrono::{DateTime, Utc};
+use log::info;
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::sync::Arc;
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration, Instant};
-use sysinfo::{System, RefreshKind, CpuRefreshKind, MemoryRefreshKind};
-use serde::{Serialize, Deserialize};
-use chrono::{DateTime, Utc};
-use log::{info, warn, error, debug};
-use std::collections::HashMap;
-use crate::dashboard::services::{EventBus, DashboardEvent};
-use crate::dashboard::services::events::{AlertLevel, ConfigSection};
-use crate::dashboard::api::models::{SystemHealth, SystemStatus};
-use crate::connection_pool::{ConnectionPool, PoolStats};
-use crate::session_manager::SessionManager;
-use crate::config::Settings;
-use reqwest::Client;
 
 // Health check result for individual components
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -117,6 +115,7 @@ impl Default for HealthThresholds {
 }
 
 // Main health monitoring service
+#[allow(dead_code)]
 pub struct HealthService {
     components: Arc<RwLock<HashMap<String, ComponentHealth>>>,
     system: Arc<RwLock<System>>,
@@ -127,6 +126,12 @@ pub struct HealthService {
     session_manager: Option<Arc<SessionManager>>,
     http_client: Client,
     last_alerts: Arc<RwLock<Vec<HealthAlert>>>,
+}
+
+impl Default for HealthService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl HealthService {
@@ -256,14 +261,13 @@ impl HealthService {
         let start = Instant::now();
 
         // Try to list sessions as a health check
-        let status = match tokio::time::timeout(
-            Duration::from_secs(2),
-            async {
-                // Session manager doesn't have a public list_sessions method
-                // We'll consider it healthy if we can access it
-                HealthStatus::Healthy
-            }
-        ).await {
+        let status = match tokio::time::timeout(Duration::from_secs(2), async {
+            // Session manager doesn't have a public list_sessions method
+            // We'll consider it healthy if we can access it
+            HealthStatus::Healthy
+        })
+        .await
+        {
             Ok(status) => status,
             Err(_) => HealthStatus::Unhealthy,
         };
@@ -334,7 +338,7 @@ impl HealthService {
         sys.refresh_specifics(
             RefreshKind::new()
                 .with_cpu(CpuRefreshKind::everything())
-                .with_memory(MemoryRefreshKind::everything())
+                .with_memory(MemoryRefreshKind::everything()),
         );
     }
 
@@ -369,7 +373,10 @@ impl HealthService {
             alerts.push(HealthAlert {
                 level: AlertLevel::Critical,
                 component: "memory".to_string(),
-                message: format!("Memory usage critical: {:.1}%", resources.memory_usage_percent),
+                message: format!(
+                    "Memory usage critical: {:.1}%",
+                    resources.memory_usage_percent
+                ),
                 triggered_at: Utc::now(),
                 value: Some(resources.memory_usage_percent as f64),
                 threshold: Some(self.thresholds.memory_critical as f64),
@@ -413,15 +420,17 @@ impl HealthService {
         // Publish alerts via event bus
         if let Some(event_bus) = &self.event_bus {
             for alert in alerts {
-                event_bus.publish_system_alert(
-                    alert.level,
-                    alert.message.clone(),
-                    Some(serde_json::json!({
-                        "component": alert.component,
-                        "value": alert.value,
-                        "threshold": alert.threshold,
-                    })),
-                ).await;
+                event_bus
+                    .publish_system_alert(
+                        alert.level,
+                        alert.message.clone(),
+                        Some(serde_json::json!({
+                            "component": alert.component,
+                            "value": alert.value,
+                            "threshold": alert.threshold,
+                        })),
+                    )
+                    .await;
             }
         }
     }
@@ -449,8 +458,8 @@ impl HealthService {
             memory_used_mb: memory_used / (1024 * 1024),
             memory_total_mb: memory_total / (1024 * 1024),
             disk_usage_percent: disk_usage,
-            disk_used_gb: 0.0, // TODO: Implement disk monitoring
-            disk_total_gb: 0.0, // TODO: Implement disk monitoring
+            disk_used_gb: 0.0,           // TODO: Implement disk monitoring
+            disk_total_gb: 0.0,          // TODO: Implement disk monitoring
             open_file_descriptors: None, // Platform-specific, not easily available
             thread_count: sys.processes().len(),
         }
@@ -463,9 +472,15 @@ impl HealthService {
         let alerts = self.last_alerts.read().await.clone();
 
         // Determine overall status based on components
-        let overall_status = if components.values().any(|c| c.status == HealthStatus::Unhealthy) {
+        let overall_status = if components
+            .values()
+            .any(|c| c.status == HealthStatus::Unhealthy)
+        {
             HealthStatus::Unhealthy
-        } else if components.values().any(|c| c.status == HealthStatus::Degraded) {
+        } else if components
+            .values()
+            .any(|c| c.status == HealthStatus::Degraded)
+        {
             HealthStatus::Degraded
         } else {
             HealthStatus::Healthy
@@ -532,8 +547,13 @@ mod tests {
         let service = Arc::new(HealthService::new());
         let report = service.get_health_report().await;
 
-        assert!(matches!(report.status, HealthStatus::Healthy | HealthStatus::Degraded | HealthStatus::Unhealthy | HealthStatus::Unknown));
-        assert!(report.uptime_seconds >= 0);
+        assert!(matches!(
+            report.status,
+            HealthStatus::Healthy
+                | HealthStatus::Degraded
+                | HealthStatus::Unhealthy
+                | HealthStatus::Unknown
+        ));
         assert!(report.components.is_empty() || !report.components.is_empty());
     }
 

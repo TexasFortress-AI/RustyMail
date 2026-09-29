@@ -3,8 +3,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use regex::Regex;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 /// Decode MIME encoded-word headers (RFC 2047)
 /// Supports both Q-encoding and B-encoding
@@ -54,7 +54,8 @@ pub fn decode_mime_header(input: &str) -> String {
 }
 
 fn decode_base64(encoded: &str) -> String {
-    BASE64.decode(encoded)
+    BASE64
+        .decode(encoded)
         .ok()
         .and_then(|bytes| String::from_utf8(bytes).ok())
         .unwrap_or_else(|| encoded.to_string())
@@ -71,7 +72,7 @@ fn decode_quoted_printable(encoded: &str) -> String {
                 // Check if it's a hex sequence
                 if let (Ok(h1), Ok(h2)) = (
                     std::str::from_utf8(&[bytes[i + 1]]),
-                    std::str::from_utf8(&[bytes[i + 2]])
+                    std::str::from_utf8(&[bytes[i + 2]]),
                 ) {
                     if let Ok(byte) = u8::from_str_radix(&format!("{}{}", h1, h2), 16) {
                         result.push(byte);
@@ -105,14 +106,15 @@ mod tests {
     #[test]
     fn test_decode_q_encoding() {
         let input = "=?UTF-8?Q?We=E2=80=99re_Updating_our_Consumer_Terms_and_Privacy_Policy?=";
-        let expected = "We\u{2019}re Updating our Consumer Terms and Privacy Policy";  // U+2019 right single quotation mark
+        let expected = "We\u{2019}re Updating our Consumer Terms and Privacy Policy"; // U+2019 right single quotation mark
         assert_eq!(decode_mime_header(input), expected);
     }
 
     #[test]
     fn test_decode_b_encoding() {
-        let input = "=?UTF-8?B?V2XigJlyZSBVcGRhdGluZyBvdXIgQ29uc3VtZXIgVGVybXMgYW5kIFByaXZhY3kgUG9saWN5?=";
-        let expected = "We\u{2019}re Updating our Consumer Terms and Privacy Policy";  // U+2019 right single quotation mark
+        let input =
+            "=?UTF-8?B?V2XigJlyZSBVcGRhdGluZyBvdXIgQ29uc3VtZXIgVGVybXMgYW5kIFByaXZhY3kgUG9saWN5?=";
+        let expected = "We\u{2019}re Updating our Consumer Terms and Privacy Policy"; // U+2019 right single quotation mark
         assert_eq!(decode_mime_header(input), expected);
     }
 

@@ -3,36 +3,32 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use actix_web::{
-    error::ResponseError,
-    http::StatusCode,
-    HttpResponse,
-};
+use crate::imap::error::ImapError;
+use actix_web::{error::ResponseError, http::StatusCode, HttpResponse};
+use log;
 use serde::Serialize;
 use thiserror::Error;
-use crate::imap::error::ImapError;
-use log;
 
 #[derive(Error, Debug)]
 pub enum ApiError {
     #[error("Internal server error: {0}")]
     InternalError(String),
-    
+
     #[error("Bad request: {0}")]
     BadRequest(String),
-    
+
     #[error("Not found: {0}")]
     NotFound(String),
-    
+
     #[error("Unauthorized: {0}")]
     Unauthorized(String),
-    
+
     #[error("Service unavailable: {0}")]
     ServiceUnavailable(String),
-    
+
     #[error("IMAP error: {0}")]
     ImapError(#[from] ImapError),
-    
+
     #[error("Serialization error: {0}")]
     SerializationError(String),
 
@@ -53,20 +49,22 @@ impl ResponseError for ApiError {
     fn error_response(&self) -> HttpResponse {
         let status_code = self.status_code();
         let error_message = self.to_string();
-        
+
         // Log internal errors with more detail
-        if status_code == StatusCode::INTERNAL_SERVER_ERROR || status_code == StatusCode::SERVICE_UNAVAILABLE {
+        if status_code == StatusCode::INTERNAL_SERVER_ERROR
+            || status_code == StatusCode::SERVICE_UNAVAILABLE
+        {
             log::error!("Dashboard API error: {:?}", self);
         } else {
             log::warn!("Dashboard API error: {:?}", self);
         }
-        
+
         HttpResponse::build(status_code).json(ErrorResponse {
             error: error_message,
             status: status_code.as_u16(),
         })
     }
-    
+
     fn status_code(&self) -> StatusCode {
         match self {
             ApiError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,

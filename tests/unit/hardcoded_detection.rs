@@ -8,7 +8,6 @@
 /// This module ensures that the codebase does not contain hardcoded account IDs
 /// (like `account_id = 1`) and that all account-related functions properly accept
 /// account IDs as parameters.
-
 use regex::Regex;
 use std::fs;
 
@@ -31,7 +30,8 @@ fn test_no_hardcoded_account_id_numeric() {
                 if pattern.is_match(line) {
                     violations.push(format!(
                         "{}:{} - Found hardcoded account_id = 1",
-                        file_path, line_num + 1
+                        file_path,
+                        line_num + 1
                     ));
                 }
             }
@@ -64,7 +64,8 @@ fn test_no_hardcoded_account_id_string() {
                 if pattern.is_match(line) {
                     violations.push(format!(
                         "{}:{} - Found hardcoded account_id = \"1\"",
-                        file_path, line_num + 1
+                        file_path,
+                        line_num + 1
                     ));
                 }
             }
@@ -97,7 +98,8 @@ fn test_cache_service_methods_accept_account_id() {
             let method_pattern = Regex::new(&format!(
                 r"(?m)^\s*(?:pub\s+)?(?:async\s+)?fn\s+{}\s*\([^)]*account_id\s*:\s*&str[^)]*\)",
                 regex::escape(method_name)
-            )).unwrap();
+            ))
+            .unwrap();
 
             assert!(
                 method_pattern.is_match(&content),
@@ -131,7 +133,8 @@ fn test_sync_service_methods_accept_account_id() {
             let method_pattern = Regex::new(&format!(
                 r"(?m)^\s*(?:pub\s+)?(?:async\s+)?fn\s+{}\s*\([^)]*account_id\s*:\s*&str[^)]*\)",
                 regex::escape(method_name)
-            )).unwrap();
+            ))
+            .unwrap();
 
             assert!(
                 method_pattern.is_match(&content),
@@ -171,7 +174,8 @@ fn test_api_handlers_no_default_account() {
                     if pattern.is_match(line) {
                         violations.push(format!(
                             "{}:{} - Suspicious hardcoded default account pattern",
-                            file_path, line_num + 1
+                            file_path,
+                            line_num + 1
                         ));
                     }
                 }
@@ -192,9 +196,7 @@ fn test_database_queries_use_parameters() {
     let source_files = collect_rust_files("src");
 
     // Pattern for SQL queries with hardcoded account_id values
-    let hardcoded_sql_pattern = Regex::new(
-        r#"(?i)WHERE\s+account_id\s*=\s*['"]\d+['"]"#
-    ).unwrap();
+    let hardcoded_sql_pattern = Regex::new(r#"(?i)WHERE\s+account_id\s*=\s*['"]\d+['"]"#).unwrap();
 
     let mut violations = Vec::new();
 
@@ -204,7 +206,8 @@ fn test_database_queries_use_parameters() {
                 if hardcoded_sql_pattern.is_match(line) {
                     violations.push(format!(
                         "{}:{} - Found SQL query with hardcoded account_id",
-                        file_path, line_num + 1
+                        file_path,
+                        line_num + 1
                     ));
                 }
             }
@@ -224,9 +227,7 @@ fn test_integration_tests_use_email_addresses() {
     let test_files = collect_rust_files("tests/integration");
 
     // Pattern for hardcoded numeric account IDs in tests
-    let hardcoded_test_pattern = Regex::new(
-        r#"account_id\s*=\s*"?\d+"?"#
-    ).unwrap();
+    let hardcoded_test_pattern = Regex::new(r#"account_id\s*=\s*"?\d+"?"#).unwrap();
 
     let mut violations = Vec::new();
 
@@ -236,7 +237,8 @@ fn test_integration_tests_use_email_addresses() {
                 // Skip comments and email address patterns
                 if line.trim().starts_with("//")
                     || line.trim().starts_with("/*")
-                    || line.contains("@") // Skip email addresses
+                    || line.contains("@")
+                // Skip email addresses
                 {
                     continue;
                 }
@@ -244,7 +246,8 @@ fn test_integration_tests_use_email_addresses() {
                 if hardcoded_test_pattern.is_match(line) {
                     violations.push(format!(
                         "{}:{} - Test uses hardcoded numeric account_id instead of email address",
-                        file_path, line_num + 1
+                        file_path,
+                        line_num + 1
                     ));
                 }
             }
@@ -334,7 +337,10 @@ mod account_isolation_tests {
 
         assert!(!emails1.is_empty());
         assert!(!emails2.is_empty());
-        assert_ne!(emails1[0], emails2[0], "Different accounts should have different data");
+        assert_ne!(
+            emails1[0], emails2[0],
+            "Different accounts should have different data"
+        );
     }
 
     /// Test that demonstrates INCORRECT hardcoded pattern (for documentation)

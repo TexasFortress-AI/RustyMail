@@ -8,12 +8,12 @@
 //! Periodically checks all OAuth-configured accounts and refreshes their
 //! access tokens before they expire, preventing silent IMAP auth failures.
 
+use crate::dashboard::services::{AccountService, OAuthService, OAuthTokens};
+use log::{debug, error, info, warn};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::sleep;
 use tokio::sync::Mutex as TokioMutex;
-use log::{info, error, warn, debug};
-use crate::dashboard::services::{AccountService, OAuthService, OAuthTokens};
+use tokio::time::sleep;
 
 /// Default interval between token refresh checks (seconds).
 const DEFAULT_CHECK_INTERVAL_SECONDS: u64 = 300;
@@ -90,7 +90,10 @@ impl TokenRefreshWorker {
             return;
         }
 
-        debug!("Token refresh: checking {} OAuth account(s)", oauth_accounts.len());
+        debug!(
+            "Token refresh: checking {} OAuth account(s)",
+            oauth_accounts.len()
+        );
 
         for account in oauth_accounts {
             let email = &account.email_address;
@@ -137,7 +140,10 @@ impl TokenRefreshWorker {
                         )
                         .await
                     {
-                        error!("Token refresh: failed to persist new tokens for {}: {}", email, e);
+                        error!(
+                            "Token refresh: failed to persist new tokens for {}: {}",
+                            email, e
+                        );
                     } else {
                         info!(
                             "Token refresh: successfully refreshed token for {} (new expiry: {})",

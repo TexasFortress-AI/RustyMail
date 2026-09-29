@@ -5,17 +5,16 @@
 
 // src/dashboard/services/ai/providers/together.rs
 
-use async_trait::async_trait;
-use reqwest::Client;
-use serde::{Serialize, Deserialize};
-use log::{debug, warn, error};
-use super::{AiProvider, AiChatMessage, get_ai_request_timeout};
+use super::{get_ai_request_timeout, AiChatMessage, AiProvider};
 use crate::api::errors::ApiError as RestApiError;
+use async_trait::async_trait;
+use log::{debug, error, warn};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 // Get Together AI API base URL from environment or use default
 fn get_base_url() -> String {
-    std::env::var("TOGETHER_BASE_URL")
-        .unwrap_or_else(|_| "https://api.together.xyz/v1".to_string())
+    std::env::var("TOGETHER_BASE_URL").unwrap_or_else(|_| "https://api.together.xyz/v1".to_string())
 }
 
 const DEFAULT_TOGETHER_MODEL: &str = "meta-llama/Meta-Llama-3.1-8B-Instruct-Turbo";
@@ -82,29 +81,44 @@ impl AiProvider for TogetherAdapter {
         let base_url = get_base_url();
         let models_url = format!("{}/models", base_url);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .get(&models_url)
             .bearer_auth(&self.api_key)
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Together AI models: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("Together AI models: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("Together AI models API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "Together AI models API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("Together AI models API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "Together AI models API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
         let response_body = response
             .json::<TogetherModelsResponse>()
             .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize Together AI models response: {}", e) })?;
+            .map_err(|e| RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize Together AI models response: {}", e),
+            })?;
 
-        let models: Vec<String> = response_body.data
+        let models: Vec<String> = response_body
+            .data
             .into_iter()
             .map(|model| model.id)
             .collect();
@@ -124,38 +138,57 @@ impl AiProvider for TogetherAdapter {
             max_tokens: Some(2000),
         };
 
-        debug!("Sending request to Together AI API: model={}, messages_count={}, url={}",
-               request_payload.model, request_payload.messages.len(), url);
+        debug!(
+            "Sending request to Together AI API: model={}, messages_count={}, url={}",
+            request_payload.model,
+            request_payload.messages.len(),
+            url
+        );
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .bearer_auth(&self.api_key)
             .json(&request_payload)
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Together AI: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("Together AI: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("Together AI API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "Together AI API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("Together AI API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "Together AI API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
-        let response_body = response
-            .json::<TogetherChatResponse>()
-            .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize Together AI response: {}", e) })?;
+        let response_body = response.json::<TogetherChatResponse>().await.map_err(|e| {
+            RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize Together AI response: {}", e),
+            }
+        })?;
 
         if let Some(choice) = response_body.choices.first() {
             debug!("Received response from Together AI API.");
             Ok(choice.message.content.clone())
         } else {
             warn!("Together AI API response did not contain any choices.");
-            Err(RestApiError::UnprocessableEntity { message: "Together AI response was empty or missing choices".to_string() })
+            Err(RestApiError::UnprocessableEntity {
+                message: "Together AI response was empty or missing choices".to_string(),
+            })
         }
     }
 }

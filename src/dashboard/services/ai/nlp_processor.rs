@@ -6,13 +6,12 @@
 // src/dashboard/services/ai/nlp_processor.rs
 // Natural Language Processing Pipeline for converting user queries to MCP operations
 
-use async_trait::async_trait;
-use serde::{Serialize, Deserialize};
-use log::{debug, info, warn, error};
-use std::collections::HashMap;
+use super::provider::AiChatMessage;
+use super::provider_manager::{ConversationContext, ProviderManager};
 use crate::api::errors::ApiError as RestApiError;
-use super::provider::{AiProvider, AiChatMessage};
-use super::provider_manager::{ProviderManager, ConversationContext};
+use log::{debug, info, warn};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use std::fmt;
 
@@ -22,22 +21,48 @@ pub enum EmailIntent {
     // Folder operations
     ListFolders,
     CreateFolder(String),
-    RenameFolder { old_name: String, new_name: String },
+    RenameFolder {
+        old_name: String,
+        new_name: String,
+    },
     DeleteFolder(String),
 
     // Email operations
-    ListEmails { folder: Option<String>, limit: Option<usize> },
-    SearchEmails { query: String, folder: Option<String> },
+    ListEmails {
+        folder: Option<String>,
+        limit: Option<usize>,
+    },
+    SearchEmails {
+        query: String,
+        folder: Option<String>,
+    },
     ShowUnreadEmails,
     ShowEmailsFromSender(String),
-    MoveEmailsToFolder { from_folder: String, to_folder: String, criteria: String },
-    DeleteEmails { folder: String, criteria: String },
-    MarkAsRead { folder: String, criteria: String },
-    MarkAsUnread { folder: String, criteria: String },
+    MoveEmailsToFolder {
+        from_folder: String,
+        to_folder: String,
+        criteria: String,
+    },
+    DeleteEmails {
+        folder: String,
+        criteria: String,
+    },
+    MarkAsRead {
+        folder: String,
+        criteria: String,
+    },
+    MarkAsUnread {
+        folder: String,
+        criteria: String,
+    },
 
     // General queries
-    GetEmailCount { folder: Option<String> },
-    ShowRecentEmails { count: usize },
+    GetEmailCount {
+        folder: Option<String>,
+    },
+    ShowRecentEmails {
+        count: usize,
+    },
 
     // Unknown/Help
     Unknown,
@@ -49,7 +74,9 @@ impl fmt::Display for EmailIntent {
         match self {
             EmailIntent::ListFolders => write!(f, "list folders"),
             EmailIntent::CreateFolder(name) => write!(f, "create folder '{}'", name),
-            EmailIntent::RenameFolder { old_name, new_name } => write!(f, "rename folder '{}' to '{}'", old_name, new_name),
+            EmailIntent::RenameFolder { old_name, new_name } => {
+                write!(f, "rename folder '{}' to '{}'", old_name, new_name)
+            }
             EmailIntent::DeleteFolder(name) => write!(f, "delete folder '{}'", name),
             EmailIntent::ListEmails { folder, limit } => {
                 let folder_str = folder.as_deref().unwrap_or("INBOX");
@@ -58,23 +85,41 @@ impl fmt::Display for EmailIntent {
                 } else {
                     write!(f, "list emails from {}", folder_str)
                 }
-            },
+            }
             EmailIntent::SearchEmails { query, folder } => {
                 let folder_str = folder.as_deref().unwrap_or("all folders");
                 write!(f, "search for '{}' in {}", query, folder_str)
-            },
+            }
             EmailIntent::ShowUnreadEmails => write!(f, "show unread emails"),
             EmailIntent::ShowEmailsFromSender(sender) => write!(f, "show emails from {}", sender),
-            EmailIntent::MoveEmailsToFolder { from_folder, to_folder, criteria } => {
-                write!(f, "move emails matching '{}' from {} to {}", criteria, from_folder, to_folder)
-            },
-            EmailIntent::DeleteEmails { folder, criteria } => write!(f, "delete emails matching '{}' in {}", criteria, folder),
-            EmailIntent::MarkAsRead { folder, criteria } => write!(f, "mark emails matching '{}' as read in {}", criteria, folder),
-            EmailIntent::MarkAsUnread { folder, criteria } => write!(f, "mark emails matching '{}' as unread in {}", criteria, folder),
+            EmailIntent::MoveEmailsToFolder {
+                from_folder,
+                to_folder,
+                criteria,
+            } => {
+                write!(
+                    f,
+                    "move emails matching '{}' from {} to {}",
+                    criteria, from_folder, to_folder
+                )
+            }
+            EmailIntent::DeleteEmails { folder, criteria } => {
+                write!(f, "delete emails matching '{}' in {}", criteria, folder)
+            }
+            EmailIntent::MarkAsRead { folder, criteria } => write!(
+                f,
+                "mark emails matching '{}' as read in {}",
+                criteria, folder
+            ),
+            EmailIntent::MarkAsUnread { folder, criteria } => write!(
+                f,
+                "mark emails matching '{}' as unread in {}",
+                criteria, folder
+            ),
             EmailIntent::GetEmailCount { folder } => {
                 let folder_str = folder.as_deref().unwrap_or("all folders");
                 write!(f, "get email count in {}", folder_str)
-            },
+            }
             EmailIntent::ShowRecentEmails { count } => write!(f, "show {} recent emails", count),
             EmailIntent::Unknown => write!(f, "unknown intent"),
             EmailIntent::Help => write!(f, "help"),
@@ -83,7 +128,7 @@ impl fmt::Display for EmailIntent {
 }
 
 // Extracted entities from natural language
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ExtractedEntities {
     pub folders: Vec<String>,
     pub senders: Vec<String>,
@@ -167,7 +212,9 @@ Respond in JSON format:
 "#.to_string());
 
         // MCP mapping template
-        templates.insert("mcp_mapping".to_string(), r#"
+        templates.insert(
+            "mcp_mapping".to_string(),
+            r#"
 Convert the following email operation intent into an MCP (Model Context Protocol) method call.
 
 Intent: {intent}
@@ -190,7 +237,9 @@ Respond with the MCP method and parameters in JSON:
   "method": "method_name",
   "params": {}
 }
-"#.to_string());
+"#
+            .to_string(),
+        );
 
         templates
     }
@@ -199,39 +248,66 @@ Respond with the MCP method and parameters in JSON:
     fn init_intent_patterns() -> Vec<(regex::Regex, EmailIntent)> {
         vec![
             // Folder operations
-            (regex::Regex::new(r"(?i)(list|show|display).*(folder|mailbox)").unwrap(),
-             EmailIntent::ListFolders),
-            (regex::Regex::new(r"(?i)create.*(folder|mailbox).*named?\s+(.+)").unwrap(),
-             EmailIntent::Unknown), // Will be refined with entity extraction
-            (regex::Regex::new(r"(?i)rename.*(folder|mailbox)").unwrap(),
-             EmailIntent::Unknown),
-            (regex::Regex::new(r"(?i)delete.*(folder|mailbox)").unwrap(),
-             EmailIntent::Unknown),
-
+            (
+                regex::Regex::new(r"(?i)(list|show|display).*(folder|mailbox)").unwrap(),
+                EmailIntent::ListFolders,
+            ),
+            (
+                regex::Regex::new(r"(?i)create.*(folder|mailbox).*named?\s+(.+)").unwrap(),
+                EmailIntent::Unknown,
+            ), // Will be refined with entity extraction
+            (
+                regex::Regex::new(r"(?i)rename.*(folder|mailbox)").unwrap(),
+                EmailIntent::Unknown,
+            ),
+            (
+                regex::Regex::new(r"(?i)delete.*(folder|mailbox)").unwrap(),
+                EmailIntent::Unknown,
+            ),
             // Email operations
-            (regex::Regex::new(r"(?i)(show|list|display).*(unread|new)\s*(email|message)").unwrap(),
-             EmailIntent::ShowUnreadEmails),
-            (regex::Regex::new(r"(?i)(email|message).*(from|sender)").unwrap(),
-             EmailIntent::Unknown),
-            (regex::Regex::new(r"(?i)(search|find).*(email|message)").unwrap(),
-             EmailIntent::Unknown),
-            (regex::Regex::new(r"(?i)move.*(email|message)").unwrap(),
-             EmailIntent::Unknown),
-            (regex::Regex::new(r"(?i)delete.*(email|message)").unwrap(),
-             EmailIntent::Unknown),
-            (regex::Regex::new(r"(?i)mark.*as\s*(read|unread)").unwrap(),
-             EmailIntent::Unknown),
-
+            (
+                regex::Regex::new(r"(?i)(show|list|display).*(unread|new)\s*(email|message)")
+                    .unwrap(),
+                EmailIntent::ShowUnreadEmails,
+            ),
+            (
+                regex::Regex::new(r"(?i)(email|message).*(from|sender)").unwrap(),
+                EmailIntent::Unknown,
+            ),
+            (
+                regex::Regex::new(r"(?i)(search|find).*(email|message)").unwrap(),
+                EmailIntent::Unknown,
+            ),
+            (
+                regex::Regex::new(r"(?i)move.*(email|message)").unwrap(),
+                EmailIntent::Unknown,
+            ),
+            (
+                regex::Regex::new(r"(?i)delete.*(email|message)").unwrap(),
+                EmailIntent::Unknown,
+            ),
+            (
+                regex::Regex::new(r"(?i)mark.*as\s*(read|unread)").unwrap(),
+                EmailIntent::Unknown,
+            ),
             // General
-            (regex::Regex::new(r"(?i)how\s+many").unwrap(),
-             EmailIntent::Unknown),
-            (regex::Regex::new(r"(?i)(help|what can you do)").unwrap(),
-             EmailIntent::Help),
+            (
+                regex::Regex::new(r"(?i)how\s+many").unwrap(),
+                EmailIntent::Unknown,
+            ),
+            (
+                regex::Regex::new(r"(?i)(help|what can you do)").unwrap(),
+                EmailIntent::Help,
+            ),
         ]
     }
 
     // Process natural language query
-    pub async fn process_query(&self, query: &str, context: Option<&ConversationContext>) -> Result<NlpResult, RestApiError> {
+    pub async fn process_query(
+        &self,
+        query: &str,
+        context: Option<&ConversationContext>,
+    ) -> Result<NlpResult, RestApiError> {
         info!("Processing NLP query: {}", query);
 
         // First, try pattern matching for quick intent detection
@@ -242,7 +318,8 @@ Respond with the MCP method and parameters in JSON:
         let extraction_result = self.extract_with_ai(query, context).await?;
 
         // Map to MCP operation
-        let mcp_operation = self.map_to_mcp_operation(&extraction_result.intent, &extraction_result.entities)?;
+        let mcp_operation =
+            self.map_to_mcp_operation(&extraction_result.intent, &extraction_result.entities)?;
 
         Ok(NlpResult {
             intent: extraction_result.intent,
@@ -264,10 +341,16 @@ Respond with the MCP method and parameters in JSON:
     }
 
     // Extract intent and entities using AI
-    async fn extract_with_ai(&self, query: &str, context: Option<&ConversationContext>) -> Result<NlpResult, RestApiError> {
-        let prompt_template = self.prompt_templates.get("intent_extraction")
+    async fn extract_with_ai(
+        &self,
+        query: &str,
+        context: Option<&ConversationContext>,
+    ) -> Result<NlpResult, RestApiError> {
+        let prompt_template = self
+            .prompt_templates
+            .get("intent_extraction")
             .ok_or_else(|| RestApiError::InternalError {
-                message: "Intent extraction template not found".to_string()
+                message: "Intent extraction template not found".to_string(),
             })?;
 
         let prompt = prompt_template.replace("{query}", query);
@@ -284,7 +367,9 @@ Respond with the MCP method and parameters in JSON:
         // Add system message
         messages.push(AiChatMessage {
             role: "system".to_string(),
-            content: "You are an email assistant that extracts intents and entities from user queries.".to_string(),
+            content:
+                "You are an email assistant that extracts intents and entities from user queries."
+                    .to_string(),
         });
 
         // Add user query
@@ -301,7 +386,11 @@ Respond with the MCP method and parameters in JSON:
     }
 
     // Parse AI extraction response
-    fn parse_extraction_response(&self, response: &str, original_query: &str) -> Result<NlpResult, RestApiError> {
+    fn parse_extraction_response(
+        &self,
+        response: &str,
+        original_query: &str,
+    ) -> Result<NlpResult, RestApiError> {
         // Try to extract JSON from response
         let json_start = response.find('{');
         let json_end = response.rfind('}');
@@ -321,7 +410,7 @@ Respond with the MCP method and parameters in JSON:
                         original_query: original_query.to_string(),
                         mcp_operation: None,
                     })
-                },
+                }
                 Err(e) => {
                     warn!("Failed to parse AI response as JSON: {}", e);
                     // Fallback to pattern detection
@@ -402,60 +491,60 @@ Respond with the MCP method and parameters in JSON:
     }
 
     // Map intent and entities to MCP operation
-    fn map_to_mcp_operation(&self, intent: &EmailIntent, entities: &ExtractedEntities) -> Result<McpOperation, RestApiError> {
+    fn map_to_mcp_operation(
+        &self,
+        intent: &EmailIntent,
+        entities: &ExtractedEntities,
+    ) -> Result<McpOperation, RestApiError> {
         let (method, params) = match intent {
-            EmailIntent::ListFolders => {
-                ("list_folders".to_string(), serde_json::json!({}))
-            },
+            EmailIntent::ListFolders => ("list_folders".to_string(), serde_json::json!({})),
             EmailIntent::ShowUnreadEmails => {
-                let folder = entities.folders.first()
+                let folder = entities
+                    .folders
+                    .first()
                     .unwrap_or(&"INBOX".to_string())
                     .clone();
-                ("search_emails".to_string(), serde_json::json!({
-                    "folder": folder,
-                    "query": "UNSEEN"
-                }))
-            },
+                (
+                    "search_emails".to_string(),
+                    serde_json::json!({
+                        "folder": folder,
+                        "query": "UNSEEN"
+                    }),
+                )
+            }
             EmailIntent::ShowEmailsFromSender(sender) => {
-                let folder = entities.folders.first()
+                let folder = entities
+                    .folders
+                    .first()
                     .unwrap_or(&"INBOX".to_string())
                     .clone();
-                ("search_emails".to_string(), serde_json::json!({
-                    "folder": folder,
-                    "query": format!("FROM \"{}\"", sender)
-                }))
-            },
-            EmailIntent::CreateFolder(name) => {
-                ("create_folder".to_string(), serde_json::json!({
+                (
+                    "search_emails".to_string(),
+                    serde_json::json!({
+                        "folder": folder,
+                        "query": format!("FROM \"{}\"", sender)
+                    }),
+                )
+            }
+            EmailIntent::CreateFolder(name) => (
+                "create_folder".to_string(),
+                serde_json::json!({
                     "name": name
-                }))
-            },
-            EmailIntent::Help => {
-                ("help".to_string(), serde_json::json!({}))
-            },
+                }),
+            ),
+            EmailIntent::Help => ("help".to_string(), serde_json::json!({})),
             _ => {
                 // Default/unknown mapping
-                ("unknown".to_string(), serde_json::json!({
-                    "query": entities.search_terms.join(" ")
-                }))
+                (
+                    "unknown".to_string(),
+                    serde_json::json!({
+                        "query": entities.search_terms.join(" ")
+                    }),
+                )
             }
         };
 
         Ok(McpOperation { method, params })
-    }
-}
-
-impl Default for ExtractedEntities {
-    fn default() -> Self {
-        Self {
-            folders: Vec::new(),
-            senders: Vec::new(),
-            subjects: Vec::new(),
-            dates: Vec::new(),
-            flags: Vec::new(),
-            counts: Vec::new(),
-            search_terms: Vec::new(),
-        }
     }
 }
 

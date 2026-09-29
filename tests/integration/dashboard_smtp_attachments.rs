@@ -7,25 +7,25 @@
 //! Tests email sending via POST /api/dashboard/emails/send and attachment management endpoints
 
 use actix_web::{test, web, App};
+use async_trait::async_trait;
 use serde_json::json;
 use serial_test::serial;
-use std::sync::Arc;
-use std::fs;
-use tokio::sync::Mutex as TokioMutex;
 use sqlx::SqlitePool;
-use async_trait::async_trait;
+use std::fs;
+use std::sync::Arc;
+use tokio::sync::Mutex as TokioMutex;
 
-use rustymail::dashboard::services::{
-    DashboardState, ClientManager, MetricsService, CacheService, CacheConfig,
-    ConfigService, AiService, EmailService, SyncService, AccountService,
-    EventBus, SmtpService, OutboxQueueService, OAuthService, OAuthConfig
-};
-use rustymail::dashboard::api::sse::SseManager;
-use rustymail::dashboard::api::routes::configure as configure_dashboard_routes;
 use rustymail::config::Settings;
-use rustymail::connection_pool::{ConnectionPool, ConnectionFactory, PoolConfig};
+use rustymail::connection_pool::{ConnectionFactory, ConnectionPool, PoolConfig};
+use rustymail::dashboard::api::routes::configure as configure_dashboard_routes;
+use rustymail::dashboard::api::sse::SseManager;
+use rustymail::dashboard::services::{
+    AccountService, AiService, CacheConfig, CacheService, ClientManager, ConfigService,
+    DashboardState, EmailService, EventBus, MetricsService, OAuthConfig, OAuthService,
+    OutboxQueueService, SmtpService, SyncService,
+};
+use rustymail::imap::{AsyncImapSessionWrapper, ImapClient, ImapError};
 use rustymail::prelude::CloneableImapSessionFactory;
-use rustymail::imap::{ImapClient, AsyncImapSessionWrapper, ImapError};
 
 /// Initialize test environment with required environment variables
 fn setup_test_env() {
@@ -88,13 +88,18 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
 
     let mut account_service_temp = AccountService::new(&accounts_config_path);
     let account_db_pool = SqlitePool::connect(&db_url).await.unwrap();
-    account_service_temp.initialize(account_db_pool.clone()).await.unwrap();
+    account_service_temp
+        .initialize(account_db_pool.clone())
+        .await
+        .unwrap();
     let account_service = Arc::new(TokioMutex::new(account_service_temp));
 
     // Create mock IMAP session factory
     let mock_factory: rustymail::imap::ImapSessionFactory = Box::new(|| {
         Box::pin(async {
-            Err(rustymail::imap::ImapError::Connection("Mock IMAP client".to_string()))
+            Err(rustymail::imap::ImapError::Connection(
+                "Mock IMAP client".to_string(),
+            ))
         })
     });
     let imap_session_factory = CloneableImapSessionFactory::new(mock_factory);
@@ -113,16 +118,14 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
         }
     }
 
-    let connection_pool = ConnectionPool::new(
-        Arc::new(MockConnectionFactory),
-        PoolConfig::default()
-    );
+    let connection_pool =
+        ConnectionPool::new(Arc::new(MockConnectionFactory), PoolConfig::default());
 
     // Initialize Email Service
     let email_service = Arc::new(
         EmailService::new(imap_session_factory.clone(), connection_pool.clone())
             .with_cache(cache_service.clone())
-            .with_account_service(account_service.clone())
+            .with_account_service(account_service.clone()),
     );
 
     // Initialize Sync Service
@@ -137,7 +140,10 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
     let ai_service = Arc::new(AiService::new_mock());
 
     // Initialize SMTP Service
-    let smtp_service = Arc::new(SmtpService::new(account_service.clone(), imap_session_factory.clone()));
+    let smtp_service = Arc::new(SmtpService::new(
+        account_service.clone(),
+        imap_session_factory.clone(),
+    ));
 
     // Initialize Outbox Queue Service
     let outbox_queue_service = Arc::new(OutboxQueueService::new(account_db_pool.clone()));
@@ -212,8 +218,9 @@ async fn test_send_email_rest_endpoint() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(configure_dashboard_routes)
-    ).await;
+            .configure(configure_dashboard_routes),
+    )
+    .await;
 
     // Send request
     let req = test::TestRequest::post()
@@ -221,7 +228,7 @@ async fn test_send_email_rest_endpoint() {
         .set_json(&send_email_request)
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     // Note: This will likely fail without a real SMTP server, but we're testing the endpoint structure
     // In a real scenario, this would connect to a mock SMTP server
@@ -252,8 +259,9 @@ async fn test_send_email_with_account_param() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(configure_dashboard_routes)
-    ).await;
+            .configure(configure_dashboard_routes),
+    )
+    .await;
 
     // Send request with account_email query parameter
     let req = test::TestRequest::post()
@@ -261,7 +269,7 @@ async fn test_send_email_with_account_param() {
         .set_json(&send_email_request)
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     println!("✓ Accepts account_email query parameter");
     println!("✓ Uses specified account for sending");
@@ -289,8 +297,9 @@ async fn test_send_email_validation() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(configure_dashboard_routes)
-    ).await;
+            .configure(configure_dashboard_routes),
+    )
+    .await;
 
     // Send invalid request
     let req = test::TestRequest::post()
@@ -330,8 +339,9 @@ async fn test_send_email_with_html_body() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(configure_dashboard_routes)
-    ).await;
+            .configure(configure_dashboard_routes),
+    )
+    .await;
 
     // Send request
     let req = test::TestRequest::post()
@@ -339,7 +349,7 @@ async fn test_send_email_with_html_body() {
         .set_json(&send_email_request)
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     println!("✓ Accepts optional body_html field");
     println!("✓ Sends multipart email with both plain and HTML bodies");
@@ -369,8 +379,9 @@ async fn test_send_email_with_cc_bcc() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(configure_dashboard_routes)
-    ).await;
+            .configure(configure_dashboard_routes),
+    )
+    .await;
 
     // Send request
     let req = test::TestRequest::post()
@@ -378,7 +389,7 @@ async fn test_send_email_with_cc_bcc() {
         .set_json(&send_email_request)
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     println!("✓ Accepts optional CC field (array of email addresses)");
     println!("✓ Accepts optional BCC field (array of email addresses)");
@@ -404,15 +415,16 @@ async fn test_list_attachments_endpoint() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(configure_dashboard_routes)
-    ).await;
+            .configure(configure_dashboard_routes),
+    )
+    .await;
 
     // Test with message_id parameter
     let req = test::TestRequest::get()
         .uri("/api/dashboard/attachments/list?message_id=test-msg-123&account_id=test@example.com")
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     println!("✓ GET /api/dashboard/attachments/list accepts message_id parameter");
     println!("✓ Returns list of attachments for specified message");
@@ -423,7 +435,7 @@ async fn test_list_attachments_endpoint() {
         .uri("/api/dashboard/attachments/list?folder=INBOX&uid=123&account_id=test@example.com")
         .to_request();
 
-    let resp2 = test::call_service(&app, req2).await;
+    let _resp2 = test::call_service(&app, req2).await;
 
     println!("✓ Also accepts folder+uid parameters as alternative");
     println!("✓ Resolves message_id from folder and UID");
@@ -444,17 +456,20 @@ async fn test_download_attachment_endpoint() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(configure_dashboard_routes)
-    ).await;
+            .configure(configure_dashboard_routes),
+    )
+    .await;
 
     // Send request
     let req = test::TestRequest::get()
         .uri("/api/dashboard/attachments/test-msg-123/document.pdf?account_id=test@example.com")
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
-    println!("✓ GET /api/dashboard/attachments/:message_id/:filename downloads specific attachment");
+    println!(
+        "✓ GET /api/dashboard/attachments/:message_id/:filename downloads specific attachment"
+    );
     println!("✓ Requires account_id query parameter");
     println!("✓ Returns file with appropriate content-type header");
     println!("✓ Sets content-disposition header for download");
@@ -475,15 +490,16 @@ async fn test_download_attachments_zip() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(configure_dashboard_routes)
-    ).await;
+            .configure(configure_dashboard_routes),
+    )
+    .await;
 
     // Send request
     let req = test::TestRequest::get()
         .uri("/api/dashboard/attachments/test-msg-123/zip?account_id=test@example.com")
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     println!("✓ GET /api/dashboard/attachments/:message_id/zip creates ZIP archive");
     println!("✓ Bundles all attachments for message into single ZIP");
@@ -506,15 +522,16 @@ async fn test_attachment_not_found_error() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(configure_dashboard_routes)
-    ).await;
+            .configure(configure_dashboard_routes),
+    )
+    .await;
 
     // Request non-existent attachment
     let req = test::TestRequest::get()
         .uri("/api/dashboard/attachments/nonexistent-msg/missing.pdf?account_id=test@example.com")
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     // Should return 404 or error
     println!("✓ Returns 404 for non-existent message_id");
@@ -543,8 +560,9 @@ async fn test_smtp_connection_error_response() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(configure_dashboard_routes)
-    ).await;
+            .configure(configure_dashboard_routes),
+    )
+    .await;
 
     // Send request (will fail without real SMTP server)
     let req = test::TestRequest::post()
@@ -552,7 +570,7 @@ async fn test_smtp_connection_error_response() {
         .set_json(&send_email_request)
         .to_request();
 
-    let resp = test::call_service(&app, req).await;
+    let _resp = test::call_service(&app, req).await;
 
     // Should return error due to missing SMTP configuration
     println!("✓ Returns appropriate error when SMTP connection fails");
@@ -580,8 +598,9 @@ async fn test_concurrent_email_sends() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(configure_dashboard_routes)
-    ).await;
+            .configure(configure_dashboard_routes),
+    )
+    .await;
 
     // Create multiple concurrent send requests
     let mut handles = vec![];
