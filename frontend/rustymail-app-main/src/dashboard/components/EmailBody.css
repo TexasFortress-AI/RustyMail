@@ -1,44 +1,69 @@
-/* Email Body HTML Styles */
+/* Email Body HTML Styles
+ *
+ * HTML emails are authored for a light canvas. Isolate them from the app theme
+ * so dark-mode foreground (near-white) never paints onto white table/bgcolor
+ * regions — that combo was invisible text in the viewer.
+ */
 .email-html-content {
-  /* Prose styles for better readability */
   font-family: inherit;
   line-height: 1.6;
+  background-color: #ffffff;
+  color: #1f2937;
+  color-scheme: light;
+  padding: 0.75rem 1rem;
+  border-radius: 0.375rem;
+  border: 1px solid #e5e7eb;
+  overflow-x: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+/* Ensure unstyled descendants stay dark-on-light even if a parent theme leaks */
+.email-html-content,
+.email-html-content :where(p, div, span, td, th, li, font, center, h1, h2, h3, h4, h5, h6) {
+  color: #1f2937;
 }
 
 .email-html-content h1 {
   font-size: 2em;
   font-weight: bold;
   margin: 0.67em 0;
+  color: #111827;
 }
 
 .email-html-content h2 {
   font-size: 1.5em;
   font-weight: bold;
   margin: 0.83em 0;
+  color: #111827;
 }
 
 .email-html-content h3 {
   font-size: 1.17em;
   font-weight: bold;
   margin: 1em 0;
+  color: #111827;
 }
 
 .email-html-content h4 {
   font-size: 1em;
   font-weight: bold;
   margin: 1.33em 0;
+  color: #111827;
 }
 
 .email-html-content h5 {
   font-size: 0.83em;
   font-weight: bold;
   margin: 1.67em 0;
+  color: #111827;
 }
 
 .email-html-content h6 {
   font-size: 0.67em;
   font-weight: bold;
   margin: 2.33em 0;
+  color: #111827;
 }
 
 .email-html-content p {
@@ -46,12 +71,12 @@
 }
 
 .email-html-content a {
-  color: #3b82f6;
+  color: #2563eb !important;
   text-decoration: underline;
 }
 
 .email-html-content a:hover {
-  color: #2563eb;
+  color: #1d4ed8 !important;
 }
 
 .email-html-content ul {
@@ -74,11 +99,12 @@
   border-left: 4px solid #e5e7eb;
   padding-left: 1em;
   margin: 1em 0;
-  color: #6b7280;
+  color: #4b5563;
 }
 
 .email-html-content pre {
   background-color: #f3f4f6;
+  color: #1f2937;
   padding: 1em;
   border-radius: 0.375rem;
   overflow-x: auto;
@@ -88,6 +114,7 @@
 
 .email-html-content code {
   background-color: #f3f4f6;
+  color: #1f2937;
   padding: 0.125em 0.25em;
   border-radius: 0.25rem;
   font-family: monospace;
@@ -104,6 +131,7 @@
   border: 1px solid #e5e7eb;
   padding: 0.5em;
   text-align: left;
+  color: #1f2937;
 }
 
 .email-html-content th {
@@ -122,4 +150,16 @@
   border: none;
   border-top: 1px solid #e5e7eb;
   margin: 2em 0;
+}
+
+.email-html-content .email-img-blocked {
+  background-color: #f3f4f6;
+  color: #4b5563;
+  border-color: #d1d5db;
+}
+
+.email-html-content .email-img-embedded {
+  background-color: #fef9c3;
+  color: #854d0e;
+  border-color: #fde047;
 }

@@ -14,82 +14,9 @@ import { format } from 'date-fns';
 import { useToast } from '../../hooks/use-toast';
 import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
 import { EmailContext } from './EmailList';
-import DOMPurify from 'dompurify';
 import './EmailBody.css';
+import { sanitizeEmailHtml } from '../utils/sanitizeEmailHtml';
 import { SendMailDialog } from './SendMailDialog';
-
-interface SanitizeOptions {
-  showImages: boolean;
-  messageId?: string;
-  accountId?: string;
-}
-
-// Helper function to sanitize HTML with image handling
-const sanitizeEmailHtml = (html: string, options: SanitizeOptions): string => {
-  const { showImages, messageId, accountId } = options;
-
-  // Configure DOMPurify hooks for image handling
-  DOMPurify.removeAllHooks();
-
-  if (!showImages) {
-    // When images are blocked, replace img tags with placeholder text
-    DOMPurify.addHook('uponSanitizeElement', (node, data) => {
-      if (data.tagName === 'img') {
-        const placeholder = document.createElement('span');
-        placeholder.className = 'inline-block px-2 py-1 text-xs bg-gray-200 text-gray-600 rounded';
-        placeholder.textContent = '[Image blocked]';
-        node.parentNode?.replaceChild(placeholder, node);
-      }
-    });
-  } else {
-    // When images are shown, handle cid: URIs by rewriting to backend endpoint
-    DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-      if (node.tagName === 'IMG') {
-        const src = node.getAttribute('src') || '';
-        if (src.startsWith('cid:')) {
-          // Extract the Content-ID (remove 'cid:' prefix)
-          const contentId = src.substring(4);
-
-          if (messageId && accountId) {
-            // Rewrite to backend inline attachment endpoint
-            const inlineUrl = `${API_BASE_URL}/dashboard/attachments/${encodeURIComponent(messageId)}/inline/${encodeURIComponent(contentId)}?account_id=${encodeURIComponent(accountId)}`;
-            node.setAttribute('src', inlineUrl);
-          } else {
-            // Fallback: show placeholder if we don't have message context
-            const placeholder = document.createElement('span');
-            placeholder.className = 'inline-block px-2 py-1 text-xs bg-yellow-100 text-yellow-800 rounded border border-yellow-300';
-            placeholder.textContent = '[Embedded image]';
-            node.parentNode?.replaceChild(placeholder, node);
-          }
-        }
-      }
-    });
-  }
-
-  // Make links open in new tab
-  DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-    if (node.tagName === 'A') {
-      node.setAttribute('target', '_blank');
-      node.setAttribute('rel', 'noopener noreferrer');
-    }
-  });
-
-  const purifyConfig: DOMPurify.Config = {
-    ALLOWED_TAGS: [
-      'p', 'br', 'strong', 'em', 'u', 's', 'a', 'ul', 'ol', 'li', 'blockquote',
-      'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'pre', 'code', 'table', 'thead',
-      'tbody', 'tr', 'th', 'td', 'img', 'hr', 'div', 'span', 'font', 'center', 'b', 'i'
-    ],
-    ALLOWED_ATTR: showImages
-      ? ['href', 'target', 'rel', 'src', 'alt', 'width', 'height', 'style', 'class', 'align', 'valign', 'bgcolor', 'color', 'size', 'face', 'border', 'cellpadding', 'cellspacing']
-      : ['href', 'target', 'rel', 'class', 'align', 'valign', 'bgcolor', 'color', 'size', 'face', 'border', 'cellpadding', 'cellspacing'],
-    ALLOW_DATA_ATTR: false,
-    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'input', 'style'],
-    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover'],
-  };
-
-  return DOMPurify.sanitize(html, purifyConfig);
-};
 
 interface Email {
   id: number;
@@ -150,25 +77,43 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
 
       setLoading(true);
       try {
-        // Fetch single email by folder and UID
-        const response = await fetch(
-          `${API_BASE_URL}/dashboard/emails?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&limit=1&offset=${selectedEmailContext.index}`,
-          {
-            headers: {
-              'X-API-Key': config.api.apiKey
-            }
-          }
-        );
+        // Prefer UID lookup so deep links and list pagination stay correct
+        const response = await fetch(`${API_BASE_URL}/dashboard/mcp/execute`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-API-Key': config.api.apiKey,
+          },
+          body: JSON.stringify({
+            tool: 'get_email_by_uid',
+            parameters: {
+              uid: selectedEmailContext.uid,
+              folder: currentFolder,
+              account_id: currentAccount.id,
+            },
+          }),
+        });
 
         if (response.ok) {
-          const data = await response.json();
-          if (data.emails && data.emails.length > 0) {
-            setEmail(data.emails[0]);
+          const result = await response.json();
+          const fetched = result?.data ?? result;
+          if (fetched && typeof fetched.uid === 'number') {
+            setEmail(fetched as Email);
           } else {
-            setEmail(null);
+            // Fallback: legacy index-based list fetch
+            const listResp = await fetch(
+              `${API_BASE_URL}/dashboard/emails?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&limit=1&offset=${selectedEmailContext.index}`,
+              { headers: { 'X-API-Key': config.api.apiKey } }
+            );
+            if (listResp.ok) {
+              const data = await listResp.json();
+              setEmail(data.emails?.[0] ?? null);
+            } else {
+              setEmail(null);
+            }
           }
         } else {
-          console.error('Failed to fetch email');
+          console.error('Failed to fetch email by uid');
           setEmail(null);
         }
       } catch (error) {
@@ -381,15 +326,15 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
       <CardContent className="flex-1 overflow-y-auto">
         <div className="mb-4">
           <h3 className="text-lg font-semibold mb-2">{email.subject || '(No subject)'}</h3>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             From: {email.from_name || email.from_address || 'Unknown'}
           </p>
           {email.to_addresses && email.to_addresses.length > 0 && (
-            <p className="text-sm text-gray-600">
+            <p className="text-sm text-muted-foreground">
               To: {email.to_addresses.join(', ')}
             </p>
           )}
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             Date: {formatDate(email.date, email.internal_date)}
           </p>
         </div>
@@ -440,7 +385,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
               }}
             />
           ) : (
-            <div className="whitespace-pre-wrap">
+            <div className="whitespace-pre-wrap text-foreground">
               {email.body_text || 'No content'}
             </div>
           )}
@@ -448,7 +393,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
 
         {/* Attachments Section */}
         {loadingAttachments ? (
-          <div className="mb-4 flex items-center gap-2 text-sm text-gray-600">
+          <div className="mb-4 flex items-center gap-2 text-sm text-muted-foreground">
             <RefreshCw className="h-4 w-4 animate-spin" />
             Loading attachments...
           </div>
@@ -472,15 +417,15 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
               {attachments.map((attachment, index) => (
                 <div
                   key={index}
-                  className="flex items-center justify-between p-2 bg-gray-50 rounded border"
+                  className="flex items-center justify-between p-2 bg-muted/50 rounded border"
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
-                    <Paperclip className="h-4 w-4 text-gray-500 flex-shrink-0" />
+                    <Paperclip className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <div className="text-sm font-medium truncate">
                         {attachment.filename}
                       </div>
-                      <div className="text-xs text-gray-500">
+                      <div className="text-xs text-muted-foreground">
                         {formatFileSize(attachment.size_bytes)}
                         {attachment.content_type && ` • ${attachment.content_type}`}
                       </div>

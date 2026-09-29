@@ -34,12 +34,22 @@ const Dashboard: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Get account context
-  const { refreshAccounts, currentAccount, loading: accountsLoading } = useAccount();
+  const { refreshAccounts, currentAccount, loading: accountsLoading, accounts, switchAccount } = useAccount();
 
   // Active tab state
   const [activeTab, setActiveTab] = useState('email');
 
+  // Deep-link: select a specific email by UID after account/folder are applied
+  const [pendingDeepLink, setPendingDeepLink] = useState<{
+    uid: number;
+    folder?: string;
+    accountId?: string;
+  } | null>(null);
+  const deepLinkConsumedRef = useRef(false);
+  const skipNextFolderResetRef = useRef(false);
+
   // Handle OAuth redirect query params (?oauth=success&email=... or ?oauth=error&message=...)
+  // Only strip oauth-related params so deep-link params are not wiped if present.
   useEffect(() => {
     const oauthStatus = searchParams.get('oauth');
     if (!oauthStatus) return;
@@ -62,8 +72,11 @@ const Dashboard: React.FC = () => {
       setActiveTab('accounts');
     }
 
-    // Clear query params from URL to prevent re-triggering on refresh
-    setSearchParams({}, { replace: true });
+    const next = new URLSearchParams(searchParams);
+    next.delete('oauth');
+    next.delete('email');
+    next.delete('message');
+    setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams, toast, refreshAccounts]);
 
   // Current folder state (shared between EmailList and ChatbotPanel)
@@ -78,15 +91,107 @@ const Dashboard: React.FC = () => {
     localStorage.setItem('rustymail_current_folder', currentFolder);
   }, [currentFolder]);
 
-  // Reset folder to INBOX when switching accounts (skip initial load to preserve localStorage)
+  // Reset folder to INBOX when switching accounts (skip initial load to preserve localStorage).
+  // Deep links that switch account + folder set skipNextFolderResetRef to avoid clobbering.
   const isInitialAccountLoad = useRef(true);
   useEffect(() => {
     if (isInitialAccountLoad.current) {
       isInitialAccountLoad.current = false;
       return;
     }
+    if (skipNextFolderResetRef.current) {
+      skipNextFolderResetRef.current = false;
+      return;
+    }
     setCurrentFolder('INBOX');
   }, [currentAccount?.id]);
+
+  // Deep link: ?account=...&folder=...&uid=... (account_id is an alias for account)
+  useEffect(() => {
+    if (accountsLoading || deepLinkConsumedRef.current) return;
+    // Let OAuth handling win if both somehow appear together
+    if (searchParams.get('oauth')) return;
+
+    const accountParam = searchParams.get('account') || searchParams.get('account_id');
+    const folderParam = searchParams.get('folder');
+    const uidRaw = searchParams.get('uid');
+
+    if (!accountParam && !folderParam && !uidRaw) return;
+
+    deepLinkConsumedRef.current = true;
+
+    const applyDeepLink = async () => {
+      if (accountParam) {
+        const match = accounts.find(
+          (a) =>
+            a.id === accountParam ||
+            a.email_address.toLowerCase() === accountParam.toLowerCase()
+        );
+        if (match) {
+          if (match.id !== currentAccount?.id) {
+            // Only skip the INBOX reset when the deep link also specifies a folder
+            if (folderParam) {
+              skipNextFolderResetRef.current = true;
+            }
+            await switchAccount(match.id);
+          }
+        } else {
+          toast({
+            title: 'Account not found',
+            description: `No account matching "${accountParam}".`,
+            variant: 'destructive',
+          });
+        }
+      }
+
+      if (folderParam) {
+        setCurrentFolder(folderParam);
+      }
+
+      if (uidRaw != null && uidRaw !== '') {
+        const uid = Number.parseInt(uidRaw, 10);
+        if (!Number.isNaN(uid)) {
+          const matchedAccount = accountParam
+            ? accounts.find(
+                (a) =>
+                  a.id === accountParam ||
+                  a.email_address.toLowerCase() === accountParam.toLowerCase()
+              )
+            : undefined;
+          setPendingDeepLink({
+            uid,
+            folder: folderParam || undefined,
+            accountId: matchedAccount?.id || accountParam || undefined,
+          });
+          setActiveTab('email');
+        } else {
+          toast({
+            title: 'Invalid email UID',
+            description: `uid must be a number (got "${uidRaw}").`,
+            variant: 'destructive',
+          });
+        }
+      }
+
+      // Clear deep-link params only; leave any non-deep-link params alone
+      const next = new URLSearchParams(searchParams);
+      next.delete('account');
+      next.delete('account_id');
+      next.delete('folder');
+      next.delete('uid');
+      setSearchParams(next, { replace: true });
+    };
+
+    void applyDeepLink();
+  }, [
+    accountsLoading,
+    accounts,
+    currentAccount?.id,
+    searchParams,
+    setSearchParams,
+    switchAccount,
+    toast,
+  ]);
 
   // Selected email context (for MCP tools)
   const [selectedEmailContext, setSelectedEmailContext] = useState<EmailContext | undefined>(undefined);
@@ -348,6 +453,10 @@ const Dashboard: React.FC = () => {
                   currentFolder={currentFolder}
                   setCurrentFolder={setCurrentFolder}
                   onEmailSelect={setSelectedEmailContext}
+                  pendingSelectUid={pendingDeepLink?.uid ?? null}
+                  pendingSelectFolder={pendingDeepLink?.folder}
+                  pendingSelectAccountId={pendingDeepLink?.accountId}
+                  onPendingSelectConsumed={() => setPendingDeepLink(null)}
                 />
               </div>
 
