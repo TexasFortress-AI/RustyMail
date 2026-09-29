@@ -6,6 +6,7 @@
 use super::account_store::{AccountStore, AccountStoreError, StoredAccount};
 use super::connection_status::AccountConnectionStatus;
 use super::connection_status_store::{ConnectionStatusStore, ConnectionStatusStoreError};
+use super::encryption::{CredentialEncryption, EncryptionError};
 use chrono::Utc;
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -30,6 +31,8 @@ pub enum AccountError {
     InvalidEmail(String),
     #[error("Account operation failed: {0}")]
     OperationFailed(String),
+    #[error("Credential encryption error: {0}")]
+    EncryptionError(#[from] EncryptionError),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,6 +132,93 @@ pub struct AccountService {
     db_pool: Option<SqlitePool>,
     account_store: AccountStore,
     connection_status_store: ConnectionStatusStore,
+    /// Used to encrypt credentials before they are written to the SQLite cache.
+    encryption: CredentialEncryption,
+}
+
+/// Credential columns of the `accounts` table, in the form they are stored in
+/// the database (AES-256-GCM `ENC:v1:` when encryption is enabled).
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DbCredentials {
+    pub imap_pass: String,
+    pub smtp_pass: Option<String>,
+    pub oauth_access_token: Option<String>,
+    pub oauth_refresh_token: Option<String>,
+}
+
+/// Encrypt an account's credentials for storage in the database cache.
+/// Already-encrypted values are left untouched, so this is idempotent.
+pub(crate) fn encrypt_credentials_for_db(
+    account: &StoredAccount,
+    encryption: &CredentialEncryption,
+) -> Result<DbCredentials, EncryptionError> {
+    Ok(DbCredentials {
+        imap_pass: encryption.encrypt_if_needed(&account.imap.password)?,
+        smtp_pass: encryption.encrypt_opt(account.smtp.as_ref().map(|s| s.password.as_str()))?,
+        oauth_access_token: encryption.encrypt_opt(account.oauth_access_token.as_deref())?,
+        oauth_refresh_token: encryption.encrypt_opt(account.oauth_refresh_token.as_deref())?,
+    })
+}
+
+/// Re-encrypt any plaintext credential values left in the `accounts` table
+/// (e.g. rows written by older versions). Idempotent: values already in the
+/// `ENC:v1:` format and empty/NULL values are skipped.
+///
+/// Returns the number of rows that were updated. Does nothing when encryption
+/// is disabled (no `ENCRYPTION_MASTER_KEY`).
+pub async fn reencrypt_plaintext_db_credentials(
+    db: &SqlitePool,
+    encryption: &CredentialEncryption,
+) -> Result<usize, AccountError> {
+    if !encryption.is_enabled() {
+        warn!("ENCRYPTION_MASTER_KEY not set - account credentials in the database remain unencrypted");
+        return Ok(0);
+    }
+
+    let rows = sqlx::query(
+        "SELECT email_address, imap_pass, smtp_pass, oauth_access_token, oauth_refresh_token FROM accounts",
+    )
+    .fetch_all(db)
+    .await?;
+
+    let needs = |v: &Option<String>| {
+        v.as_deref()
+            .map(|s| !s.is_empty() && !CredentialEncryption::is_encrypted(s))
+            .unwrap_or(false)
+    };
+
+    let mut updated = 0usize;
+    for row in rows {
+        let email: String = row.get("email_address");
+        let imap_pass: Option<String> = row.get("imap_pass");
+        let smtp_pass: Option<String> = row.get("smtp_pass");
+        let access: Option<String> = row.get("oauth_access_token");
+        let refresh: Option<String> = row.get("oauth_refresh_token");
+
+        if !(needs(&imap_pass) || needs(&smtp_pass) || needs(&access) || needs(&refresh)) {
+            continue;
+        }
+
+        sqlx::query(
+            "UPDATE accounts SET imap_pass = ?, smtp_pass = ?, oauth_access_token = ?, oauth_refresh_token = ? WHERE email_address = ?",
+        )
+        .bind(encryption.encrypt_opt(imap_pass.as_deref())?)
+        .bind(encryption.encrypt_opt(smtp_pass.as_deref())?)
+        .bind(encryption.encrypt_opt(access.as_deref())?)
+        .bind(encryption.encrypt_opt(refresh.as_deref())?)
+        .bind(&email)
+        .execute(db)
+        .await?;
+        updated += 1;
+    }
+
+    if updated > 0 {
+        info!(
+            "Encrypted plaintext credentials for {} account row(s) in the database",
+            updated
+        );
+    }
+    Ok(updated)
 }
 
 impl AccountService {
@@ -144,6 +234,7 @@ impl AccountService {
             db_pool: None,
             account_store: AccountStore::new(config_path),
             connection_status_store: ConnectionStatusStore::new(&connection_status_path),
+            encryption: CredentialEncryption::new(),
         }
     }
 
@@ -164,6 +255,14 @@ impl AccountService {
         // Sync accounts FROM file storage TO database
         if let Err(e) = self.sync_accounts_to_db().await {
             warn!("Failed to sync accounts to database: {}", e);
+        }
+
+        // Encrypt any plaintext credentials still present in the database
+        // (rows from older versions or accounts no longer in accounts.json).
+        if let Some(db) = self.db_pool.as_ref() {
+            if let Err(e) = reencrypt_plaintext_db_credentials(db, &self.encryption).await {
+                warn!("Failed to encrypt plaintext credentials in database: {}", e);
+            }
         }
 
         info!("Account service initialized with file-based storage");
@@ -314,13 +413,17 @@ impl AccountService {
             let imap_host: String = row.get("imap_host");
             let imap_port: i64 = row.get("imap_port");
             let imap_user: String = row.get("imap_user");
-            let imap_pass: String = row.get("imap_pass");
+            let imap_pass: String = self
+                .encryption
+                .decrypt(&row.get::<String, _>("imap_pass"))?;
             let imap_use_tls: i32 = row.get("imap_use_tls");
             let imap_use_starttls: i32 = row.get("imap_use_starttls");
             let smtp_host: Option<String> = row.get("smtp_host");
             let smtp_port: Option<i64> = row.get("smtp_port");
             let smtp_user: Option<String> = row.get("smtp_user");
-            let smtp_pass: Option<String> = row.get("smtp_pass");
+            let smtp_pass: Option<String> = self
+                .encryption
+                .decrypt_opt(row.get::<Option<String>, _>("smtp_pass").as_deref())?;
             let smtp_use_tls: Option<i32> = row.get("smtp_use_tls");
             let smtp_use_starttls: Option<i32> = row.get("smtp_use_starttls");
             let is_active: i32 = row.get("is_active");
@@ -391,7 +494,14 @@ impl AccountService {
             file_accounts.len()
         );
 
+        if !self.encryption.is_enabled() {
+            warn!("ENCRYPTION_MASTER_KEY not set - account credentials will be stored unencrypted in the database");
+        }
+
         for account in file_accounts {
+            // Never write plaintext credentials to the database cache
+            let creds = encrypt_credentials_for_db(&account, &self.encryption)?;
+
             // Check if account already exists in database by email_address
             let exists = sqlx::query_scalar::<_, i64>(
                 "SELECT COUNT(*) FROM accounts WHERE email_address = ?",
@@ -420,18 +530,18 @@ impl AccountService {
                 .bind(&account.imap.host)
                 .bind(account.imap.port as i64)
                 .bind(&account.imap.username)
-                .bind(&account.imap.password)
+                .bind(&creds.imap_pass)
                 .bind(if account.imap.use_tls { 1 } else { 0 })
                 .bind(if account.imap.use_starttls { 1 } else { 0 })
                 .bind(account.smtp.as_ref().map(|s| &s.host))
                 .bind(account.smtp.as_ref().map(|s| s.port as i64))
                 .bind(account.smtp.as_ref().map(|s| &s.username))
-                .bind(account.smtp.as_ref().map(|s| &s.password))
+                .bind(&creds.smtp_pass)
                 .bind(account.smtp.as_ref().map(|s| if s.use_tls { 1 } else { 0 }))
                 .bind(account.smtp.as_ref().map(|s| if s.use_starttls { 1 } else { 0 }))
                 .bind(&account.oauth_provider)
-                .bind(&account.oauth_access_token)
-                .bind(&account.oauth_refresh_token)
+                .bind(&creds.oauth_access_token)
+                .bind(&creds.oauth_refresh_token)
                 .bind(account.oauth_token_expiry)
                 .bind(if account.is_active { 1 } else { 0 })
                 .bind(&account.email_address)
@@ -459,18 +569,18 @@ impl AccountService {
                 .bind(&account.imap.host)
                 .bind(account.imap.port as i64)
                 .bind(&account.imap.username)
-                .bind(&account.imap.password)
+                .bind(&creds.imap_pass)
                 .bind(if account.imap.use_tls { 1 } else { 0 })
                 .bind(if account.imap.use_starttls { 1 } else { 0 })
                 .bind(account.smtp.as_ref().map(|s| &s.host))
                 .bind(account.smtp.as_ref().map(|s| s.port as i64))
                 .bind(account.smtp.as_ref().map(|s| &s.username))
-                .bind(account.smtp.as_ref().map(|s| &s.password))
+                .bind(&creds.smtp_pass)
                 .bind(account.smtp.as_ref().map(|s| if s.use_tls { 1 } else { 0 }))
                 .bind(account.smtp.as_ref().map(|s| if s.use_starttls { 1 } else { 0 }))
                 .bind(&account.oauth_provider)
-                .bind(&account.oauth_access_token)
-                .bind(&account.oauth_refresh_token)
+                .bind(&creds.oauth_access_token)
+                .bind(&creds.oauth_refresh_token)
                 .bind(account.oauth_token_expiry)
                 .bind(if account.is_active { 1 } else { 0 })
                 .execute(db)
@@ -1022,5 +1132,191 @@ impl AccountService {
 
         self.connection_status_store.update_status(status).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod db_credential_encryption_tests {
+    use super::super::account_store::{ImapConfig, SmtpConfig};
+    use super::*;
+    use sqlx::sqlite::SqlitePoolOptions;
+
+    fn test_encryption() -> CredentialEncryption {
+        CredentialEncryption::from_key_hex(&"5a".repeat(32)).unwrap()
+    }
+
+    async fn memory_db() -> SqlitePool {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .unwrap();
+        sqlx::migrate!("./migrations").run(&pool).await.unwrap();
+        pool
+    }
+
+    fn stored_account() -> StoredAccount {
+        StoredAccount {
+            display_name: "Test".into(),
+            email_address: "t@example.com".into(),
+            provider_type: None,
+            imap: ImapConfig {
+                host: "imap.example.com".into(),
+                port: 993,
+                username: "t@example.com".into(),
+                password: "imap-secret".into(),
+                use_tls: true,
+                use_starttls: false,
+            },
+            smtp: Some(SmtpConfig {
+                host: "smtp.example.com".into(),
+                port: 465,
+                username: "t@example.com".into(),
+                password: "smtp-secret".into(),
+                use_tls: true,
+                use_starttls: false,
+            }),
+            oauth_provider: None,
+            oauth_access_token: Some("access".into()),
+            oauth_refresh_token: None,
+            oauth_token_expiry: None,
+            is_active: true,
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+        }
+    }
+
+    #[test]
+    fn credentials_for_db_are_encrypted_and_idempotent() {
+        let enc = test_encryption();
+        let creds = encrypt_credentials_for_db(&stored_account(), &enc).unwrap();
+        assert!(CredentialEncryption::is_encrypted(&creds.imap_pass));
+        assert!(CredentialEncryption::is_encrypted(
+            creds.smtp_pass.as_deref().unwrap()
+        ));
+        assert!(CredentialEncryption::is_encrypted(
+            creds.oauth_access_token.as_deref().unwrap()
+        ));
+        assert_eq!(creds.oauth_refresh_token, None);
+        assert_eq!(enc.decrypt(&creds.imap_pass).unwrap(), "imap-secret");
+
+        // Feeding already-encrypted values back in must not double-encrypt
+        let mut again = stored_account();
+        again.imap.password = creds.imap_pass.clone();
+        let creds2 = encrypt_credentials_for_db(&again, &enc).unwrap();
+        assert_eq!(creds2.imap_pass, creds.imap_pass);
+    }
+
+    #[tokio::test]
+    async fn reencrypt_plaintext_rows_is_idempotent() {
+        let db = memory_db().await;
+        let enc = test_encryption();
+
+        sqlx::query(
+            "INSERT INTO accounts (display_name, email_address, imap_host, imap_port, imap_user, imap_pass, imap_use_tls, smtp_host, smtp_port, smtp_user, smtp_pass, is_active, is_default) \
+             VALUES ('Legacy', 'legacy@example.com', 'h', 993, 'u', 'plain-imap', 1, 'h', 465, 'u', 'plain-smtp', 1, 0)",
+        )
+        .execute(&db)
+        .await
+        .unwrap();
+
+        assert_eq!(
+            reencrypt_plaintext_db_credentials(&db, &enc).await.unwrap(),
+            1
+        );
+
+        let row = sqlx::query("SELECT imap_pass, smtp_pass, oauth_access_token FROM accounts WHERE email_address = 'legacy@example.com'")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+        let imap: String = row.get("imap_pass");
+        let smtp: Option<String> = row.get("smtp_pass");
+        let tok: Option<String> = row.get("oauth_access_token");
+        assert!(CredentialEncryption::is_encrypted(&imap));
+        assert!(CredentialEncryption::is_encrypted(smtp.as_deref().unwrap()));
+        assert_eq!(tok, None);
+        assert_eq!(enc.decrypt(&imap).unwrap(), "plain-imap");
+        assert_eq!(enc.decrypt(smtp.as_deref().unwrap()).unwrap(), "plain-smtp");
+
+        // Second run: nothing to do, values unchanged
+        assert_eq!(
+            reencrypt_plaintext_db_credentials(&db, &enc).await.unwrap(),
+            0
+        );
+        let imap_after: String = sqlx::query_scalar(
+            "SELECT imap_pass FROM accounts WHERE email_address = 'legacy@example.com'",
+        )
+        .fetch_one(&db)
+        .await
+        .unwrap();
+        assert_eq!(imap_after, imap);
+    }
+
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn reencrypt_is_noop_without_key() {
+        let db = memory_db().await;
+        sqlx::query(
+            "INSERT INTO accounts (display_name, email_address, imap_host, imap_port, imap_user, imap_pass, imap_use_tls, is_active, is_default) \
+             VALUES ('Legacy', 'legacy@example.com', 'h', 993, 'u', 'plain-imap', 1, 1, 0)",
+        )
+        .execute(&db)
+        .await
+        .unwrap();
+
+        let saved = std::env::var("ENCRYPTION_MASTER_KEY").ok();
+        std::env::remove_var("ENCRYPTION_MASTER_KEY");
+        let disabled = CredentialEncryption::new();
+        if let Some(k) = saved {
+            std::env::set_var("ENCRYPTION_MASTER_KEY", k);
+        }
+        assert!(!disabled.is_enabled());
+        assert_eq!(
+            reencrypt_plaintext_db_credentials(&db, &disabled)
+                .await
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn account_serialization_never_contains_secrets() {
+        let account = Account {
+            email_address: "t@example.com".into(),
+            id: "t@example.com".into(),
+            display_name: "T".into(),
+            provider_type: None,
+            imap_host: "h".into(),
+            imap_port: 993,
+            imap_user: "u".into(),
+            imap_pass: "imap-secret".into(),
+            imap_use_tls: true,
+            imap_use_starttls: false,
+            smtp_host: None,
+            smtp_port: None,
+            smtp_user: None,
+            smtp_pass: Some("smtp-secret".into()),
+            smtp_use_tls: None,
+            smtp_use_starttls: None,
+            oauth_provider: Some("microsoft".into()),
+            oauth_access_token: Some("access-secret".into()),
+            oauth_refresh_token: Some("refresh-secret".into()),
+            oauth_token_expiry: None,
+            is_active: true,
+            is_default: false,
+            connection_status: None,
+        };
+        let json = serde_json::to_string(&account).unwrap();
+        for secret in [
+            "imap-secret",
+            "smtp-secret",
+            "access-secret",
+            "refresh-secret",
+        ] {
+            assert!(
+                !json.contains(secret),
+                "serialized account leaked a secret field"
+            );
+        }
     }
 }

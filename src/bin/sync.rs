@@ -24,6 +24,7 @@
 use chrono::Utc;
 use clap::Parser;
 use log::{debug, error, info, warn};
+use rustymail::dashboard::services::encryption::{CredentialEncryption, EncryptionError};
 use sqlx::{Row, SqlitePool};
 use std::fs::File;
 use std::io::Write as IoWrite;
@@ -224,20 +225,38 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Ok(());
     }
 
-    let accounts: Vec<AccountRow> = rows
-        .iter()
-        .map(|row| AccountRow {
-            email_address: row.get("email_address"),
+    // Credentials are stored encrypted (ENC:v1:) in the database; decrypt them
+    // in memory using ENCRYPTION_MASTER_KEY (loaded from .env above).
+    let encryption = CredentialEncryption::new();
+
+    let mut accounts: Vec<AccountRow> = Vec::with_capacity(rows.len());
+    for row in rows.iter() {
+        let email_address: String = row.get("email_address");
+        let raw_pass: String = row.get("imap_pass");
+        let raw_token: Option<String> = row.get("oauth_access_token");
+        let (imap_pass, oauth_access_token) = match decrypt_account_secrets(
+            &encryption,
+            &raw_pass,
+            raw_token.as_deref(),
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                error!("Cannot decrypt credentials for {} (is ENCRYPTION_MASTER_KEY set correctly?): {}", email_address, e);
+                continue;
+            }
+        };
+        accounts.push(AccountRow {
+            email_address,
             imap_host: row.get("imap_host"),
             imap_port: row.get("imap_port"),
             imap_user: row.get("imap_user"),
-            imap_pass: row.get("imap_pass"),
+            imap_pass,
             imap_use_tls: row.get("imap_use_tls"),
             imap_use_starttls: row.get("imap_use_starttls"),
             oauth_provider: row.get("oauth_provider"),
-            oauth_access_token: row.get("oauth_access_token"),
-        })
-        .collect();
+            oauth_access_token,
+        });
+    }
 
     info!("Found {} account(s) to sync", accounts.len());
 
@@ -250,6 +269,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("Sync complete, exiting");
     Ok(())
+}
+
+/// Decrypt an account's IMAP password and OAuth access token read from the
+/// database. Plaintext values (from older versions) pass through unchanged.
+fn decrypt_account_secrets(
+    encryption: &CredentialEncryption,
+    imap_pass: &str,
+    oauth_access_token: Option<&str>,
+) -> Result<(String, Option<String>), EncryptionError> {
+    Ok((
+        encryption.decrypt(imap_pass)?,
+        encryption.decrypt_opt(oauth_access_token)?,
+    ))
 }
 
 /// Sync folders for a single account
@@ -820,4 +852,31 @@ async fn get_or_create_folder_id(
         .await?;
 
     Ok(id)
+}
+
+#[cfg(test)]
+mod credential_tests {
+    use super::*;
+
+    #[test]
+    fn decrypts_encrypted_and_passes_plaintext() {
+        let enc = CredentialEncryption::from_key_hex(&"ab".repeat(32)).unwrap();
+        let ct = enc.encrypt("pw").unwrap();
+        let tok = enc.encrypt("tok").unwrap();
+        let (p, t) = decrypt_account_secrets(&enc, &ct, Some(&tok)).unwrap();
+        assert_eq!(p, "pw");
+        assert_eq!(t.as_deref(), Some("tok"));
+
+        let (p, t) = decrypt_account_secrets(&enc, "legacy", None).unwrap();
+        assert_eq!(p, "legacy");
+        assert!(t.is_none());
+    }
+
+    #[test]
+    fn wrong_key_is_an_error() {
+        let a = CredentialEncryption::from_key_hex(&"ab".repeat(32)).unwrap();
+        let b = CredentialEncryption::from_key_hex(&"cd".repeat(32)).unwrap();
+        let ct = a.encrypt("pw").unwrap();
+        assert!(decrypt_account_secrets(&b, &ct, None).is_err());
+    }
 }

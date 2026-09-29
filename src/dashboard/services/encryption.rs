@@ -36,6 +36,9 @@ pub enum EncryptionError {
     InvalidFormat(String),
 }
 
+/// Prefix marking a value as encrypted with scheme version 1.
+pub const ENC_PREFIX: &str = "ENC:v1:";
+
 /// Encrypted data container storing the nonce and ciphertext together.
 #[derive(Debug, Serialize, Deserialize)]
 struct EncryptedData {
@@ -85,6 +88,39 @@ impl CredentialEncryption {
         self.cipher.is_some()
     }
 
+    /// Create an instance from an explicit 64-hex-character key (used by tests
+    /// and tools that must not depend on process environment).
+    pub fn from_key_hex(key_hex: &str) -> Result<Self, EncryptionError> {
+        Ok(Self {
+            cipher: Some(Self::cipher_from_hex(key_hex)?),
+        })
+    }
+
+    /// Returns true if `value` is in the encrypted `ENC:v1:` format.
+    pub fn is_encrypted(value: &str) -> bool {
+        value.starts_with(ENC_PREFIX)
+    }
+
+    /// Encrypt `value` unless it is empty or already encrypted (idempotent).
+    ///
+    /// If encryption is disabled the value is returned unchanged.
+    pub fn encrypt_if_needed(&self, value: &str) -> Result<String, EncryptionError> {
+        if value.is_empty() || Self::is_encrypted(value) {
+            return Ok(value.to_string());
+        }
+        self.encrypt(value)
+    }
+
+    /// Optional-value variant of [`encrypt_if_needed`](Self::encrypt_if_needed).
+    pub fn encrypt_opt(&self, value: Option<&str>) -> Result<Option<String>, EncryptionError> {
+        value.map(|v| self.encrypt_if_needed(v)).transpose()
+    }
+
+    /// Optional-value variant of [`decrypt`](Self::decrypt).
+    pub fn decrypt_opt(&self, value: Option<&str>) -> Result<Option<String>, EncryptionError> {
+        value.map(|v| self.decrypt(v)).transpose()
+    }
+
     /// Encrypt a plaintext credential.
     ///
     /// Returns the encrypted data as a prefixed string: `ENC:v1:<base64-json>`.
@@ -115,7 +151,7 @@ impl CredentialEncryption {
             .map_err(|e| EncryptionError::EncryptionFailed(e.to_string()))?;
 
         // Prefix with version marker for future compatibility
-        Ok(format!("ENC:v1:{}", BASE64.encode(json.as_bytes())))
+        Ok(format!("{}{}", ENC_PREFIX, BASE64.encode(json.as_bytes())))
     }
 
     /// Decrypt an encrypted credential.
@@ -124,7 +160,7 @@ impl CredentialEncryption {
     /// If encryption is disabled or the data is not encrypted, returns unchanged.
     pub fn decrypt(&self, encrypted: &str) -> Result<String, EncryptionError> {
         // Check if this is encrypted data
-        if !encrypted.starts_with("ENC:v1:") {
+        if !encrypted.starts_with(ENC_PREFIX) {
             // Not encrypted - return as-is (backward compatibility)
             return Ok(encrypted.to_string());
         }
@@ -137,7 +173,7 @@ impl CredentialEncryption {
         };
 
         // Extract and decode the base64 JSON
-        let encoded_json = &encrypted[7..]; // Skip "ENC:v1:"
+        let encoded_json = &encrypted[ENC_PREFIX.len()..];
         let json_bytes = BASE64
             .decode(encoded_json)
             .map_err(|e| EncryptionError::InvalidFormat(format!("base64 decode: {}", e)))?;
@@ -178,16 +214,19 @@ impl CredentialEncryption {
     fn load_key_from_env() -> Result<Aes256Gcm, EncryptionError> {
         let key_hex = std::env::var("ENCRYPTION_MASTER_KEY")
             .map_err(|_| EncryptionError::KeyNotConfigured)?;
+        Self::cipher_from_hex(&key_hex)
+    }
 
+    fn cipher_from_hex(key_hex: &str) -> Result<Aes256Gcm, EncryptionError> {
         // Key must be 32 bytes = 64 hex characters
         if key_hex.len() != 64 {
             return Err(EncryptionError::InvalidKeyLength);
         }
 
         let key_bytes =
-            hex::decode(&key_hex).map_err(|e| EncryptionError::InvalidKeyHex(e.to_string()))?;
+            hex::decode(key_hex).map_err(|e| EncryptionError::InvalidKeyHex(e.to_string()))?;
 
-        Aes256Gcm::new_from_slice(&key_bytes).map_err(|_e| EncryptionError::InvalidKeyLength)
+        Aes256Gcm::new_from_slice(&key_bytes).map_err(|_| EncryptionError::InvalidKeyLength)
     }
 }
 
@@ -299,5 +338,41 @@ mod tests {
         assert_eq!(encryption.decrypt(&encrypted2).unwrap(), plaintext);
 
         std::env::remove_var("ENCRYPTION_MASTER_KEY");
+    }
+
+    #[test]
+    fn test_from_key_hex_and_encrypt_if_needed_is_idempotent() {
+        let enc = CredentialEncryption::from_key_hex(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        )
+        .unwrap();
+        assert!(enc.is_enabled());
+
+        let once = enc.encrypt_if_needed("hunter2").unwrap();
+        assert!(CredentialEncryption::is_encrypted(&once));
+        // Second pass must not double-encrypt
+        let twice = enc.encrypt_if_needed(&once).unwrap();
+        assert_eq!(once, twice);
+        assert_eq!(enc.decrypt(&twice).unwrap(), "hunter2");
+
+        // Empty stays empty
+        assert_eq!(enc.encrypt_if_needed("").unwrap(), "");
+        assert_eq!(enc.encrypt_opt(None).unwrap(), None);
+        let opt = enc.encrypt_opt(Some("tok")).unwrap().unwrap();
+        assert_eq!(enc.decrypt_opt(Some(&opt)).unwrap().as_deref(), Some("tok"));
+    }
+
+    #[test]
+    fn test_from_key_hex_rejects_bad_keys() {
+        assert!(CredentialEncryption::from_key_hex("tooshort").is_err());
+        assert!(CredentialEncryption::from_key_hex(&"zz".repeat(32)).is_err());
+    }
+
+    #[test]
+    fn test_decrypt_with_wrong_key_fails() {
+        let a = CredentialEncryption::from_key_hex(&"11".repeat(32)).unwrap();
+        let b = CredentialEncryption::from_key_hex(&"22".repeat(32)).unwrap();
+        let ct = a.encrypt("secret").unwrap();
+        assert!(b.decrypt(&ct).is_err());
     }
 }
