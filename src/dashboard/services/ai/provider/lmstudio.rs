@@ -6,13 +6,13 @@
 // src/dashboard/services/ai/providers/lmstudio.rs
 // LM Studio adapter - OpenAI-compatible local inference server
 
-use async_trait::async_trait;
-use reqwest::Client;
-use serde::{Serialize, Deserialize};
-use log::{debug, warn, error, info};
-use super::{AiProvider, AiChatMessage, get_ai_request_timeout, get_ai_generation_timeout};
+use super::{get_ai_generation_timeout, get_ai_request_timeout, AiChatMessage, AiProvider};
 use crate::api::errors::ApiError as RestApiError;
 use crate::dashboard::services::ai::sampler_config::SamplerConfig;
+use async_trait::async_trait;
+use log::{debug, error, info, warn};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 // Default sampler settings for tool-calling (same as llama.cpp)
 const DEFAULT_TEMPERATURE: f32 = 0.7;
@@ -228,29 +228,44 @@ impl AiProvider for LmStudioAdapter {
 
         let url = format!("{}/v1/models", self.base_url);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .get(&url)
             .header("Content-Type", "application/json")
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("LM Studio models: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("LM Studio models: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("LM Studio models API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "LM Studio models API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("LM Studio models API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "LM Studio models API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
         let response_body = response
             .json::<LmStudioModelsResponse>()
             .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize LM Studio models response: {}", e) })?;
+            .map_err(|e| RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize LM Studio models response: {}", e),
+            })?;
 
-        let models: Vec<String> = response_body.data
+        let models: Vec<String> = response_body
+            .data
             .into_iter()
             .map(|model| model.id)
             .collect();
@@ -263,7 +278,8 @@ impl AiProvider for LmStudioAdapter {
         let url = format!("{}/v1/chat/completions", self.base_url);
 
         // Convert messages to LM Studio format
-        let lmstudio_messages: Vec<LmStudioMessage> = messages.iter().map(LmStudioMessage::from).collect();
+        let lmstudio_messages: Vec<LmStudioMessage> =
+            messages.iter().map(LmStudioMessage::from).collect();
 
         let request_payload = LmStudioChatRequest {
             messages: lmstudio_messages,
@@ -283,38 +299,55 @@ impl AiProvider for LmStudioAdapter {
         info!("Sending request to LM Studio server: base_url={}, messages_count={}, temp={:?}, min_p={:?}",
               self.base_url, request_payload.messages.len(), self.options.temperature, self.options.min_p);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&request_payload)
             .timeout(get_ai_generation_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("LM Studio: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("LM Studio: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("LM Studio API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "LM Studio API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("LM Studio API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "LM Studio API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
-        let response_body = response
-            .json::<LmStudioChatResponse>()
-            .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize LM Studio response: {}", e) })?;
+        let response_body = response.json::<LmStudioChatResponse>().await.map_err(|e| {
+            RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize LM Studio response: {}", e),
+            }
+        })?;
 
         if let Some(choice) = response_body.choices.first() {
             if let Some(usage) = &response_body.usage {
-                info!("LM Studio response complete. Tokens: prompt={:?}, completion={:?}, total={:?}",
-                      usage.prompt_tokens, usage.completion_tokens, usage.total_tokens);
+                info!(
+                    "LM Studio response complete. Tokens: prompt={:?}, completion={:?}, total={:?}",
+                    usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
+                );
             }
             Ok(choice.message.content.clone())
         } else {
             warn!("LM Studio API response did not contain any choices");
-            Err(RestApiError::UnprocessableEntity { message: "LM Studio response was empty or missing choices".to_string() })
+            Err(RestApiError::UnprocessableEntity {
+                message: "LM Studio response was empty or missing choices".to_string(),
+            })
         }
     }
 
@@ -326,7 +359,10 @@ impl AiProvider for LmStudioAdapter {
         // Use database config if provided, otherwise fall back to self.options
         let options = match config {
             Some(cfg) => {
-                info!("Using sampler config from database for {}/{}", cfg.provider, cfg.model_name);
+                info!(
+                    "Using sampler config from database for {}/{}",
+                    cfg.provider, cfg.model_name
+                );
                 Self::sampler_config_to_options(cfg)
             }
             None => {
@@ -338,7 +374,8 @@ impl AiProvider for LmStudioAdapter {
         let url = format!("{}/v1/chat/completions", self.base_url);
 
         // Convert messages to LM Studio format
-        let lmstudio_messages: Vec<LmStudioMessage> = messages.iter().map(LmStudioMessage::from).collect();
+        let lmstudio_messages: Vec<LmStudioMessage> =
+            messages.iter().map(LmStudioMessage::from).collect();
 
         let request_payload = LmStudioChatRequest {
             messages: lmstudio_messages,
@@ -358,38 +395,55 @@ impl AiProvider for LmStudioAdapter {
         info!("Sending request to LM Studio server with config: base_url={}, messages_count={}, temp={:?}, min_p={:?}",
               self.base_url, request_payload.messages.len(), options.temperature, options.min_p);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&request_payload)
             .timeout(get_ai_generation_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("LM Studio: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("LM Studio: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("LM Studio API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "LM Studio API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("LM Studio API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "LM Studio API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
-        let response_body = response
-            .json::<LmStudioChatResponse>()
-            .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize LM Studio response: {}", e) })?;
+        let response_body = response.json::<LmStudioChatResponse>().await.map_err(|e| {
+            RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize LM Studio response: {}", e),
+            }
+        })?;
 
         if let Some(choice) = response_body.choices.first() {
             if let Some(usage) = &response_body.usage {
-                info!("LM Studio response complete. Tokens: prompt={:?}, completion={:?}, total={:?}",
-                      usage.prompt_tokens, usage.completion_tokens, usage.total_tokens);
+                info!(
+                    "LM Studio response complete. Tokens: prompt={:?}, completion={:?}, total={:?}",
+                    usage.prompt_tokens, usage.completion_tokens, usage.total_tokens
+                );
             }
             Ok(choice.message.content.clone())
         } else {
             warn!("LM Studio API response did not contain any choices");
-            Err(RestApiError::UnprocessableEntity { message: "LM Studio response was empty or missing choices".to_string() })
+            Err(RestApiError::UnprocessableEntity {
+                message: "LM Studio response was empty or missing choices".to_string(),
+            })
         }
     }
 }

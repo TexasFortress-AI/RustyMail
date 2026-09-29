@@ -7,24 +7,24 @@
 //! Tests the JSON-RPC over HTTP implementation at /mcp
 
 use actix_web::{test, web, App};
+use async_trait::async_trait;
 use serde_json::json;
 use serial_test::serial;
-use std::sync::Arc;
-use std::fs;
-use tokio::sync::Mutex as TokioMutex;
 use sqlx::SqlitePool;
-use async_trait::async_trait;
+use std::fs;
+use std::sync::Arc;
+use tokio::sync::Mutex as TokioMutex;
 
-use rustymail::dashboard::services::{
-    DashboardState, ClientManager, MetricsService, CacheService, CacheConfig,
-    ConfigService, AiService, EmailService, SyncService, AccountService,
-    EventBus, SmtpService, OutboxQueueService, OAuthService, OAuthConfig
-};
-use rustymail::dashboard::api::sse::SseManager;
 use rustymail::config::Settings;
-use rustymail::connection_pool::{ConnectionPool, ConnectionFactory, PoolConfig};
+use rustymail::connection_pool::{ConnectionFactory, ConnectionPool, PoolConfig};
+use rustymail::dashboard::api::sse::SseManager;
+use rustymail::dashboard::services::{
+    AccountService, AiService, CacheConfig, CacheService, ClientManager, ConfigService,
+    DashboardState, EmailService, EventBus, MetricsService, OAuthConfig, OAuthService,
+    OutboxQueueService, SmtpService, SyncService,
+};
+use rustymail::imap::{AsyncImapSessionWrapper, ImapClient, ImapError};
 use rustymail::prelude::CloneableImapSessionFactory;
-use rustymail::imap::{ImapClient, AsyncImapSessionWrapper, ImapError};
 
 /// Helper to get the test API key from environment
 fn get_test_api_key() -> String {
@@ -95,14 +95,19 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
 
     let mut account_service_temp = AccountService::new(&accounts_config_path);
     let account_db_pool = SqlitePool::connect(&db_url).await.unwrap();
-    account_service_temp.initialize(account_db_pool.clone()).await.unwrap();
+    account_service_temp
+        .initialize(account_db_pool.clone())
+        .await
+        .unwrap();
     let account_service = Arc::new(TokioMutex::new(account_service_temp));
 
     // Create mock IMAP session factory (returns a function that creates mock clients)
     let mock_factory: rustymail::imap::ImapSessionFactory = Box::new(|| {
         Box::pin(async {
             // Return error for mock - tests don't need real IMAP
-            Err(rustymail::imap::ImapError::Connection("Mock IMAP client".to_string()))
+            Err(rustymail::imap::ImapError::Connection(
+                "Mock IMAP client".to_string(),
+            ))
         })
     });
     let imap_session_factory = CloneableImapSessionFactory::new(mock_factory);
@@ -121,16 +126,14 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
         }
     }
 
-    let connection_pool = ConnectionPool::new(
-        Arc::new(MockConnectionFactory),
-        PoolConfig::default()
-    );
+    let connection_pool =
+        ConnectionPool::new(Arc::new(MockConnectionFactory), PoolConfig::default());
 
     // Initialize Email Service
     let email_service = Arc::new(
         EmailService::new(imap_session_factory.clone(), connection_pool.clone())
             .with_cache(cache_service.clone())
-            .with_account_service(account_service.clone())
+            .with_account_service(account_service.clone()),
     );
 
     // Initialize Sync Service
@@ -145,7 +148,10 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
     let ai_service = Arc::new(AiService::new_mock());
 
     // Initialize SMTP Service
-    let smtp_service = Arc::new(SmtpService::new(account_service.clone(), imap_session_factory.clone()));
+    let smtp_service = Arc::new(SmtpService::new(
+        account_service.clone(),
+        imap_session_factory.clone(),
+    ));
 
     // Initialize Outbox Queue Service
     let outbox_queue_service = Arc::new(OutboxQueueService::new(account_db_pool.clone()));
@@ -223,8 +229,9 @@ async fn test_mcp_initialize_handshake() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     // Send request and verify response
     let api_key = get_test_api_key();
@@ -235,25 +242,59 @@ async fn test_mcp_initialize_handshake() {
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_success(), "Initialize request should succeed (status: {:?})", resp.status());
+    assert!(
+        resp.status().is_success(),
+        "Initialize request should succeed (status: {:?})",
+        resp.status()
+    );
 
     // Verify response structure
     let body: serde_json::Value = test::read_body_json(resp).await;
     assert_eq!(body["jsonrpc"], "2.0", "Response should be JSON-RPC 2.0");
     assert_eq!(body["id"], 1, "Response ID should match request ID");
-    assert!(body["result"]["protocolVersion"].is_string(), "Protocol version should be present");
-    assert_eq!(body["result"]["protocolVersion"], "2025-03-26", "Protocol version should match");
-    assert!(body["result"]["serverInfo"]["name"].is_string(), "Server name should be present");
-    assert_eq!(body["result"]["serverInfo"]["name"], "rustymail-mcp", "Server name should be rustymail-mcp");
-    assert!(body["result"]["serverInfo"]["version"].is_string(), "Server version should be present");
-    assert!(body["result"]["capabilities"].is_object(), "Capabilities should be present");
-    assert!(body["result"]["_meta"]["sessionId"].is_string(), "Session ID should be generated");
+    assert!(
+        body["result"]["protocolVersion"].is_string(),
+        "Protocol version should be present"
+    );
+    assert_eq!(
+        body["result"]["protocolVersion"], "2025-03-26",
+        "Protocol version should match"
+    );
+    assert!(
+        body["result"]["serverInfo"]["name"].is_string(),
+        "Server name should be present"
+    );
+    assert_eq!(
+        body["result"]["serverInfo"]["name"], "rustymail-mcp",
+        "Server name should be rustymail-mcp"
+    );
+    assert!(
+        body["result"]["serverInfo"]["version"].is_string(),
+        "Server version should be present"
+    );
+    assert!(
+        body["result"]["capabilities"].is_object(),
+        "Capabilities should be present"
+    );
+    assert!(
+        body["result"]["_meta"]["sessionId"].is_string(),
+        "Session ID should be generated"
+    );
 
     println!("✓ Initialize handshake returns correct JSON-RPC response");
-    println!("✓ Response includes protocol version: {}", body["result"]["protocolVersion"]);
-    println!("✓ Response includes server info: {}", body["result"]["serverInfo"]["name"]);
+    println!(
+        "✓ Response includes protocol version: {}",
+        body["result"]["protocolVersion"]
+    );
+    println!(
+        "✓ Response includes server info: {}",
+        body["result"]["serverInfo"]["name"]
+    );
     println!("✓ Response includes capabilities");
-    println!("✓ Session ID is generated and returned in _meta: {}", body["result"]["_meta"]["sessionId"]);
+    println!(
+        "✓ Session ID is generated and returned in _meta: {}",
+        body["result"]["_meta"]["sessionId"]
+    );
 
     cleanup_test_db(test_name);
 }
@@ -279,8 +320,9 @@ async fn test_mcp_tools_list() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     // Send request
     let api_key = get_test_api_key();
@@ -291,52 +333,98 @@ async fn test_mcp_tools_list() {
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_success(), "tools/list request should succeed (status: {:?})", resp.status());
+    assert!(
+        resp.status().is_success(),
+        "tools/list request should succeed (status: {:?})",
+        resp.status()
+    );
 
     // Verify response structure
     let body: serde_json::Value = test::read_body_json(resp).await;
     assert_eq!(body["jsonrpc"], "2.0", "Response should be JSON-RPC 2.0");
     assert_eq!(body["id"], 2, "Response ID should match request ID");
-    assert!(body["result"]["tools"].is_array(), "Result should contain tools array");
+    assert!(
+        body["result"]["tools"].is_array(),
+        "Result should contain tools array"
+    );
 
     let tools = body["result"]["tools"].as_array().unwrap();
     assert_eq!(tools.len(), 38, "Should have exactly 38 tools");
 
     // Verify each tool has required fields
     let expected_tool_names = vec![
-        "list_folders", "list_folders_hierarchical",
-        "search_emails", "fetch_emails_with_mime",
-        "atomic_move_message", "atomic_batch_move",
-        "mark_as_deleted", "delete_messages", "undelete_messages", "expunge",
-        "list_cached_emails", "get_email_by_uid", "get_email_by_index",
-        "count_emails_in_folder", "get_folder_stats", "search_cached_emails",
-        "list_accounts", "set_current_account",
-        "mark_as_read", "mark_as_unread",
-        "send_email", "list_email_attachments", "download_email_attachments", "cleanup_attachments",
-        "create_folder", "delete_folder", "rename_folder",
-        "sync_emails", "search_by_attachment_type", "list_emails_by_flag",
-        "get_email_synopsis", "get_email_thread",
-        "search_by_domain", "get_address_report",
-        "get_attachment_content", "export_evidence", "export_folder_metadata",
-        "filter_emails_by_subject", "batch_get_synopsis"
+        "list_folders",
+        "list_folders_hierarchical",
+        "search_emails",
+        "fetch_emails_with_mime",
+        "atomic_move_message",
+        "atomic_batch_move",
+        "mark_as_deleted",
+        "delete_messages",
+        "undelete_messages",
+        "expunge",
+        "list_cached_emails",
+        "get_email_by_uid",
+        "get_email_by_index",
+        "count_emails_in_folder",
+        "get_folder_stats",
+        "search_cached_emails",
+        "list_accounts",
+        "set_current_account",
+        "mark_as_read",
+        "mark_as_unread",
+        "send_email",
+        "list_email_attachments",
+        "download_email_attachments",
+        "cleanup_attachments",
+        "create_folder",
+        "delete_folder",
+        "rename_folder",
+        "sync_emails",
+        "search_by_attachment_type",
+        "list_emails_by_flag",
+        "get_email_synopsis",
+        "get_email_thread",
+        "search_by_domain",
+        "get_address_report",
+        "get_attachment_content",
+        "export_evidence",
+        "export_folder_metadata",
+        "filter_emails_by_subject",
+        "batch_get_synopsis",
     ];
 
     for tool in tools {
         assert!(tool["name"].is_string(), "Tool should have name");
-        assert!(tool["description"].is_string(), "Tool should have description");
-        assert!(tool["inputSchema"].is_object(), "Tool should have inputSchema");
+        assert!(
+            tool["description"].is_string(),
+            "Tool should have description"
+        );
+        assert!(
+            tool["inputSchema"].is_object(),
+            "Tool should have inputSchema"
+        );
 
         let schema = &tool["inputSchema"];
         assert_eq!(schema["type"], "object", "Schema type should be object");
-        assert!(schema["properties"].is_object(), "Schema should have properties");
+        assert!(
+            schema["properties"].is_object(),
+            "Schema should have properties"
+        );
 
         // Verify tool name is in expected list
         let tool_name = tool["name"].as_str().unwrap();
-        assert!(expected_tool_names.contains(&tool_name),
-                "Tool '{}' should be in expected list", tool_name);
+        assert!(
+            expected_tool_names.contains(&tool_name),
+            "Tool '{}' should be in expected list",
+            tool_name
+        );
     }
 
-    println!("✓ tools/list returns array of {} available tools", tools.len());
+    println!(
+        "✓ tools/list returns array of {} available tools",
+        tools.len()
+    );
     println!("✓ Each tool has name, description, and inputSchema");
     println!("✓ All expected email operation tools are present");
     println!("✓ Tool schemas are valid JSON Schema format");
@@ -448,8 +536,9 @@ async fn test_mcp_error_handling_invalid_method() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     // Send request
     let api_key = get_test_api_key();
@@ -460,22 +549,40 @@ async fn test_mcp_error_handling_invalid_method() {
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_success(), "Response should be 200 OK (errors in JSON-RPC body)");
+    assert!(
+        resp.status().is_success(),
+        "Response should be 200 OK (errors in JSON-RPC body)"
+    );
 
     // Verify error response structure
     let body: serde_json::Value = test::read_body_json(resp).await;
     assert_eq!(body["jsonrpc"], "2.0", "Response should be JSON-RPC 2.0");
     assert_eq!(body["id"], 6, "Response ID should match request ID");
-    assert!(body["error"].is_object(), "Response should contain error object");
-    assert!(body["result"].is_null(), "Response should not have result field");
+    assert!(
+        body["error"].is_object(),
+        "Response should contain error object"
+    );
+    assert!(
+        body["result"].is_null(),
+        "Response should not have result field"
+    );
 
     // Verify error details
     let error = &body["error"];
-    assert_eq!(error["code"], -32601, "Error code should be -32601 (Method not found)");
+    assert_eq!(
+        error["code"], -32601,
+        "Error code should be -32601 (Method not found)"
+    );
     assert!(error["message"].is_string(), "Error should have message");
     let message = error["message"].as_str().unwrap();
-    assert!(message.contains("Method not found"), "Error message should mention 'Method not found'");
-    assert!(message.contains("nonexistent/method"), "Error message should include method name");
+    assert!(
+        message.contains("Method not found"),
+        "Error message should mention 'Method not found'"
+    );
+    assert!(
+        message.contains("nonexistent/method"),
+        "Error message should include method name"
+    );
 
     println!("✓ Invalid method returns JSON-RPC error");
     println!("✓ Error code -32601 (Method not found)");
@@ -751,8 +858,9 @@ async fn test_mcp_dashboard_api_consistency() {
         App::new()
             .app_data(dashboard_state.clone())
             .configure(rustymail::api::mcp_http::configure_mcp_routes)
-            .service(rustymail::dashboard::api::routes::configure_routes())
-    ).await;
+            .service(rustymail::dashboard::api::routes::configure_routes()),
+    )
+    .await;
 
     // Fetch MCP tools
     let api_key = get_test_api_key();
@@ -763,7 +871,10 @@ async fn test_mcp_dashboard_api_consistency() {
         .to_request();
 
     let mcp_resp = test::call_service(&app, mcp_req).await;
-    assert!(mcp_resp.status().is_success(), "MCP tools/list should succeed");
+    assert!(
+        mcp_resp.status().is_success(),
+        "MCP tools/list should succeed"
+    );
     let mcp_body: serde_json::Value = test::read_body_json(mcp_resp).await;
     let mcp_tools = mcp_body["result"]["tools"].as_array().unwrap();
 
@@ -777,38 +888,54 @@ async fn test_mcp_dashboard_api_consistency() {
     let status = dashboard_resp.status();
     println!("Dashboard response status: {:?}", status);
     if !status.is_success() {
-        let error_body: String = test::read_body(dashboard_resp).await
+        let error_body: String = test::read_body(dashboard_resp)
+            .await
             .iter()
             .map(|&b| b as char)
             .collect();
-        panic!("Dashboard /mcp/tools failed with status {:?}: {}", status, error_body);
+        panic!(
+            "Dashboard /mcp/tools failed with status {:?}: {}",
+            status, error_body
+        );
     }
     let dashboard_body: serde_json::Value = test::read_body_json(dashboard_resp).await;
     let dashboard_tools = dashboard_body["tools"].as_array().unwrap();
 
     // Verify same number of tools
-    assert_eq!(mcp_tools.len(), dashboard_tools.len(),
-               "MCP and Dashboard should expose same number of tools");
-    assert_eq!(mcp_tools.len(), 38, "Should have 38 tools in both interfaces");
+    assert_eq!(
+        mcp_tools.len(),
+        dashboard_tools.len(),
+        "MCP and Dashboard should expose same number of tools"
+    );
+    assert_eq!(
+        mcp_tools.len(),
+        38,
+        "Should have 38 tools in both interfaces"
+    );
 
     // Verify all tool names match
-    let mut mcp_tool_names: Vec<String> = mcp_tools.iter()
+    let mut mcp_tool_names: Vec<String> = mcp_tools
+        .iter()
         .map(|t| t["name"].as_str().unwrap().to_string())
         .collect();
     mcp_tool_names.sort();
 
-    let mut dashboard_tool_names: Vec<String> = dashboard_tools.iter()
+    let mut dashboard_tool_names: Vec<String> = dashboard_tools
+        .iter()
         .map(|t| t["name"].as_str().unwrap().to_string())
         .collect();
     dashboard_tool_names.sort();
 
-    assert_eq!(mcp_tool_names, dashboard_tool_names,
-               "Tool names should match exactly between MCP and Dashboard API");
+    assert_eq!(
+        mcp_tool_names, dashboard_tool_names,
+        "Tool names should match exactly between MCP and Dashboard API"
+    );
 
     // Verify parameter consistency for each tool
     for mcp_tool in mcp_tools {
         let tool_name = mcp_tool["name"].as_str().unwrap();
-        let dashboard_tool = dashboard_tools.iter()
+        let dashboard_tool = dashboard_tools
+            .iter()
             .find(|t| t["name"].as_str().unwrap() == tool_name)
             .expect(&format!("Dashboard should have tool: {}", tool_name));
 
@@ -816,8 +943,12 @@ async fn test_mcp_dashboard_api_consistency() {
         let mcp_params = mcp_tool["inputSchema"]["properties"].as_object().unwrap();
         let dashboard_params = dashboard_tool["parameters"].as_object().unwrap();
 
-        assert_eq!(mcp_params.len(), dashboard_params.len(),
-                   "Tool '{}' should have same number of parameters", tool_name);
+        assert_eq!(
+            mcp_params.len(),
+            dashboard_params.len(),
+            "Tool '{}' should have same number of parameters",
+            tool_name
+        );
 
         // Verify parameter names match
         let mut mcp_param_names: Vec<&String> = mcp_params.keys().collect();
@@ -825,11 +956,17 @@ async fn test_mcp_dashboard_api_consistency() {
         let mut dashboard_param_names: Vec<&String> = dashboard_params.keys().collect();
         dashboard_param_names.sort();
 
-        assert_eq!(mcp_param_names, dashboard_param_names,
-                   "Tool '{}' parameters should match", tool_name);
+        assert_eq!(
+            mcp_param_names, dashboard_param_names,
+            "Tool '{}' parameters should match",
+            tool_name
+        );
     }
 
-    println!("✓ MCP and Dashboard API expose same {} tools", mcp_tools.len());
+    println!(
+        "✓ MCP and Dashboard API expose same {} tools",
+        mcp_tools.len()
+    );
     println!("✓ All tool names match exactly between interfaces");
     println!("✓ All parameter names match for each tool");
     println!("✓ Architecture requirement satisfied: same tools, same parameters everywhere");
@@ -864,8 +1001,9 @@ async fn test_mcp_mark_as_read() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     // Send request
     let api_key = get_test_api_key();
@@ -876,7 +1014,10 @@ async fn test_mcp_mark_as_read() {
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_success(), "mark_as_read request should succeed");
+    assert!(
+        resp.status().is_success(),
+        "mark_as_read request should succeed"
+    );
 
     // Verify response structure
     let body: serde_json::Value = test::read_body_json(resp).await;
@@ -919,8 +1060,9 @@ async fn test_mcp_mark_as_unread() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     // Send request
     let api_key = get_test_api_key();
@@ -931,7 +1073,10 @@ async fn test_mcp_mark_as_unread() {
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_success(), "mark_as_unread request should succeed");
+    assert!(
+        resp.status().is_success(),
+        "mark_as_unread request should succeed"
+    );
 
     // Verify response structure
     let body: serde_json::Value = test::read_body_json(resp).await;
@@ -975,8 +1120,9 @@ async fn test_mcp_send_email() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     // Send request
     let api_key = get_test_api_key();
@@ -987,7 +1133,10 @@ async fn test_mcp_send_email() {
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_success(), "send_email request should succeed");
+    assert!(
+        resp.status().is_success(),
+        "send_email request should succeed"
+    );
 
     // Verify response structure
     let body: serde_json::Value = test::read_body_json(resp).await;
@@ -1028,8 +1177,9 @@ async fn test_mcp_list_email_attachments() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     // Send request
     let api_key = get_test_api_key();
@@ -1040,7 +1190,10 @@ async fn test_mcp_list_email_attachments() {
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_success(), "list_email_attachments request should succeed");
+    assert!(
+        resp.status().is_success(),
+        "list_email_attachments request should succeed"
+    );
 
     // Verify response structure
     let body: serde_json::Value = test::read_body_json(resp).await;
@@ -1082,8 +1235,9 @@ async fn test_mcp_download_email_attachments() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     // Send request
     let api_key = get_test_api_key();
@@ -1094,7 +1248,10 @@ async fn test_mcp_download_email_attachments() {
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_success(), "download_email_attachments request should succeed");
+    assert!(
+        resp.status().is_success(),
+        "download_email_attachments request should succeed"
+    );
 
     // Verify response structure
     let body: serde_json::Value = test::read_body_json(resp).await;
@@ -1134,8 +1291,9 @@ async fn test_mcp_cleanup_attachments() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     // Send request
     let api_key = get_test_api_key();
@@ -1146,7 +1304,10 @@ async fn test_mcp_cleanup_attachments() {
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_success(), "cleanup_attachments request should succeed");
+    assert!(
+        resp.status().is_success(),
+        "cleanup_attachments request should succeed"
+    );
 
     // Verify response structure
     let body: serde_json::Value = test::read_body_json(resp).await;
@@ -1186,8 +1347,9 @@ async fn test_mcp_create_folder() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     // Send request
     let api_key = get_test_api_key();
@@ -1198,7 +1360,10 @@ async fn test_mcp_create_folder() {
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_success(), "create_folder request should succeed");
+    assert!(
+        resp.status().is_success(),
+        "create_folder request should succeed"
+    );
 
     // Verify response structure
     let body: serde_json::Value = test::read_body_json(resp).await;
@@ -1238,8 +1403,9 @@ async fn test_mcp_delete_folder() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     // Send request
     let api_key = get_test_api_key();
@@ -1250,7 +1416,10 @@ async fn test_mcp_delete_folder() {
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_success(), "delete_folder request should succeed");
+    assert!(
+        resp.status().is_success(),
+        "delete_folder request should succeed"
+    );
 
     // Verify response structure
     let body: serde_json::Value = test::read_body_json(resp).await;
@@ -1291,8 +1460,9 @@ async fn test_mcp_rename_folder() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     // Send request
     let api_key = get_test_api_key();
@@ -1303,7 +1473,10 @@ async fn test_mcp_rename_folder() {
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert!(resp.status().is_success(), "rename_folder request should succeed");
+    assert!(
+        resp.status().is_success(),
+        "rename_folder request should succeed"
+    );
 
     // Verify response structure
     let body: serde_json::Value = test::read_body_json(resp).await;

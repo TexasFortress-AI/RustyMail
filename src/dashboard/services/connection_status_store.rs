@@ -4,13 +4,13 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use super::connection_status::AccountConnectionStatus;
-use serde::{Serialize, Deserialize};
+use log::{debug, error, info};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use thiserror::Error;
 use tokio::fs;
 use tokio::sync::RwLock;
-use log::{debug, error, info};
-use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ConnectionStatusStoreError {
@@ -72,7 +72,10 @@ impl ConnectionStatusStore {
                 );
             }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                debug!("Connection status file not found, creating new: {}", self.storage_path.display());
+                debug!(
+                    "Connection status file not found, creating new: {}",
+                    self.storage_path.display()
+                );
                 self.save().await?;
             }
             Err(e) => return Err(e.into()),
@@ -126,7 +129,10 @@ impl ConnectionStatusStore {
     }
 
     /// Delete connection status for an account
-    pub async fn delete_status(&self, email_address: &str) -> Result<(), ConnectionStatusStoreError> {
+    pub async fn delete_status(
+        &self,
+        email_address: &str,
+    ) -> Result<(), ConnectionStatusStoreError> {
         {
             let mut storage = self.cache.write().await;
             storage.statuses.remove(email_address);

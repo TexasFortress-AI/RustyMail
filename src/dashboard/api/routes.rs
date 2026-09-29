@@ -3,14 +3,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use actix_web::{web, Scope};
-use super::handlers;
 use super::accounts;
+use super::attachments;
+use super::config;
+use super::handlers;
+use super::health;
 use super::oauth;
 use super::sse;
-use super::config;
-use super::health;
-use super::attachments;
+use actix_web::{web, Scope};
 use log::info;
 
 pub fn configure_routes() -> Scope {
@@ -28,29 +28,68 @@ pub fn configure_routes() -> Scope {
         .route("/mcp/execute", web::post().to(handlers::execute_mcp_tool))
         // AI provider management endpoints
         .route("/ai/providers", web::get().to(handlers::get_ai_providers))
-        .route("/ai/providers/set", web::post().to(handlers::set_ai_provider))
+        .route(
+            "/ai/providers/set",
+            web::post().to(handlers::set_ai_provider),
+        )
         // AI model management endpoints
         .route("/ai/models", web::get().to(handlers::get_ai_models))
         .route("/ai/models/set", web::post().to(handlers::set_ai_model))
         // AI model configuration endpoints (for tool-calling and drafting models)
-        .route("/ai/model-configs", web::get().to(handlers::get_model_configs))
-        .route("/ai/model-configs", web::post().to(handlers::set_model_config))
-        .route("/ai/models-for-provider", web::get().to(handlers::get_models_for_provider))
+        .route(
+            "/ai/model-configs",
+            web::get().to(handlers::get_model_configs),
+        )
+        .route(
+            "/ai/model-configs",
+            web::post().to(handlers::set_model_config),
+        )
+        .route(
+            "/ai/models-for-provider",
+            web::get().to(handlers::get_models_for_provider),
+        )
         // AI sampler configuration endpoints
-        .route("/ai/sampler-configs", web::get().to(handlers::get_sampler_config))
-        .route("/ai/sampler-configs", web::post().to(handlers::set_sampler_config))
-        .route("/ai/sampler-configs", web::delete().to(handlers::delete_sampler_config))
-        .route("/ai/sampler-configs/list", web::get().to(handlers::list_sampler_configs))
-        .route("/ai/sampler-configs/defaults", web::get().to(handlers::get_env_defaults))
-        .route("/ai/sampler-configs/presets", web::get().to(handlers::get_sampler_presets))
-        .route("/ai/sampler-configs/presets/import", web::post().to(handlers::import_sampler_presets))
+        .route(
+            "/ai/sampler-configs",
+            web::get().to(handlers::get_sampler_config),
+        )
+        .route(
+            "/ai/sampler-configs",
+            web::post().to(handlers::set_sampler_config),
+        )
+        .route(
+            "/ai/sampler-configs",
+            web::delete().to(handlers::delete_sampler_config),
+        )
+        .route(
+            "/ai/sampler-configs/list",
+            web::get().to(handlers::list_sampler_configs),
+        )
+        .route(
+            "/ai/sampler-configs/defaults",
+            web::get().to(handlers::get_env_defaults),
+        )
+        .route(
+            "/ai/sampler-configs/presets",
+            web::get().to(handlers::get_sampler_presets),
+        )
+        .route(
+            "/ai/sampler-configs/presets/import",
+            web::post().to(handlers::import_sampler_presets),
+        )
         // Email sync endpoints
-        .route("/sync/trigger", web::post().to(handlers::trigger_email_sync))
+        .route(
+            "/sync/trigger",
+            web::post().to(handlers::trigger_email_sync),
+        )
         .route("/sync/flags", web::post().to(handlers::sync_flags))
         .route("/sync/status", web::get().to(handlers::get_sync_status))
         // Email cache endpoints
         .route("/folders", web::get().to(handlers::list_folders))
-        .route("/cached-folders", web::get().to(handlers::list_cached_folders))
+        .route(
+            "/cached-folders",
+            web::get().to(handlers::list_cached_folders),
+        )
         .route("/emails", web::get().to(handlers::get_cached_emails))
         // SMTP email sending endpoint
         .route("/emails/send", web::post().to(handlers::send_email))
@@ -58,40 +97,97 @@ pub fn configure_routes() -> Scope {
         .route("/emails/delete", web::post().to(handlers::delete_email))
         .route("/events", web::get().to(sse::sse_handler))
         // Account management endpoints
-        .route("/accounts/auto-config", web::post().to(accounts::auto_configure))
+        .route(
+            "/accounts/auto-config",
+            web::post().to(accounts::auto_configure),
+        )
         .route("/accounts", web::post().to(accounts::create_account))
         .route("/accounts", web::get().to(accounts::list_accounts))
-        .route("/accounts/default", web::get().to(accounts::get_default_account))
+        .route(
+            "/accounts/default",
+            web::get().to(accounts::get_default_account),
+        )
         .route("/accounts/{id}", web::get().to(accounts::get_account))
         .route("/accounts/{id}", web::put().to(accounts::update_account))
         .route("/accounts/{id}", web::delete().to(accounts::delete_account))
-        .route("/accounts/{id}/default", web::post().to(accounts::set_default_account))
-        .route("/accounts/{id}/connection-status", web::get().to(accounts::get_connection_status))
-        .route("/accounts/{id}/validate", web::post().to(accounts::validate_connection))
+        .route(
+            "/accounts/{id}/default",
+            web::post().to(accounts::set_default_account),
+        )
+        .route(
+            "/accounts/{id}/connection-status",
+            web::get().to(accounts::get_connection_status),
+        )
+        .route(
+            "/accounts/{id}/validate",
+            web::post().to(accounts::validate_connection),
+        )
         // Subscription management endpoints
-        .route("/events/types", web::get().to(handlers::get_available_event_types))
-        .route("/clients/{client_id}/subscriptions", web::get().to(handlers::get_client_subscriptions))
-        .route("/clients/{client_id}/subscriptions", web::put().to(handlers::update_client_subscriptions))
-        .route("/clients/{client_id}/subscribe", web::post().to(handlers::subscribe_to_event))
-        .route("/clients/{client_id}/unsubscribe", web::post().to(handlers::unsubscribe_from_event))
+        .route(
+            "/events/types",
+            web::get().to(handlers::get_available_event_types),
+        )
+        .route(
+            "/clients/{client_id}/subscriptions",
+            web::get().to(handlers::get_client_subscriptions),
+        )
+        .route(
+            "/clients/{client_id}/subscriptions",
+            web::put().to(handlers::update_client_subscriptions),
+        )
+        .route(
+            "/clients/{client_id}/subscribe",
+            web::post().to(handlers::subscribe_to_event),
+        )
+        .route(
+            "/clients/{client_id}/unsubscribe",
+            web::post().to(handlers::unsubscribe_from_event),
+        )
         // Attachment management endpoints
-        .route("/attachments/list", web::get().to(attachments::list_attachments))
-        .route("/attachments/{message_id}/zip", web::get().to(attachments::download_attachments_zip))
-        .route("/attachments/{message_id}/inline/{content_id}", web::get().to(attachments::download_inline_attachment))
-        .route("/attachments/{message_id}/{filename}", web::get().to(attachments::download_attachment))
+        .route(
+            "/attachments/list",
+            web::get().to(attachments::list_attachments),
+        )
+        .route(
+            "/attachments/{message_id}/zip",
+            web::get().to(attachments::download_attachments_zip),
+        )
+        .route(
+            "/attachments/{message_id}/inline/{content_id}",
+            web::get().to(attachments::download_inline_attachment),
+        )
+        .route(
+            "/attachments/{message_id}/{filename}",
+            web::get().to(attachments::download_attachment),
+        )
         // Jobs management endpoints
         .route("/jobs", web::get().to(handlers::get_jobs))
-        .route("/jobs/finished", web::delete().to(handlers::clear_finished_jobs))
+        .route(
+            "/jobs/finished",
+            web::delete().to(handlers::clear_finished_jobs),
+        )
         .route("/jobs/cancel", web::post().to(handlers::cancel_job))
         .route("/jobs/pause", web::post().to(handlers::pause_job))
         .route("/jobs/resume", web::post().to(handlers::resume_job))
-        .route("/jobs/process-emails", web::post().to(handlers::start_process_email_instructions))
+        .route(
+            "/jobs/process-emails",
+            web::post().to(handlers::start_process_email_instructions),
+        )
         .route("/jobs/{job_id}", web::get().to(handlers::get_job))
-        .route("/jobs/{job_id}", web::delete().to(handlers::delete_job_handler))
+        .route(
+            "/jobs/{job_id}",
+            web::delete().to(handlers::delete_job_handler),
+        )
         // OAuth endpoints
         .route("/oauth/status", web::get().to(oauth::oauth_status))
-        .route("/oauth/microsoft/authorize", web::get().to(oauth::microsoft_authorize))
-        .route("/oauth/callback/microsoft", web::get().to(oauth::microsoft_callback))
+        .route(
+            "/oauth/microsoft/authorize",
+            web::get().to(oauth::microsoft_authorize),
+        )
+        .route(
+            "/oauth/callback/microsoft",
+            web::get().to(oauth::microsoft_callback),
+        )
 }
 
 pub fn configure(cfg: &mut web::ServiceConfig) {

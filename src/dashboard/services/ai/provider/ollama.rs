@@ -6,22 +6,22 @@
 // src/dashboard/services/ai/providers/ollama.rs
 // Uses native Ollama API for full control over sampler settings
 
-use async_trait::async_trait;
-use reqwest::Client;
-use serde::{Serialize, Deserialize};
-use log::{debug, warn, error, info};
-use super::{AiProvider, AiChatMessage, get_ai_request_timeout, get_ai_generation_timeout};
+use super::{get_ai_generation_timeout, get_ai_request_timeout, AiChatMessage, AiProvider};
 use crate::api::errors::ApiError as RestApiError;
 use crate::dashboard::services::ai::sampler_config::SamplerConfig;
+use async_trait::async_trait;
+use log::{debug, error, info, warn};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 // No default model - must be provided via OLLAMA_MODEL environment variable
 
 // Default sampler settings for tool-calling
 const DEFAULT_TEMPERATURE: f32 = 0.7;
 const DEFAULT_TOP_P: f32 = 1.0;
-const DEFAULT_MIN_P: f32 = 0.01;  // llama.cpp default is 0.05, we use 0.01
-const DEFAULT_REPEAT_PENALTY: f32 = 1.0;  // Disabled
-const DEFAULT_NUM_CTX: u32 = 51200;  // 50k context window
+const DEFAULT_MIN_P: f32 = 0.01; // llama.cpp default is 0.05, we use 0.01
+const DEFAULT_REPEAT_PENALTY: f32 = 1.0; // Disabled
+const DEFAULT_NUM_CTX: u32 = 51200; // 50k context window
 
 /// Ollama-specific options for model generation
 #[derive(Debug, Clone, Serialize, Default)]
@@ -129,8 +129,8 @@ pub struct OllamaAdapter {
 impl OllamaAdapter {
     pub fn new(base_url: String, http_client: Client) -> Self {
         // Model MUST come from environment variable - no hardcoded default
-        let model = std::env::var("OLLAMA_MODEL")
-            .expect("OLLAMA_MODEL environment variable must be set");
+        let model =
+            std::env::var("OLLAMA_MODEL").expect("OLLAMA_MODEL environment variable must be set");
 
         // Default options optimized for tool-calling with thinking disabled
         let options = OllamaOptions {
@@ -139,7 +139,7 @@ impl OllamaAdapter {
             min_p: Some(DEFAULT_MIN_P),
             repeat_penalty: Some(DEFAULT_REPEAT_PENALTY),
             num_ctx: Some(DEFAULT_NUM_CTX),
-            think: Some(false),  // ALWAYS disable thinking mode
+            think: Some(false), // ALWAYS disable thinking mode
             ..Default::default()
         };
 
@@ -169,7 +169,7 @@ impl OllamaAdapter {
             repeat_penalty: options.repeat_penalty.or(self.options.repeat_penalty),
             num_ctx: options.num_ctx.or(self.options.num_ctx),
             num_predict: options.num_predict.or(self.options.num_predict),
-            think: options.think.or(Some(false)),  // Default to false
+            think: options.think.or(Some(false)), // Default to false
             stop: options.stop.or(self.options.stop),
             seed: options.seed.or(self.options.seed),
         };
@@ -220,29 +220,43 @@ impl AiProvider for OllamaAdapter {
         // Use OpenAI-compatible models endpoint (still works for listing)
         let url = format!("{}/v1/models", self.base_url);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .get(&url)
             .header("Content-Type", "application/json")
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Ollama models: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("Ollama models: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("Ollama models API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "Ollama models API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("Ollama models API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "Ollama models API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
-        let response_body = response
-            .json::<OllamaModelsResponse>()
-            .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize Ollama models response: {}", e) })?;
+        let response_body = response.json::<OllamaModelsResponse>().await.map_err(|e| {
+            RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize Ollama models response: {}", e),
+            }
+        })?;
 
-        let models: Vec<String> = response_body.data
+        let models: Vec<String> = response_body
+            .data
             .into_iter()
             .filter(|model| model.object == "model")
             .map(|model| model.id)
@@ -257,7 +271,8 @@ impl AiProvider for OllamaAdapter {
         let url = format!("{}/api/chat", self.base_url);
 
         // Convert messages to Ollama format
-        let ollama_messages: Vec<OllamaMessage> = messages.iter().map(OllamaMessage::from).collect();
+        let ollama_messages: Vec<OllamaMessage> =
+            messages.iter().map(OllamaMessage::from).collect();
 
         let request_payload = OllamaNativeChatRequest {
             model: self.model.clone(),
@@ -269,32 +284,48 @@ impl AiProvider for OllamaAdapter {
         info!("Sending request to Ollama native API: base_url={}, model={}, messages_count={}, options={:?}",
               self.base_url, request_payload.model, request_payload.messages.len(), self.options);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&request_payload)
             .timeout(get_ai_generation_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Ollama: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("Ollama: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("Ollama API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "Ollama API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("Ollama API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "Ollama API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
         let response_body = response
             .json::<OllamaNativeChatResponse>()
             .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize Ollama response: {}", e) })?;
+            .map_err(|e| RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize Ollama response: {}", e),
+            })?;
 
         if response_body.done {
-            info!("Ollama response complete. Tokens: prompt={:?}, eval={:?}",
-                  response_body.prompt_eval_count, response_body.eval_count);
+            info!(
+                "Ollama response complete. Tokens: prompt={:?}, eval={:?}",
+                response_body.prompt_eval_count, response_body.eval_count
+            );
             Ok(response_body.message.content)
         } else {
             warn!("Ollama API response was not marked as done");
@@ -310,7 +341,10 @@ impl AiProvider for OllamaAdapter {
         // Use database config if provided, otherwise fall back to self.options
         let options = match config {
             Some(cfg) => {
-                info!("Using sampler config from database for {}/{}", cfg.provider, cfg.model_name);
+                info!(
+                    "Using sampler config from database for {}/{}",
+                    cfg.provider, cfg.model_name
+                );
                 Self::sampler_config_to_options(cfg)
             }
             None => {
@@ -323,7 +357,8 @@ impl AiProvider for OllamaAdapter {
         let url = format!("{}/api/chat", self.base_url);
 
         // Convert messages to Ollama format
-        let ollama_messages: Vec<OllamaMessage> = messages.iter().map(OllamaMessage::from).collect();
+        let ollama_messages: Vec<OllamaMessage> =
+            messages.iter().map(OllamaMessage::from).collect();
 
         let request_payload = OllamaNativeChatRequest {
             model: self.model.clone(),
@@ -335,32 +370,48 @@ impl AiProvider for OllamaAdapter {
         info!("Sending request to Ollama native API with config: base_url={}, model={}, messages_count={}, options={:?}",
               self.base_url, request_payload.model, request_payload.messages.len(), options);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&request_payload)
             .timeout(get_ai_generation_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Ollama: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("Ollama: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("Ollama API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "Ollama API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("Ollama API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "Ollama API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
         let response_body = response
             .json::<OllamaNativeChatResponse>()
             .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize Ollama response: {}", e) })?;
+            .map_err(|e| RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize Ollama response: {}", e),
+            })?;
 
         if response_body.done {
-            info!("Ollama response complete. Tokens: prompt={:?}, eval={:?}",
-                  response_body.prompt_eval_count, response_body.eval_count);
+            info!(
+                "Ollama response complete. Tokens: prompt={:?}, eval={:?}",
+                response_body.prompt_eval_count, response_body.eval_count
+            );
             Ok(response_body.message.content)
         } else {
             warn!("Ollama API response was not marked as done");

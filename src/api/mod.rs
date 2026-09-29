@@ -7,13 +7,13 @@
 
 // pub mod mcp;
 pub mod auth;
-pub mod errors;  // New comprehensive error module
-pub mod openapi_docs;  // OpenAPI documentation
-pub mod rate_limit;  // Rate limiting middleware
+pub mod errors; // New comprehensive error module
+pub mod openapi_docs; // OpenAPI documentation
+pub mod rate_limit; // Rate limiting middleware
 pub mod rest;
 pub mod validation;
 // pub mod sse;
-pub mod mcp_sse;
-pub mod mcp_http;  // MCP Streamable HTTP transport
+pub mod mcp_http;
+pub mod mcp_sse; // MCP Streamable HTTP transport
 
-// pub mod sse; // Will be added later 
+// pub mod sse; // Will be added later

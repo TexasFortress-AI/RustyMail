@@ -2,10 +2,10 @@
 // High-level MCP tools for AI-first email management
 // Exposes only 10-12 tools to reduce context pollution
 
-use crate::dashboard::DashboardState;
-use serde_json::{json, Value};
-use log::{debug, error, warn};
 use crate::dashboard::services::jobs::{JobRecord, JobStatus};
+use crate::dashboard::DashboardState;
+use log::{debug, error, warn};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 /// Get high-level MCP tools in JSON-RPC format
@@ -83,7 +83,6 @@ pub fn get_mcp_high_level_tools_jsonrpc_format() -> Vec<Value> {
                 "required": ["to", "subject", "context", "account_id"]
             }
         }),
-
         // === Discovery/Browsing Tools (6 read-only) ===
         json!({
             "name": "list_accounts",
@@ -200,7 +199,6 @@ pub fn get_mcp_high_level_tools_jsonrpc_format() -> Vec<Value> {
                 "required": ["folder", "account_id"]
             }
         }),
-
         // === Enhanced Discovery Tools (6 read-only, cache-side) ===
         json!({
             "name": "get_email_synopsis",
@@ -341,7 +339,6 @@ pub fn get_mcp_high_level_tools_jsonrpc_format() -> Vec<Value> {
                 "required": ["account_id"]
             }
         }),
-
         // === Configuration Tools (3) ===
         json!({
             "name": "get_model_configurations",
@@ -447,7 +444,6 @@ pub fn get_mcp_high_level_tools_jsonrpc_format() -> Vec<Value> {
                 "required": ["job_id"]
             }
         }),
-
     ]
 }
 
@@ -456,55 +452,41 @@ pub async fn execute_high_level_tool(
     tool_name: &str,
     arguments: Value,
 ) -> Value {
-    debug!("Executing high-level tool: {} with args: {:?}", tool_name, arguments);
+    debug!(
+        "Executing high-level tool: {} with args: {:?}",
+        tool_name, arguments
+    );
 
     match tool_name {
         // Configuration tools (implemented)
-        "get_model_configurations" => {
-            handle_get_model_configurations(state).await
-        }
-        "set_tool_calling_model" => {
-            handle_set_tool_calling_model(state, arguments).await
-        }
-        "set_drafting_model" => {
-            handle_set_drafting_model(state, arguments).await
-        },
+        "get_model_configurations" => handle_get_model_configurations(state).await,
+        "set_tool_calling_model" => handle_set_tool_calling_model(state, arguments).await,
+        "set_drafting_model" => handle_set_drafting_model(state, arguments).await,
         // Job management tools
-        "list_jobs" => {
-            handle_list_jobs(state, arguments).await
-        }
-        "get_job_status" => {
-            handle_get_job_status(state, arguments).await
-        }
-        "cancel_job" => {
-            handle_cancel_job(state, arguments).await
-        }
+        "list_jobs" => handle_list_jobs(state, arguments).await,
+        "get_job_status" => handle_get_job_status(state, arguments).await,
+        "cancel_job" => handle_cancel_job(state, arguments).await,
         // Browsing tools (delegate to existing low-level handlers)
-        "list_accounts" |
-        "list_folders_hierarchical" |
-        "list_cached_emails" |
-        "get_email_by_uid" |
-        "search_cached_emails" |
-        "get_folder_stats" |
-        "get_email_synopsis" |
-        "get_email_thread" |
-        "search_by_domain" |
-        "list_emails_by_flag" |
-        "get_address_report" |
-        "sync_emails" => {
-            crate::dashboard::api::handlers::execute_mcp_tool_inner(state, tool_name, arguments).await
+        "list_accounts"
+        | "list_folders_hierarchical"
+        | "list_cached_emails"
+        | "get_email_by_uid"
+        | "search_cached_emails"
+        | "get_folder_stats"
+        | "get_email_synopsis"
+        | "get_email_thread"
+        | "search_by_domain"
+        | "list_emails_by_flag"
+        | "get_address_report"
+        | "sync_emails" => {
+            crate::dashboard::api::handlers::execute_mcp_tool_inner(state, tool_name, arguments)
+                .await
         }
 
         // Agentic/drafting tools
-        "process_email_instructions" => {
-            handle_process_email_instructions(state, arguments).await
-        }
-        "draft_reply" => {
-            handle_draft_reply(state, arguments).await
-        }
-        "draft_email" => {
-            handle_draft_email(state, arguments).await
-        }
+        "process_email_instructions" => handle_process_email_instructions(state, arguments).await,
+        "draft_reply" => handle_draft_reply(state, arguments).await,
+        "draft_email" => handle_draft_email(state, arguments).await,
 
         _ => {
             error!("Unknown high-level tool: {}", tool_name);
@@ -523,10 +505,12 @@ async fn handle_get_model_configurations(state: &DashboardState) -> Value {
 
     let pool = match state.cache_service.db_pool.as_ref() {
         Some(p) => p,
-        None => return json!({
-            "success": false,
-            "error": "Database not initialized"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Database not initialized"
+            })
+        }
     };
 
     match model_config::get_all_model_configs(pool).await {
@@ -547,30 +531,36 @@ async fn handle_get_model_configurations(state: &DashboardState) -> Value {
 }
 
 async fn handle_set_tool_calling_model(state: &DashboardState, arguments: Value) -> Value {
-    use crate::dashboard::services::ai::model_config::{ModelConfiguration, set_model_config};
+    use crate::dashboard::services::ai::model_config::{set_model_config, ModelConfiguration};
 
     let pool = match state.cache_service.db_pool.as_ref() {
         Some(p) => p,
-        None => return json!({
-            "success": false,
-            "error": "Database not initialized"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Database not initialized"
+            })
+        }
     };
 
     let provider = match arguments.get("provider").and_then(|v| v.as_str()) {
         Some(p) => p,
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: provider"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing required parameter: provider"
+            })
+        }
     };
 
     let model_name = match arguments.get("model_name").and_then(|v| v.as_str()) {
         Some(m) => m,
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: model_name"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing required parameter: model_name"
+            })
+        }
     };
 
     let mut config = ModelConfiguration::new("tool_calling", provider, model_name);
@@ -604,30 +594,36 @@ async fn handle_set_tool_calling_model(state: &DashboardState, arguments: Value)
 }
 
 async fn handle_set_drafting_model(state: &DashboardState, arguments: Value) -> Value {
-    use crate::dashboard::services::ai::model_config::{ModelConfiguration, set_model_config};
+    use crate::dashboard::services::ai::model_config::{set_model_config, ModelConfiguration};
 
     let pool = match state.cache_service.db_pool.as_ref() {
         Some(p) => p,
-        None => return json!({
-            "success": false,
-            "error": "Database not initialized"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Database not initialized"
+            })
+        }
     };
 
     let provider = match arguments.get("provider").and_then(|v| v.as_str()) {
         Some(p) => p,
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: provider"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing required parameter: provider"
+            })
+        }
     };
 
     let model_name = match arguments.get("model_name").and_then(|v| v.as_str()) {
         Some(m) => m,
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: model_name"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing required parameter: model_name"
+            })
+        }
     };
 
     let mut config = ModelConfiguration::new("drafting", provider, model_name);
@@ -665,7 +661,9 @@ async fn handle_set_drafting_model(state: &DashboardState, arguments: Value) -> 
 async fn handle_list_jobs(state: &DashboardState, arguments: Value) -> Value {
     let status_filter = arguments.get("status_filter").and_then(|v| v.as_str());
 
-    let jobs: Vec<_> = state.jobs.iter()
+    let jobs: Vec<_> = state
+        .jobs
+        .iter()
         .filter(|entry| {
             match status_filter {
                 Some("running") => matches!(entry.value().status, JobStatus::Running),
@@ -697,10 +695,12 @@ async fn handle_list_jobs(state: &DashboardState, arguments: Value) -> Value {
 async fn handle_get_job_status(state: &DashboardState, arguments: Value) -> Value {
     let job_id = match arguments.get("job_id").and_then(|v| v.as_str()) {
         Some(id) => id,
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: job_id"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing required parameter: job_id"
+            })
+        }
     };
 
     match state.jobs.get(job_id) {
@@ -723,10 +723,12 @@ async fn handle_get_job_status(state: &DashboardState, arguments: Value) -> Valu
 async fn handle_cancel_job(state: &DashboardState, arguments: Value) -> Value {
     let job_id = match arguments.get("job_id").and_then(|v| v.as_str()) {
         Some(id) => id,
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: job_id"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing required parameter: job_id"
+            })
+        }
     };
 
     // Remove the job and get its last status
@@ -746,7 +748,7 @@ async fn handle_cancel_job(state: &DashboardState, arguments: Value) -> Value {
                     }
                 }
             })
-        },
+        }
         None => json!({
             "success": false,
             "error": "Job not found"
@@ -756,8 +758,8 @@ async fn handle_cancel_job(state: &DashboardState, arguments: Value) -> Value {
 /// Starts a background job to process email instructions using the AI agent
 /// Returns immediately with a job_id that can be polled for status
 pub async fn handle_process_email_instructions(state: &DashboardState, arguments: Value) -> Value {
-    use std::time::Instant;
     use crate::dashboard::services::ai::agent_executor::AgentExecutor;
+    use std::time::Instant;
 
     let job_id = Uuid::new_v4().to_string();
 
@@ -768,15 +770,22 @@ pub async fn handle_process_email_instructions(state: &DashboardState, arguments
 
     let instruction = match arguments.get("instruction").and_then(|v| v.as_str()) {
         Some(i) => i.to_string(),
-        None => return json!({ "success": false, "error": "Missing required parameter: instruction" }),
+        None => {
+            return json!({ "success": false, "error": "Missing required parameter: instruction" })
+        }
     };
 
     let account_id = match arguments.get("account_id").and_then(|v| v.as_str()) {
         Some(a) => a.to_string(),
-        None => return json!({ "success": false, "error": "Missing required parameter: account_id" }),
+        None => {
+            return json!({ "success": false, "error": "Missing required parameter: account_id" })
+        }
     };
 
-    debug!("Processing email instruction for account {}: {}", account_id, instruction);
+    debug!(
+        "Processing email instruction for account {}: {}",
+        account_id, instruction
+    );
 
     let low_level_tools = crate::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
 
@@ -828,7 +837,11 @@ pub async fn handle_process_email_instructions(state: &DashboardState, arguments
     // Persist job to database for restart survival
     if let Some(ref job_persistence) = state.job_persistence {
         use crate::dashboard::services::jobs::PersistedJob;
-        let persisted = PersistedJob::new_resumable(job_id.clone(), Some(instruction.clone()), Some(account_id.clone()));
+        let persisted = PersistedJob::new_resumable(
+            job_id.clone(),
+            Some(instruction.clone()),
+            Some(account_id.clone()),
+        );
         if let Err(e) = job_persistence.create_job(&persisted).await {
             warn!("Failed to persist job {}: {}", job_id, e);
         }
@@ -840,18 +853,33 @@ pub async fn handle_process_email_instructions(state: &DashboardState, arguments
 
     let handle = tokio::spawn(async move {
         let executor = AgentExecutor::new();
-        let result = executor.execute_with_tools(&pool, &state_clone, &instruction, Some(&account_id), all_tools, Some(&job_id_clone)).await;
+        let result = executor
+            .execute_with_tools(
+                &pool,
+                &state_clone,
+                &instruction,
+                Some(&account_id),
+                all_tools,
+                Some(&job_id_clone),
+            )
+            .await;
 
-        let final_status = match &result {
-            Ok(r) if r.success => JobStatus::Completed(json!(r)),
-            Ok(r) => JobStatus::Failed(r.error.clone().unwrap_or_else(|| "Agent failed without a specific error message".to_string())),
-            Err(e) => JobStatus::Failed(e.to_string()),
-        };
+        let final_status =
+            match &result {
+                Ok(r) if r.success => JobStatus::Completed(json!(r)),
+                Ok(r) => JobStatus::Failed(r.error.clone().unwrap_or_else(|| {
+                    "Agent failed without a specific error message".to_string()
+                })),
+                Err(e) => JobStatus::Failed(e.to_string()),
+            };
 
         // Update in-memory state
-        state_clone.jobs.entry(job_id_clone.clone()).and_modify(|record| {
-            record.status = final_status;
-        });
+        state_clone
+            .jobs
+            .entry(job_id_clone.clone())
+            .and_modify(|record| {
+                record.status = final_status;
+            });
 
         // Update persistent storage
         if let Some(ref job_persistence) = state_clone.job_persistence {
@@ -862,13 +890,19 @@ pub async fn handle_process_email_instructions(state: &DashboardState, arguments
                     }
                 }
                 Ok(r) => {
-                    let error = r.error.clone().unwrap_or_else(|| "Agent failed".to_string());
+                    let error = r
+                        .error
+                        .clone()
+                        .unwrap_or_else(|| "Agent failed".to_string());
                     if let Err(e) = job_persistence.fail_job(&job_id_clone, &error).await {
                         warn!("Failed to persist job failure {}: {}", job_id_clone, e);
                     }
                 }
                 Err(e) => {
-                    if let Err(pe) = job_persistence.fail_job(&job_id_clone, &e.to_string()).await {
+                    if let Err(pe) = job_persistence
+                        .fail_job(&job_id_clone, &e.to_string())
+                        .await
+                    {
                         warn!("Failed to persist job failure {}: {}", job_id_clone, pe);
                     }
                 }
@@ -887,14 +921,23 @@ pub async fn handle_process_email_instructions(state: &DashboardState, arguments
                 format!("Job task failed: {}", join_error)
             };
             error!("Job {} failed: {}", job_id_for_panic, error_msg);
-            state_for_panic.jobs.entry(job_id_for_panic.clone()).and_modify(|record| {
-                record.status = JobStatus::Failed(error_msg.clone());
-            });
+            state_for_panic
+                .jobs
+                .entry(job_id_for_panic.clone())
+                .and_modify(|record| {
+                    record.status = JobStatus::Failed(error_msg.clone());
+                });
 
             // Persist the failure
             if let Some(ref job_persistence) = state_for_panic.job_persistence {
-                if let Err(e) = job_persistence.fail_job(&job_id_for_panic, &error_msg).await {
-                    warn!("Failed to persist job panic failure {}: {}", job_id_for_panic, e);
+                if let Err(e) = job_persistence
+                    .fail_job(&job_id_for_panic, &error_msg)
+                    .await
+                {
+                    warn!(
+                        "Failed to persist job panic failure {}: {}",
+                        job_id_for_panic, e
+                    );
                 }
             }
         }
@@ -905,43 +948,53 @@ pub async fn handle_process_email_instructions(state: &DashboardState, arguments
 
 // === Agentic Tool Handlers ===
 
-
 async fn handle_draft_reply(state: &DashboardState, arguments: Value) -> Value {
-    use crate::dashboard::services::ai::email_drafter::{EmailDrafter, DraftReplyRequest};
+    use crate::dashboard::services::ai::email_drafter::{DraftReplyRequest, EmailDrafter};
 
     let pool = match state.cache_service.db_pool.as_ref() {
         Some(p) => p,
-        None => return json!({
-            "success": false,
-            "error": "Database not initialized"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Database not initialized"
+            })
+        }
     };
 
     let email_uid = match arguments.get("email_uid").and_then(|v| v.as_u64()) {
         Some(u) => u as u32,
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: email_uid"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing required parameter: email_uid"
+            })
+        }
     };
 
     let folder = match arguments.get("folder").and_then(|v| v.as_str()) {
         Some(f) => f,
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: folder"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing required parameter: folder"
+            })
+        }
     };
 
     let account_id = match arguments.get("account_id").and_then(|v| v.as_str()) {
         Some(a) => a,
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: account_id"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing required parameter: account_id"
+            })
+        }
     };
 
-    let instruction = arguments.get("instruction").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let instruction = arguments
+        .get("instruction")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     // Fetch the original email
     let email_args = json!({
@@ -953,10 +1006,15 @@ async fn handle_draft_reply(state: &DashboardState, arguments: Value) -> Value {
     let email_result = crate::dashboard::api::handlers::execute_mcp_tool_inner(
         state,
         "get_email_by_uid",
-        email_args
-    ).await;
+        email_args,
+    )
+    .await;
 
-    if !email_result.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
+    if !email_result
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
         return json!({
             "success": false,
             "error": "Failed to fetch original email"
@@ -965,16 +1023,27 @@ async fn handle_draft_reply(state: &DashboardState, arguments: Value) -> Value {
 
     let email_data = match email_result.get("data") {
         Some(d) => d,
-        None => return json!({
-            "success": false,
-            "error": "Email data not found in response"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Email data not found in response"
+            })
+        }
     };
 
     // Extract email fields
-    let original_from = email_data.get("from_address").and_then(|v| v.as_str()).unwrap_or("unknown");
-    let original_subject = email_data.get("subject").and_then(|v| v.as_str()).unwrap_or("(no subject)");
-    let original_body = email_data.get("body_text").and_then(|v| v.as_str()).unwrap_or("");
+    let original_from = email_data
+        .get("from_address")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown");
+    let original_subject = email_data
+        .get("subject")
+        .and_then(|v| v.as_str())
+        .unwrap_or("(no subject)");
+    let original_body = email_data
+        .get("body_text")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
 
     let request = DraftReplyRequest {
         original_from: original_from.to_string(),
@@ -996,12 +1065,16 @@ async fn handle_draft_reply(state: &DashboardState, arguments: Value) -> Value {
                 format!("Re: {}", original_subject)
             };
 
-            match state.smtp_service.save_draft(
-                &account_email,
-                &request.original_from,
-                &reply_subject,
-                &draft
-            ).await {
+            match state
+                .smtp_service
+                .save_draft(
+                    &account_email,
+                    &request.original_from,
+                    &reply_subject,
+                    &draft,
+                )
+                .await
+            {
                 Ok(_) => {
                     json!({
                         "success": true,
@@ -1033,46 +1106,56 @@ async fn handle_draft_reply(state: &DashboardState, arguments: Value) -> Value {
     }
 }
 async fn handle_draft_email(state: &DashboardState, arguments: Value) -> Value {
-    use crate::dashboard::services::ai::email_drafter::{EmailDrafter, DraftEmailRequest};
+    use crate::dashboard::services::ai::email_drafter::{DraftEmailRequest, EmailDrafter};
 
     let pool = match state.cache_service.db_pool.as_ref() {
         Some(p) => p,
-        None => return json!({
-            "success": false,
-            "error": "Database not initialized"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Database not initialized"
+            })
+        }
     };
 
     let to = match arguments.get("to").and_then(|v| v.as_str()) {
         Some(t) => t.to_string(),
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: to"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing required parameter: to"
+            })
+        }
     };
 
     let subject = match arguments.get("subject").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: subject"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing required parameter: subject"
+            })
+        }
     };
 
     let context = match arguments.get("context").and_then(|v| v.as_str()) {
         Some(c) => c.to_string(),
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: context"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing required parameter: context"
+            })
+        }
     };
 
     let account_id = match arguments.get("account_id").and_then(|v| v.as_str()) {
         Some(a) => a.to_string(),
-        None => return json!({
-            "success": false,
-            "error": "Missing required parameter: account_id"
-        }),
+        None => {
+            return json!({
+                "success": false,
+                "error": "Missing required parameter: account_id"
+            })
+        }
     };
 
     let request = DraftEmailRequest {
@@ -1085,12 +1168,11 @@ async fn handle_draft_email(state: &DashboardState, arguments: Value) -> Value {
     match drafter.draft_email(pool, request.clone()).await {
         Ok(draft) => {
             // Save the draft to the Drafts folder
-            match state.smtp_service.save_draft(
-                &account_id,
-                &request.to,
-                &request.subject,
-                &draft
-            ).await {
+            match state
+                .smtp_service
+                .save_draft(&account_id, &request.to, &request.subject, &draft)
+                .await
+            {
                 Ok(_) => {
                     json!({
                         "success": true,

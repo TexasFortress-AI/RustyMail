@@ -3,14 +3,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use sqlx::{SqlitePool, Row};
-use log::{info, debug, error, warn};
-use thiserror::Error;
-use serde::{Serialize, Deserialize};
-use super::account_store::{AccountStore, StoredAccount, AccountStoreError};
-use super::connection_status_store::{ConnectionStatusStore, ConnectionStatusStoreError};
+use super::account_store::{AccountStore, AccountStoreError, StoredAccount};
 use super::connection_status::AccountConnectionStatus;
+use super::connection_status_store::{ConnectionStatusStore, ConnectionStatusStoreError};
 use chrono::Utc;
+use log::{debug, error, info, warn};
+use serde::{Deserialize, Serialize};
+use sqlx::{Row, SqlitePool};
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum AccountError {
@@ -155,7 +155,10 @@ impl AccountService {
 
         // Attempt to migrate accounts from database to file storage
         if let Err(e) = self.migrate_accounts_from_db().await {
-            warn!("Account migration from database failed: {}. Continuing with file-based storage.", e);
+            warn!(
+                "Account migration from database failed: {}. Continuing with file-based storage.",
+                e
+            );
         }
 
         // Sync accounts FROM file storage TO database
@@ -168,9 +171,12 @@ impl AccountService {
     }
 
     /// Create account from environment variables if no accounts exist
-    pub async fn ensure_default_account_from_env(&mut self, settings: &crate::config::Settings) -> Result<(), AccountError> {
+    pub async fn ensure_default_account_from_env(
+        &mut self,
+        settings: &crate::config::Settings,
+    ) -> Result<(), AccountError> {
+        use crate::dashboard::services::account_store::{ImapConfig, StoredAccount};
         use chrono::Utc;
-        use crate::dashboard::services::account_store::{StoredAccount, ImapConfig};
 
         // Check if we already have accounts
         let existing_accounts = self.account_store.list_accounts().await?;
@@ -220,10 +226,17 @@ impl AccountService {
         match self.account_store.add_account(account.clone()).await {
             Ok(()) => {
                 // Set as default account
-                if let Err(e) = self.account_store.set_default_account(&account.email_address).await {
+                if let Err(e) = self
+                    .account_store
+                    .set_default_account(&account.email_address)
+                    .await
+                {
                     warn!("Failed to set default account: {}", e);
                 }
-                info!("Successfully created default account from environment: {}", account.email_address);
+                info!(
+                    "Successfully created default account from environment: {}",
+                    account.email_address
+                );
 
                 // Sync to database cache so the account is immediately available for email operations
                 if let Err(e) = self.sync_accounts_to_db().await {
@@ -246,10 +259,11 @@ impl AccountService {
 
         // Check if accounts table exists in database
         let table_exists = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='accounts'"
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='accounts'",
         )
         .fetch_one(db)
-        .await? > 0;
+        .await?
+            > 0;
 
         if !table_exists {
             debug!("No accounts table in database, skipping migration");
@@ -274,7 +288,7 @@ impl AccountService {
                 smtp_use_tls, smtp_use_starttls,
                 is_active, is_default
             FROM accounts
-            "#
+            "#,
         )
         .fetch_all(db)
         .await?;
@@ -285,7 +299,10 @@ impl AccountService {
         }
 
         let account_count = rows.len();
-        info!("Migrating {} accounts from database to file storage", account_count);
+        info!(
+            "Migrating {} accounts from database to file storage",
+            account_count
+        );
 
         // Migrate each account
         let mut default_account_id: Option<String> = None;
@@ -321,15 +338,13 @@ impl AccountService {
                     use_tls: imap_use_tls != 0,
                     use_starttls: imap_use_starttls != 0,
                 },
-                smtp: smtp_host.map(|host| {
-                    super::account_store::SmtpConfig {
-                        host,
-                        port: smtp_port.unwrap_or(587) as u16,
-                        username: smtp_user.unwrap_or_default(),
-                        password: smtp_pass.unwrap_or_default(),
-                        use_tls: smtp_use_tls.map(|v| v != 0).unwrap_or(true),
-                        use_starttls: smtp_use_starttls.map(|v| v != 0).unwrap_or(true),
-                    }
+                smtp: smtp_host.map(|host| super::account_store::SmtpConfig {
+                    host,
+                    port: smtp_port.unwrap_or(587) as u16,
+                    username: smtp_user.unwrap_or_default(),
+                    password: smtp_pass.unwrap_or_default(),
+                    use_tls: smtp_use_tls.map(|v| v != 0).unwrap_or(true),
+                    use_starttls: smtp_use_starttls.map(|v| v != 0).unwrap_or(true),
                 }),
                 oauth_provider: None,
                 oauth_access_token: None,
@@ -352,7 +367,10 @@ impl AccountService {
             self.account_store.set_default_account(&default_id).await?;
         }
 
-        info!("Successfully migrated {} accounts to file storage", account_count);
+        info!(
+            "Successfully migrated {} accounts to file storage",
+            account_count
+        );
         Ok(())
     }
 
@@ -368,16 +386,20 @@ impl AccountService {
             return Ok(());
         }
 
-        info!("Syncing {} accounts from file storage to database", file_accounts.len());
+        info!(
+            "Syncing {} accounts from file storage to database",
+            file_accounts.len()
+        );
 
         for account in file_accounts {
             // Check if account already exists in database by email_address
             let exists = sqlx::query_scalar::<_, i64>(
-                "SELECT COUNT(*) FROM accounts WHERE email_address = ?"
+                "SELECT COUNT(*) FROM accounts WHERE email_address = ?",
             )
             .bind(&account.email_address)
             .fetch_one(db)
-            .await? > 0;
+            .await?
+                > 0;
 
             if exists {
                 // Update existing account
@@ -464,9 +486,9 @@ impl AccountService {
 
     /// Get database pool or return error (only used for provider templates now)
     fn db(&self) -> Result<&SqlitePool, AccountError> {
-        self.db_pool.as_ref().ok_or_else(|| {
-            AccountError::OperationFailed("Database not initialized".to_string())
-        })
+        self.db_pool
+            .as_ref()
+            .ok_or_else(|| AccountError::OperationFailed("Database not initialized".to_string()))
     }
 
     /// Convert StoredAccount to Account (for API responses)
@@ -499,7 +521,10 @@ impl AccountService {
     }
 
     /// Auto-configure email settings based on email address
-    pub async fn auto_configure(&self, email_address: &str) -> Result<AutoConfigResult, AccountError> {
+    pub async fn auto_configure(
+        &self,
+        email_address: &str,
+    ) -> Result<AutoConfigResult, AccountError> {
         debug!("Auto-configuring for email: {}", email_address);
 
         // Extract domain from email
@@ -511,7 +536,10 @@ impl AccountService {
 
         match template {
             Some(tmpl) => {
-                info!("Found provider template for domain: {} ({})", domain, tmpl.display_name);
+                info!(
+                    "Found provider template for domain: {} ({})",
+                    domain, tmpl.display_name
+                );
                 Ok(AutoConfigResult {
                     provider_found: true,
                     provider_type: Some(tmpl.provider_type),
@@ -553,13 +581,19 @@ impl AccountService {
     fn extract_domain(email: &str) -> Result<String, AccountError> {
         let parts: Vec<&str> = email.split('@').collect();
         if parts.len() != 2 || parts[0].is_empty() || parts[1].is_empty() {
-            return Err(AccountError::InvalidEmail(format!("Invalid email format: {}", email)));
+            return Err(AccountError::InvalidEmail(format!(
+                "Invalid email format: {}",
+                email
+            )));
         }
         Ok(parts[1].to_lowercase())
     }
 
     /// Find provider template by domain
-    async fn find_provider_template(&self, domain: &str) -> Result<Option<ProviderTemplate>, AccountError> {
+    async fn find_provider_template(
+        &self,
+        domain: &str,
+    ) -> Result<Option<ProviderTemplate>, AccountError> {
         let db = self.db()?;
 
         // Query all provider templates
@@ -580,7 +614,7 @@ impl AccountService {
                 supports_oauth,
                 oauth_provider
             FROM provider_templates
-            "#
+            "#,
         )
         .fetch_all(db)
         .await?;
@@ -628,16 +662,17 @@ impl AccountService {
                 use_tls: account.imap_use_tls,
                 use_starttls: account.imap_use_starttls,
             },
-            smtp: account.smtp_host.as_ref().map(|host| {
-                super::account_store::SmtpConfig {
+            smtp: account
+                .smtp_host
+                .as_ref()
+                .map(|host| super::account_store::SmtpConfig {
                     host: host.clone(),
                     port: account.smtp_port.unwrap_or(587) as u16,
                     username: account.smtp_user.clone().unwrap_or_default(),
                     password: account.smtp_pass.clone().unwrap_or_default(),
                     use_tls: account.smtp_use_tls.unwrap_or(true),
                     use_starttls: account.smtp_use_starttls.unwrap_or(true),
-                }
-            }),
+                }),
             oauth_provider: account.oauth_provider.clone(),
             oauth_access_token: account.oauth_access_token.clone(),
             oauth_refresh_token: account.oauth_refresh_token.clone(),
@@ -651,7 +686,10 @@ impl AccountService {
         let account_email = stored_account.email_address.clone();
 
         self.account_store.add_account(stored_account).await?;
-        info!("Created account: {} ({})", account.display_name, account.email_address);
+        info!(
+            "Created account: {} ({})",
+            account.display_name, account.email_address
+        );
 
         // Sync to database cache so the account is immediately available for email operations
         if let Err(e) = self.sync_accounts_to_db().await {
@@ -677,7 +715,7 @@ impl AccountService {
         account.connection_status = Some(
             self.connection_status_store
                 .get_status_or_default(account_id)
-                .await
+                .await,
         );
 
         Ok(account)
@@ -698,7 +736,7 @@ impl AccountService {
             account.connection_status = Some(
                 self.connection_status_store
                     .get_status_or_default(&stored.email_address)
-                    .await
+                    .await,
             );
 
             accounts.push(account);
@@ -720,7 +758,11 @@ impl AccountService {
     }
 
     /// Update account (requires account_id as string)
-    pub async fn update_account(&self, account_id: &str, account: Account) -> Result<(), AccountError> {
+    pub async fn update_account(
+        &self,
+        account_id: &str,
+        account: Account,
+    ) -> Result<(), AccountError> {
         // Get existing account to preserve created_at timestamp
         let existing = self.account_store.get_account(account_id).await?;
 
@@ -736,16 +778,17 @@ impl AccountService {
                 use_tls: account.imap_use_tls,
                 use_starttls: account.imap_use_starttls,
             },
-            smtp: account.smtp_host.as_ref().map(|host| {
-                super::account_store::SmtpConfig {
+            smtp: account
+                .smtp_host
+                .as_ref()
+                .map(|host| super::account_store::SmtpConfig {
                     host: host.clone(),
                     port: account.smtp_port.unwrap_or(587) as u16,
                     username: account.smtp_user.clone().unwrap_or_default(),
                     password: account.smtp_pass.clone().unwrap_or_default(),
                     use_tls: account.smtp_use_tls.unwrap_or(true),
                     use_starttls: account.smtp_use_starttls.unwrap_or(true),
-                }
-            }),
+                }),
             // Preserve existing OAuth fields during non-OAuth updates
             oauth_provider: existing.oauth_provider,
             oauth_access_token: existing.oauth_access_token,
@@ -757,7 +800,10 @@ impl AccountService {
         };
 
         self.account_store.update_account(updated).await?;
-        info!("Updated account: {} ({})", account.display_name, account.email_address);
+        info!(
+            "Updated account: {} ({})",
+            account.display_name, account.email_address
+        );
         Ok(())
     }
 
@@ -803,7 +849,10 @@ impl AccountService {
 
     /// Validate account credentials by attempting to connect and record status
     pub async fn validate_connection(&self, account: &Account) -> Result<(), AccountError> {
-        debug!("Validating connection for account: {}", account.display_name);
+        debug!(
+            "Validating connection for account: {}",
+            account.display_name
+        );
 
         // Route OAuth accounts through XOAUTH2
         let connect_result = if account.is_oauth() {
@@ -837,7 +886,8 @@ impl AccountService {
         };
 
         // Record connection status
-        let mut status = self.connection_status_store
+        let mut status = self
+            .connection_status_store
             .get_status_or_default(&account.email_address)
             .await;
 
@@ -846,7 +896,10 @@ impl AccountService {
                 // Pre-create essential folders (Outbox, Sent, Drafts)
                 // This ensures folders exist before first use, avoiding timeout issues during email send
                 if let Err(e) = self.ensure_essential_folders_exist(&client).await {
-                    warn!("Failed to create essential folders during validation: {}", e);
+                    warn!(
+                        "Failed to create essential folders during validation: {}",
+                        e
+                    );
                     // Don't fail validation if folder creation fails - just log warning
                 }
 
@@ -861,7 +914,10 @@ impl AccountService {
                     warn!("Failed to record connection status: {}", e);
                 }
 
-                info!("Connection validation successful for: {}", account.display_name);
+                info!(
+                    "Connection validation successful for: {}",
+                    account.display_name
+                );
                 Ok(())
             }
             Err(e) => {
@@ -871,8 +927,14 @@ impl AccountService {
                     warn!("Failed to record connection status: {}", err);
                 }
 
-                error!("Connection validation failed for {}: {}", account.display_name, e);
-                Err(AccountError::OperationFailed(format!("Connection failed: {}", e)))
+                error!(
+                    "Connection validation failed for {}: {}",
+                    account.display_name, e
+                );
+                Err(AccountError::OperationFailed(format!(
+                    "Connection failed: {}",
+                    e
+                )))
             }
         }
     }
@@ -912,7 +974,10 @@ impl AccountService {
         &self,
         account_id: &str,
     ) -> Result<AccountConnectionStatus, AccountError> {
-        Ok(self.connection_status_store.get_status_or_default(account_id).await)
+        Ok(self
+            .connection_status_store
+            .get_status_or_default(account_id)
+            .await)
     }
 
     /// Update IMAP connection status for an account
@@ -922,7 +987,10 @@ impl AccountService {
         success: bool,
         message: impl Into<String>,
     ) -> Result<(), AccountError> {
-        let mut status = self.connection_status_store.get_status_or_default(account_id).await;
+        let mut status = self
+            .connection_status_store
+            .get_status_or_default(account_id)
+            .await;
 
         if success {
             status.set_imap_success(message);
@@ -941,7 +1009,10 @@ impl AccountService {
         success: bool,
         message: impl Into<String>,
     ) -> Result<(), AccountError> {
-        let mut status = self.connection_status_store.get_status_or_default(account_id).await;
+        let mut status = self
+            .connection_status_store
+            .get_status_or_default(account_id)
+            .await;
 
         if success {
             status.set_smtp_success(message);

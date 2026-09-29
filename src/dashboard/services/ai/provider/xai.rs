@@ -5,17 +5,16 @@
 
 // src/dashboard/services/ai/providers/xai.rs
 
-use async_trait::async_trait;
-use reqwest::Client;
-use serde::{Serialize, Deserialize};
-use log::{debug, warn, error};
-use super::{AiProvider, AiChatMessage, get_ai_request_timeout};
+use super::{get_ai_request_timeout, AiChatMessage, AiProvider};
 use crate::api::errors::ApiError as RestApiError;
+use async_trait::async_trait;
+use log::{debug, error, warn};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 // Get xAI API base URL from environment or use default
 fn get_base_url() -> String {
-    std::env::var("XAI_BASE_URL")
-        .unwrap_or_else(|_| "https://api.x.ai/v1".to_string())
+    std::env::var("XAI_BASE_URL").unwrap_or_else(|_| "https://api.x.ai/v1".to_string())
 }
 
 const DEFAULT_XAI_MODEL: &str = "grok-beta";
@@ -63,8 +62,7 @@ impl XAIAdapter {
         Self {
             api_key,
             http_client,
-            model: std::env::var("XAI_MODEL")
-                .unwrap_or_else(|_| DEFAULT_XAI_MODEL.to_string()),
+            model: std::env::var("XAI_MODEL").unwrap_or_else(|_| DEFAULT_XAI_MODEL.to_string()),
         }
     }
 
@@ -82,29 +80,43 @@ impl AiProvider for XAIAdapter {
         let base_url = get_base_url();
         let models_url = format!("{}/models", base_url);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .get(&models_url)
             .bearer_auth(&self.api_key)
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("xAI models: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("xAI models: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("xAI models API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "xAI models API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("xAI models API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "xAI models API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
-        let response_body = response
-            .json::<XAIModelsResponse>()
-            .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize xAI models response: {}", e) })?;
+        let response_body = response.json::<XAIModelsResponse>().await.map_err(|e| {
+            RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize xAI models response: {}", e),
+            }
+        })?;
 
-        let models: Vec<String> = response_body.data
+        let models: Vec<String> = response_body
+            .data
             .into_iter()
             .map(|model| model.id)
             .collect();
@@ -124,38 +136,54 @@ impl AiProvider for XAIAdapter {
             max_tokens: Some(2000),
         };
 
-        debug!("Sending request to xAI API: model={}, messages_count={}, url={}",
-               request_payload.model, request_payload.messages.len(), url);
+        debug!(
+            "Sending request to xAI API: model={}, messages_count={}, url={}",
+            request_payload.model,
+            request_payload.messages.len(),
+            url
+        );
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .bearer_auth(&self.api_key)
             .json(&request_payload)
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("xAI: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("xAI: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("xAI API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "xAI API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("xAI API returned error status {}: {}", status, error_body)
+                service: format!("xAI API returned error status {}: {}", status, error_body),
             });
         }
 
-        let response_body = response
-            .json::<XAIChatResponse>()
-            .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize xAI response: {}", e) })?;
+        let response_body = response.json::<XAIChatResponse>().await.map_err(|e| {
+            RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize xAI response: {}", e),
+            }
+        })?;
 
         if let Some(choice) = response_body.choices.first() {
             debug!("Received response from xAI API.");
             Ok(choice.message.content.clone())
         } else {
             warn!("xAI API response did not contain any choices.");
-            Err(RestApiError::UnprocessableEntity { message: "xAI response was empty or missing choices".to_string() })
+            Err(RestApiError::UnprocessableEntity {
+                message: "xAI response was empty or missing choices".to_string(),
+            })
         }
     }
 }

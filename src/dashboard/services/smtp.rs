@@ -3,6 +3,8 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use chrono;
+use lettre::message::header;
 use lettre::{
     message::{header::ContentType, Mailbox, MultiPart, SinglePart},
     transport::smtp::{
@@ -11,16 +13,14 @@ use lettre::{
     },
     AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor,
 };
-use lettre::message::header;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::time::timeout;
-use chrono;
 
-use super::account::{AccountService};
+use super::account::AccountService;
 use crate::prelude::CloneableImapSessionFactory;
 
 // Folder name constants (can be configured via environment or config file in the future)
@@ -130,12 +130,16 @@ impl SmtpService {
         // Build from address with properly quoted display name
         let from_mailbox: Mailbox = if account.display_name.is_empty() {
             // Just use the email address if no display name
-            account.email_address
+            account
+                .email_address
                 .parse()
                 .map_err(|e| SmtpError::ConfigError(format!("Invalid from address: {}", e)))?
         } else {
             // Quote the display name if it contains special characters
-            let quoted_name = if account.display_name.contains(|c: char| "()<>[]:;@\\,\"".contains(c)) {
+            let quoted_name = if account
+                .display_name
+                .contains(|c: char| "()<>[]:;@\\,\"".contains(c))
+            {
                 format!("\"{}\"", account.display_name.replace('\"', "\\\""))
             } else {
                 account.display_name.clone()
@@ -191,14 +195,13 @@ impl SmtpService {
                     ),
             )?
         } else {
-            email_builder.header(ContentType::TEXT_PLAIN).body(request.body.clone())?
+            email_builder
+                .header(ContentType::TEXT_PLAIN)
+                .body(request.body.clone())?
         };
 
         // Get message ID before sending
-        let message_id = email
-            .headers()
-            .get_raw("Message-ID")
-            .map(|v| v.to_string());
+        let message_id = email.headers().get_raw("Message-ID").map(|v| v.to_string());
 
         // Build SMTP transport
         let creds = Credentials::new(smtp_user.clone(), smtp_pass.clone());
@@ -212,14 +215,24 @@ impl SmtpService {
         let email_bytes = email.formatted();
 
         // Step 1: Save to Outbox FIRST (blocking, must succeed - proper Outbox pattern)
-        log::info!("Saving email to {} before sending (this may take up to 30 seconds)", OUTBOX_FOLDER);
-        match self.ensure_folder_exists_and_append(&account.email_address, &email_bytes, OUTBOX_FOLDER).await {
+        log::info!(
+            "Saving email to {} before sending (this may take up to 30 seconds)",
+            OUTBOX_FOLDER
+        );
+        match self
+            .ensure_folder_exists_and_append(&account.email_address, &email_bytes, OUTBOX_FOLDER)
+            .await
+        {
             Ok(_) => {
                 log::info!("Successfully saved email to {}", OUTBOX_FOLDER);
             }
             Err(e) => {
                 // CRITICAL: If we can't save to Outbox, abort the send completely
-                log::error!("CRITICAL: Failed to save email to {}. Aborting send. Error: {}", OUTBOX_FOLDER, e);
+                log::error!(
+                    "CRITICAL: Failed to save email to {}. Aborting send. Error: {}",
+                    OUTBOX_FOLDER,
+                    e
+                );
                 return Err(e);
             }
         }
@@ -231,7 +244,14 @@ impl SmtpService {
                 log::info!("Email sent successfully via SMTP");
 
                 // Step 3: Save to Sent folder (best-effort, don't fail if it doesn't work)
-                match self.ensure_folder_exists_and_append(&account.email_address, &email_bytes, SENT_FOLDER).await {
+                match self
+                    .ensure_folder_exists_and_append(
+                        &account.email_address,
+                        &email_bytes,
+                        SENT_FOLDER,
+                    )
+                    .await
+                {
                     Ok(_) => {
                         log::info!("Successfully saved sent email to Sent folder");
                     }
@@ -241,12 +261,18 @@ impl SmtpService {
                 }
 
                 // Step 4: Clean up Outbox after successful send
-                match self.delete_from_outbox(&account.email_address, &message_id).await {
+                match self
+                    .delete_from_outbox(&account.email_address, &message_id)
+                    .await
+                {
                     Ok(_) => {
                         log::info!("Successfully removed email from Outbox");
                     }
                     Err(e) => {
-                        log::warn!("Failed to remove email from Outbox: {}. Email was sent successfully.", e);
+                        log::warn!(
+                            "Failed to remove email from Outbox: {}. Email was sent successfully.",
+                            e
+                        );
                     }
                 }
 
@@ -277,7 +303,11 @@ impl SmtpService {
         // This prevents indefinite hangs with slow IMAP servers
         let operation_timeout = Duration::from_secs(40); // 5 seconds more than IMAP APPEND timeout
 
-        log::info!("Starting IMAP APPEND to '{}' with {}s timeout", folder_name, operation_timeout.as_secs());
+        log::info!(
+            "Starting IMAP APPEND to '{}' with {}s timeout",
+            folder_name,
+            operation_timeout.as_secs()
+        );
 
         // Wrap the entire operation in a timeout
         let result = timeout(operation_timeout, async {
@@ -395,7 +425,8 @@ impl SmtpService {
         drop(account_service);
 
         // Create IMAP session for this account
-        let session = self.imap_session_factory
+        let session = self
+            .imap_session_factory
             .create_session_for_account(&account)
             .await
             .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
@@ -438,7 +469,9 @@ impl SmtpService {
                 err
             )))
         } else {
-            Err(SmtpError::ConfigError("No Outbox folders to try".to_string()))
+            Err(SmtpError::ConfigError(
+                "No Outbox folders to try".to_string(),
+            ))
         }
     }
 
@@ -466,7 +499,8 @@ impl SmtpService {
         drop(account_service);
 
         // Create IMAP session for this account
-        let session = self.imap_session_factory
+        let session = self
+            .imap_session_factory
             .create_session_for_account(&account)
             .await
             .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
@@ -497,12 +531,20 @@ impl SmtpService {
                                         return Ok(());
                                     }
                                     Err(e) => {
-                                        log::warn!("Failed to delete message from Outbox folder '{}': {}", folder, e);
+                                        log::warn!(
+                                            "Failed to delete message from Outbox folder '{}': {}",
+                                            folder,
+                                            e
+                                        );
                                         last_error = Some(e);
                                     }
                                 }
                             } else {
-                                log::debug!("No messages found in Outbox folder '{}' with Message-ID: {}", folder, msg_id);
+                                log::debug!(
+                                    "No messages found in Outbox folder '{}' with Message-ID: {}",
+                                    folder,
+                                    msg_id
+                                );
                             }
                         }
                         Err(e) => {
@@ -552,7 +594,8 @@ impl SmtpService {
         drop(account_service);
 
         // Create IMAP session for this account
-        let session = self.imap_session_factory
+        let session = self
+            .imap_session_factory
             .create_session_for_account(&account)
             .await
             .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
@@ -632,11 +675,15 @@ impl SmtpService {
 
         // Build from address with properly quoted display name
         let from_mailbox: Mailbox = if account.display_name.is_empty() {
-            account.email_address
+            account
+                .email_address
                 .parse()
                 .map_err(|e| SmtpError::ConfigError(format!("Invalid from address: {}", e)))?
         } else {
-            let quoted_name = if account.display_name.contains(|c: char| "()<>[]:;@\\,\"".contains(c)) {
+            let quoted_name = if account
+                .display_name
+                .contains(|c: char| "()<>[]:;@\\,\"".contains(c))
+            {
                 format!("\"{}\"", account.display_name.replace('\"', "\\\""))
             } else {
                 account.display_name.clone()
@@ -692,7 +739,9 @@ impl SmtpService {
                     ),
             )?
         } else {
-            email_builder.header(ContentType::TEXT_PLAIN).body(request.body.clone())?
+            email_builder
+                .header(ContentType::TEXT_PLAIN)
+                .body(request.body.clone())?
         };
 
         // Get message ID before sending
@@ -705,10 +754,11 @@ impl SmtpService {
         // Build SMTP transport
         let creds = Credentials::new(smtp_user.clone(), smtp_pass.clone());
 
-        let mailer: AsyncSmtpTransport<Tokio1Executor> = smtp_transport_builder(smtp_host, use_starttls)?
-            .port(smtp_port)
-            .credentials(creds)
-            .build();
+        let mailer: AsyncSmtpTransport<Tokio1Executor> =
+            smtp_transport_builder(smtp_host, use_starttls)?
+                .port(smtp_port)
+                .credentials(creds)
+                .build();
 
         // Send via SMTP (no IMAP operations)
         log::info!("Sending email via SMTP only (no IMAP operations)...");
@@ -746,10 +796,11 @@ impl SmtpService {
         // Build SMTP transport
         let creds = Credentials::new(smtp_user.clone(), smtp_pass.clone());
 
-        let mailer: AsyncSmtpTransport<Tokio1Executor> = smtp_transport_builder(smtp_host, use_starttls)?
-            .port(smtp_port)
-            .credentials(creds)
-            .build();
+        let mailer: AsyncSmtpTransport<Tokio1Executor> =
+            smtp_transport_builder(smtp_host, use_starttls)?
+                .port(smtp_port)
+                .credentials(creds)
+                .build();
 
         // Test connection
         mailer.test_connection().await?;
@@ -786,13 +837,19 @@ impl SmtpService {
 
         // Append to Drafts folder with \Draft flag
         let operation_timeout = Duration::from_secs(40);
-        log::info!("Saving draft to Drafts folder with {}s timeout", operation_timeout.as_secs());
+        log::info!(
+            "Saving draft to Drafts folder with {}s timeout",
+            operation_timeout.as_secs()
+        );
 
         let result = timeout(operation_timeout, async {
-            let session = self.imap_session_factory
+            let session = self
+                .imap_session_factory
                 .create_session_for_account(&account)
                 .await
-                .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
+                .map_err(|e| {
+                    SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e))
+                })?;
 
             let drafts_folder = "INBOX.Drafts";
             let flags = vec!["\\Draft".to_string()];
@@ -804,10 +861,10 @@ impl SmtpService {
                 }
                 Err(append_err) => {
                     let err_str = append_err.to_string().to_lowercase();
-                    let folder_not_found = err_str.contains("no such") ||
-                                          err_str.contains("not found") ||
-                                          err_str.contains("nonexistent") ||
-                                          err_str.contains("does not exist");
+                    let folder_not_found = err_str.contains("no such")
+                        || err_str.contains("not found")
+                        || err_str.contains("nonexistent")
+                        || err_str.contains("does not exist");
 
                     if folder_not_found {
                         log::warn!("Drafts folder does not exist, attempting to create...");
@@ -817,17 +874,20 @@ impl SmtpService {
                                 match session.append(drafts_folder, email_bytes, &flags).await {
                                     Ok(_) => Ok(()),
                                     Err(e) => Err(SmtpError::ConfigError(format!(
-                                        "Failed to append draft after creating folder: {}", e
-                                    )))
+                                        "Failed to append draft after creating folder: {}",
+                                        e
+                                    ))),
                                 }
                             }
                             Err(e) => Err(SmtpError::ConfigError(format!(
-                                "Failed to create Drafts folder: {}", e
-                            )))
+                                "Failed to create Drafts folder: {}",
+                                e
+                            ))),
                         }
                     } else {
                         Err(SmtpError::ConfigError(format!(
-                            "Failed to save draft: {}", append_err
+                            "Failed to save draft: {}",
+                            append_err
                         )))
                     }
                 }
@@ -839,14 +899,16 @@ impl SmtpService {
             }
 
             result
-        }).await;
+        })
+        .await;
 
         match result {
             Ok(Ok(())) => Ok(()),
             Ok(Err(e)) => Err(e),
             Err(_) => Err(SmtpError::ConfigError(format!(
-                "Save draft operation timed out after {}s", operation_timeout.as_secs()
-            )))
+                "Save draft operation timed out after {}s",
+                operation_timeout.as_secs()
+            ))),
         }
     }
 }

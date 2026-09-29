@@ -9,21 +9,21 @@
 // Dashboard API module
 
 pub mod accounts;
+pub mod attachments;
+pub mod config;
+pub mod errors;
+pub mod handlers;
+pub mod health;
+pub mod high_level_tools;
+pub mod middleware;
+pub mod models;
 pub mod oauth;
 pub mod routes;
 pub mod sse;
-pub mod models;
-pub mod handlers;
-pub mod errors;
-pub mod middleware;
-pub mod config;
-pub mod health;
-pub mod attachments;
-pub mod high_level_tools;
 
 // Re-export main types needed elsewhere
 pub use routes::configure as init_routes;
 pub use sse::SseManager;
 
-// The init function previously here is no longer needed, 
+// The init function previously here is no longer needed,
 // its logic moved to main.rs

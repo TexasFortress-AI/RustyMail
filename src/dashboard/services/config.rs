@@ -3,16 +3,16 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use tokio::sync::RwLock;
-use crate::dashboard::api::models::{ServerConfig, ImapAdapter};
-use log::{info, error};
-use std::time::Instant;
 use crate::config::Settings;
-use sysinfo;
-use serde::{Serialize, Deserialize};
-use std::sync::Arc;
+use crate::dashboard::api::models::{ImapAdapter, ServerConfig};
+use log::{error, info};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Instant;
+use sysinfo;
+use tokio::sync::RwLock;
 
 #[derive(Debug, Clone)]
 pub struct ConfigData {
@@ -30,10 +30,13 @@ pub struct ConfigService {
 
 impl ConfigService {
     pub fn new() -> Self {
-        Self::with_settings(Settings::new(None).unwrap_or_else(|e| {
-            error!("Failed to load settings, using defaults: {}", e);
-            Settings::default()
-        }), None)
+        Self::with_settings(
+            Settings::new(None).unwrap_or_else(|e| {
+                error!("Failed to load settings, using defaults: {}", e);
+                Settings::default()
+            }),
+            None,
+        )
     }
 
     pub fn with_settings(settings: Settings, config_path: Option<PathBuf>) -> Self {
@@ -42,7 +45,10 @@ impl ConfigService {
             ImapAdapter {
                 id: "current".to_string(),
                 name: settings.imap_host.clone(),
-                description: format!("IMAP server at {}:{}", settings.imap_host, settings.imap_port),
+                description: format!(
+                    "IMAP server at {}:{}",
+                    settings.imap_host, settings.imap_port
+                ),
                 is_active: true,
             },
             ImapAdapter {
@@ -75,20 +81,21 @@ impl ConfigService {
         let uptime = sysinfo::System::uptime();
 
         // Create adapter list based on settings
-        let adapters = vec![
-            ImapAdapter {
-                id: "current".to_string(),
-                name: settings.imap_host.clone(),
-                description: format!("IMAP server at {}:{}", settings.imap_host, settings.imap_port),
-                is_active: true,
-            }
-        ];
+        let adapters = vec![ImapAdapter {
+            id: "current".to_string(),
+            name: settings.imap_host.clone(),
+            description: format!(
+                "IMAP server at {}:{}",
+                settings.imap_host, settings.imap_port
+            ),
+            is_active: true,
+        }];
 
         let active_adapter = adapters.first().cloned().unwrap_or_else(|| ImapAdapter {
-             id: "unknown".to_string(),
-             name: "Unknown".to_string(),
-             description: "No adapter configured".to_string(),
-             is_active: true,
+            id: "unknown".to_string(),
+            name: "Unknown".to_string(),
+            description: "No adapter configured".to_string(),
+            is_active: true,
         });
 
         ServerConfig {
@@ -102,7 +109,7 @@ impl ConfigService {
     // Set the active IMAP adapter
     pub async fn set_active_adapter(&self, adapter_id: &str) -> Result<ServerConfig, String> {
         let mut config = self.config.write().await;
-        
+
         // Check if adapter exists
         if !config.available_adapters.iter().any(|a| a.id == adapter_id) {
             return Err(format!("Adapter '{}' not found", adapter_id));
@@ -115,17 +122,19 @@ impl ConfigService {
 
         // Update active adapter ID
         config.active_adapter_id = adapter_id.to_string();
-        
+
         info!("Active IMAP adapter set to: {}", adapter_id);
-        
+
         // Return updated configuration
-        let active_adapter = config.available_adapters.iter()
+        let active_adapter = config
+            .available_adapters
+            .iter()
             .find(|a| a.id == adapter_id)
             .cloned()
             .unwrap();
-            
+
         let uptime = config.start_time.elapsed().as_secs();
-        
+
         Ok(ServerConfig {
             active_adapter,
             available_adapters: config.available_adapters.clone(),
@@ -137,42 +146,43 @@ impl ConfigService {
     // Add a new IMAP adapter
     pub async fn add_adapter(&self, adapter: ImapAdapter) -> Result<ServerConfig, String> {
         let mut config = self.config.write().await;
-        
+
         // Check if adapter with same ID already exists
         if config.available_adapters.iter().any(|a| a.id == adapter.id) {
             return Err(format!("Adapter with ID '{}' already exists", adapter.id));
         }
-        
+
         // Add new adapter
         config.available_adapters.push(adapter);
-        
+
         // Update uptime
         config.start_time = Instant::now();
-        
+
         Ok(self.get_configuration().await)
     }
-    
+
     // Remove an IMAP adapter
     pub async fn remove_adapter(&self, adapter_id: &str) -> Result<ServerConfig, String> {
         let mut config = self.config.write().await;
-        
+
         // Cannot remove active adapter
         if config.active_adapter_id == adapter_id {
             return Err("Cannot remove active adapter".to_string());
         }
-        
+
         // Find adapter index
-        let adapter_index = config.available_adapters
+        let adapter_index = config
+            .available_adapters
             .iter()
             .position(|a| a.id == adapter_id)
             .ok_or_else(|| format!("Adapter with ID '{}' not found", adapter_id))?;
-        
+
         // Remove adapter
         config.available_adapters.remove(adapter_index);
-        
+
         // Update uptime
         config.start_time = Instant::now();
-        
+
         Ok(self.get_configuration().await)
     }
 
@@ -214,12 +224,20 @@ impl ConfigService {
             }
         }
 
-        info!("IMAP configuration updated: {}:{} (user: {})", host, port, user);
+        info!(
+            "IMAP configuration updated: {}:{} (user: {})",
+            host, port, user
+        );
         Ok(())
     }
 
     // Update REST API configuration
-    pub async fn update_rest_config(&self, enabled: bool, host: String, port: u16) -> Result<(), String> {
+    pub async fn update_rest_config(
+        &self,
+        enabled: bool,
+        host: String,
+        port: u16,
+    ) -> Result<(), String> {
         if port == 0 {
             return Err("Invalid port number".to_string());
         }
@@ -239,12 +257,22 @@ impl ConfigService {
             }
         }
 
-        info!("REST configuration updated: {} ({}:{})", if enabled { "enabled" } else { "disabled" }, host, port);
+        info!(
+            "REST configuration updated: {} ({}:{})",
+            if enabled { "enabled" } else { "disabled" },
+            host,
+            port
+        );
         Ok(())
     }
 
     // Update dashboard configuration
-    pub async fn update_dashboard_config(&self, enabled: bool, port: u16, path: Option<String>) -> Result<(), String> {
+    pub async fn update_dashboard_config(
+        &self,
+        enabled: bool,
+        port: u16,
+        path: Option<String>,
+    ) -> Result<(), String> {
         if port == 0 {
             return Err("Invalid port number".to_string());
         }
@@ -272,7 +300,11 @@ impl ConfigService {
             }
         }
 
-        info!("Dashboard configuration updated: {} (port: {})", if enabled { "enabled" } else { "disabled" }, port);
+        info!(
+            "Dashboard configuration updated: {} (port: {})",
+            if enabled { "enabled" } else { "disabled" },
+            port
+        );
         Ok(())
     }
 

@@ -8,11 +8,11 @@
 //! This module provides comprehensive error handling with JSON-RPC 2.0 compliance,
 //! structured error details, and proper error mapping from async-imap and other sources.
 
+use crate::imap::error::ImapError;
+use crate::mcp::error_codes::ErrorCode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
-use crate::imap::error::ImapError;
-use crate::mcp::error_codes::ErrorCode;
 
 /// Structured error details that provide context about the failed operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,7 +90,9 @@ impl ErrorMapper {
             ImapError::FolderExists(_) => ErrorCode::ImapFolderExists,
             ImapError::EmailNotFound(_) => ErrorCode::ImapEmailNotFound,
             ImapError::EnvelopeNotFound | ImapError::NoEnvelope => ErrorCode::ImapEnvelopeNotFound,
-            ImapError::FolderNotSelected | ImapError::RequiresFolderSelection(_) => ErrorCode::ImapFolderNotSelected,
+            ImapError::FolderNotSelected | ImapError::RequiresFolderSelection(_) => {
+                ErrorCode::ImapFolderNotSelected
+            }
             ImapError::Fetch(_) => ErrorCode::ImapOperationError,
             ImapError::Operation(_) => ErrorCode::ImapOperationError,
             ImapError::Command(_) => ErrorCode::ImapCommandError,
@@ -125,27 +127,27 @@ impl ErrorMapper {
                 details.context = Some(serde_json::json!({
                     "folder": folder
                 }));
-            },
+            }
             ImapError::FolderExists(folder) => {
                 details.context = Some(serde_json::json!({
                     "folder": folder
                 }));
-            },
+            }
             ImapError::EmailNotFound(ids) => {
                 details.context = Some(serde_json::json!({
                     "message_ids": ids
                 }));
-            },
+            }
             ImapError::RequiresFolderSelection(op) => {
                 details.context = Some(serde_json::json!({
                     "required_for_operation": op
                 }));
-            },
+            }
             ImapError::InvalidCriteria(criteria) => {
                 details.context = Some(serde_json::json!({
                     "criteria": criteria
                 }));
-            },
+            }
             _ => {}
         }
 
@@ -155,7 +157,7 @@ impl ErrorMapper {
     /// Creates a JSON-RPC error response with structured details
     pub fn to_jsonrpc_error(
         err: &ImapError,
-        operation: Option<String>
+        operation: Option<String>,
     ) -> crate::mcp::types::JsonRpcError {
         let code = Self::imap_to_error_code(err);
         let details = Self::imap_to_details(err, operation);
@@ -203,7 +205,9 @@ impl fmt::Display for RustyMailError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             RustyMailError::Imap(err, _) => write!(f, "IMAP error: {}", err),
-            RustyMailError::JsonRpc(err) => write!(f, "JSON-RPC error: {} ({})", err.message, err.code),
+            RustyMailError::JsonRpc(err) => {
+                write!(f, "JSON-RPC error: {} ({})", err.message, err.code)
+            }
             RustyMailError::Config(msg) => write!(f, "Configuration error: {}", msg),
             RustyMailError::Session(msg) => write!(f, "Session error: {}", msg),
             RustyMailError::Other(msg) => write!(f, "Error: {}", msg),
@@ -225,7 +229,8 @@ impl RustyMailError {
         match self {
             RustyMailError::Imap(err, details) => {
                 let code = ErrorMapper::imap_to_error_code(err);
-                let error_details = details.clone()
+                let error_details = details
+                    .clone()
                     .or_else(|| Some(ErrorMapper::imap_to_details(err, operation)));
 
                 crate::mcp::types::JsonRpcError {
@@ -233,7 +238,7 @@ impl RustyMailError {
                     message: code.message().to_string(),
                     data: error_details.and_then(|d| serde_json::to_value(d).ok()),
                 }
-            },
+            }
             RustyMailError::JsonRpc(err) => err.clone(),
             RustyMailError::Config(msg) => crate::mcp::types::JsonRpcError {
                 code: ErrorCode::InvalidParams as i64,
@@ -280,7 +285,8 @@ mod tests {
     #[test]
     fn test_jsonrpc_error_with_details() {
         let imap_err = ImapError::FolderNotFound("INBOX/Archive".to_string());
-        let jsonrpc_err = ErrorMapper::to_jsonrpc_error(&imap_err, Some("list_folders".to_string()));
+        let jsonrpc_err =
+            ErrorMapper::to_jsonrpc_error(&imap_err, Some("list_folders".to_string()));
 
         assert_eq!(jsonrpc_err.code, ErrorCode::ImapFolderNotFound as i64);
         assert!(jsonrpc_err.data.is_some());

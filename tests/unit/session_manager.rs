@@ -10,11 +10,11 @@ mod tests {
     use std::sync::Arc;
     use tokio::time::Duration;
 
-    use rustymail::prelude::*;
     use rustymail::config::Settings;
     use rustymail::imap::ImapError;
+    use rustymail::prelude::*;
     use rustymail::session_manager::{
-        SessionManager, SessionManagerTrait, SessionError, SessionResult, ManagedClient
+        ManagedClient, SessionError, SessionManager, SessionManagerTrait, SessionResult,
     };
 
     // Note: MockSessionManager tests are disabled as MockSessionManager is internal test-only code

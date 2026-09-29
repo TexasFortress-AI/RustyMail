@@ -37,7 +37,7 @@ pub struct McpStdioConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogConfig {
-    pub level: String, 
+    pub level: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,9 +64,9 @@ pub struct Settings {
     pub imap_pass: String,
     pub rest: Option<RestConfig>, // Use Option for potentially disabled sections
     pub mcp_stdio: Option<McpStdioConfig>,
-    pub sse: Option<SseConfig>, // SSE configuration
+    pub sse: Option<SseConfig>,             // SSE configuration
     pub dashboard: Option<DashboardConfig>, // Dashboard configuration
-    pub api_key: Option<String>, // API key for authentication
+    pub api_key: Option<String>,            // API key for authentication
 }
 
 impl Settings {
@@ -75,34 +75,30 @@ impl Settings {
         let mut config_builder = config::Config::builder()
             // Default interface value
             .set_default("interface", "rest")?
-            
             // IMAP defaults - imap_port has a sensible default, but host requires env var
             .set_default("imap_port", 993)?
-            
             // REST defaults
             .set_default("rest.enabled", true)?
-
             // SSE defaults
             .set_default("sse.enabled", false)?
-
             // Dashboard defaults
             .set_default("dashboard.enabled", false)?
             // Log defaults
             .set_default("log.level", "info")?;
-        
+
         // Add configuration from file
         if let Some(path) = config_path {
             config_builder = config_builder.add_source(File::with_name(path));
         }
-        
+
         // Add environment variables with prefix
         // e.g. `RUSTYMAIL_IMAP_HOST=...` would override `imap_host`
         config_builder = config_builder.add_source(
             Environment::with_prefix("RUSTYMAIL")
                 .separator("_")
-                .ignore_empty(true)
+                .ignore_empty(true),
         );
-        
+
         // Add direct environment variables for important settings
         // e.g. `IMAP_HOST=...` would override `imap_host`
         let env_vars = [
@@ -120,17 +116,24 @@ impl Settings {
             ("DASHBOARD_PORT", "dashboard.port"),
             ("DASHBOARD_PATH", "dashboard.path"),
         ];
-        
+
         for (env_var, config_path) in &env_vars {
             if let Ok(value) = env::var(env_var) {
                 // Handle special case for port which needs to be parsed to integer
-                if *env_var == "IMAP_PORT" || *env_var == "REST_PORT" || *env_var == "SSE_PORT" || *env_var == "DASHBOARD_PORT" {
+                if *env_var == "IMAP_PORT"
+                    || *env_var == "REST_PORT"
+                    || *env_var == "SSE_PORT"
+                    || *env_var == "DASHBOARD_PORT"
+                {
                     if let Ok(port) = value.parse::<u16>() {
                         config_builder = config_builder.set_override(config_path, port)?;
                     } else {
                         warn!("Invalid port value in {}: {}", env_var, value);
                     }
-                } else if *env_var == "DASHBOARD_ENABLED" || *env_var == "REST_ENABLED" || *env_var == "SSE_ENABLED" {
+                } else if *env_var == "DASHBOARD_ENABLED"
+                    || *env_var == "REST_ENABLED"
+                    || *env_var == "SSE_ENABLED"
+                {
                     if let Ok(enabled) = value.parse::<bool>() {
                         config_builder = config_builder.set_override(config_path, enabled)?;
                     } else {
@@ -141,7 +144,7 @@ impl Settings {
                 }
             }
         }
-        
+
         // Build the config and deserialize it into Settings
         config_builder.build()?.try_deserialize()
     }
@@ -149,7 +152,9 @@ impl Settings {
 
 impl Default for LogConfig {
     fn default() -> Self {
-        LogConfig { level: "info".to_string() }
+        LogConfig {
+            level: "info".to_string(),
+        }
     }
 }
 
@@ -157,8 +162,7 @@ impl Default for RestConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            host: std::env::var("REST_HOST")
-                .expect("REST_HOST environment variable must be set"),
+            host: std::env::var("REST_HOST").expect("REST_HOST environment variable must be set"),
             port: std::env::var("REST_PORT")
                 .expect("REST_PORT environment variable must be set")
                 .parse()
@@ -171,8 +175,7 @@ impl Default for SseConfig {
     fn default() -> Self {
         Self {
             enabled: false,
-            host: std::env::var("SSE_HOST")
-                .expect("SSE_HOST environment variable must be set"),
+            host: std::env::var("SSE_HOST").expect("SSE_HOST environment variable must be set"),
             port: std::env::var("SSE_PORT")
                 .expect("SSE_PORT environment variable must be set")
                 .parse()
@@ -183,9 +186,7 @@ impl Default for SseConfig {
 
 impl Default for McpStdioConfig {
     fn default() -> Self {
-        Self {
-            enabled: false,
-        }
+        Self { enabled: false }
     }
 }
 
@@ -218,7 +219,7 @@ impl Default for Settings {
             dashboard: Some(DashboardConfig::default()),
             api_key: Some(
                 std::env::var("RUSTYMAIL_API_KEY")
-                    .expect("RUSTYMAIL_API_KEY environment variable must be set")
+                    .expect("RUSTYMAIL_API_KEY environment variable must be set"),
             ),
         }
     }
@@ -228,4 +229,4 @@ impl Default for Settings {
 pub enum SettingsError {
     #[error("Failed to load or parse configuration: {0}")]
     LoadError(#[from] config::ConfigError),
-} 
+}

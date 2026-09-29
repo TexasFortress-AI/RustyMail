@@ -55,7 +55,8 @@ async fn test_imap_client_initialization() {
         config.imap_port,
         &config.imap_user,
         &config.imap_pass,
-    ).await;
+    )
+    .await;
 
     // The connection should fail since we're not running a real IMAP server
     assert!(result.is_err());

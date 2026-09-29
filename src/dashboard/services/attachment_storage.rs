@@ -3,16 +3,16 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::path::{Path, PathBuf};
+use crate::imap::types::{Email, MimePart};
+use chrono::{DateTime, Utc};
+use log::{debug, error, info, warn};
+use serde::{Deserialize, Serialize};
+use serde_json;
+use sqlx::SqlitePool;
 use std::fs;
 use std::io::Write;
-use chrono::{DateTime, Utc};
-use log::{info, debug, warn, error};
-use sqlx::SqlitePool;
-use serde::{Serialize, Deserialize};
+use std::path::{Path, PathBuf};
 use thiserror::Error;
-use serde_json;
-use crate::imap::types::{Email, MimePart};
 
 #[derive(Error, Debug)]
 pub enum AttachmentError {
@@ -63,7 +63,7 @@ pub fn sanitize_message_id(message_id: &str) -> String {
         .chars()
         .map(|c| match c {
             '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
-            c => c
+            c => c,
         })
         .collect::<String>()
         .chars()
@@ -77,7 +77,9 @@ pub fn sanitize_filename(filename: &str) -> Result<String, AttachmentError> {
     // Reject null bytes
     if filename.contains('\0') {
         warn!("Path traversal attempt: null byte in filename");
-        return Err(AttachmentError::InvalidFilename("Null byte in filename".to_string()));
+        return Err(AttachmentError::InvalidFilename(
+            "Null byte in filename".to_string(),
+        ));
     }
 
     // Reject path traversal patterns - fail closed rather than silently sanitizing
@@ -88,22 +90,27 @@ pub fn sanitize_filename(filename: &str) -> Result<String, AttachmentError> {
 
     // Reject path separators - filenames shouldn't contain directory components
     if filename.contains('/') || filename.contains('\\') {
-        warn!("Path traversal attempt: path separator in filename '{}'", filename);
+        warn!(
+            "Path traversal attempt: path separator in filename '{}'",
+            filename
+        );
         return Err(AttachmentError::PathTraversal);
     }
 
     // Reject empty filenames
     if filename.is_empty() || filename == "." {
         warn!("Path traversal attempt: empty or dot filename");
-        return Err(AttachmentError::InvalidFilename("Invalid filename".to_string()));
+        return Err(AttachmentError::InvalidFilename(
+            "Invalid filename".to_string(),
+        ));
     }
 
     // Additional sanitization: replace dangerous characters
     let sanitized: String = filename
         .chars()
         .map(|c| match c {
-            ':' => '_',  // Windows drive separator
-            c => c
+            ':' => '_', // Windows drive separator
+            c => c,
         })
         .collect();
 
@@ -122,7 +129,10 @@ fn get_storage_root() -> PathBuf {
 
 /// Validate that a path is safely contained within the storage root
 /// Uses canonicalization to resolve symlinks and relative paths
-fn validate_path_containment(storage_root: &Path, full_path: &Path) -> Result<PathBuf, AttachmentError> {
+fn validate_path_containment(
+    storage_root: &Path,
+    full_path: &Path,
+) -> Result<PathBuf, AttachmentError> {
     // Ensure storage root exists and get its canonical form
     if !storage_root.exists() {
         fs::create_dir_all(storage_root)?;
@@ -134,13 +144,17 @@ fn validate_path_containment(storage_root: &Path, full_path: &Path) -> Result<Pa
         // File exists - canonicalize it directly
         let canonical_path = fs::canonicalize(full_path)?;
         if !canonical_path.starts_with(&canonical_root) {
-            warn!("Path traversal attempt: {:?} escapes storage root {:?}", full_path, canonical_root);
+            warn!(
+                "Path traversal attempt: {:?} escapes storage root {:?}",
+                full_path, canonical_root
+            );
             return Err(AttachmentError::PathTraversal);
         }
         Ok(canonical_path)
     } else {
         // File doesn't exist - check parent directory and construct path
-        let parent = full_path.parent()
+        let parent = full_path
+            .parent()
             .ok_or_else(|| AttachmentError::InvalidFilename("No parent directory".to_string()))?;
 
         // Ensure parent directory exists
@@ -150,11 +164,15 @@ fn validate_path_containment(storage_root: &Path, full_path: &Path) -> Result<Pa
 
         let canonical_parent = fs::canonicalize(parent)?;
         if !canonical_parent.starts_with(&canonical_root) {
-            warn!("Path traversal attempt: parent {:?} escapes storage root {:?}", parent, canonical_root);
+            warn!(
+                "Path traversal attempt: parent {:?} escapes storage root {:?}",
+                parent, canonical_root
+            );
             return Err(AttachmentError::PathTraversal);
         }
 
-        let filename = full_path.file_name()
+        let filename = full_path
+            .file_name()
             .ok_or_else(|| AttachmentError::InvalidFilename("No filename".to_string()))?;
 
         Ok(canonical_parent.join(filename))
@@ -172,16 +190,22 @@ pub fn ensure_message_id(email: &Email, account: &str) -> String {
     // Generate stable pseudo message-id from email metadata
     let uid = email.uid;
     let date = email.internal_date.map(|d| d.timestamp()).unwrap_or(0);
-    format!("rustymail-{}-{}-{}@local",
-            account.replace('@', "_"),
-            uid,
-            date)
+    format!(
+        "rustymail-{}-{}-{}@local",
+        account.replace('@', "_"),
+        uid,
+        date
+    )
 }
 
 /// Get the storage path for an attachment with secure path validation
 /// Format: {storage_root}/{sanitized_account}/{sanitized_message_id}/{sanitized_filename}
 /// Returns error if path would escape the storage root
-pub fn get_attachment_path(account: &str, message_id: &str, filename: &str) -> Result<PathBuf, AttachmentError> {
+pub fn get_attachment_path(
+    account: &str,
+    message_id: &str,
+    filename: &str,
+) -> Result<PathBuf, AttachmentError> {
     // Sanitize all path components
     let sanitized_account = sanitize_message_id(account); // Reuse for account sanitization
     let sanitized_id = sanitize_message_id(message_id);
@@ -206,7 +230,8 @@ pub async fn save_attachment(
     mime_part: &MimePart,
 ) -> Result<AttachmentInfo, AttachmentError> {
     // Get filename from content disposition or generate one
-    let filename = mime_part.content_disposition
+    let filename = mime_part
+        .content_disposition
         .as_ref()
         .and_then(|cd| cd.filename())
         .map(|s| s.to_string())
@@ -263,7 +288,10 @@ pub async fn save_attachment(
     .execute(pool)
     .await?;
 
-    info!("Saved attachment metadata for {} (message: {}, content_id: {:?})", filename, message_id, content_id);
+    info!(
+        "Saved attachment metadata for {} (message: {}, content_id: {:?})",
+        filename, message_id, content_id
+    );
 
     Ok(AttachmentInfo {
         filename,
@@ -281,13 +309,23 @@ pub async fn get_attachments_metadata(
     account: &str,
     message_id: &str,
 ) -> Result<Vec<AttachmentInfo>, AttachmentError> {
-    let attachments = sqlx::query_as::<_, (String, i64, Option<String>, Option<String>, DateTime<Utc>, String)>(
+    let attachments = sqlx::query_as::<
+        _,
+        (
+            String,
+            i64,
+            Option<String>,
+            Option<String>,
+            DateTime<Utc>,
+            String,
+        ),
+    >(
         r#"
         SELECT filename, size_bytes, content_type, content_id, downloaded_at, storage_path
         FROM attachment_metadata
         WHERE message_id = ? AND account_email = ?
         ORDER BY downloaded_at ASC
-        "#
+        "#,
     )
     .bind(message_id)
     .bind(account)
@@ -296,14 +334,18 @@ pub async fn get_attachments_metadata(
 
     Ok(attachments
         .into_iter()
-        .map(|(filename, size_bytes, content_type, content_id, downloaded_at, storage_path)| AttachmentInfo {
-            filename,
-            size_bytes,
-            content_type,
-            content_id,
-            downloaded_at,
-            storage_path,
-        })
+        .map(
+            |(filename, size_bytes, content_type, content_id, downloaded_at, storage_path)| {
+                AttachmentInfo {
+                    filename,
+                    size_bytes,
+                    content_type,
+                    content_id,
+                    downloaded_at,
+                    storage_path,
+                }
+            },
+        )
         .collect())
 }
 
@@ -315,18 +357,26 @@ pub async fn get_attachment_by_content_id(
     content_id: &str,
 ) -> Result<Option<AttachmentInfo>, AttachmentError> {
     // Normalize content_id by removing angle brackets if present
-    let normalized_cid = content_id
-        .trim_start_matches('<')
-        .trim_end_matches('>');
+    let normalized_cid = content_id.trim_start_matches('<').trim_end_matches('>');
 
-    let attachment = sqlx::query_as::<_, (String, i64, Option<String>, Option<String>, DateTime<Utc>, String)>(
+    let attachment = sqlx::query_as::<
+        _,
+        (
+            String,
+            i64,
+            Option<String>,
+            Option<String>,
+            DateTime<Utc>,
+            String,
+        ),
+    >(
         r#"
         SELECT filename, size_bytes, content_type, content_id, downloaded_at, storage_path
         FROM attachment_metadata
         WHERE message_id = ? AND account_email = ?
           AND (content_id = ? OR content_id = ? OR content_id = ?)
         LIMIT 1
-        "#
+        "#,
     )
     .bind(message_id)
     .bind(account)
@@ -336,14 +386,18 @@ pub async fn get_attachment_by_content_id(
     .fetch_optional(pool)
     .await?;
 
-    Ok(attachment.map(|(filename, size_bytes, content_type, content_id, downloaded_at, storage_path)| AttachmentInfo {
-        filename,
-        size_bytes,
-        content_type,
-        content_id,
-        downloaded_at,
-        storage_path,
-    }))
+    Ok(attachment.map(
+        |(filename, size_bytes, content_type, content_id, downloaded_at, storage_path)| {
+            AttachmentInfo {
+                filename,
+                size_bytes,
+                content_type,
+                content_id,
+                downloaded_at,
+                storage_path,
+            }
+        },
+    ))
 }
 
 /// Delete all attachments for an email
@@ -365,7 +419,10 @@ pub async fn delete_attachments_for_email(
             Ok(validated_path) => {
                 if validated_path.exists() {
                     if let Err(e) = fs::remove_file(&validated_path) {
-                        warn!("Failed to delete attachment file {:?}: {}", validated_path, e);
+                        warn!(
+                            "Failed to delete attachment file {:?}: {}",
+                            validated_path, e
+                        );
                     } else {
                         debug!("Deleted attachment file: {:?}", validated_path);
                     }
@@ -380,30 +437,33 @@ pub async fn delete_attachments_for_email(
     // Clean up empty directories with sanitization
     let sanitized_account = sanitize_message_id(account);
     let sanitized_id = sanitize_message_id(message_id);
-    let message_dir = storage_root
-        .join(&sanitized_account)
-        .join(&sanitized_id);
+    let message_dir = storage_root.join(&sanitized_account).join(&sanitized_id);
 
     // Validate the directory path before attempting removal
     if let Ok(validated_dir) = validate_path_containment(&storage_root, &message_dir) {
         if validated_dir.exists() {
             if let Err(e) = fs::remove_dir(&validated_dir) {
-                debug!("Could not remove message dir {:?}: {} (may not be empty)", validated_dir, e);
+                debug!(
+                    "Could not remove message dir {:?}: {} (may not be empty)",
+                    validated_dir, e
+                );
             }
         }
     }
 
     // Delete from database
-    let deleted = sqlx::query(
-        "DELETE FROM attachment_metadata WHERE message_id = ? AND account_email = ?"
-    )
-    .bind(message_id)
-    .bind(account)
-    .execute(pool)
-    .await?
-    .rows_affected();
+    let deleted =
+        sqlx::query("DELETE FROM attachment_metadata WHERE message_id = ? AND account_email = ?")
+            .bind(message_id)
+            .bind(account)
+            .execute(pool)
+            .await?
+            .rows_affected();
 
-    info!("Deleted {} attachment(s) for message {} (account: {})", deleted, message_id, account);
+    info!(
+        "Deleted {} attachment(s) for message {} (account: {})",
+        deleted, message_id, account
+    );
 
     Ok(())
 }
@@ -422,7 +482,9 @@ pub async fn create_zip_archive(
     let attachments = get_attachments_metadata(pool, account, message_id).await?;
 
     if attachments.is_empty() {
-        return Err(AttachmentError::NotFound("No attachments found".to_string()));
+        return Err(AttachmentError::NotFound(
+            "No attachments found".to_string(),
+        ));
     }
 
     // Create output directory if needed
@@ -464,7 +526,10 @@ pub async fn create_zip_archive(
     }
 
     zip.finish()?;
-    info!("Created ZIP archive at {:?} with {} files", output_path, files_added);
+    info!(
+        "Created ZIP archive at {:?} with {} files",
+        output_path, files_added
+    );
 
     Ok(output_path.to_path_buf())
 }
@@ -488,7 +553,8 @@ pub async fn search_by_attachment_type(
 
     // SQL LIKE patterns for coarse filtering on the JSON text column.
     // "image/*" → "%image/%" matches any image subtype inside the JSON.
-    let like_clauses: Vec<String> = mime_patterns.iter()
+    let like_clauses: Vec<String> = mime_patterns
+        .iter()
         .map(|_| "e.attachment_parts LIKE ?".to_string())
         .collect();
     let where_clause = like_clauses.join(" OR ");
@@ -505,12 +571,12 @@ pub async fn search_by_attachment_type(
         where_clause
     );
 
-    let like_values: Vec<String> = mime_patterns.iter()
+    let like_values: Vec<String> = mime_patterns
+        .iter()
         .map(|p| format!("%{}%", p.replace('*', "")))
         .collect();
 
-    let mut query = sqlx::query_as::<_, (i64, String, Option<String>, String)>(&sql)
-        .bind(account);
+    let mut query = sqlx::query_as::<_, (i64, String, Option<String>, String)>(&sql).bind(account);
     for val in &like_values {
         query = query.bind(val);
     }
@@ -526,14 +592,20 @@ pub async fn search_by_attachment_type(
             Err(_) => continue,
         };
         for part in parts {
-            let ct = part.get("content_type").and_then(|v| v.as_str()).unwrap_or("");
+            let ct = part
+                .get("content_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if mime_pattern_matches(ct, mime_patterns) {
                 results.push(AttachmentTypeMatch {
                     uid,
                     folder: folder.clone(),
                     subject: subject.clone(),
-                    filename: part.get("filename").and_then(|v| v.as_str())
-                        .unwrap_or("unnamed").to_string(),
+                    filename: part
+                        .get("filename")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unnamed")
+                        .to_string(),
                     content_type: ct.to_string(),
                     size: part.get("size").and_then(|v| v.as_i64()).unwrap_or(0),
                 });
@@ -546,7 +618,8 @@ pub async fn search_by_attachment_type(
     // regardless of whether they've been re-synced since migration 013.
     let remaining = limit.saturating_sub(results.len());
     if remaining > 0 {
-        let am_like_clauses: Vec<String> = mime_patterns.iter()
+        let am_like_clauses: Vec<String> = mime_patterns
+            .iter()
             .map(|_| "am.content_type LIKE ?".to_string())
             .collect();
         let am_where = am_like_clauses.join(" OR ");
@@ -563,11 +636,13 @@ pub async fn search_by_attachment_type(
                LIMIT ?"#,
             am_where
         );
-        let am_like_values: Vec<String> = mime_patterns.iter()
-            .map(|p| p.replace('*', "%"))
-            .collect();
-        let mut am_query = sqlx::query_as::<_, (i64, String, Option<String>, String, Option<String>, i64)>(&am_sql)
-            .bind(account);
+        let am_like_values: Vec<String> =
+            mime_patterns.iter().map(|p| p.replace('*', "%")).collect();
+        let mut am_query = sqlx::query_as::<
+            _,
+            (i64, String, Option<String>, String, Option<String>, i64),
+        >(&am_sql)
+        .bind(account);
         for val in &am_like_values {
             am_query = am_query.bind(val);
         }
@@ -579,7 +654,8 @@ pub async fn search_by_attachment_type(
                     folder,
                     subject,
                     filename,
-                    content_type: content_type.unwrap_or_else(|| "application/octet-stream".to_string()),
+                    content_type: content_type
+                        .unwrap_or_else(|| "application/octet-stream".to_string()),
                     size,
                 });
             }
@@ -615,7 +691,9 @@ pub async fn store_attachment_metadata_from_mime(
 ) -> Result<usize, AttachmentError> {
     let mut stored = 0;
     for mime_part in attachments {
-        let filename = mime_part.content_disposition.as_ref()
+        let filename = mime_part
+            .content_disposition
+            .as_ref()
             .and_then(|d| d.filename().cloned())
             .unwrap_or_else(|| {
                 let ext = match mime_part.content_type.sub_type.as_str() {
@@ -669,24 +747,28 @@ pub async fn read_attachment_content(
     // Look up attachment metadata from DB
     let row = sqlx::query(
         "SELECT storage_path, content_type FROM attachment_metadata
-         WHERE message_id = ? AND account_email = ? AND filename = ?"
+         WHERE message_id = ? AND account_email = ? AND filename = ?",
     )
     .bind(message_id)
     .bind(account)
     .bind(filename)
     .fetch_optional(pool)
     .await?
-    .ok_or_else(|| AttachmentError::NotFound(
-        format!("Attachment '{}' not found for message {}", filename, message_id)
-    ))?;
+    .ok_or_else(|| {
+        AttachmentError::NotFound(format!(
+            "Attachment '{}' not found for message {}",
+            filename, message_id
+        ))
+    })?;
 
     let storage_path: String = sqlx::Row::get(&row, "storage_path");
     let content_type: Option<String> = sqlx::Row::get(&row, "content_type");
 
     if storage_path.is_empty() {
-        return Err(AttachmentError::NotFound(
-            format!("Attachment '{}' has metadata only (not yet downloaded from IMAP)", filename)
-        ));
+        return Err(AttachmentError::NotFound(format!(
+            "Attachment '{}' has metadata only (not yet downloaded from IMAP)",
+            filename
+        )));
     }
 
     // Validate path is within storage root before reading
@@ -706,10 +788,7 @@ mod tests {
 
     #[test]
     fn test_sanitize_message_id() {
-        assert_eq!(
-            sanitize_message_id("<abc@example.com>"),
-            "abc@example.com"
-        );
+        assert_eq!(sanitize_message_id("<abc@example.com>"), "abc@example.com");
         assert_eq!(
             sanitize_message_id("<abc/def:123*456?.com>"),
             "abc_def_123_456_.com"
@@ -760,11 +839,8 @@ mod tests {
 
     #[test]
     fn test_get_attachment_path() {
-        let path = get_attachment_path(
-            "user@example.com",
-            "<msg123@server.com>",
-            "invoice.pdf"
-        ).expect("Should return valid path for normal inputs");
+        let path = get_attachment_path("user@example.com", "<msg123@server.com>", "invoice.pdf")
+            .expect("Should return valid path for normal inputs");
 
         assert!(path.to_string_lossy().contains("attachments"));
         assert!(path.to_string_lossy().contains("user@example.com"));
@@ -779,16 +855,12 @@ mod tests {
         let result = get_attachment_path(
             "user@example.com",
             "<msg123@server.com>",
-            "../../../etc/passwd"
+            "../../../etc/passwd",
         );
         assert!(result.is_err());
 
         // Null byte in filename should be rejected
-        let result = get_attachment_path(
-            "user@example.com",
-            "<msg123@server.com>",
-            "file\0.pdf"
-        );
+        let result = get_attachment_path("user@example.com", "<msg123@server.com>", "file\0.pdf");
         assert!(result.is_err());
     }
 

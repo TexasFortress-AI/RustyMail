@@ -6,8 +6,8 @@
 // Unit tests for dashboard configuration management functionality
 #[cfg(test)]
 mod tests {
-    use rustymail::dashboard::services::config::ConfigService;
     use rustymail::config::Settings;
+    use rustymail::dashboard::services::config::ConfigService;
     use tempfile::TempDir;
 
     /// Set up required environment variables for tests
@@ -41,12 +41,14 @@ mod tests {
         let config_service = ConfigService::with_settings(settings, None);
 
         // Update IMAP configuration
-        let result = config_service.update_imap_config(
-            "mail.example.com".to_string(),
-            993,
-            "user@example.com".to_string(),
-            "password123".to_string(),
-        ).await;
+        let result = config_service
+            .update_imap_config(
+                "mail.example.com".to_string(),
+                993,
+                "user@example.com".to_string(),
+                "password123".to_string(),
+            )
+            .await;
 
         assert!(result.is_ok());
 
@@ -65,11 +67,9 @@ mod tests {
         let config_service = ConfigService::with_settings(settings, None);
 
         // Update REST configuration
-        let result = config_service.update_rest_config(
-            true,
-            "localhost".to_string(),
-            8080,
-        ).await;
+        let result = config_service
+            .update_rest_config(true, "localhost".to_string(), 8080)
+            .await;
 
         assert!(result.is_ok());
 
@@ -89,11 +89,9 @@ mod tests {
         let config_service = ConfigService::with_settings(settings, None);
 
         // Update dashboard configuration
-        let result = config_service.update_dashboard_config(
-            true,
-            3000,
-            Some("/tmp".to_string()),
-        ).await;
+        let result = config_service
+            .update_dashboard_config(true, 3000, Some("/tmp".to_string()))
+            .await;
 
         assert!(result.is_ok());
 
@@ -127,7 +125,9 @@ mod tests {
         assert!(result.is_err());
 
         if let Err(errors) = result {
-            assert!(errors.iter().any(|e| e.contains("IMAP host cannot be empty")));
+            assert!(errors
+                .iter()
+                .any(|e| e.contains("IMAP host cannot be empty")));
             assert!(errors.iter().any(|e| e.contains("IMAP port cannot be 0")));
         }
     }
@@ -139,12 +139,14 @@ mod tests {
         let config_service = ConfigService::with_settings(settings, None);
 
         // Test port 0 rejection
-        let result = config_service.update_imap_config(
-            "mail.example.com".to_string(),
-            0,
-            "user@example.com".to_string(),
-            "password".to_string(),
-        ).await;
+        let result = config_service
+            .update_imap_config(
+                "mail.example.com".to_string(),
+                0,
+                "user@example.com".to_string(),
+                "password".to_string(),
+            )
+            .await;
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Invalid port number");
@@ -157,12 +159,14 @@ mod tests {
         let config_service = ConfigService::with_settings(settings, None);
 
         // Test empty host rejection
-        let result = config_service.update_imap_config(
-            "".to_string(),
-            993,
-            "user@example.com".to_string(),
-            "password".to_string(),
-        ).await;
+        let result = config_service
+            .update_imap_config(
+                "".to_string(),
+                993,
+                "user@example.com".to_string(),
+                "password".to_string(),
+            )
+            .await;
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "Host cannot be empty");
@@ -175,14 +179,18 @@ mod tests {
         let config_service = ConfigService::with_settings(settings, None);
 
         // Test non-existent path rejection
-        let result = config_service.update_dashboard_config(
-            true,
-            3000,
-            Some("/this/path/does/not/exist/zzz123".to_string()),
-        ).await;
+        let result = config_service
+            .update_dashboard_config(
+                true,
+                3000,
+                Some("/this/path/does/not/exist/zzz123".to_string()),
+            )
+            .await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Dashboard path does not exist"));
+        assert!(result
+            .unwrap_err()
+            .contains("Dashboard path does not exist"));
     }
 
     #[tokio::test]
@@ -196,12 +204,15 @@ mod tests {
         let config_service = ConfigService::with_settings(settings, Some(config_path.clone()));
 
         // Update configuration
-        config_service.update_imap_config(
-            "persistent.example.com".to_string(),
-            143,
-            "persistent@example.com".to_string(),
-            "persistpass".to_string(),
-        ).await.unwrap();
+        config_service
+            .update_imap_config(
+                "persistent.example.com".to_string(),
+                143,
+                "persistent@example.com".to_string(),
+                "persistpass".to_string(),
+            )
+            .await
+            .unwrap();
 
         // Verify file was created
         assert!(config_path.exists());

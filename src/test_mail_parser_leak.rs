@@ -3,9 +3,9 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use mail_parser::{Message, MimeHeaders};
 use std::time::Instant;
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 
 /// Test to isolate mail_parser memory behavior
 /// Run with: cargo test test_mail_parser_leak --release -- --nocapture
@@ -18,8 +18,8 @@ mod tests {
         #[cfg(target_os = "linux")]
         {
             let pid = std::process::id();
-            let status = std::fs::read_to_string(format!("/proc/{}/status", pid))
-                .unwrap_or_default();
+            let status =
+                std::fs::read_to_string(format!("/proc/{}/status", pid)).unwrap_or_default();
 
             for line in status.lines() {
                 if line.starts_with("VmRSS:") {
@@ -85,11 +85,17 @@ Content-Disposition: attachment; filename="test.bin"
 
         let email_bytes = email_content.as_bytes();
 
-        println!("Test email size: {} MB", email_bytes.len() as f64 / 1024.0 / 1024.0);
+        println!(
+            "Test email size: {} MB",
+            email_bytes.len() as f64 / 1024.0 / 1024.0
+        );
 
         // Measure memory before parsing
         let mem_before = get_memory_usage();
-        println!("Memory before parsing: {} MB", mem_before as f64 / 1024.0 / 1024.0);
+        println!(
+            "Memory before parsing: {} MB",
+            mem_before as f64 / 1024.0 / 1024.0
+        );
 
         // Parse emails in a loop to see if memory accumulates
         for i in 0..5 {
@@ -104,14 +110,14 @@ Content-Disposition: attachment; filename="test.bin"
                 // Access the parsed data to ensure it's fully materialized
                 let attachments: Vec<_> = msg.attachments().collect();
                 let attachment_count = attachments.len();
-                let total_attachment_size: usize = attachments
-                    .iter()
-                    .map(|a| a.contents().len())
-                    .sum();
+                let total_attachment_size: usize =
+                    attachments.iter().map(|a| a.contents().len()).sum();
 
-                println!("Parsed {} attachments, total decoded size: {} MB",
-                         attachment_count,
-                         total_attachment_size as f64 / 1024.0 / 1024.0);
+                println!(
+                    "Parsed {} attachments, total decoded size: {} MB",
+                    attachment_count,
+                    total_attachment_size as f64 / 1024.0 / 1024.0
+                );
                 println!("Parse time: {:?}", parse_time);
 
                 // Explicitly drop the message
@@ -125,10 +131,12 @@ Content-Disposition: attachment; filename="test.bin"
 
             let mem_after = get_memory_usage();
             let mem_used = (mem_after as i64 - mem_before as i64) as f64 / 1024.0 / 1024.0;
-            println!("Memory after iteration {}: {} MB (delta: {:+.2} MB)",
-                     i + 1,
-                     mem_after as f64 / 1024.0 / 1024.0,
-                     mem_used);
+            println!(
+                "Memory after iteration {}: {} MB (delta: {:+.2} MB)",
+                i + 1,
+                mem_after as f64 / 1024.0 / 1024.0,
+                mem_used
+            );
         }
 
         // Final memory check after all drops
@@ -142,9 +150,11 @@ Content-Disposition: attachment; filename="test.bin"
         println!("Memory leaked: {:+.2} MB", total_leaked);
 
         // Assert that memory shouldn't grow more than 20 MB (allowing for some overhead)
-        assert!(total_leaked < 20.0,
-                "Memory leak detected! Leaked {:.2} MB after parsing 5 emails",
-                total_leaked);
+        assert!(
+            total_leaked < 20.0,
+            "Memory leak detected! Leaked {:.2} MB after parsing 5 emails",
+            total_leaked
+        );
     }
 
     #[test]
@@ -154,7 +164,10 @@ Content-Disposition: attachment; filename="test.bin"
         println!("\nTesting our Email struct memory behavior...");
 
         let mem_before = get_memory_usage();
-        println!("Memory before creating Emails: {} MB", mem_before as f64 / 1024.0 / 1024.0);
+        println!(
+            "Memory before creating Emails: {} MB",
+            mem_before as f64 / 1024.0 / 1024.0
+        );
 
         // Create Email structs with large bodies
         let mut emails: Vec<Email> = Vec::new();
@@ -178,10 +191,12 @@ Content-Disposition: attachment; filename="test.bin"
             emails.push(email);
 
             let mem_current = get_memory_usage();
-            println!("Memory after creating Email {}: {} MB (delta: {:+.2} MB)",
-                     i + 1,
-                     mem_current as f64 / 1024.0 / 1024.0,
-                     (mem_current as i64 - mem_before as i64) as f64 / 1024.0 / 1024.0);
+            println!(
+                "Memory after creating Email {}: {} MB (delta: {:+.2} MB)",
+                i + 1,
+                mem_current as f64 / 1024.0 / 1024.0,
+                (mem_current as i64 - mem_before as i64) as f64 / 1024.0 / 1024.0
+            );
         }
 
         println!("\nDropping all emails...");
@@ -199,8 +214,10 @@ Content-Disposition: attachment; filename="test.bin"
         println!("Memory leaked: {:+.2} MB", total_leaked);
 
         // Our Email struct should definitely free memory when dropped
-        assert!(total_leaked < 5.0,
-                "Memory leak in Email struct! Leaked {:.2} MB after dropping 5 emails",
-                total_leaked);
+        assert!(
+            total_leaked < 5.0,
+            "Memory leak in Email struct! Leaked {:.2} MB after dropping 5 emails",
+            total_leaked
+        );
     }
 }

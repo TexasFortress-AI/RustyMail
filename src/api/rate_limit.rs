@@ -9,11 +9,11 @@
 //! Adds standard X-RateLimit-* headers to all responses.
 
 use actix_web::{
-    dev::{ServiceRequest, ServiceResponse, Transform, Service},
+    dev::{Service, ServiceRequest, ServiceResponse, Transform},
     http::header::{HeaderName, HeaderValue},
     Error, HttpResponse,
 };
-use futures_util::future::{ok, Ready, LocalBoxFuture};
+use futures_util::future::{ok, LocalBoxFuture, Ready};
 use log::{debug, warn};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -94,14 +94,14 @@ impl RateLimiterState {
         let mut counters = self.ip_counters.write().await;
         let now = chrono::Utc::now();
 
-        let counter = counters.entry(ip.to_string()).or_insert_with(|| {
-            RequestCounter {
+        let counter = counters
+            .entry(ip.to_string())
+            .or_insert_with(|| RequestCounter {
                 minute_count: 0,
                 minute_reset: now + chrono::Duration::minutes(1),
                 hour_count: 0,
                 hour_reset: now + chrono::Duration::hours(1),
-            }
-        });
+            });
 
         // Reset counters if time windows have passed
         if now > counter.minute_reset {
@@ -133,7 +133,10 @@ impl RateLimiterState {
         counter.minute_count += 1;
         counter.hour_count += 1;
 
-        let remaining = self.config.per_ip_per_minute.saturating_sub(counter.minute_count);
+        let remaining = self
+            .config
+            .per_ip_per_minute
+            .saturating_sub(counter.minute_count);
         let reset = counter.minute_reset.timestamp();
 
         Ok((remaining, reset))
@@ -144,12 +147,19 @@ impl RateLimiterState {
         let counters = self.ip_counters.read().await;
 
         if let Some(counter) = counters.get(ip) {
-            let remaining = self.config.per_ip_per_minute.saturating_sub(counter.minute_count);
+            let remaining = self
+                .config
+                .per_ip_per_minute
+                .saturating_sub(counter.minute_count);
             let reset = counter.minute_reset.timestamp();
             (self.config.per_ip_per_minute, remaining, reset)
         } else {
             let reset = (chrono::Utc::now() + chrono::Duration::minutes(1)).timestamp();
-            (self.config.per_ip_per_minute, self.config.per_ip_per_minute, reset)
+            (
+                self.config.per_ip_per_minute,
+                self.config.per_ip_per_minute,
+                reset,
+            )
         }
     }
 }
@@ -225,22 +235,13 @@ where
                     let limit = state.config.per_ip_per_minute;
 
                     if let Ok(val) = HeaderValue::from_str(&limit.to_string()) {
-                        headers.insert(
-                            HeaderName::from_static("x-ratelimit-limit"),
-                            val,
-                        );
+                        headers.insert(HeaderName::from_static("x-ratelimit-limit"), val);
                     }
                     if let Ok(val) = HeaderValue::from_str(&remaining.to_string()) {
-                        headers.insert(
-                            HeaderName::from_static("x-ratelimit-remaining"),
-                            val,
-                        );
+                        headers.insert(HeaderName::from_static("x-ratelimit-remaining"), val);
                     }
                     if let Ok(val) = HeaderValue::from_str(&reset.to_string()) {
-                        headers.insert(
-                            HeaderName::from_static("x-ratelimit-reset"),
-                            val,
-                        );
+                        headers.insert(HeaderName::from_static("x-ratelimit-reset"), val);
                     }
 
                     Ok(res.map_into_left_body())

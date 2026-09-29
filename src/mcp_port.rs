@@ -3,26 +3,26 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::sync::Arc;
-use serde_json::{Value, json};
-use tokio::sync::Mutex as TokioMutex;
-use crate::mcp::{types::{JsonRpcError, McpPortState}};
+use crate::dashboard::services::Account;
 use crate::imap::types::FlagOperation;
-use base64::{engine::general_purpose, Engine as _};
-use log::{info, warn, error, debug};
+use crate::mcp::types::{JsonRpcError, McpPortState};
+use crate::mcp_attachment_tools::{
+    cleanup_attachments_tool, download_email_attachments_tool, list_email_attachments_tool,
+};
+use crate::mcp_cache_tools::{
+    count_emails_in_folder_tool, get_email_by_index_tool, get_email_by_uid_tool,
+    get_folder_stats_tool, list_cached_emails_tool, search_cached_emails_tool,
+};
+use crate::prelude::AsyncImapOps;
 use async_trait::async_trait;
+use base64::{engine::general_purpose, Engine as _};
+use futures_util::future::BoxFuture;
+use log::{debug, error, info, warn};
+use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::future::Future;
-use futures_util::future::BoxFuture;
-use crate::prelude::AsyncImapOps;
-use crate::mcp_cache_tools::{
-    list_cached_emails_tool, get_email_by_uid_tool, get_email_by_index_tool,
-    count_emails_in_folder_tool, get_folder_stats_tool, search_cached_emails_tool
-};
-use crate::mcp_attachment_tools::{
-    list_email_attachments_tool, download_email_attachments_tool, cleanup_attachments_tool
-};
-use crate::dashboard::services::Account;
+use std::sync::Arc;
+use tokio::sync::Mutex as TokioMutex;
 
 // Define the signature for an MCP tool function
 // The function receives the IMAP session, MCP state, and optional parameters.
@@ -30,12 +30,13 @@ use crate::dashboard::services::Account;
 // Commenting out McpResult, McpError as they are unresolved
 type McpToolFn = Box<
     dyn Fn(
-        Arc<dyn AsyncImapOps>,
-        Arc<TokioMutex<McpPortState>>,
-        Option<Value>,
-    ) -> BoxFuture<'static, Result<Value, JsonRpcError>> // Use Value/JsonRpcError for now
-    + Send
-    + Sync,
+            Arc<dyn AsyncImapOps>,
+            Arc<TokioMutex<McpPortState>>,
+            Option<Value>,
+        ) -> BoxFuture<'static, Result<Value, JsonRpcError>>
+        // Use Value/JsonRpcError for now
+        + Send
+        + Sync,
 >;
 
 /// Trait that defines the interface for a tool that can be executed via MCP.
@@ -48,7 +49,7 @@ pub trait McpTool: Send + Sync {
         state: &mut McpPortState,
         params: Value,
     ) -> Result<Value, JsonRpcError>;
-    
+
     /// Returns the name of the tool.
     fn name(&self) -> &str;
 }
@@ -63,11 +64,7 @@ pub struct DefaultMcpTool {
 impl DefaultMcpTool {
     /// Creates a new DefaultMcpTool.
     pub fn new<
-        F: Fn(
-                Arc<dyn AsyncImapOps>,
-                Arc<TokioMutex<McpPortState>>,
-                Option<Value>,
-            ) -> Fut
+        F: Fn(Arc<dyn AsyncImapOps>, Arc<TokioMutex<McpPortState>>, Option<Value>) -> Fut
             + Send
             + Sync
             + 'static,
@@ -81,14 +78,15 @@ impl DefaultMcpTool {
             func: Box::new(move |session, state, params| Box::pin(f(session, state, params))),
         }
     }
-    
+
     /// Executes the tool.
     pub async fn execute_internal(
         &self,
         session: Arc<dyn AsyncImapOps>,
         state: Arc<TokioMutex<McpPortState>>,
         params: Option<Value>,
-    ) -> Result<Value, JsonRpcError> { // Use Value/JsonRpcError
+    ) -> Result<Value, JsonRpcError> {
+        // Use Value/JsonRpcError
         (self.func)(session, state, params).await
     }
 }
@@ -103,16 +101,18 @@ impl McpTool for DefaultMcpTool {
     ) -> Result<Value, JsonRpcError> {
         // Wrap the state in an Arc<TokioMutex<>> for the internal implementation
         let state_arc = Arc::new(TokioMutex::new(state.clone()));
-        let result = self.execute_internal(session, state_arc.clone(), Some(params)).await;
-        
+        let result = self
+            .execute_internal(session, state_arc.clone(), Some(params))
+            .await;
+
         // Update the original state with any changes from the mutex
         if let Ok(mutex_state) = state_arc.try_lock() {
             *state = mutex_state.clone();
         }
-        
+
         result
     }
-    
+
     fn name(&self) -> &str {
         &self.name
     }
@@ -126,7 +126,9 @@ pub struct McpToolRegistry {
 
 impl McpToolRegistry {
     pub fn new() -> Self {
-        Self { tools: Arc::new(HashMap::new()) }
+        Self {
+            tools: Arc::new(HashMap::new()),
+        }
     }
 
     pub fn register<T: McpTool + 'static>(&mut self, name: &str, tool: T) {
@@ -156,10 +158,12 @@ pub async fn list_folders_tool(
     session: Arc<dyn AsyncImapOps>,
     _state: Arc<TokioMutex<McpPortState>>,
     params: Option<Value>,
-) -> Result<Value, JsonRpcError> { // Use Value/JsonRpcError
+) -> Result<Value, JsonRpcError> {
+    // Use Value/JsonRpcError
     let folders = session.list_folders().await.map_err(|e| {
         // Create error with structured details including operation context
-        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("list_folders".to_string()));
+        let mut error =
+            crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("list_folders".to_string()));
         // Add params to the error data if available
         if let Some(p) = params.as_ref() {
             if let Some(data) = error.data.as_mut() {
@@ -181,7 +185,10 @@ pub async fn list_folders_hierarchical_tool(
 ) -> Result<Value, JsonRpcError> {
     let folders = session.list_folders_hierarchical().await.map_err(|e| {
         // Create error with structured details including operation context
-        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("list_folders_hierarchical".to_string()));
+        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(
+            &e,
+            Some("list_folders_hierarchical".to_string()),
+        );
         // Add params to the error data if available
         if let Some(p) = params.as_ref() {
             if let Some(data) = error.data.as_mut() {
@@ -210,19 +217,27 @@ pub async fn search_emails_tool(
         crate::imap::types::SearchCriteria::All
     };
 
-    let message_ids = session.search_emails_structured(&search_criteria).await.map_err(|e| {
-        // Create error with structured details including operation context
-        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("search_emails".to_string()));
-        // Add search criteria to the error data
-        if let Some(data) = error.data.as_mut() {
-            if let Some(obj) = data.as_object_mut() {
-                obj.insert("search_criteria".to_string(), serde_json::to_value(&search_criteria).unwrap_or_default());
+    let message_ids = session
+        .search_emails_structured(&search_criteria)
+        .await
+        .map_err(|e| {
+            // Create error with structured details including operation context
+            let mut error =
+                crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("search_emails".to_string()));
+            // Add search criteria to the error data
+            if let Some(data) = error.data.as_mut() {
+                if let Some(obj) = data.as_object_mut() {
+                    obj.insert(
+                        "search_criteria".to_string(),
+                        serde_json::to_value(&search_criteria).unwrap_or_default(),
+                    );
+                }
             }
-        }
-        error
-    })?;
+            error
+        })?;
 
-    Ok(serde_json::to_value(message_ids).map_err(|e| JsonRpcError::internal_error(e.to_string()))?)
+    Ok(serde_json::to_value(message_ids)
+        .map_err(|e| JsonRpcError::internal_error(e.to_string()))?)
 }
 
 /// Tool for fetching emails with MIME part handling
@@ -235,25 +250,34 @@ pub async fn fetch_emails_with_mime_tool(
     let uids = if let Some(p) = params {
         if let Some(uids_array) = p.get("uids") {
             if let Some(uids_vec) = uids_array.as_array() {
-                uids_vec.iter()
+                uids_vec
+                    .iter()
                     .filter_map(|v| v.as_u64().map(|u| u as u32))
                     .collect::<Vec<u32>>()
             } else {
-                return Err(JsonRpcError::invalid_params("uids must be an array of numbers"));
+                return Err(JsonRpcError::invalid_params(
+                    "uids must be an array of numbers",
+                ));
             }
         } else {
             return Err(JsonRpcError::invalid_params("uids parameter is required"));
         }
     } else {
-        return Err(JsonRpcError::invalid_params("Parameters with uids are required"));
+        return Err(JsonRpcError::invalid_params(
+            "Parameters with uids are required",
+        ));
     };
 
     // Fetch emails with MIME parsing
     let emails = session.fetch_emails(&uids).await.map_err(|e| {
-        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("fetch_emails".to_string()));
+        let mut error =
+            crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("fetch_emails".to_string()));
         if let Some(data) = error.data.as_mut() {
             if let Some(obj) = data.as_object_mut() {
-                obj.insert("uids".to_string(), serde_json::to_value(&uids).unwrap_or_default());
+                obj.insert(
+                    "uids".to_string(),
+                    serde_json::to_value(&uids).unwrap_or_default(),
+                );
             }
         }
         error
@@ -271,31 +295,51 @@ pub async fn atomic_move_message_tool(
     let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
 
     // Extract parameters
-    let uid = params.get("uid")
+    let uid = params
+        .get("uid")
         .and_then(|v| v.as_u64())
         .map(|u| u as u32)
         .ok_or_else(|| JsonRpcError::invalid_params("uid parameter is required as number"))?;
 
-    let from_folder = params.get("from_folder")
+    let from_folder = params
+        .get("from_folder")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| JsonRpcError::invalid_params("from_folder parameter is required as string"))?;
+        .ok_or_else(|| {
+            JsonRpcError::invalid_params("from_folder parameter is required as string")
+        })?;
 
-    let to_folder = params.get("to_folder")
+    let to_folder = params
+        .get("to_folder")
         .and_then(|v| v.as_str())
         .ok_or_else(|| JsonRpcError::invalid_params("to_folder parameter is required as string"))?;
 
     // Perform atomic move operation
-    session.move_email(uid, from_folder, to_folder).await.map_err(|e| {
-        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("atomic_move_message".to_string()));
-        if let Some(data) = error.data.as_mut() {
-            if let Some(obj) = data.as_object_mut() {
-                obj.insert("uid".to_string(), serde_json::to_value(&uid).unwrap_or_default());
-                obj.insert("from_folder".to_string(), serde_json::Value::String(from_folder.to_string()));
-                obj.insert("to_folder".to_string(), serde_json::Value::String(to_folder.to_string()));
+    session
+        .move_email(uid, from_folder, to_folder)
+        .await
+        .map_err(|e| {
+            let mut error = crate::error::ErrorMapper::to_jsonrpc_error(
+                &e,
+                Some("atomic_move_message".to_string()),
+            );
+            if let Some(data) = error.data.as_mut() {
+                if let Some(obj) = data.as_object_mut() {
+                    obj.insert(
+                        "uid".to_string(),
+                        serde_json::to_value(&uid).unwrap_or_default(),
+                    );
+                    obj.insert(
+                        "from_folder".to_string(),
+                        serde_json::Value::String(from_folder.to_string()),
+                    );
+                    obj.insert(
+                        "to_folder".to_string(),
+                        serde_json::Value::String(to_folder.to_string()),
+                    );
+                }
             }
-        }
-        error
-    })?;
+            error
+        })?;
 
     Ok(json!({
         "success": true,
@@ -317,40 +361,64 @@ pub async fn atomic_batch_move_tool(
     // Extract UIDs
     let uids = if let Some(uids_array) = params.get("uids") {
         if let Some(uids_vec) = uids_array.as_array() {
-            uids_vec.iter()
+            uids_vec
+                .iter()
                 .filter_map(|v| v.as_u64().map(|u| u as u32))
                 .collect::<Vec<u32>>()
         } else {
-            return Err(JsonRpcError::invalid_params("uids must be an array of numbers"));
+            return Err(JsonRpcError::invalid_params(
+                "uids must be an array of numbers",
+            ));
         }
     } else {
         return Err(JsonRpcError::invalid_params("uids parameter is required"));
     };
 
     if uids.is_empty() {
-        return Err(JsonRpcError::invalid_params("At least one UID must be provided"));
+        return Err(JsonRpcError::invalid_params(
+            "At least one UID must be provided",
+        ));
     }
 
-    let from_folder = params.get("from_folder")
+    let from_folder = params
+        .get("from_folder")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| JsonRpcError::invalid_params("from_folder parameter is required as string"))?;
+        .ok_or_else(|| {
+            JsonRpcError::invalid_params("from_folder parameter is required as string")
+        })?;
 
-    let to_folder = params.get("to_folder")
+    let to_folder = params
+        .get("to_folder")
         .and_then(|v| v.as_str())
         .ok_or_else(|| JsonRpcError::invalid_params("to_folder parameter is required as string"))?;
 
     // Use the efficient batch move method
-    session.move_messages(&uids, from_folder, to_folder).await.map_err(|e| {
-        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("atomic_batch_move".to_string()));
-        if let Some(data) = error.data.as_mut() {
-            if let Some(obj) = data.as_object_mut() {
-                obj.insert("uids".to_string(), serde_json::to_value(&uids).unwrap_or_default());
-                obj.insert("from_folder".to_string(), serde_json::Value::String(from_folder.to_string()));
-                obj.insert("to_folder".to_string(), serde_json::Value::String(to_folder.to_string()));
+    session
+        .move_messages(&uids, from_folder, to_folder)
+        .await
+        .map_err(|e| {
+            let mut error = crate::error::ErrorMapper::to_jsonrpc_error(
+                &e,
+                Some("atomic_batch_move".to_string()),
+            );
+            if let Some(data) = error.data.as_mut() {
+                if let Some(obj) = data.as_object_mut() {
+                    obj.insert(
+                        "uids".to_string(),
+                        serde_json::to_value(&uids).unwrap_or_default(),
+                    );
+                    obj.insert(
+                        "from_folder".to_string(),
+                        serde_json::Value::String(from_folder.to_string()),
+                    );
+                    obj.insert(
+                        "to_folder".to_string(),
+                        serde_json::Value::String(to_folder.to_string()),
+                    );
+                }
             }
-        }
-        error
-    })?;
+            error
+        })?;
 
     Ok(json!({
         "success": true,
@@ -373,26 +441,35 @@ pub async fn mark_as_deleted_tool(
     // Extract UIDs
     let uids = if let Some(uids_array) = params.get("uids") {
         if let Some(uids_vec) = uids_array.as_array() {
-            uids_vec.iter()
+            uids_vec
+                .iter()
                 .filter_map(|v| v.as_u64().map(|u| u as u32))
                 .collect::<Vec<u32>>()
         } else {
-            return Err(JsonRpcError::invalid_params("uids must be an array of numbers"));
+            return Err(JsonRpcError::invalid_params(
+                "uids must be an array of numbers",
+            ));
         }
     } else {
         return Err(JsonRpcError::invalid_params("uids parameter is required"));
     };
 
     if uids.is_empty() {
-        return Err(JsonRpcError::invalid_params("At least one UID must be provided"));
+        return Err(JsonRpcError::invalid_params(
+            "At least one UID must be provided",
+        ));
     }
 
     // Mark messages as deleted
     session.mark_as_deleted(&uids).await.map_err(|e| {
-        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("mark_as_deleted".to_string()));
+        let mut error =
+            crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("mark_as_deleted".to_string()));
         if let Some(data) = error.data.as_mut() {
             if let Some(obj) = data.as_object_mut() {
-                obj.insert("uids".to_string(), serde_json::to_value(&uids).unwrap_or_default());
+                obj.insert(
+                    "uids".to_string(),
+                    serde_json::to_value(&uids).unwrap_or_default(),
+                );
             }
         }
         error
@@ -417,26 +494,35 @@ pub async fn delete_messages_tool(
     // Extract UIDs
     let uids = if let Some(uids_array) = params.get("uids") {
         if let Some(uids_vec) = uids_array.as_array() {
-            uids_vec.iter()
+            uids_vec
+                .iter()
                 .filter_map(|v| v.as_u64().map(|u| u as u32))
                 .collect::<Vec<u32>>()
         } else {
-            return Err(JsonRpcError::invalid_params("uids must be an array of numbers"));
+            return Err(JsonRpcError::invalid_params(
+                "uids must be an array of numbers",
+            ));
         }
     } else {
         return Err(JsonRpcError::invalid_params("uids parameter is required"));
     };
 
     if uids.is_empty() {
-        return Err(JsonRpcError::invalid_params("At least one UID must be provided"));
+        return Err(JsonRpcError::invalid_params(
+            "At least one UID must be provided",
+        ));
     }
 
     // Delete messages permanently
     session.delete_messages(&uids).await.map_err(|e| {
-        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("delete_messages".to_string()));
+        let mut error =
+            crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("delete_messages".to_string()));
         if let Some(data) = error.data.as_mut() {
             if let Some(obj) = data.as_object_mut() {
-                obj.insert("uids".to_string(), serde_json::to_value(&uids).unwrap_or_default());
+                obj.insert(
+                    "uids".to_string(),
+                    serde_json::to_value(&uids).unwrap_or_default(),
+                );
             }
         }
         error
@@ -461,26 +547,35 @@ pub async fn undelete_messages_tool(
     // Extract UIDs
     let uids = if let Some(uids_array) = params.get("uids") {
         if let Some(uids_vec) = uids_array.as_array() {
-            uids_vec.iter()
+            uids_vec
+                .iter()
                 .filter_map(|v| v.as_u64().map(|u| u as u32))
                 .collect::<Vec<u32>>()
         } else {
-            return Err(JsonRpcError::invalid_params("uids must be an array of numbers"));
+            return Err(JsonRpcError::invalid_params(
+                "uids must be an array of numbers",
+            ));
         }
     } else {
         return Err(JsonRpcError::invalid_params("uids parameter is required"));
     };
 
     if uids.is_empty() {
-        return Err(JsonRpcError::invalid_params("At least one UID must be provided"));
+        return Err(JsonRpcError::invalid_params(
+            "At least one UID must be provided",
+        ));
     }
 
     // Undelete messages
     session.undelete_messages(&uids).await.map_err(|e| {
-        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("undelete_messages".to_string()));
+        let mut error =
+            crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("undelete_messages".to_string()));
         if let Some(data) = error.data.as_mut() {
             if let Some(obj) = data.as_object_mut() {
-                obj.insert("uids".to_string(), serde_json::to_value(&uids).unwrap_or_default());
+                obj.insert(
+                    "uids".to_string(),
+                    serde_json::to_value(&uids).unwrap_or_default(),
+                );
             }
         }
         error
@@ -523,30 +618,42 @@ pub async fn mark_as_read_tool(
     // Extract UIDs
     let uids = if let Some(uids_array) = params.get("uids") {
         if let Some(uids_vec) = uids_array.as_array() {
-            uids_vec.iter()
+            uids_vec
+                .iter()
                 .filter_map(|v| v.as_u64().map(|u| u as u32))
                 .collect::<Vec<u32>>()
         } else {
-            return Err(JsonRpcError::invalid_params("uids must be an array of numbers"));
+            return Err(JsonRpcError::invalid_params(
+                "uids must be an array of numbers",
+            ));
         }
     } else {
         return Err(JsonRpcError::invalid_params("uids parameter is required"));
     };
 
     if uids.is_empty() {
-        return Err(JsonRpcError::invalid_params("At least one UID must be provided"));
+        return Err(JsonRpcError::invalid_params(
+            "At least one UID must be provided",
+        ));
     }
 
     // Mark messages as read by adding \Seen flag
-    session.store_flags(&uids, FlagOperation::Add, &vec!["\\Seen".to_string()]).await.map_err(|e| {
-        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("mark_as_read".to_string()));
-        if let Some(data) = error.data.as_mut() {
-            if let Some(obj) = data.as_object_mut() {
-                obj.insert("uids".to_string(), serde_json::to_value(&uids).unwrap_or_default());
+    session
+        .store_flags(&uids, FlagOperation::Add, &vec!["\\Seen".to_string()])
+        .await
+        .map_err(|e| {
+            let mut error =
+                crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("mark_as_read".to_string()));
+            if let Some(data) = error.data.as_mut() {
+                if let Some(obj) = data.as_object_mut() {
+                    obj.insert(
+                        "uids".to_string(),
+                        serde_json::to_value(&uids).unwrap_or_default(),
+                    );
+                }
             }
-        }
-        error
-    })?;
+            error
+        })?;
 
     Ok(json!({
         "success": true,
@@ -567,30 +674,42 @@ pub async fn mark_as_unread_tool(
     // Extract UIDs
     let uids = if let Some(uids_array) = params.get("uids") {
         if let Some(uids_vec) = uids_array.as_array() {
-            uids_vec.iter()
+            uids_vec
+                .iter()
                 .filter_map(|v| v.as_u64().map(|u| u as u32))
                 .collect::<Vec<u32>>()
         } else {
-            return Err(JsonRpcError::invalid_params("uids must be an array of numbers"));
+            return Err(JsonRpcError::invalid_params(
+                "uids must be an array of numbers",
+            ));
         }
     } else {
         return Err(JsonRpcError::invalid_params("uids parameter is required"));
     };
 
     if uids.is_empty() {
-        return Err(JsonRpcError::invalid_params("At least one UID must be provided"));
+        return Err(JsonRpcError::invalid_params(
+            "At least one UID must be provided",
+        ));
     }
 
     // Mark messages as unread by removing \Seen flag
-    session.store_flags(&uids, FlagOperation::Remove, &vec!["\\Seen".to_string()]).await.map_err(|e| {
-        let mut error = crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("mark_as_unread".to_string()));
-        if let Some(data) = error.data.as_mut() {
-            if let Some(obj) = data.as_object_mut() {
-                obj.insert("uids".to_string(), serde_json::to_value(&uids).unwrap_or_default());
+    session
+        .store_flags(&uids, FlagOperation::Remove, &vec!["\\Seen".to_string()])
+        .await
+        .map_err(|e| {
+            let mut error =
+                crate::error::ErrorMapper::to_jsonrpc_error(&e, Some("mark_as_unread".to_string()));
+            if let Some(data) = error.data.as_mut() {
+                if let Some(obj) = data.as_object_mut() {
+                    obj.insert(
+                        "uids".to_string(),
+                        serde_json::to_value(&uids).unwrap_or_default(),
+                    );
+                }
             }
-        }
-        error
-    })?;
+            error
+        })?;
 
     Ok(json!({
         "success": true,
@@ -610,7 +729,7 @@ pub async fn list_accounts_tool(
     _params: Option<Value>,
 ) -> Result<Value, JsonRpcError> {
     let state_guard = state.lock().await;
-    
+
     // For now, return a simple response indicating the current account
     // The actual account list will be fetched by the dashboard handler
     // which has access to the DashboardState
@@ -633,9 +752,12 @@ pub async fn set_current_account_tool(
     let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
 
     // Extract account_id from params
-    let account_id = params.get("account_id")
+    let account_id = params
+        .get("account_id")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| JsonRpcError::invalid_params("account_id parameter is required as string"))?;
+        .ok_or_else(|| {
+            JsonRpcError::invalid_params("account_id parameter is required as string")
+        })?;
 
     // Set the current account ID in the state
     let mut state_guard = state.lock().await;
@@ -661,39 +783,52 @@ pub async fn send_email_tool(
     let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
 
     // Extract and validate parameters
-    let to = params.get("to")
+    let to = params
+        .get("to")
         .and_then(|v| v.as_array())
-        .ok_or_else(|| JsonRpcError::invalid_params("to parameter is required as array of strings"))?
+        .ok_or_else(|| {
+            JsonRpcError::invalid_params("to parameter is required as array of strings")
+        })?
         .iter()
         .filter_map(|v| v.as_str().map(String::from))
         .collect::<Vec<String>>();
 
     if to.is_empty() {
-        return Err(JsonRpcError::invalid_params("At least one recipient in 'to' field is required"));
+        return Err(JsonRpcError::invalid_params(
+            "At least one recipient in 'to' field is required",
+        ));
     }
 
-    let subject = params.get("subject")
+    let subject = params
+        .get("subject")
         .and_then(|v| v.as_str())
         .ok_or_else(|| JsonRpcError::invalid_params("subject parameter is required as string"))?;
 
-    let body = params.get("body")
+    let body = params
+        .get("body")
         .and_then(|v| v.as_str())
         .ok_or_else(|| JsonRpcError::invalid_params("body parameter is required as string"))?;
 
     // Optional parameters
-    let cc = params.get("cc")
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<String>>());
+    let cc = params.get("cc").and_then(|v| v.as_array()).map(|arr| {
+        arr.iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect::<Vec<String>>()
+    });
 
-    let bcc = params.get("bcc")
-        .and_then(|v| v.as_array())
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect::<Vec<String>>());
+    let bcc = params.get("bcc").and_then(|v| v.as_array()).map(|arr| {
+        arr.iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect::<Vec<String>>()
+    });
 
-    let body_html = params.get("body_html")
+    let body_html = params
+        .get("body_html")
         .and_then(|v| v.as_str())
         .map(String::from);
 
-    let account_id = params.get("account_id")
+    let account_id = params
+        .get("account_id")
         .and_then(|v| v.as_str())
         .map(String::from);
 
@@ -722,38 +857,110 @@ pub fn create_mcp_tool_registry() -> McpToolRegistry {
     let mut registry = McpToolRegistry::new();
 
     // Register tools using the DefaultMcpTool::new constructor
-    registry.register("list_folders", DefaultMcpTool::new("list_folders", list_folders_tool));
-    registry.register("list_folders_hierarchical", DefaultMcpTool::new("list_folders_hierarchical", list_folders_hierarchical_tool));
-    registry.register("search_emails", DefaultMcpTool::new("search_emails", search_emails_tool));
-    registry.register("fetch_emails_with_mime", DefaultMcpTool::new("fetch_emails_with_mime", fetch_emails_with_mime_tool));
-    registry.register("atomic_move_message", DefaultMcpTool::new("atomic_move_message", atomic_move_message_tool));
-    registry.register("atomic_batch_move", DefaultMcpTool::new("atomic_batch_move", atomic_batch_move_tool));
-    registry.register("mark_as_deleted", DefaultMcpTool::new("mark_as_deleted", mark_as_deleted_tool));
-    registry.register("delete_messages", DefaultMcpTool::new("delete_messages", delete_messages_tool));
-    registry.register("undelete_messages", DefaultMcpTool::new("undelete_messages", undelete_messages_tool));
+    registry.register(
+        "list_folders",
+        DefaultMcpTool::new("list_folders", list_folders_tool),
+    );
+    registry.register(
+        "list_folders_hierarchical",
+        DefaultMcpTool::new("list_folders_hierarchical", list_folders_hierarchical_tool),
+    );
+    registry.register(
+        "search_emails",
+        DefaultMcpTool::new("search_emails", search_emails_tool),
+    );
+    registry.register(
+        "fetch_emails_with_mime",
+        DefaultMcpTool::new("fetch_emails_with_mime", fetch_emails_with_mime_tool),
+    );
+    registry.register(
+        "atomic_move_message",
+        DefaultMcpTool::new("atomic_move_message", atomic_move_message_tool),
+    );
+    registry.register(
+        "atomic_batch_move",
+        DefaultMcpTool::new("atomic_batch_move", atomic_batch_move_tool),
+    );
+    registry.register(
+        "mark_as_deleted",
+        DefaultMcpTool::new("mark_as_deleted", mark_as_deleted_tool),
+    );
+    registry.register(
+        "delete_messages",
+        DefaultMcpTool::new("delete_messages", delete_messages_tool),
+    );
+    registry.register(
+        "undelete_messages",
+        DefaultMcpTool::new("undelete_messages", undelete_messages_tool),
+    );
     registry.register("expunge", DefaultMcpTool::new("expunge", expunge_tool));
-    registry.register("mark_as_read", DefaultMcpTool::new("mark_as_read", mark_as_read_tool));
-    registry.register("mark_as_unread", DefaultMcpTool::new("mark_as_unread", mark_as_unread_tool));
+    registry.register(
+        "mark_as_read",
+        DefaultMcpTool::new("mark_as_read", mark_as_read_tool),
+    );
+    registry.register(
+        "mark_as_unread",
+        DefaultMcpTool::new("mark_as_unread", mark_as_unread_tool),
+    );
 
     // Cache tools - these work with the email_cache.db database
-    registry.register("list_cached_emails", DefaultMcpTool::new("list_cached_emails", list_cached_emails_tool));
-    registry.register("get_email_by_uid", DefaultMcpTool::new("get_email_by_uid", get_email_by_uid_tool));
-    registry.register("get_email_by_index", DefaultMcpTool::new("get_email_by_index", get_email_by_index_tool));
-    registry.register("count_emails_in_folder", DefaultMcpTool::new("count_emails_in_folder", count_emails_in_folder_tool));
-    registry.register("get_folder_stats", DefaultMcpTool::new("get_folder_stats", get_folder_stats_tool));
-    registry.register("search_cached_emails", DefaultMcpTool::new("search_cached_emails", search_cached_emails_tool));
+    registry.register(
+        "list_cached_emails",
+        DefaultMcpTool::new("list_cached_emails", list_cached_emails_tool),
+    );
+    registry.register(
+        "get_email_by_uid",
+        DefaultMcpTool::new("get_email_by_uid", get_email_by_uid_tool),
+    );
+    registry.register(
+        "get_email_by_index",
+        DefaultMcpTool::new("get_email_by_index", get_email_by_index_tool),
+    );
+    registry.register(
+        "count_emails_in_folder",
+        DefaultMcpTool::new("count_emails_in_folder", count_emails_in_folder_tool),
+    );
+    registry.register(
+        "get_folder_stats",
+        DefaultMcpTool::new("get_folder_stats", get_folder_stats_tool),
+    );
+    registry.register(
+        "search_cached_emails",
+        DefaultMcpTool::new("search_cached_emails", search_cached_emails_tool),
+    );
 
     // Account management tools
-    registry.register("list_accounts", DefaultMcpTool::new("list_accounts", list_accounts_tool));
-    registry.register("set_current_account", DefaultMcpTool::new("set_current_account", set_current_account_tool));
+    registry.register(
+        "list_accounts",
+        DefaultMcpTool::new("list_accounts", list_accounts_tool),
+    );
+    registry.register(
+        "set_current_account",
+        DefaultMcpTool::new("set_current_account", set_current_account_tool),
+    );
 
     // SMTP email sending
-    registry.register("send_email", DefaultMcpTool::new("send_email", send_email_tool));
+    registry.register(
+        "send_email",
+        DefaultMcpTool::new("send_email", send_email_tool),
+    );
 
     // Attachment tools
-    registry.register("list_email_attachments", DefaultMcpTool::new("list_email_attachments", list_email_attachments_tool));
-    registry.register("download_email_attachments", DefaultMcpTool::new("download_email_attachments", download_email_attachments_tool));
-    registry.register("cleanup_attachments", DefaultMcpTool::new("cleanup_attachments", cleanup_attachments_tool));
+    registry.register(
+        "list_email_attachments",
+        DefaultMcpTool::new("list_email_attachments", list_email_attachments_tool),
+    );
+    registry.register(
+        "download_email_attachments",
+        DefaultMcpTool::new(
+            "download_email_attachments",
+            download_email_attachments_tool,
+        ),
+    );
+    registry.register(
+        "cleanup_attachments",
+        DefaultMcpTool::new("cleanup_attachments", cleanup_attachments_tool),
+    );
 
     registry
 }
@@ -763,7 +970,7 @@ pub fn create_mcp_tool_registry() -> McpToolRegistry {
 pub trait McpResource: Send + Sync {
     /// The unique name identifying this resource.
     fn name(&self) -> &str;
-    
+
     /// A brief description of the resource.
     fn description(&self) -> &str;
 
@@ -771,4 +978,4 @@ pub trait McpResource: Send + Sync {
     async fn read(&self) -> Result<Value, JsonRpcError>;
 
     // Add more resource methods as needed
-} 
+}

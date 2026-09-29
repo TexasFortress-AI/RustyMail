@@ -5,9 +5,9 @@
 
 #[cfg(test)]
 mod tests {
-    use rustymail::config::{Settings, InterfaceType};
-    use std::env;
+    use rustymail::config::{InterfaceType, Settings};
     use serial_test::serial;
+    use std::env;
     use tempfile::TempDir;
 
     /// Set up required environment variables for tests
@@ -131,7 +131,8 @@ port = 8080
         // Set environment variables that will override config file
         env::set_var("IMAP_PASS", "env_pass");
 
-        let settings = Settings::new(Some(&config_path)).expect("Failed to load settings with env vars");
+        let settings =
+            Settings::new(Some(&config_path)).expect("Failed to load settings with env vars");
 
         assert!(matches!(settings.interface, InterfaceType::Rest));
         assert_eq!(settings.imap_pass, "env_pass"); // Env var overrides config

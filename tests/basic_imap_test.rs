@@ -15,7 +15,10 @@ fn test_search_criteria_creation() {
     ]);
 
     let criteria_str = criteria.to_string();
-    assert_eq!(criteria_str, "(FROM \"test@example.com\" SUBJECT \"Test Subject\")");
+    assert_eq!(
+        criteria_str,
+        "(FROM \"test@example.com\" SUBJECT \"Test Subject\")"
+    );
 }
 
 #[test]
@@ -70,8 +73,8 @@ fn test_flag_operations() {
 /// as a side effect of caching/syncing.
 #[test]
 fn test_imap_fetch_uses_peek_to_preserve_unseen_flag() {
-    let source = std::fs::read_to_string("src/imap/session.rs")
-        .expect("Failed to read src/imap/session.rs");
+    let source =
+        std::fs::read_to_string("src/imap/session.rs").expect("Failed to read src/imap/session.rs");
 
     // Find all uid_fetch calls and ensure none use bare BODY[] without PEEK
     for (line_num, line) in source.lines().enumerate() {

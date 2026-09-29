@@ -3,17 +3,17 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::sync::Arc;
-use log::{info, error, debug, warn};
+use crate::connection_pool::ConnectionPool;
+use crate::dashboard::services::account::{Account, AccountError, AccountService};
+use crate::dashboard::services::attachment_storage::{self, AttachmentError, AttachmentInfo};
+use crate::dashboard::services::cache::{CacheService, CachedEmail};
 use crate::imap::error::ImapError;
 use crate::imap::types::Email;
 use crate::prelude::CloneableImapSessionFactory;
-use crate::connection_pool::ConnectionPool;
-use crate::dashboard::services::cache::{CacheService, CachedEmail};
-use crate::dashboard::services::account::{AccountService, Account, AccountError};
-use crate::dashboard::services::attachment_storage::{self, AttachmentInfo, AttachmentError};
-use tokio::sync::Mutex as TokioMutex;
+use log::{debug, error, info, warn};
+use std::sync::Arc;
 use thiserror::Error;
+use tokio::sync::Mutex as TokioMutex;
 
 #[derive(Error, Debug)]
 pub enum EmailServiceError {
@@ -41,7 +41,10 @@ pub struct EmailService {
 }
 
 impl EmailService {
-    pub fn new(imap_factory: CloneableImapSessionFactory, connection_pool: Arc<ConnectionPool>) -> Self {
+    pub fn new(
+        imap_factory: CloneableImapSessionFactory,
+        connection_pool: Arc<ConnectionPool>,
+    ) -> Self {
         Self {
             imap_factory,
             connection_pool,
@@ -55,15 +58,19 @@ impl EmailService {
         self
     }
 
-    pub fn with_account_service(mut self, account_service: Arc<TokioMutex<AccountService>>) -> Self {
+    pub fn with_account_service(
+        mut self,
+        account_service: Arc<TokioMutex<AccountService>>,
+    ) -> Self {
         self.account_service = Some(account_service);
         self
     }
 
     /// Get account by ID from AccountService
     async fn get_account(&self, account_id: &str) -> Result<Account, EmailServiceError> {
-        let account_service = self.account_service.as_ref()
-            .ok_or_else(|| EmailServiceError::AccountNotFound("Account service not available".to_string()))?;
+        let account_service = self.account_service.as_ref().ok_or_else(|| {
+            EmailServiceError::AccountNotFound("Account service not available".to_string())
+        })?;
 
         let account_service = account_service.lock().await;
         let account = account_service.get_account(account_id).await?;
@@ -76,15 +83,25 @@ impl EmailService {
         account: &Account,
         account_id: &str,
         operation: &str,
-    ) -> Result<crate::imap::client::ImapClient<crate::imap::session::AsyncImapSessionWrapper>, EmailServiceError> {
+    ) -> Result<
+        crate::imap::client::ImapClient<crate::imap::session::AsyncImapSessionWrapper>,
+        EmailServiceError,
+    > {
         match self.imap_factory.create_session_for_account(account).await {
             Ok(s) => {
                 if let Some(account_service) = &self.account_service {
                     let account_service = account_service.lock().await;
-                    if let Err(e) = account_service.update_imap_status(
-                        account_id, true,
-                        format!("Successfully connected to {} for {}", account.imap_host, operation),
-                    ).await {
+                    if let Err(e) = account_service
+                        .update_imap_status(
+                            account_id,
+                            true,
+                            format!(
+                                "Successfully connected to {} for {}",
+                                account.imap_host, operation
+                            ),
+                        )
+                        .await
+                    {
                         warn!("Failed to update IMAP connection status: {}", e);
                     }
                 }
@@ -93,28 +110,35 @@ impl EmailService {
             Err(e) => {
                 if let Some(account_service) = &self.account_service {
                     let account_service = account_service.lock().await;
-                    if let Err(status_err) = account_service.update_imap_status(
-                        account_id, false, e.to_string(),
-                    ).await {
+                    if let Err(status_err) = account_service
+                        .update_imap_status(account_id, false, e.to_string())
+                        .await
+                    {
                         warn!("Failed to update IMAP connection status: {}", status_err);
                     }
                 }
-                Err(EmailServiceError::ConnectionError(
-                    format!("Failed to create session for account {}: {}", account_id, e),
-                ))
+                Err(EmailServiceError::ConnectionError(format!(
+                    "Failed to create session for account {}: {}",
+                    account_id, e
+                )))
             }
         }
     }
 
     /// List all folders for a specific account
-    pub async fn list_folders_for_account(&self, account_id: &str) -> Result<Vec<String>, EmailServiceError> {
+    pub async fn list_folders_for_account(
+        &self,
+        account_id: &str,
+    ) -> Result<Vec<String>, EmailServiceError> {
         debug!("Listing email folders for account: {}", account_id);
 
         // Get account credentials
         let account = self.get_account(account_id).await?;
 
         // Create session with account-specific credentials and record connection status
-        let session = self.create_session_with_status(&account, account_id, "folder listing").await?;
+        let session = self
+            .create_session_with_status(&account, account_id, "folder listing")
+            .await?;
 
         // List folders
         let folders = session.list_folders().await?;
@@ -124,7 +148,11 @@ impl EmailService {
             warn!("Failed to logout IMAP session: {}", e);
         }
 
-        info!("Listed {} folders for account {}", folders.len(), account_id);
+        info!(
+            "Listed {} folders for account {}",
+            folders.len(),
+            account_id
+        );
         Ok(folders)
     }
 
@@ -133,8 +161,9 @@ impl EmailService {
         debug!("Listing email folders (default account)");
 
         // Get a session from the factory (uses .env credentials for backwards compatibility)
-        let session = self.imap_factory.create_session().await
-            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+        let session = self.imap_factory.create_session().await.map_err(|e| {
+            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
+        })?;
 
         // List folders
         let folders = session.list_folders().await?;
@@ -149,14 +178,24 @@ impl EmailService {
     }
 
     /// Search for emails in a specific folder for a specific account
-    pub async fn search_emails_for_account(&self, folder: &str, criteria: &str, account_id: &str) -> Result<Vec<u32>, EmailServiceError> {
-        debug!("Searching emails in folder '{}' with criteria: {} for account {}", folder, criteria, account_id);
+    pub async fn search_emails_for_account(
+        &self,
+        folder: &str,
+        criteria: &str,
+        account_id: &str,
+    ) -> Result<Vec<u32>, EmailServiceError> {
+        debug!(
+            "Searching emails in folder '{}' with criteria: {} for account {}",
+            folder, criteria, account_id
+        );
 
         // Get account credentials
         let account = self.get_account(account_id).await?;
 
         // Create session with account-specific credentials and record connection status
-        let session = self.create_session_with_status(&account, account_id, "search").await?;
+        let session = self
+            .create_session_with_status(&account, account_id, "search")
+            .await?;
 
         // Select the folder first
         session.select_folder(folder).await?;
@@ -169,16 +208,28 @@ impl EmailService {
             warn!("Failed to logout IMAP session: {}", e);
         }
 
-        info!("Found {} emails matching criteria for account {}", uids.len(), account_id);
+        info!(
+            "Found {} emails matching criteria for account {}",
+            uids.len(),
+            account_id
+        );
         Ok(uids)
     }
 
     /// Search for emails in a specific folder (uses default account)
-    pub async fn search_emails(&self, folder: &str, criteria: &str) -> Result<Vec<u32>, EmailServiceError> {
-        debug!("Searching emails in folder '{}' with criteria: {}", folder, criteria);
+    pub async fn search_emails(
+        &self,
+        folder: &str,
+        criteria: &str,
+    ) -> Result<Vec<u32>, EmailServiceError> {
+        debug!(
+            "Searching emails in folder '{}' with criteria: {}",
+            folder, criteria
+        );
 
-        let session = self.imap_factory.create_session().await
-            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+        let session = self.imap_factory.create_session().await.map_err(|e| {
+            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
+        })?;
 
         // Select the folder first
         session.select_folder(folder).await?;
@@ -196,8 +247,18 @@ impl EmailService {
     }
 
     /// Fetch emails by their UIDs for a specific account
-    pub async fn fetch_emails_for_account(&self, folder: &str, uids: &[u32], account_id: &str) -> Result<Vec<Email>, EmailServiceError> {
-        debug!("Fetching {} emails from folder '{}' for account {}", uids.len(), folder, account_id);
+    pub async fn fetch_emails_for_account(
+        &self,
+        folder: &str,
+        uids: &[u32],
+        account_id: &str,
+    ) -> Result<Vec<Email>, EmailServiceError> {
+        debug!(
+            "Fetching {} emails from folder '{}' for account {}",
+            uids.len(),
+            folder,
+            account_id
+        );
 
         if uids.is_empty() {
             return Ok(Vec::new());
@@ -237,7 +298,9 @@ impl EmailService {
         // Fetch emails from IMAP
         if !uids_to_fetch.is_empty() {
             // Create session with connection status recording
-            let session = self.create_session_with_status(&account, account_id, "fetch").await?;
+            let session = self
+                .create_session_with_status(&account, account_id, "fetch")
+                .await?;
 
             // Select the folder first
             session.select_folder(folder).await?;
@@ -262,17 +325,24 @@ impl EmailService {
             }
         }
 
-        info!("Fetched {} emails for account {} ({} from cache, {} from IMAP)",
-              emails.len(), account_id,
-              uids.len() - uids_to_fetch.len(),
-              uids_to_fetch.len());
+        info!(
+            "Fetched {} emails for account {} ({} from cache, {} from IMAP)",
+            emails.len(),
+            account_id,
+            uids.len() - uids_to_fetch.len(),
+            uids_to_fetch.len()
+        );
         Ok(emails)
     }
 
     /// Fetch emails by their UIDs (uses default account)
     /// DEPRECATED: Use fetch_emails_for_account instead for proper multi-account support
     #[allow(dead_code)]
-    pub async fn fetch_emails(&self, folder: &str, uids: &[u32]) -> Result<Vec<Email>, EmailServiceError> {
+    pub async fn fetch_emails(
+        &self,
+        folder: &str,
+        uids: &[u32],
+    ) -> Result<Vec<Email>, EmailServiceError> {
         debug!("Fetching {} emails from folder '{}'", uids.len(), folder);
 
         if uids.is_empty() {
@@ -281,8 +351,9 @@ impl EmailService {
 
         // NOTE: This method doesn't support caching properly because it lacks account_id context
         // Fetching directly from IMAP without cache
-        let session = self.imap_factory.create_session().await
-            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+        let session = self.imap_factory.create_session().await.map_err(|e| {
+            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
+        })?;
 
         // Select the folder first
         session.select_folder(folder).await?;
@@ -295,16 +366,23 @@ impl EmailService {
             warn!("Failed to logout IMAP session: {}", e);
         }
 
-        info!("Fetched {} emails from IMAP (no cache support)", emails.len());
+        info!(
+            "Fetched {} emails from IMAP (no cache support)",
+            emails.len()
+        );
         Ok(emails)
     }
 
     /// Get recent emails from inbox
-    pub async fn get_recent_inbox_emails(&self, limit: usize) -> Result<Vec<Email>, EmailServiceError> {
+    pub async fn get_recent_inbox_emails(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<Email>, EmailServiceError> {
         debug!("Getting recent {} emails from INBOX", limit);
 
-        let session = self.imap_factory.create_session().await
-            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+        let session = self.imap_factory.create_session().await.map_err(|e| {
+            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
+        })?;
 
         // Select INBOX
         session.select_folder("INBOX").await?;
@@ -318,11 +396,7 @@ impl EmailService {
         }
 
         // Get the most recent UIDs (last N from the list)
-        let recent_uids: Vec<u32> = all_uids.iter()
-            .rev()
-            .take(limit)
-            .copied()
-            .collect();
+        let recent_uids: Vec<u32> = all_uids.iter().rev().take(limit).copied().collect();
 
         // Fetch the emails
         let emails = session.fetch_emails(&recent_uids).await?;
@@ -340,8 +414,9 @@ impl EmailService {
     pub async fn get_unread_emails(&self) -> Result<Vec<Email>, EmailServiceError> {
         debug!("Getting unread emails from INBOX");
 
-        let session = self.imap_factory.create_session().await
-            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+        let session = self.imap_factory.create_session().await.map_err(|e| {
+            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
+        })?;
 
         // Select INBOX
         session.select_folder("INBOX").await?;
@@ -368,7 +443,7 @@ impl EmailService {
 
     /// Convert CachedEmail to Email
     fn cached_email_to_email(&self, cached: CachedEmail) -> Email {
-        use crate::imap::types::{Envelope, Address};
+        use crate::imap::types::{Address, Envelope};
 
         // Reconstruct envelope from cached data
         let envelope = Some(Envelope {
@@ -385,22 +460,30 @@ impl EmailService {
             } else {
                 Vec::new()
             },
-            to: cached.to_addresses.iter().map(|addr| {
-                let parts: Vec<&str> = addr.split('@').collect();
-                Address {
-                    name: None,
-                    mailbox: parts.get(0).map(|s| s.to_string()),
-                    host: parts.get(1).map(|s| s.to_string()),
-                }
-            }).collect(),
-            cc: cached.cc_addresses.iter().map(|addr| {
-                let parts: Vec<&str> = addr.split('@').collect();
-                Address {
-                    name: None,
-                    mailbox: parts.get(0).map(|s| s.to_string()),
-                    host: parts.get(1).map(|s| s.to_string()),
-                }
-            }).collect(),
+            to: cached
+                .to_addresses
+                .iter()
+                .map(|addr| {
+                    let parts: Vec<&str> = addr.split('@').collect();
+                    Address {
+                        name: None,
+                        mailbox: parts.get(0).map(|s| s.to_string()),
+                        host: parts.get(1).map(|s| s.to_string()),
+                    }
+                })
+                .collect(),
+            cc: cached
+                .cc_addresses
+                .iter()
+                .map(|addr| {
+                    let parts: Vec<&str> = addr.split('@').collect();
+                    Address {
+                        name: None,
+                        mailbox: parts.get(0).map(|s| s.to_string()),
+                        host: parts.get(1).map(|s| s.to_string()),
+                    }
+                })
+                .collect(),
             bcc: Vec::new(),
             reply_to: Vec::new(),
             in_reply_to: None,
@@ -421,11 +504,20 @@ impl EmailService {
     }
 
     /// Atomically move a single email from one folder to another
-    pub async fn atomic_move_message(&self, uid: u32, from_folder: &str, to_folder: &str) -> Result<(), EmailServiceError> {
-        debug!("Atomically moving email {} from {} to {}", uid, from_folder, to_folder);
+    pub async fn atomic_move_message(
+        &self,
+        uid: u32,
+        from_folder: &str,
+        to_folder: &str,
+    ) -> Result<(), EmailServiceError> {
+        debug!(
+            "Atomically moving email {} from {} to {}",
+            uid, from_folder, to_folder
+        );
 
-        let client = self.imap_factory.create_session().await
-            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+        let client = self.imap_factory.create_session().await.map_err(|e| {
+            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
+        })?;
 
         // Use atomic operations - extract the session from the client
         let session = client.session_arc();
@@ -438,21 +530,37 @@ impl EmailService {
         }
 
         // Note: Cache will be invalidated naturally on next access
-        info!("Successfully moved email {} from {} to {}", uid, from_folder, to_folder);
+        info!(
+            "Successfully moved email {} from {} to {}",
+            uid, from_folder, to_folder
+        );
         Ok(())
     }
 
     /// Atomically move multiple emails from one folder to another
-    pub async fn atomic_batch_move(&self, uids: &[u32], from_folder: &str, to_folder: &str) -> Result<(), EmailServiceError> {
-        debug!("Atomically moving {} emails from {} to {}", uids.len(), from_folder, to_folder);
+    pub async fn atomic_batch_move(
+        &self,
+        uids: &[u32],
+        from_folder: &str,
+        to_folder: &str,
+    ) -> Result<(), EmailServiceError> {
+        debug!(
+            "Atomically moving {} emails from {} to {}",
+            uids.len(),
+            from_folder,
+            to_folder
+        );
 
-        let client = self.imap_factory.create_session().await
-            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+        let client = self.imap_factory.create_session().await.map_err(|e| {
+            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
+        })?;
 
         // Use atomic operations - extract the session from the client
         let session = client.session_arc();
         let atomic_ops = crate::imap::atomic::AtomicImapOperations::new((*session).clone());
-        atomic_ops.atomic_batch_move(uids, from_folder, to_folder).await?;
+        atomic_ops
+            .atomic_batch_move(uids, from_folder, to_folder)
+            .await?;
 
         // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
         if let Err(e) = client.logout().await {
@@ -460,7 +568,12 @@ impl EmailService {
         }
 
         // Note: Cache will be invalidated naturally on next access
-        info!("Successfully moved {} emails from {} to {}", uids.len(), from_folder, to_folder);
+        info!(
+            "Successfully moved {} emails from {} to {}",
+            uids.len(),
+            from_folder,
+            to_folder
+        );
         Ok(())
     }
 
@@ -468,13 +581,16 @@ impl EmailService {
     pub async fn mark_as_read(&self, folder: &str, uids: &[u32]) -> Result<(), EmailServiceError> {
         debug!("Marking {} emails as read in {}", uids.len(), folder);
 
-        let client = self.imap_factory.create_session().await
-            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+        let client = self.imap_factory.create_session().await.map_err(|e| {
+            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
+        })?;
 
         client.select_folder(folder).await?;
 
         use crate::imap::types::FlagOperation;
-        client.store_flags(uids, FlagOperation::Add, &vec!["\\Seen".to_string()]).await?;
+        client
+            .store_flags(uids, FlagOperation::Add, &vec!["\\Seen".to_string()])
+            .await?;
 
         // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
         if let Err(e) = client.logout().await {
@@ -487,16 +603,23 @@ impl EmailService {
     }
 
     /// Mark email(s) as unread (removes \Seen flag)
-    pub async fn mark_as_unread(&self, folder: &str, uids: &[u32]) -> Result<(), EmailServiceError> {
+    pub async fn mark_as_unread(
+        &self,
+        folder: &str,
+        uids: &[u32],
+    ) -> Result<(), EmailServiceError> {
         debug!("Marking {} emails as unread in {}", uids.len(), folder);
 
-        let client = self.imap_factory.create_session().await
-            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+        let client = self.imap_factory.create_session().await.map_err(|e| {
+            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
+        })?;
 
         client.select_folder(folder).await?;
 
         use crate::imap::types::FlagOperation;
-        client.store_flags(uids, FlagOperation::Remove, &vec!["\\Seen".to_string()]).await?;
+        client
+            .store_flags(uids, FlagOperation::Remove, &vec!["\\Seen".to_string()])
+            .await?;
 
         // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
         if let Err(e) = client.logout().await {
@@ -509,11 +632,16 @@ impl EmailService {
     }
 
     /// Mark email(s) as deleted (sets \Deleted flag)
-    pub async fn mark_as_deleted(&self, folder: &str, uids: &[u32]) -> Result<(), EmailServiceError> {
+    pub async fn mark_as_deleted(
+        &self,
+        folder: &str,
+        uids: &[u32],
+    ) -> Result<(), EmailServiceError> {
         debug!("Marking {} emails as deleted in {}", uids.len(), folder);
 
-        let client = self.imap_factory.create_session().await
-            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+        let client = self.imap_factory.create_session().await.map_err(|e| {
+            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
+        })?;
 
         client.select_folder(folder).await?;
         client.mark_as_deleted(uids).await?;
@@ -529,7 +657,11 @@ impl EmailService {
     }
 
     /// Permanently delete messages (mark as deleted and expunge)
-    pub async fn delete_messages(&self, folder: &str, uids: &[u32]) -> Result<(), EmailServiceError> {
+    pub async fn delete_messages(
+        &self,
+        folder: &str,
+        uids: &[u32],
+    ) -> Result<(), EmailServiceError> {
         debug!("Deleting {} messages in {}", uids.len(), folder);
 
         // First mark as deleted
@@ -550,8 +682,12 @@ impl EmailService {
         uids: &[u32],
         account_id: &str,
     ) -> Result<(), EmailServiceError> {
-        debug!("Deleting {} messages in {} for account {} with attachment cleanup",
-               uids.len(), folder, account_id);
+        debug!(
+            "Deleting {} messages in {} for account {} with attachment cleanup",
+            uids.len(),
+            folder,
+            account_id
+        );
 
         if uids.is_empty() {
             return Ok(());
@@ -562,25 +698,41 @@ impl EmailService {
         let account_email = &account.email_address;
 
         // Get database pool for attachment cleanup
-        let db_pool = self.cache_service.as_ref()
+        let db_pool = self
+            .cache_service
+            .as_ref()
             .and_then(|cache| cache.db_pool.as_ref());
 
         // If we have database access, clean up attachments
         if let Some(db_pool) = db_pool {
             // Fetch emails to get their message_ids
-            let emails = self.fetch_emails_for_account(folder, uids, account_id).await?;
+            let emails = self
+                .fetch_emails_for_account(folder, uids, account_id)
+                .await?;
 
             // Delete attachments for each email
             for email in &emails {
                 let message_id = attachment_storage::ensure_message_id(email, account_email);
 
-                match attachment_storage::delete_attachments_for_email(db_pool, &message_id, account_email).await {
+                match attachment_storage::delete_attachments_for_email(
+                    db_pool,
+                    &message_id,
+                    account_email,
+                )
+                .await
+                {
                     Ok(_) => {
-                        debug!("Deleted attachments for email UID {} (message_id: {})", email.uid, message_id);
+                        debug!(
+                            "Deleted attachments for email UID {} (message_id: {})",
+                            email.uid, message_id
+                        );
                     }
                     Err(e) => {
                         // Log warning but continue - attachment deletion shouldn't prevent email deletion
-                        warn!("Failed to delete attachments for email UID {}: {}", email.uid, e);
+                        warn!(
+                            "Failed to delete attachments for email UID {}: {}",
+                            email.uid, e
+                        );
                     }
                 }
             }
@@ -589,7 +741,9 @@ impl EmailService {
         }
 
         // Delete emails from IMAP with connection status recording
-        let client = self.create_session_with_status(&account, account_id, "delete").await?;
+        let client = self
+            .create_session_with_status(&account, account_id, "delete")
+            .await?;
 
         client.select_folder(folder).await?;
         client.mark_as_deleted(uids).await?;
@@ -600,16 +754,25 @@ impl EmailService {
             warn!("Failed to logout IMAP session: {}", e);
         }
 
-        info!("Successfully deleted {} messages with attachments for account {}", uids.len(), account_id);
+        info!(
+            "Successfully deleted {} messages with attachments for account {}",
+            uids.len(),
+            account_id
+        );
         Ok(())
     }
 
     /// Remove \Deleted flag from messages
-    pub async fn undelete_messages(&self, folder: &str, uids: &[u32]) -> Result<(), EmailServiceError> {
+    pub async fn undelete_messages(
+        &self,
+        folder: &str,
+        uids: &[u32],
+    ) -> Result<(), EmailServiceError> {
         debug!("Undeleting {} messages in {}", uids.len(), folder);
 
-        let client = self.imap_factory.create_session().await
-            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+        let client = self.imap_factory.create_session().await.map_err(|e| {
+            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
+        })?;
 
         client.select_folder(folder).await?;
         client.undelete_messages(uids).await?;
@@ -627,8 +790,9 @@ impl EmailService {
     pub async fn expunge(&self, folder: &str) -> Result<(), EmailServiceError> {
         debug!("Expunging deleted messages from {}", folder);
 
-        let client = self.imap_factory.create_session().await
-            .map_err(|e| EmailServiceError::ConnectionError(format!("Failed to create session: {}", e)))?;
+        let client = self.imap_factory.create_session().await.map_err(|e| {
+            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
+        })?;
 
         client.select_folder(folder).await?;
         client.expunge().await?;
@@ -643,14 +807,20 @@ impl EmailService {
     }
 
     /// Create a new folder for a specific account
-    pub async fn create_folder_for_account(&self, name: &str, account_id: &str) -> Result<(), EmailServiceError> {
+    pub async fn create_folder_for_account(
+        &self,
+        name: &str,
+        account_id: &str,
+    ) -> Result<(), EmailServiceError> {
         debug!("Creating folder '{}' for account {}", name, account_id);
 
         // Get account credentials
         let account = self.get_account(account_id).await?;
 
         // Create session with account-specific credentials and record connection status
-        let session = self.create_session_with_status(&account, account_id, "create folder").await?;
+        let session = self
+            .create_session_with_status(&account, account_id, "create folder")
+            .await?;
 
         // Create the folder
         session.create_folder(name).await?;
@@ -660,19 +830,28 @@ impl EmailService {
             warn!("Failed to logout IMAP session: {}", e);
         }
 
-        info!("Successfully created folder '{}' for account {}", name, account_id);
+        info!(
+            "Successfully created folder '{}' for account {}",
+            name, account_id
+        );
         Ok(())
     }
 
     /// Delete a folder for a specific account
-    pub async fn delete_folder_for_account(&self, name: &str, account_id: &str) -> Result<(), EmailServiceError> {
+    pub async fn delete_folder_for_account(
+        &self,
+        name: &str,
+        account_id: &str,
+    ) -> Result<(), EmailServiceError> {
         debug!("Deleting folder '{}' for account {}", name, account_id);
 
         // Get account credentials
         let account = self.get_account(account_id).await?;
 
         // Create session with account-specific credentials and record connection status
-        let session = self.create_session_with_status(&account, account_id, "delete folder").await?;
+        let session = self
+            .create_session_with_status(&account, account_id, "delete folder")
+            .await?;
 
         // Delete the folder
         session.delete_folder(name).await?;
@@ -682,19 +861,32 @@ impl EmailService {
             warn!("Failed to logout IMAP session: {}", e);
         }
 
-        info!("Successfully deleted folder '{}' for account {}", name, account_id);
+        info!(
+            "Successfully deleted folder '{}' for account {}",
+            name, account_id
+        );
         Ok(())
     }
 
     /// Rename a folder for a specific account
-    pub async fn rename_folder_for_account(&self, old_name: &str, new_name: &str, account_id: &str) -> Result<(), EmailServiceError> {
-        debug!("Renaming folder '{}' to '{}' for account {}", old_name, new_name, account_id);
+    pub async fn rename_folder_for_account(
+        &self,
+        old_name: &str,
+        new_name: &str,
+        account_id: &str,
+    ) -> Result<(), EmailServiceError> {
+        debug!(
+            "Renaming folder '{}' to '{}' for account {}",
+            old_name, new_name, account_id
+        );
 
         // Get account credentials
         let account = self.get_account(account_id).await?;
 
         // Create session with account-specific credentials and record connection status
-        let session = self.create_session_with_status(&account, account_id, "rename folder").await?;
+        let session = self
+            .create_session_with_status(&account, account_id, "rename folder")
+            .await?;
 
         // Rename the folder
         session.rename_folder(old_name, new_name).await?;
@@ -704,7 +896,10 @@ impl EmailService {
             warn!("Failed to logout IMAP session: {}", e);
         }
 
-        info!("Successfully renamed folder '{}' to '{}' for account {}", old_name, new_name, account_id);
+        info!(
+            "Successfully renamed folder '{}' to '{}' for account {}",
+            old_name, new_name, account_id
+        );
         Ok(())
     }
 
@@ -716,20 +911,29 @@ impl EmailService {
         uid: u32,
         account_id: &str,
     ) -> Result<(Email, Vec<AttachmentInfo>), EmailServiceError> {
-        debug!("Fetching email {} from folder '{}' with attachments for account {}", uid, folder, account_id);
+        debug!(
+            "Fetching email {} from folder '{}' with attachments for account {}",
+            uid, folder, account_id
+        );
 
         // Get account
         let account = self.get_account(account_id).await?;
         let account_email = &account.email_address;
 
         // Get database pool from cache service
-        let db_pool = self.cache_service.as_ref()
+        let db_pool = self
+            .cache_service
+            .as_ref()
             .and_then(|cache| cache.db_pool.as_ref())
             .ok_or(EmailServiceError::CacheServiceNotAvailable)?;
 
         // First, try to get the email from cache to get its message_id
         let cached_email = if let Some(cache) = &self.cache_service {
-            cache.get_cached_email(folder, uid, account_email).await.ok().flatten()
+            cache
+                .get_cached_email(folder, uid, account_email)
+                .await
+                .ok()
+                .flatten()
         } else {
             None
         };
@@ -743,35 +947,46 @@ impl EmailService {
 
         // Check if attachments already exist in database
         if let Some(ref msg_id) = message_id {
-            let existing_attachments = attachment_storage::get_attachments_metadata(
-                db_pool,
-                account_email,
-                msg_id,
-            ).await?;
+            let existing_attachments =
+                attachment_storage::get_attachments_metadata(db_pool, account_email, msg_id)
+                    .await?;
 
             if !existing_attachments.is_empty() {
-                debug!("Attachments already cached for email {}, returning {} attachments", uid, existing_attachments.len());
+                debug!(
+                    "Attachments already cached for email {}, returning {} attachments",
+                    uid,
+                    existing_attachments.len()
+                );
                 // Return the cached email (reconstruct it)
                 let email = if let Some(cached) = cached_email {
                     self.cached_email_to_email(cached)
                 } else {
                     // Shouldn't happen, but fetch if needed
-                    let emails = self.fetch_emails_for_account(folder, &[uid], account_id).await?;
-                    emails.into_iter().next()
-                        .ok_or_else(|| EmailServiceError::ConnectionError(format!("Email {} not found", uid)))?
+                    let emails = self
+                        .fetch_emails_for_account(folder, &[uid], account_id)
+                        .await?;
+                    emails.into_iter().next().ok_or_else(|| {
+                        EmailServiceError::ConnectionError(format!("Email {} not found", uid))
+                    })?
                 };
                 return Ok((email, existing_attachments));
             }
         }
 
         // Attachments not in database, fetch full email from IMAP
-        debug!("Attachments not cached, fetching full email from IMAP for uid {}", uid);
-        let session = self.create_session_with_status(&account, account_id, "fetch with attachments").await?;
+        debug!(
+            "Attachments not cached, fetching full email from IMAP for uid {}",
+            uid
+        );
+        let session = self
+            .create_session_with_status(&account, account_id, "fetch with attachments")
+            .await?;
 
         session.select_folder(folder).await?;
         let emails = session.fetch_emails(&[uid]).await?;
-        let mut email = emails.into_iter().next()
-            .ok_or_else(|| EmailServiceError::ConnectionError(format!("Email {} not found", uid)))?;
+        let mut email = emails.into_iter().next().ok_or_else(|| {
+            EmailServiceError::ConnectionError(format!("Email {} not found", uid))
+        })?;
 
         // Ensure the email has a message_id (or generate one)
         let message_id = attachment_storage::ensure_message_id(&email, account_email);
@@ -784,7 +999,9 @@ impl EmailService {
                 account_email,
                 &message_id,
                 attachment,
-            ).await {
+            )
+            .await
+            {
                 Ok(info) => {
                     debug!("Saved attachment: {}", info.filename);
                     attachment_infos.push(info);
@@ -808,7 +1025,12 @@ impl EmailService {
             warn!("Failed to logout IMAP session: {}", e);
         }
 
-        info!("Fetched email {} with {} attachments for account {}", uid, attachment_infos.len(), account_id);
+        info!(
+            "Fetched email {} with {} attachments for account {}",
+            uid,
+            attachment_infos.len(),
+            account_id
+        );
         Ok((email, attachment_infos))
     }
 }

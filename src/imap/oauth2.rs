@@ -8,7 +8,7 @@
 //! Uses the Microsoft Authentication Library (MSAL) compatible device code flow
 //! to obtain access tokens for IMAP authentication via XOAUTH2.
 
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -61,8 +61,8 @@ impl MicrosoftOAuth2Config {
     pub fn from_env() -> Result<Self, OAuth2Error> {
         let client_id = std::env::var("MICROSOFT_CLIENT_ID")
             .map_err(|_| OAuth2Error::InvalidConfig("MICROSOFT_CLIENT_ID not set".to_string()))?;
-        let tenant_id = std::env::var("MICROSOFT_TENANT_ID")
-            .unwrap_or_else(|_| "common".to_string());
+        let tenant_id =
+            std::env::var("MICROSOFT_TENANT_ID").unwrap_or_else(|_| "common".to_string());
 
         Ok(Self::for_m365(client_id, tenant_id))
     }
@@ -161,10 +161,7 @@ impl MicrosoftOAuth2Client {
     }
 
     /// Get a valid access token, refreshing if necessary
-    pub async fn get_valid_token(
-        &self,
-        stored: &mut StoredToken,
-    ) -> Result<String, OAuth2Error> {
+    pub async fn get_valid_token(&self, stored: &mut StoredToken) -> Result<String, OAuth2Error> {
         if stored.is_expired() {
             info!("Access token expired, refreshing...");
             if let Some(refresh) = &stored.refresh_token {

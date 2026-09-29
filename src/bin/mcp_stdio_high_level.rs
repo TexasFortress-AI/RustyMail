@@ -1,3 +1,4 @@
+use clap::Parser;
 /// MCP stdio proxy (HIGH-LEVEL VARIANT) - A thin JSON-RPC proxy that forwards requests from stdin to the MCP HTTP backend
 ///
 /// This binary acts as a protocol translation layer between line-oriented JSON-RPC-over-stdin/stdout
@@ -7,7 +8,6 @@
 /// instead of the full set of low-level tools.
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use clap::Parser;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -35,7 +35,11 @@ async fn main() {
 
     // Append ?variant=high-level to backend URL if not already present
     if !cli.backend_url.contains("variant=") {
-        let separator = if cli.backend_url.contains('?') { "&" } else { "?" };
+        let separator = if cli.backend_url.contains('?') {
+            "&"
+        } else {
+            "?"
+        };
         cli.backend_url = format!("{}{}variant=high-level", cli.backend_url, separator);
     }
 
@@ -135,11 +139,8 @@ async fn main() {
                     }
                     Err(e) => {
                         eprintln!("Error parsing JSON: {}", e);
-                        let error = create_error_response(
-                            None,
-                            -32700,
-                            &format!("Parse error: {}", e),
-                        );
+                        let error =
+                            create_error_response(None, -32700, &format!("Parse error: {}", e));
                         write_response(&mut stdout, &error).await;
                     }
                 }

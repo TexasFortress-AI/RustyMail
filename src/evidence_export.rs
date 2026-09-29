@@ -13,8 +13,8 @@ use sqlx::SqlitePool;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::dashboard::services::cache::CacheService;
 use crate::dashboard::services::attachment_storage;
+use crate::dashboard::services::cache::CacheService;
 
 /// Default output directory when env var is not set.
 const DEFAULT_EXPORT_DIR: &str = "data/evidence_exports";
@@ -36,7 +36,10 @@ pub struct EvidenceExporter {
 
 impl EvidenceExporter {
     pub fn new(cache_service: Arc<CacheService>, db_pool: SqlitePool) -> Self {
-        Self { cache_service, db_pool }
+        Self {
+            cache_service,
+            db_pool,
+        }
     }
 
     /// Export emails and attachments into an organized evidence directory.
@@ -75,22 +78,21 @@ impl EvidenceExporter {
         std::fs::create_dir_all(&attachments_dir)?;
 
         // 3. Collect emails
-        let emails = self.collect_emails(account_id, folder, search_query, max_emails).await?;
+        let emails = self
+            .collect_emails(account_id, folder, search_query, max_emails)
+            .await?;
 
         // 4. Write email JSON files and copy attachments
         let mut attachment_count: usize = 0;
         let mut manifest_rows: Vec<String> = Vec::new();
 
         // CSV header
-        manifest_rows.push(
-            "uid,message_id,subject,from,to,date,has_attachments,synopsis".to_string()
-        );
+        manifest_rows
+            .push("uid,message_id,subject,from,to,date,has_attachments,synopsis".to_string());
 
         for email in &emails {
             // Write email JSON
-            let safe_subj = sanitize_filename(
-                email.subject.as_deref().unwrap_or("no_subject")
-            );
+            let safe_subj = sanitize_filename(email.subject.as_deref().unwrap_or("no_subject"));
             let json_filename = format!("{}_{}.json", email.uid, safe_subj);
             let json_path = emails_dir.join(&json_filename);
             let json_str = serde_json::to_string_pretty(&email)?;
@@ -100,8 +102,12 @@ impl EvidenceExporter {
             if email.has_attachments {
                 if let Some(ref message_id) = email.message_id {
                     if let Ok(attachments) = attachment_storage::get_attachments_metadata(
-                        &self.db_pool, account_id, message_id
-                    ).await {
+                        &self.db_pool,
+                        account_id,
+                        message_id,
+                    )
+                    .await
+                    {
                         for att in &attachments {
                             let dest_name = format!("{}_{}", email.uid, att.filename);
                             let dest_path = attachments_dir.join(&dest_name);
@@ -109,10 +115,7 @@ impl EvidenceExporter {
                             let src_path = PathBuf::from(&att.storage_path);
                             if src_path.exists() {
                                 if let Err(e) = std::fs::copy(&src_path, &dest_path) {
-                                    log::warn!(
-                                        "Failed to copy attachment {}: {}",
-                                        att.filename, e
-                                    );
+                                    log::warn!("Failed to copy attachment {}: {}", att.filename, e);
                                 } else {
                                     attachment_count += 1;
                                 }
@@ -186,25 +189,29 @@ impl EvidenceExporter {
         folder: Option<&str>,
         search_query: Option<&str>,
         max_emails: usize,
-    ) -> Result<Vec<crate::dashboard::services::cache::CachedEmail>, Box<dyn std::error::Error>> {
+    ) -> Result<Vec<crate::dashboard::services::cache::CachedEmail>, Box<dyn std::error::Error>>
+    {
         use crate::dashboard::services::cache::CachedEmail;
 
         let mut all_emails: Vec<CachedEmail> = Vec::new();
 
         if let Some(query) = search_query {
             let folder_name = folder.unwrap_or("");
-            let results = self.cache_service
+            let results = self
+                .cache_service
                 .search_cached_emails_for_account(folder_name, query, max_emails, account_id)
                 .await?;
             all_emails = results;
         } else if let Some(folder_name) = folder {
-            let results = self.cache_service
+            let results = self
+                .cache_service
                 .get_cached_emails_for_account(folder_name, account_id, max_emails, 0, false)
                 .await?;
             all_emails = results;
         } else {
             // No folder or query: iterate all folders
-            let folders = self.cache_service
+            let folders = self
+                .cache_service
                 .get_all_cached_folders_for_account(account_id)
                 .await?;
             for cached_folder in &folders {
@@ -212,9 +219,14 @@ impl EvidenceExporter {
                     break;
                 }
                 let remaining = max_emails - all_emails.len();
-                let results = self.cache_service
+                let results = self
+                    .cache_service
                     .get_cached_emails_for_account(
-                        &cached_folder.name, account_id, remaining, 0, false
+                        &cached_folder.name,
+                        account_id,
+                        remaining,
+                        0,
+                        false,
                     )
                     .await?;
                 all_emails.extend(results);
@@ -268,13 +280,16 @@ pub(crate) fn csv_escape(field: &str) -> String {
 /// Keeps alphanumeric, hyphens, and underscores; replaces everything else.
 /// Truncates to 50 characters.
 pub(crate) fn sanitize_filename(input: &str) -> String {
-    let sanitized: String = input.chars().map(|c| {
-        if c.is_alphanumeric() || c == '-' || c == '_' {
-            c
-        } else {
-            '_'
-        }
-    }).collect();
+    let sanitized: String = input
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
     if sanitized.len() > 50 {
         sanitized[..50].to_string()
     } else {

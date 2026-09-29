@@ -2,25 +2,29 @@
 // AI Model Configuration Management
 // Handles database storage and retrieval of AI model settings
 
-use serde::{Serialize, Deserialize};
-use sqlx::SqlitePool;
-use log::{debug, error};
 use crate::api::errors::ApiError;
+use log::{debug, error};
+use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 
 /// AI Model Configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelConfiguration {
-    pub role: String,  // 'tool_calling' or 'drafting'
-    pub provider: String,  // 'ollama', 'openai', 'anthropic', etc.
-    pub model_name: String,  // e.g., 'hf.co/unsloth/GLM-4.7-Flash-GGUF:q8_0', 'gemma3:27b-it-q8_0'
-    pub base_url: Option<String>,  // Provider API base URL
-    pub api_key: Option<String>,  // Optional API key
-    pub additional_config: Option<String>,  // JSON for provider-specific settings
+    pub role: String,                      // 'tool_calling' or 'drafting'
+    pub provider: String,                  // 'ollama', 'openai', 'anthropic', etc.
+    pub model_name: String, // e.g., 'hf.co/unsloth/GLM-4.7-Flash-GGUF:q8_0', 'gemma3:27b-it-q8_0'
+    pub base_url: Option<String>, // Provider API base URL
+    pub api_key: Option<String>, // Optional API key
+    pub additional_config: Option<String>, // JSON for provider-specific settings
 }
 
 impl ModelConfiguration {
     /// Create a new model configuration
-    pub fn new(role: impl Into<String>, provider: impl Into<String>, model_name: impl Into<String>) -> Self {
+    pub fn new(
+        role: impl Into<String>,
+        provider: impl Into<String>,
+        model_name: impl Into<String>,
+    ) -> Self {
         Self {
             role: role.into(),
             provider: provider.into(),
@@ -51,20 +55,38 @@ impl ModelConfiguration {
 }
 
 /// Get model configuration for a specific role
-pub async fn get_model_config(pool: &SqlitePool, role: &str) -> Result<ModelConfiguration, ApiError> {
+pub async fn get_model_config(
+    pool: &SqlitePool,
+    role: &str,
+) -> Result<ModelConfiguration, ApiError> {
     debug!("Fetching model configuration for role: {}", role);
 
-    let row = sqlx::query_as::<_, (String, String, String, Option<String>, Option<String>, Option<String>)>(
+    let row = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ),
+    >(
         "SELECT role, provider, model_name, base_url, api_key, additional_config
          FROM ai_model_configurations
-         WHERE role = ?"
+         WHERE role = ?",
     )
     .bind(role)
     .fetch_optional(pool)
     .await
     .map_err(|e| {
-        error!("Database error fetching model config for role {}: {}", role, e);
-        ApiError::InternalError { message: format!("Failed to fetch model configuration: {}", e) }
+        error!(
+            "Database error fetching model config for role {}: {}",
+            role, e
+        );
+        ApiError::InternalError {
+            message: format!("Failed to fetch model configuration: {}", e),
+        }
     })?;
 
     match row {
@@ -78,14 +100,17 @@ pub async fn get_model_config(pool: &SqlitePool, role: &str) -> Result<ModelConf
                 additional_config,
             })
         }
-        None => {
-            Err(ApiError::NotFound { resource: format!("Model configuration for role: {}", role) })
-        }
+        None => Err(ApiError::NotFound {
+            resource: format!("Model configuration for role: {}", role),
+        }),
     }
 }
 
 /// Set model configuration for a specific role
-pub async fn set_model_config(pool: &SqlitePool, config: &ModelConfiguration) -> Result<(), ApiError> {
+pub async fn set_model_config(
+    pool: &SqlitePool,
+    config: &ModelConfiguration,
+) -> Result<(), ApiError> {
     debug!("Setting model configuration for role: {}", config.role);
 
     sqlx::query(
@@ -112,7 +137,10 @@ pub async fn set_model_config(pool: &SqlitePool, config: &ModelConfiguration) ->
         ApiError::InternalError { message: format!("Failed to set model configuration: {}", e) }
     })?;
 
-    debug!("Successfully set model configuration for role: {}", config.role);
+    debug!(
+        "Successfully set model configuration for role: {}",
+        config.role
+    );
     Ok(())
 }
 
@@ -120,28 +148,45 @@ pub async fn set_model_config(pool: &SqlitePool, config: &ModelConfiguration) ->
 pub async fn get_all_model_configs(pool: &SqlitePool) -> Result<Vec<ModelConfiguration>, ApiError> {
     debug!("Fetching all model configurations");
 
-    let rows = sqlx::query_as::<_, (String, String, String, Option<String>, Option<String>, Option<String>)>(
+    let rows = sqlx::query_as::<
+        _,
+        (
+            String,
+            String,
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ),
+    >(
         "SELECT role, provider, model_name, base_url, api_key, additional_config
          FROM ai_model_configurations
-         ORDER BY role"
+         ORDER BY role",
     )
     .fetch_all(pool)
     .await
     .map_err(|e| {
         error!("Database error fetching all model configs: {}", e);
-        ApiError::InternalError { message: format!("Failed to fetch model configurations: {}", e) }
+        ApiError::InternalError {
+            message: format!("Failed to fetch model configurations: {}", e),
+        }
     })?;
 
-    let configs = rows.into_iter().map(|(role, provider, model_name, base_url, api_key, additional_config)| {
-        ModelConfiguration {
-            role,
-            provider,
-            model_name,
-            base_url,
-            api_key,
-            additional_config,
-        }
-    }).collect();
+    let configs = rows
+        .into_iter()
+        .map(
+            |(role, provider, model_name, base_url, api_key, additional_config)| {
+                ModelConfiguration {
+                    role,
+                    provider,
+                    model_name,
+                    base_url,
+                    api_key,
+                    additional_config,
+                }
+            },
+        )
+        .collect();
 
     Ok(configs)
 }
@@ -155,15 +200,25 @@ pub async fn delete_model_config(pool: &SqlitePool, role: &str) -> Result<(), Ap
         .execute(pool)
         .await
         .map_err(|e| {
-            error!("Database error deleting model config for role {}: {}", role, e);
-            ApiError::InternalError { message: format!("Failed to delete model configuration: {}", e) }
+            error!(
+                "Database error deleting model config for role {}: {}",
+                role, e
+            );
+            ApiError::InternalError {
+                message: format!("Failed to delete model configuration: {}", e),
+            }
         })?;
 
     if result.rows_affected() == 0 {
-        return Err(ApiError::NotFound { resource: format!("Model configuration for role: {}", role) });
+        return Err(ApiError::NotFound {
+            resource: format!("Model configuration for role: {}", role),
+        });
     }
 
-    debug!("Successfully deleted model configuration for role: {}", role);
+    debug!(
+        "Successfully deleted model configuration for role: {}",
+        role
+    );
     Ok(())
 }
 
@@ -173,9 +228,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_model_configuration_builder() {
-        let config = ModelConfiguration::new("tool_calling", "ollama", "hf.co/unsloth/GLM-4.7-Flash-GGUF:q8_0")
-            .with_base_url("http://localhost:11434")
-            .with_api_key("test-key");
+        let config = ModelConfiguration::new(
+            "tool_calling",
+            "ollama",
+            "hf.co/unsloth/GLM-4.7-Flash-GGUF:q8_0",
+        )
+        .with_base_url("http://localhost:11434")
+        .with_api_key("test-key");
 
         assert_eq!(config.role, "tool_calling");
         assert_eq!(config.provider, "ollama");

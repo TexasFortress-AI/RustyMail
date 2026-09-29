@@ -6,16 +6,13 @@
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
-    fmt,
     convert::Infallible,
+    fmt,
 };
 // use std::str::FromStr; // Unused
 
 use async_imap::types::{
-    Fetch,
-    Flag as AsyncImapFlag,
-    Name as AsyncImapName,
-    Mailbox as AsyncImapMailbox,
+    Fetch, Flag as AsyncImapFlag, Mailbox as AsyncImapMailbox, Name as AsyncImapName,
 };
 use chrono::{DateTime, Utc};
 // imap_types removed - NString was unused
@@ -134,8 +131,10 @@ impl Folder {
     }
 
     /// Creates a hierarchical folder tree from a flat list of folder paths
-    pub fn build_hierarchy(folder_paths: Vec<(String, Option<String>, Vec<String>)>) -> Vec<Folder> {
-                let mut folder_map = std::collections::HashMap::new();
+    pub fn build_hierarchy(
+        folder_paths: Vec<(String, Option<String>, Vec<String>)>,
+    ) -> Vec<Folder> {
+        let mut folder_map = std::collections::HashMap::new();
 
         // First pass: create all folders
         for (full_path, delimiter, attributes) in folder_paths {
@@ -143,7 +142,7 @@ impl Folder {
             let parts: Vec<&str> = full_path.split(delim).collect();
             let name = parts.last().unwrap_or(&full_path.as_str()).to_string();
             let parent = if parts.len() > 1 {
-                Some(parts[..parts.len()-1].join(delim))
+                Some(parts[..parts.len() - 1].join(delim))
             } else {
                 None
             };
@@ -166,7 +165,11 @@ impl Folder {
 
         // Sort by path depth (deeper paths first) to ensure children are processed before parents
         sorted_names.sort_by_key(|path| {
-            let delim = folder_map.get(path).and_then(|f| f.delimiter.as_ref()).map(|s| s.as_str()).unwrap_or("/");
+            let delim = folder_map
+                .get(path)
+                .and_then(|f| f.delimiter.as_ref())
+                .map(|s| s.as_str())
+                .unwrap_or("/");
             std::cmp::Reverse(path.matches(delim).count())
         });
 
@@ -329,12 +332,37 @@ impl fmt::Display for SearchCriteria {
             SearchCriteria::Since(date) => write!(f, "SINCE {}", date.format("%d-%b-%Y")),
             SearchCriteria::Body(text) => write!(f, "BODY \"{}\"", Self::escape_search_text(text)),
             SearchCriteria::From(text) => write!(f, "FROM \"{}\"", Self::escape_search_text(text)),
-            SearchCriteria::Subject(text) => write!(f, "SUBJECT \"{}\"", Self::escape_search_text(text)),
+            SearchCriteria::Subject(text) => {
+                write!(f, "SUBJECT \"{}\"", Self::escape_search_text(text))
+            }
             SearchCriteria::Text(text) => write!(f, "TEXT \"{}\"", Self::escape_search_text(text)),
             SearchCriteria::To(text) => write!(f, "TO \"{}\"", Self::escape_search_text(text)),
-            SearchCriteria::Uid(uids) => write!(f, "UID {}", uids.iter().map(|u| u.to_string()).collect::<Vec<_>>().join(",")),
-            SearchCriteria::And(criteria) => write!(f, "({})", criteria.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(" ")),
-            SearchCriteria::Or(criteria) => write!(f, "(OR {})", criteria.iter().map(|c| c.to_string()).collect::<Vec<_>>().join(" ")),
+            SearchCriteria::Uid(uids) => write!(
+                f,
+                "UID {}",
+                uids.iter()
+                    .map(|u| u.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            SearchCriteria::And(criteria) => write!(
+                f,
+                "({})",
+                criteria
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ),
+            SearchCriteria::Or(criteria) => write!(
+                f,
+                "(OR {})",
+                criteria
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ),
             SearchCriteria::Not(criterion) => write!(f, "NOT {}", criterion),
         }
     }
@@ -409,12 +437,24 @@ mod search_tests {
         assert_eq!(SearchCriteria::Flagged.to_string(), "FLAGGED");
 
         // Test text criteria with proper quoting
-        assert_eq!(SearchCriteria::Subject("test".to_string()).to_string(), "SUBJECT \"test\"");
-        assert_eq!(SearchCriteria::From("user@example.com".to_string()).to_string(), "FROM \"user@example.com\"");
-        assert_eq!(SearchCriteria::Body("hello world".to_string()).to_string(), "BODY \"hello world\"");
+        assert_eq!(
+            SearchCriteria::Subject("test".to_string()).to_string(),
+            "SUBJECT \"test\""
+        );
+        assert_eq!(
+            SearchCriteria::From("user@example.com".to_string()).to_string(),
+            "FROM \"user@example.com\""
+        );
+        assert_eq!(
+            SearchCriteria::Body("hello world".to_string()).to_string(),
+            "BODY \"hello world\""
+        );
 
         // Test text escaping
-        assert_eq!(SearchCriteria::Subject("test \"quoted\"".to_string()).to_string(), "SUBJECT \"test \\\"quoted\\\"\"");
+        assert_eq!(
+            SearchCriteria::Subject("test \"quoted\"".to_string()).to_string(),
+            "SUBJECT \"test \\\"quoted\\\"\""
+        );
     }
 
     #[test]
@@ -429,20 +469,32 @@ mod search_tests {
             SearchCriteria::Subject("urgent".to_string()),
             SearchCriteria::Subject("important".to_string()),
         ]);
-        assert_eq!(or_criteria.to_string(), "(OR SUBJECT \"urgent\" SUBJECT \"important\")");
+        assert_eq!(
+            or_criteria.to_string(),
+            "(OR SUBJECT \"urgent\" SUBJECT \"important\")"
+        );
     }
 
     #[test]
     fn test_search_criteria_dates() {
         let date = Utc.with_ymd_and_hms(2024, 1, 15, 0, 0, 0).unwrap();
         assert_eq!(SearchCriteria::Since(date).to_string(), "SINCE 15-Jan-2024");
-        assert_eq!(SearchCriteria::Before(date).to_string(), "BEFORE 15-Jan-2024");
+        assert_eq!(
+            SearchCriteria::Before(date).to_string(),
+            "BEFORE 15-Jan-2024"
+        );
     }
 
     #[test]
     fn test_search_criteria_helpers() {
-        assert_eq!(SearchCriteria::subject("test"), SearchCriteria::Subject("test".to_string()));
-        assert_eq!(SearchCriteria::from("user@example.com"), SearchCriteria::From("user@example.com".to_string()));
+        assert_eq!(
+            SearchCriteria::subject("test"),
+            SearchCriteria::Subject("test".to_string())
+        );
+        assert_eq!(
+            SearchCriteria::from("user@example.com"),
+            SearchCriteria::From("user@example.com".to_string())
+        );
 
         let and_criteria = SearchCriteria::and(vec![
             SearchCriteria::Unseen,
@@ -619,15 +671,13 @@ impl ContentType {
 
     /// Gets the charset parameter, defaulting to "utf-8" for text types
     pub fn charset(&self) -> String {
-        self.parameters.get("charset")
-            .cloned()
-            .unwrap_or_else(|| {
-                if self.is_text() {
-                    "utf-8".to_string()
-                } else {
-                    "us-ascii".to_string()
-                }
-            })
+        self.parameters.get("charset").cloned().unwrap_or_else(|| {
+            if self.is_text() {
+                "utf-8".to_string()
+            } else {
+                "us-ascii".to_string()
+            }
+        })
     }
 
     /// Gets the boundary parameter for multipart types
@@ -665,7 +715,9 @@ impl Email {
         // Check if this looks like MIME encoded text
         if raw.contains("=?") && raw.contains("?=") {
             // Parse as a simple header to decode MIME encoded words
-            if let Some(message) = mail_parser::Message::parse(format!("Subject: {}\r\n\r\n", raw).as_bytes()) {
+            if let Some(message) =
+                mail_parser::Message::parse(format!("Subject: {}\r\n\r\n", raw).as_bytes())
+            {
                 if let Some(subject) = message.subject() {
                     return subject.to_string();
                 }
@@ -679,26 +731,75 @@ impl Email {
     pub fn from_fetch(fetch: &Fetch) -> Result<Self, ImapError> {
         // Handle flags - fetch.flags() returns an iterator; deduplicate
         let mut seen_flags = HashSet::new();
-        let flags: Vec<String> = fetch.flags()
+        let flags: Vec<String> = fetch
+            .flags()
             .map(|f| format!("{:?}", f))
             .filter(|f| seen_flags.insert(f.clone()))
             .collect();
         let body = fetch.body().map(|b| b.to_vec());
-        let parsed_message = body.as_ref().and_then(|body_bytes| mail_parser::Message::parse(body_bytes));
-        let envelope = fetch.envelope().map(|env| Envelope {
-            date: env.date.as_ref().map(|d| Email::decode_mime_encoded_text(d)),
-            subject: env.subject.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
-            from: env.from.as_ref().unwrap_or(&vec![]).iter().map(Self::convert_address).collect(),
-            // Note: sender field exists in async-imap but not in our Envelope struct
-            reply_to: env.reply_to.as_ref().unwrap_or(&vec![]).iter().map(Self::convert_address).collect(),
-            to: env.to.as_ref().unwrap_or(&vec![]).iter().map(Self::convert_address).collect(),
-            cc: env.cc.as_ref().unwrap_or(&vec![]).iter().map(Self::convert_address).collect(),
-            bcc: env.bcc.as_ref().unwrap_or(&vec![]).iter().map(Self::convert_address).collect(),
-            in_reply_to: env.in_reply_to.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
-            message_id: env.message_id.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
-        }).or_else(|| parsed_message.as_ref().map(Self::envelope_from_message));
+        let parsed_message = body
+            .as_ref()
+            .and_then(|body_bytes| mail_parser::Message::parse(body_bytes));
+        let envelope = fetch
+            .envelope()
+            .map(|env| Envelope {
+                date: env
+                    .date
+                    .as_ref()
+                    .map(|d| Email::decode_mime_encoded_text(d)),
+                subject: env
+                    .subject
+                    .as_ref()
+                    .map(|s| Email::decode_mime_encoded_text(s)),
+                from: env
+                    .from
+                    .as_ref()
+                    .unwrap_or(&vec![])
+                    .iter()
+                    .map(Self::convert_address)
+                    .collect(),
+                // Note: sender field exists in async-imap but not in our Envelope struct
+                reply_to: env
+                    .reply_to
+                    .as_ref()
+                    .unwrap_or(&vec![])
+                    .iter()
+                    .map(Self::convert_address)
+                    .collect(),
+                to: env
+                    .to
+                    .as_ref()
+                    .unwrap_or(&vec![])
+                    .iter()
+                    .map(Self::convert_address)
+                    .collect(),
+                cc: env
+                    .cc
+                    .as_ref()
+                    .unwrap_or(&vec![])
+                    .iter()
+                    .map(Self::convert_address)
+                    .collect(),
+                bcc: env
+                    .bcc
+                    .as_ref()
+                    .unwrap_or(&vec![])
+                    .iter()
+                    .map(Self::convert_address)
+                    .collect(),
+                in_reply_to: env
+                    .in_reply_to
+                    .as_ref()
+                    .map(|s| Email::decode_mime_encoded_text(s)),
+                message_id: env
+                    .message_id
+                    .as_ref()
+                    .map(|s| Email::decode_mime_encoded_text(s)),
+            })
+            .or_else(|| parsed_message.as_ref().map(Self::envelope_from_message));
 
-        let internal_date = fetch.internal_date()
+        let internal_date = fetch
+            .internal_date()
             .and_then(|d| DateTime::parse_from_rfc2822(&d.to_string()).ok())
             .map(|dt| dt.with_timezone(&Utc));
 
@@ -724,10 +825,19 @@ impl Email {
 
     fn convert_address(addr: &async_imap::imap_proto::Address) -> crate::imap::types::Address {
         crate::imap::types::Address {
-            name: addr.name.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
+            name: addr
+                .name
+                .as_ref()
+                .map(|s| Email::decode_mime_encoded_text(s)),
             // Note: async-imap Address has route field but our Address doesn't
-            mailbox: addr.mailbox.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
-            host: addr.host.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
+            mailbox: addr
+                .mailbox
+                .as_ref()
+                .map(|s| Email::decode_mime_encoded_text(s)),
+            host: addr
+                .host
+                .as_ref()
+                .map(|s| Email::decode_mime_encoded_text(s)),
         }
     }
 
@@ -740,17 +850,32 @@ impl Email {
             cc: Self::convert_header_addresses(message.cc()),
             bcc: Vec::new(),
             reply_to: Self::convert_header_addresses(message.reply_to()),
-            in_reply_to: message.in_reply_to().as_text_ref().map(|value| value.to_string()),
+            in_reply_to: message
+                .in_reply_to()
+                .as_text_ref()
+                .map(|value| value.to_string()),
             message_id: message.message_id().map(|value| value.to_string()),
         }
     }
 
-    fn convert_header_addresses(value: &mail_parser::HeaderValue<'_>) -> Vec<crate::imap::types::Address> {
+    fn convert_header_addresses(
+        value: &mail_parser::HeaderValue<'_>,
+    ) -> Vec<crate::imap::types::Address> {
         match value {
-            mail_parser::HeaderValue::Address(addr) => vec![Self::convert_mail_parser_address(addr)],
-            mail_parser::HeaderValue::AddressList(addresses) => addresses.iter().map(Self::convert_mail_parser_address).collect(),
-            mail_parser::HeaderValue::Group(group) => group.addresses.iter().map(Self::convert_mail_parser_address).collect(),
-            mail_parser::HeaderValue::GroupList(groups) => groups.iter()
+            mail_parser::HeaderValue::Address(addr) => {
+                vec![Self::convert_mail_parser_address(addr)]
+            }
+            mail_parser::HeaderValue::AddressList(addresses) => addresses
+                .iter()
+                .map(Self::convert_mail_parser_address)
+                .collect(),
+            mail_parser::HeaderValue::Group(group) => group
+                .addresses
+                .iter()
+                .map(Self::convert_mail_parser_address)
+                .collect(),
+            mail_parser::HeaderValue::GroupList(groups) => groups
+                .iter()
                 .flat_map(|group| group.addresses.iter())
                 .map(Self::convert_mail_parser_address)
                 .collect(),
@@ -759,10 +884,17 @@ impl Email {
     }
 
     fn convert_mail_parser_address(addr: &mail_parser::Addr<'_>) -> crate::imap::types::Address {
-        let (mailbox, host) = addr.address.as_deref()
+        let (mailbox, host) = addr
+            .address
+            .as_deref()
             .and_then(|address| address.rsplit_once('@'))
             .map(|(mailbox, host)| (Some(mailbox.to_string()), Some(host.to_string())))
-            .unwrap_or_else(|| (addr.address.as_ref().map(|address| address.to_string()), None));
+            .unwrap_or_else(|| {
+                (
+                    addr.address.as_ref().map(|address| address.to_string()),
+                    None,
+                )
+            });
 
         crate::imap::types::Address {
             name: addr.name.as_ref().map(|name| name.to_string()),
@@ -772,7 +904,9 @@ impl Email {
     }
 
     /// Parses MIME content from raw email body
-    fn parse_mime_content(body_bytes: &[u8]) -> Result<(Vec<MimePart>, Option<String>, Option<String>, Vec<MimePart>), ImapError> {
+    fn parse_mime_content(
+        body_bytes: &[u8],
+    ) -> Result<(Vec<MimePart>, Option<String>, Option<String>, Vec<MimePart>), ImapError> {
         use mail_parser::Message;
 
         // Parse the email message
@@ -789,23 +923,33 @@ impl Email {
         html_body = message.body_html(0).map(|s| s.to_string());
 
         // DEBUG: Log part count and attachment count
-        debug!("Email MIME parsing: {} total parts, {} attachments",
-               message.parts.len(), message.attachment_count());
+        debug!(
+            "Email MIME parsing: {} total parts, {} attachments",
+            message.parts.len(),
+            message.attachment_count()
+        );
 
         // Process ALL parts, not just attachments
         for (i, part) in message.parts.iter().enumerate() {
             use mail_parser::MimeHeaders;
 
-            debug!("  Part {}: content_type={:?}, attachment_name={:?}",
-                   i,
-                   part.content_type().map(|ct| format!("{}/{}", ct.c_type, ct.c_subtype.as_ref().unwrap_or(&"unknown".into()))),
-                   part.attachment_name());
+            debug!(
+                "  Part {}: content_type={:?}, attachment_name={:?}",
+                i,
+                part.content_type().map(|ct| format!(
+                    "{}/{}",
+                    ct.c_type,
+                    ct.c_subtype.as_ref().unwrap_or(&"unknown".into())
+                )),
+                part.attachment_name()
+            );
 
             // Check if this part should be treated as an attachment
             // Parts with filenames are attachments
             let is_attachment = part.attachment_name().is_some();
 
-            if is_attachment && i > 0 {  // Skip part 0 which is usually the message itself
+            if is_attachment && i > 0 {
+                // Skip part 0 which is usually the message itself
                 debug!("    -> Treating as attachment");
                 let mime_part = Self::create_attachment_mime_part(part);
                 attachments.push(mime_part.clone());
@@ -826,7 +970,11 @@ impl Email {
         let content_type = if let Some(ct) = attachment.content_type() {
             ContentType {
                 main_type: ct.c_type.to_string(),
-                sub_type: ct.c_subtype.as_ref().map(|s| s.to_string()).unwrap_or_else(|| "octet-stream".to_string()),
+                sub_type: ct
+                    .c_subtype
+                    .as_ref()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "octet-stream".to_string()),
                 parameters: HashMap::new(), // TODO: Extract parameters from mail_parser::ContentType
             }
         } else {
@@ -838,15 +986,14 @@ impl Email {
         };
 
         // Get content disposition
-        let content_disposition = attachment.attachment_name()
-            .map(|name| ContentDisposition {
-                disposition_type: "attachment".to_string(),
-                parameters: {
-                    let mut params = HashMap::new();
-                    params.insert("filename".to_string(), name.to_string());
-                    params
-                },
-            });
+        let content_disposition = attachment.attachment_name().map(|name| ContentDisposition {
+            disposition_type: "attachment".to_string(),
+            parameters: {
+                let mut params = HashMap::new();
+                params.insert("filename".to_string(), name.to_string());
+                params
+            },
+        });
 
         // Get the body content
         let body = attachment.contents().to_vec();
@@ -854,8 +1001,10 @@ impl Email {
         // Extract headers (simplified)
         let mut headers = HashMap::new();
         if let Some(name) = attachment.attachment_name() {
-            headers.insert("Content-Disposition".to_string(),
-                format!("attachment; filename=\"{}\"", name));
+            headers.insert(
+                "Content-Disposition".to_string(),
+                format!("attachment; filename=\"{}\"", name),
+            );
         }
 
         // Try to decode text content if it's a text type
@@ -869,7 +1018,7 @@ impl Email {
             content_type,
             content_transfer_encoding: None, // Could be extracted from headers
             content_disposition,
-            content_id: None, // Could be extracted from headers
+            content_id: None,          // Could be extracted from headers
             content_description: None, // Could be extracted from headers
             headers,
             body,
@@ -901,7 +1050,6 @@ impl Email {
             parameters,
         }
     }
-
 }
 
 impl From<Fetch> for Email {
@@ -909,26 +1057,68 @@ impl From<Fetch> for Email {
         let uid = fetch.uid.unwrap_or(0);
         // Handle flags - fetch.flags() returns an iterator; deduplicate
         let mut seen_flags = HashSet::new();
-        let flags: Vec<String> = fetch.flags()
+        let flags: Vec<String> = fetch
+            .flags()
             .map(|f| format!("{:?}", f))
             .filter(|f| seen_flags.insert(f.clone()))
             .collect();
 
         let envelope = fetch.envelope().map(|env| Envelope {
-            date: env.date.as_ref().map(|d| Email::decode_mime_encoded_text(d)),
-            subject: env.subject.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
-            from: env.from.as_ref().unwrap_or(&vec![]).iter().map(Email::convert_address).collect(),
+            date: env
+                .date
+                .as_ref()
+                .map(|d| Email::decode_mime_encoded_text(d)),
+            subject: env
+                .subject
+                .as_ref()
+                .map(|s| Email::decode_mime_encoded_text(s)),
+            from: env
+                .from
+                .as_ref()
+                .unwrap_or(&vec![])
+                .iter()
+                .map(Email::convert_address)
+                .collect(),
             // Note: sender field exists in async-imap but not in our Envelope struct
-            reply_to: env.reply_to.as_ref().unwrap_or(&vec![]).iter().map(Email::convert_address).collect(),
-            to: env.to.as_ref().unwrap_or(&vec![]).iter().map(Email::convert_address).collect(),
-            cc: env.cc.as_ref().unwrap_or(&vec![]).iter().map(Email::convert_address).collect(),
-            bcc: env.bcc.as_ref().unwrap_or(&vec![]).iter().map(Email::convert_address).collect(),
-            in_reply_to: env.in_reply_to.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
-            message_id: env.message_id.as_ref().map(|s| Email::decode_mime_encoded_text(s)),
+            reply_to: env
+                .reply_to
+                .as_ref()
+                .unwrap_or(&vec![])
+                .iter()
+                .map(Email::convert_address)
+                .collect(),
+            to: env
+                .to
+                .as_ref()
+                .unwrap_or(&vec![])
+                .iter()
+                .map(Email::convert_address)
+                .collect(),
+            cc: env
+                .cc
+                .as_ref()
+                .unwrap_or(&vec![])
+                .iter()
+                .map(Email::convert_address)
+                .collect(),
+            bcc: env
+                .bcc
+                .as_ref()
+                .unwrap_or(&vec![])
+                .iter()
+                .map(Email::convert_address)
+                .collect(),
+            in_reply_to: env
+                .in_reply_to
+                .as_ref()
+                .map(|s| Email::decode_mime_encoded_text(s)),
+            message_id: env
+                .message_id
+                .as_ref()
+                .map(|s| Email::decode_mime_encoded_text(s)),
         });
 
-        let internal_date = fetch.internal_date()
-            .map(|d| d.with_timezone(&Utc));
+        let internal_date = fetch.internal_date().map(|d| d.with_timezone(&Utc));
 
         let body = fetch.body().map(|b| b.to_vec());
 

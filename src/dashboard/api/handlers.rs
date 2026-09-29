@@ -3,23 +3,23 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use actix_web::{web, HttpResponse, Responder};
-use actix_web::web::Data;
-use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
-use std::convert::Infallible;
-use log::{debug, warn, info, error};
 use crate::dashboard::api::errors::ApiError;
-use crate::dashboard::services::DashboardState;
 use crate::dashboard::api::models::{ChatbotQuery, ServerConfig};
 use crate::dashboard::api::sse::EventType;
 use crate::dashboard::services::ai::provider_manager::ProviderConfig;
+use crate::dashboard::services::DashboardState;
+use actix_web::web::Data;
+use actix_web::{web, HttpResponse, Responder};
 use actix_web_lab::sse::{self, Sse};
 use futures_util::StreamExt;
+use log::{debug, error, info, warn};
+use serde::{Deserialize, Serialize};
+use serde_json;
+use std::collections::HashSet;
+use std::convert::Infallible;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use uuid;
-use serde_json;
 
 // Query parameters for client list endpoint
 #[derive(Debug, Deserialize)]
@@ -34,9 +34,9 @@ pub async fn get_dashboard_stats(
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
     debug!("Handling GET /api/dashboard/stats");
-    
+
     let stats = state.metrics_service.get_current_stats().await;
-    
+
     Ok(HttpResponse::Ok().json(stats))
 }
 
@@ -45,22 +45,25 @@ pub async fn get_connected_clients(
     query: web::Query<ClientQueryParams>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling GET /api/dashboard/clients with query: {:?}", query);
-    
+    debug!(
+        "Handling GET /api/dashboard/clients with query: {:?}",
+        query
+    );
+
     let page = query.page.unwrap_or(1);
     let limit = query.limit.unwrap_or(10);
     let filter = query.filter.as_deref();
-    
+
     if page == 0 {
         return Err(ApiError::BadRequest("Page must be at least 1".to_string()));
     }
-    
+
     if limit == 0 {
         return Err(ApiError::BadRequest("Limit must be at least 1".to_string()));
     }
-    
+
     let clients = state.client_manager.get_clients(page, limit, filter).await;
-    
+
     Ok(HttpResponse::Ok().json(clients))
 }
 
@@ -69,9 +72,9 @@ pub async fn get_configuration(
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
     debug!("Handling GET /api/dashboard/config");
-    
+
     let config: ServerConfig = state.config_service.get_configuration().await;
-    
+
     Ok(HttpResponse::Ok().json(config))
 }
 
@@ -80,7 +83,10 @@ pub async fn query_chatbot(
     state: web::Data<DashboardState>,
     req: web::Json<ChatbotQuery>,
 ) -> Result<impl Responder, ApiError> {
-    info!("Handling POST /api/dashboard/chatbot/query with body: {:?}", req);
+    info!(
+        "Handling POST /api/dashboard/chatbot/query with body: {:?}",
+        req
+    );
     info!("Chatbot query field breakdown:");
     info!("  - query: {}", req.query);
     info!("  - conversation_id: {:?}", req.conversation_id);
@@ -89,7 +95,9 @@ pub async fn query_chatbot(
     info!("  - current_folder: {:?}", req.current_folder);
     info!("  - account_id: {:?}", req.account_id);
 
-    let response = state.ai_service.process_query(req.0)
+    let response = state
+        .ai_service
+        .process_query(req.0)
         .await
         .map_err(|e| ApiError::InternalError(format!("AI service error: {}", e)))?;
 
@@ -995,7 +1003,7 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
                 },
                 "required": ["account_id", "folder", "uids"]
             }
-        })
+        }),
     ]
 }
 
@@ -1023,390 +1031,394 @@ pub async fn list_mcp_tools(
         let high_level_tools = high_level_tools::get_mcp_high_level_tools_jsonrpc_format();
 
         // Convert from JSON-RPC format to dashboard format
-        high_level_tools.iter().map(|tool| {
-            let name = tool["name"].as_str().unwrap_or("unknown");
-            let description = tool["description"].as_str().unwrap_or("");
-            let input_schema = &tool["inputSchema"];
+        high_level_tools
+            .iter()
+            .map(|tool| {
+                let name = tool["name"].as_str().unwrap_or("unknown");
+                let description = tool["description"].as_str().unwrap_or("");
+                let input_schema = &tool["inputSchema"];
 
-            // Extract parameters from inputSchema
-            let mut parameters = serde_json::json!({});
-            if let Some(props) = input_schema.get("properties") {
-                if let Some(props_obj) = props.as_object() {
-                    for (key, value) in props_obj {
-                        let desc = value.get("description")
-                            .and_then(|d| d.as_str())
-                            .unwrap_or("");
-                        parameters[key] = serde_json::Value::String(desc.to_string());
+                // Extract parameters from inputSchema
+                let mut parameters = serde_json::json!({});
+                if let Some(props) = input_schema.get("properties") {
+                    if let Some(props_obj) = props.as_object() {
+                        for (key, value) in props_obj {
+                            let desc = value
+                                .get("description")
+                                .and_then(|d| d.as_str())
+                                .unwrap_or("");
+                            parameters[key] = serde_json::Value::String(desc.to_string());
+                        }
                     }
                 }
-            }
 
-            serde_json::json!({
-                "name": name,
-                "description": description,
-                "parameters": parameters
+                serde_json::json!({
+                    "name": name,
+                    "description": description,
+                    "parameters": parameters
+                })
             })
-        }).collect()
+            .collect()
     } else {
         // Return low-level tools (existing implementation)
         vec![
-        serde_json::json!({
-            "name": "list_folders",
-            "description": "List all email folders in the account",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "list_folders_hierarchical",
-            "description": "List folders with hierarchical structure",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "create_folder",
-            "description": "Create a new email folder in the account",
-            "parameters": {
-                "folder_name": "Name of the folder to create (e.g., INBOX.Archive)",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "delete_folder",
-            "description": "Delete an email folder from the account",
-            "parameters": {
-                "folder_name": "Name of the folder to delete (e.g., INBOX.OldEmails)",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "rename_folder",
-            "description": "Rename an email folder in the account",
-            "parameters": {
-                "old_name": "Current name of the folder (e.g., INBOX.Temp)",
-                "new_name": "New name for the folder (e.g., INBOX.Projects)",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "fetch_emails_with_mime",
-            "description": "Fetch email content with MIME data",
-            "parameters": {
-                "folder": "Folder containing the email",
-                "uid": "Email UID",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "atomic_move_message",
-            "description": "Move a single message to another folder",
-            "parameters": {
-                "source_folder": "Source folder",
-                "target_folder": "Target folder",
-                "uid": "Message UID to move",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "atomic_batch_move",
-            "description": "Move multiple messages to another folder",
-            "parameters": {
-                "source_folder": "Source folder",
-                "target_folder": "Target folder",
-                "uids": "Comma-separated list of UIDs",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "mark_as_deleted",
-            "description": "Mark messages as deleted",
-            "parameters": {
-                "folder": "Folder containing messages",
-                "uids": "Comma-separated list of UIDs",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "delete_messages",
-            "description": "Permanently delete messages",
-            "parameters": {
-                "folder": "Folder containing messages",
-                "uids": "Comma-separated list of UIDs",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "undelete_messages",
-            "description": "Unmark messages as deleted",
-            "parameters": {
-                "folder": "Folder containing messages",
-                "uids": "Comma-separated list of UIDs",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "expunge",
-            "description": "Expunge deleted messages from folder",
-            "parameters": {
-                "folder": "Folder to expunge",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        // Cache-based tools
-        serde_json::json!({
-            "name": "list_cached_emails",
-            "description": "List cached emails from database",
-            "parameters": {
-                "folder": "Folder name (default: INBOX)",
-                "limit": "Maximum number of emails (default: 20)",
-                "offset": "Pagination offset (default: 0)",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "get_email_by_uid",
-            "description": "Get full cached email by UID",
-            "parameters": {
-                "folder": "Folder name (default: INBOX)",
-                "uid": "Email UID",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "get_email_by_index",
-            "description": "Get cached email by position index",
-            "parameters": {
-                "folder": "Folder name (default: INBOX)",
-                "index": "Zero-based position index",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "count_emails_in_folder",
-            "description": "Count total emails in cached folder",
-            "parameters": {
-                "folder": "Folder name (default: INBOX)",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "get_folder_stats",
-            "description": "Get statistics about cached folder",
-            "parameters": {
-                "folder": "Folder name (default: INBOX)",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "search_cached_emails",
-            "description": "Search within cached emails",
-            "parameters": {
-                "folder": "Folder name (default: INBOX)",
-                "query": "Search query text",
-                "limit": "Maximum number of results (default: 20)",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        // Account management tools
-        serde_json::json!({
-            "name": "list_accounts",
-            "description": "List all configured email accounts",
-            "parameters": {}
-        }),
-        serde_json::json!({
-            "name": "set_current_account",
-            "description": "Set the current account for email operations",
-            "parameters": {
-                "account_id": "Account ID to set as current"
-            }
-        }),
-        // SMTP email sending
-        serde_json::json!({
-            "name": "send_email",
-            "description": "Send an email via SMTP",
-            "parameters": {
-                "to": "REQUIRED. Array of recipient email addresses",
-                "subject": "REQUIRED. Email subject line",
-                "body": "REQUIRED. Plain text email body",
-                "cc": "Optional. Array of CC recipient email addresses",
-                "bcc": "Optional. Array of BCC recipient email addresses",
-                "body_html": "Optional. HTML email body (multipart with plain text fallback)",
-                "account_id": "Optional. Email address of the sending account (uses default if not specified)"
-            }
-        }),
-        // Attachment management tools
-        serde_json::json!({
-            "name": "list_email_attachments",
-            "description": "List all attachments for a specific email",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
-                "folder": "Folder containing the email (when using uid)",
-                "uid": "Email UID (alternative to message_id)",
-                "message_id": "Message ID (alternative to folder+uid)"
-            }
-        }),
-        serde_json::json!({
-            "name": "download_email_attachments",
-            "description": "Download attachments from an email to local directory",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
-                "folder": "Folder containing the email (when using uid)",
-                "uid": "Email UID (alternative to message_id)",
-                "message_id": "Message ID (alternative to folder+uid)",
-                "destination": "Destination directory path (optional)",
-                "create_zip": "Create ZIP archive instead of individual files (optional, boolean)"
-            }
-        }),
-        serde_json::json!({
-            "name": "cleanup_attachments",
-            "description": "Delete downloaded attachments for a specific email",
-            "parameters": {
-                "message_id": "REQUIRED. The message ID of the email",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "get_attachment_content",
-            "description": "Get a single attachment's content as base64",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account",
-                "message_id": "Message-ID (provide this OR folder+uid)",
-                "folder": "Folder name (if message_id not provided)",
-                "uid": "Email UID (if message_id not provided)",
-                "filename": "REQUIRED. Filename of the attachment"
-            }
-        }),
-        serde_json::json!({
-            "name": "mark_as_read",
-            "description": "Mark messages as read (adds \\Seen flag)",
-            "parameters": {
-                "folder": "REQUIRED. Folder containing messages",
-                "uids": "REQUIRED. Array of message UIDs to mark as read",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "mark_as_unread",
-            "description": "Mark messages as unread (removes \\Seen flag)",
-            "parameters": {
-                "folder": "REQUIRED. Folder containing messages",
-                "uids": "REQUIRED. Array of message UIDs to mark as unread",
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
-            }
-        }),
-        serde_json::json!({
-            "name": "sync_emails",
-            "description": "Trigger email sync for a specific folder or all folders",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
-                "folder": "Optional. Specific folder to sync (e.g., 'INBOX', 'INBOX/resumes'). If omitted, syncs all folders."
-            }
-        }),
-        serde_json::json!({
-            "name": "get_email_synopsis",
-            "description": "Get a concise synopsis of an email (subject + first sentences)",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account",
-                "folder": "Optional. Folder name (default: INBOX)",
-                "uid": "REQUIRED. Email UID",
-                "max_lines": "Optional. Max sentences to extract (default: 3)"
-            }
-        }),
-        serde_json::json!({
-            "name": "get_email_thread",
-            "description": "Get all emails in a conversation thread by message_id",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account",
-                "message_id": "REQUIRED. Message-ID of any email in the thread"
-            }
-        }),
-        serde_json::json!({
-            "name": "search_by_domain",
-            "description": "Search cached emails by sender/recipient domain",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account",
-                "domain": "REQUIRED. Domain to search for (e.g., 'gmail.com')",
-                "search_in": "Optional. Array of fields: 'from', 'to', 'cc' (default: ['from'])",
-                "limit": "Optional. Max results (default: 50)"
-            }
-        }),
-        serde_json::json!({
-            "name": "get_address_report",
-            "description": "Get aggregated report of unique email addresses and domains",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account"
-            }
-        }),
-        serde_json::json!({
-            "name": "list_emails_by_flag",
-            "description": "Filter cached emails by IMAP flags (Seen, Flagged, Answered, etc.)",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account",
-                "folder": "Optional. Folder name (default: INBOX)",
-                "flags_include": "Optional. Array of flags emails must have (e.g., ['Flagged'])",
-                "flags_exclude": "Optional. Array of flags emails must not have (e.g., ['Seen'] for unread)",
-                "unread_only": "Optional. Boolean shorthand for flags_exclude=['Seen']",
-                "limit": "Optional. Max results (default: 50)",
-                "offset": "Optional. Pagination offset (default: 0)"
-            }
-        }),
-        serde_json::json!({
-            "name": "search_by_attachment_type",
-            "description": "Search for attachments matching MIME type patterns (e.g., 'image/*', 'application/pdf')",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
-                "mime_types": "REQUIRED. Array of MIME type patterns (e.g., ['image/*', 'application/pdf'])",
-                "limit": "Optional. Maximum results to return (default: 50)"
-            }
-        }),
-        serde_json::json!({
-            "name": "export_evidence",
-            "description": "Export emails and attachments into an organized evidence directory for attorney review",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
-                "folder": "Optional. Folder name to limit export. If omitted, exports all folders.",
-                "search_query": "Optional. Search string to filter emails.",
-                "output_path": "Optional. Override output directory (default: EVIDENCE_EXPORT_DIR env or data/evidence_exports)."
-            }
-        }),
-        serde_json::json!({
-            "name": "export_folder_metadata",
-            "description": "Export email metadata (no body content) to a file on disk. Returns file path only — ideal for large folders.",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account",
-                "folder": "REQUIRED. Folder name (e.g., 'INBOX')",
-                "format": "Optional. 'json' (default) or 'csv'",
-                "fields": "Optional. Comma-separated field names to include (e.g., 'uid,subject,date')",
-                "limit": "Optional. Max rows to export (default: 10000)"
-            }
-        }),
-        serde_json::json!({
-            "name": "filter_emails_by_subject",
-            "description": "Filter emails by subject line patterns. Returns metadata only (no body content).",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account",
-                "folder": "REQUIRED. Folder name (e.g., 'INBOX')",
-                "subject_patterns": "REQUIRED. Array of keywords to match against subjects (case-insensitive)",
-                "match_mode": "Optional. 'any' (default) or 'all'",
-                "sender_filter": "Optional. Restrict to sender address/domain",
-                "recipient_filter": "Optional. Restrict to recipient address/domain",
-                "date_after": "Optional. ISO 8601 date lower bound",
-                "date_before": "Optional. ISO 8601 date upper bound",
-                "max_results": "Optional. Max results (default: 500)"
-            }
-        }),
-        serde_json::json!({
-            "name": "batch_get_synopsis",
-            "description": "Get compact synopses for multiple emails in a single call (max 50 UIDs).",
-            "parameters": {
-                "account_id": "REQUIRED. Email address of the account",
-                "folder": "REQUIRED. Folder name (e.g., 'INBOX')",
-                "uids": "REQUIRED. Array of email UIDs (max 50 per call)",
-                "max_chars_per_synopsis": "Optional. Character cap per synopsis (default: 300, max: 1500)"
-            }
-        })
-    ]
+            serde_json::json!({
+                "name": "list_folders",
+                "description": "List all email folders in the account",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "list_folders_hierarchical",
+                "description": "List folders with hierarchical structure",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "create_folder",
+                "description": "Create a new email folder in the account",
+                "parameters": {
+                    "folder_name": "Name of the folder to create (e.g., INBOX.Archive)",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "delete_folder",
+                "description": "Delete an email folder from the account",
+                "parameters": {
+                    "folder_name": "Name of the folder to delete (e.g., INBOX.OldEmails)",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "rename_folder",
+                "description": "Rename an email folder in the account",
+                "parameters": {
+                    "old_name": "Current name of the folder (e.g., INBOX.Temp)",
+                    "new_name": "New name for the folder (e.g., INBOX.Projects)",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "fetch_emails_with_mime",
+                "description": "Fetch email content with MIME data",
+                "parameters": {
+                    "folder": "Folder containing the email",
+                    "uid": "Email UID",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "atomic_move_message",
+                "description": "Move a single message to another folder",
+                "parameters": {
+                    "source_folder": "Source folder",
+                    "target_folder": "Target folder",
+                    "uid": "Message UID to move",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "atomic_batch_move",
+                "description": "Move multiple messages to another folder",
+                "parameters": {
+                    "source_folder": "Source folder",
+                    "target_folder": "Target folder",
+                    "uids": "Comma-separated list of UIDs",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "mark_as_deleted",
+                "description": "Mark messages as deleted",
+                "parameters": {
+                    "folder": "Folder containing messages",
+                    "uids": "Comma-separated list of UIDs",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "delete_messages",
+                "description": "Permanently delete messages",
+                "parameters": {
+                    "folder": "Folder containing messages",
+                    "uids": "Comma-separated list of UIDs",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "undelete_messages",
+                "description": "Unmark messages as deleted",
+                "parameters": {
+                    "folder": "Folder containing messages",
+                    "uids": "Comma-separated list of UIDs",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "expunge",
+                "description": "Expunge deleted messages from folder",
+                "parameters": {
+                    "folder": "Folder to expunge",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            // Cache-based tools
+            serde_json::json!({
+                "name": "list_cached_emails",
+                "description": "List cached emails from database",
+                "parameters": {
+                    "folder": "Folder name (default: INBOX)",
+                    "limit": "Maximum number of emails (default: 20)",
+                    "offset": "Pagination offset (default: 0)",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "get_email_by_uid",
+                "description": "Get full cached email by UID",
+                "parameters": {
+                    "folder": "Folder name (default: INBOX)",
+                    "uid": "Email UID",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "get_email_by_index",
+                "description": "Get cached email by position index",
+                "parameters": {
+                    "folder": "Folder name (default: INBOX)",
+                    "index": "Zero-based position index",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "count_emails_in_folder",
+                "description": "Count total emails in cached folder",
+                "parameters": {
+                    "folder": "Folder name (default: INBOX)",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "get_folder_stats",
+                "description": "Get statistics about cached folder",
+                "parameters": {
+                    "folder": "Folder name (default: INBOX)",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "search_cached_emails",
+                "description": "Search within cached emails",
+                "parameters": {
+                    "folder": "Folder name (default: INBOX)",
+                    "query": "Search query text",
+                    "limit": "Maximum number of results (default: 20)",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            // Account management tools
+            serde_json::json!({
+                "name": "list_accounts",
+                "description": "List all configured email accounts",
+                "parameters": {}
+            }),
+            serde_json::json!({
+                "name": "set_current_account",
+                "description": "Set the current account for email operations",
+                "parameters": {
+                    "account_id": "Account ID to set as current"
+                }
+            }),
+            // SMTP email sending
+            serde_json::json!({
+                "name": "send_email",
+                "description": "Send an email via SMTP",
+                "parameters": {
+                    "to": "REQUIRED. Array of recipient email addresses",
+                    "subject": "REQUIRED. Email subject line",
+                    "body": "REQUIRED. Plain text email body",
+                    "cc": "Optional. Array of CC recipient email addresses",
+                    "bcc": "Optional. Array of BCC recipient email addresses",
+                    "body_html": "Optional. HTML email body (multipart with plain text fallback)",
+                    "account_id": "Optional. Email address of the sending account (uses default if not specified)"
+                }
+            }),
+            // Attachment management tools
+            serde_json::json!({
+                "name": "list_email_attachments",
+                "description": "List all attachments for a specific email",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
+                    "folder": "Folder containing the email (when using uid)",
+                    "uid": "Email UID (alternative to message_id)",
+                    "message_id": "Message ID (alternative to folder+uid)"
+                }
+            }),
+            serde_json::json!({
+                "name": "download_email_attachments",
+                "description": "Download attachments from an email to local directory",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
+                    "folder": "Folder containing the email (when using uid)",
+                    "uid": "Email UID (alternative to message_id)",
+                    "message_id": "Message ID (alternative to folder+uid)",
+                    "destination": "Destination directory path (optional)",
+                    "create_zip": "Create ZIP archive instead of individual files (optional, boolean)"
+                }
+            }),
+            serde_json::json!({
+                "name": "cleanup_attachments",
+                "description": "Delete downloaded attachments for a specific email",
+                "parameters": {
+                    "message_id": "REQUIRED. The message ID of the email",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "get_attachment_content",
+                "description": "Get a single attachment's content as base64",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account",
+                    "message_id": "Message-ID (provide this OR folder+uid)",
+                    "folder": "Folder name (if message_id not provided)",
+                    "uid": "Email UID (if message_id not provided)",
+                    "filename": "REQUIRED. Filename of the attachment"
+                }
+            }),
+            serde_json::json!({
+                "name": "mark_as_read",
+                "description": "Mark messages as read (adds \\Seen flag)",
+                "parameters": {
+                    "folder": "REQUIRED. Folder containing messages",
+                    "uids": "REQUIRED. Array of message UIDs to mark as read",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "mark_as_unread",
+                "description": "Mark messages as unread (removes \\Seen flag)",
+                "parameters": {
+                    "folder": "REQUIRED. Folder containing messages",
+                    "uids": "REQUIRED. Array of message UIDs to mark as unread",
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
+                }
+            }),
+            serde_json::json!({
+                "name": "sync_emails",
+                "description": "Trigger email sync for a specific folder or all folders",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
+                    "folder": "Optional. Specific folder to sync (e.g., 'INBOX', 'INBOX/resumes'). If omitted, syncs all folders."
+                }
+            }),
+            serde_json::json!({
+                "name": "get_email_synopsis",
+                "description": "Get a concise synopsis of an email (subject + first sentences)",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account",
+                    "folder": "Optional. Folder name (default: INBOX)",
+                    "uid": "REQUIRED. Email UID",
+                    "max_lines": "Optional. Max sentences to extract (default: 3)"
+                }
+            }),
+            serde_json::json!({
+                "name": "get_email_thread",
+                "description": "Get all emails in a conversation thread by message_id",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account",
+                    "message_id": "REQUIRED. Message-ID of any email in the thread"
+                }
+            }),
+            serde_json::json!({
+                "name": "search_by_domain",
+                "description": "Search cached emails by sender/recipient domain",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account",
+                    "domain": "REQUIRED. Domain to search for (e.g., 'gmail.com')",
+                    "search_in": "Optional. Array of fields: 'from', 'to', 'cc' (default: ['from'])",
+                    "limit": "Optional. Max results (default: 50)"
+                }
+            }),
+            serde_json::json!({
+                "name": "get_address_report",
+                "description": "Get aggregated report of unique email addresses and domains",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account"
+                }
+            }),
+            serde_json::json!({
+                "name": "list_emails_by_flag",
+                "description": "Filter cached emails by IMAP flags (Seen, Flagged, Answered, etc.)",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account",
+                    "folder": "Optional. Folder name (default: INBOX)",
+                    "flags_include": "Optional. Array of flags emails must have (e.g., ['Flagged'])",
+                    "flags_exclude": "Optional. Array of flags emails must not have (e.g., ['Seen'] for unread)",
+                    "unread_only": "Optional. Boolean shorthand for flags_exclude=['Seen']",
+                    "limit": "Optional. Max results (default: 50)",
+                    "offset": "Optional. Pagination offset (default: 0)"
+                }
+            }),
+            serde_json::json!({
+                "name": "search_by_attachment_type",
+                "description": "Search for attachments matching MIME type patterns (e.g., 'image/*', 'application/pdf')",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
+                    "mime_types": "REQUIRED. Array of MIME type patterns (e.g., ['image/*', 'application/pdf'])",
+                    "limit": "Optional. Maximum results to return (default: 50)"
+                }
+            }),
+            serde_json::json!({
+                "name": "export_evidence",
+                "description": "Export emails and attachments into an organized evidence directory for attorney review",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)",
+                    "folder": "Optional. Folder name to limit export. If omitted, exports all folders.",
+                    "search_query": "Optional. Search string to filter emails.",
+                    "output_path": "Optional. Override output directory (default: EVIDENCE_EXPORT_DIR env or data/evidence_exports)."
+                }
+            }),
+            serde_json::json!({
+                "name": "export_folder_metadata",
+                "description": "Export email metadata (no body content) to a file on disk. Returns file path only — ideal for large folders.",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account",
+                    "folder": "REQUIRED. Folder name (e.g., 'INBOX')",
+                    "format": "Optional. 'json' (default) or 'csv'",
+                    "fields": "Optional. Comma-separated field names to include (e.g., 'uid,subject,date')",
+                    "limit": "Optional. Max rows to export (default: 10000)"
+                }
+            }),
+            serde_json::json!({
+                "name": "filter_emails_by_subject",
+                "description": "Filter emails by subject line patterns. Returns metadata only (no body content).",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account",
+                    "folder": "REQUIRED. Folder name (e.g., 'INBOX')",
+                    "subject_patterns": "REQUIRED. Array of keywords to match against subjects (case-insensitive)",
+                    "match_mode": "Optional. 'any' (default) or 'all'",
+                    "sender_filter": "Optional. Restrict to sender address/domain",
+                    "recipient_filter": "Optional. Restrict to recipient address/domain",
+                    "date_after": "Optional. ISO 8601 date lower bound",
+                    "date_before": "Optional. ISO 8601 date upper bound",
+                    "max_results": "Optional. Max results (default: 500)"
+                }
+            }),
+            serde_json::json!({
+                "name": "batch_get_synopsis",
+                "description": "Get compact synopses for multiple emails in a single call (max 50 UIDs).",
+                "parameters": {
+                    "account_id": "REQUIRED. Email address of the account",
+                    "folder": "REQUIRED. Folder name (e.g., 'INBOX')",
+                    "uids": "REQUIRED. Array of email UIDs (max 50 per call)",
+                    "max_chars_per_synopsis": "Optional. Character cap per synopsis (default: 300, max: 1500)"
+                }
+            }),
+        ]
     }; // End of if-else for variant
 
     Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -1428,7 +1440,8 @@ async fn get_account_id_to_use(
 
     // If account_id not provided, return error
     Err(ApiError::BadRequest(
-        "account_id parameter is required and must be an email address (e.g., user@example.com)".to_string()
+        "account_id parameter is required and must be an email address (e.g., user@example.com)"
+            .to_string(),
     ))
 }
 
@@ -1440,7 +1453,9 @@ async fn validate_account_exists(
 ) -> Result<String, ApiError> {
     // Verify the account exists by looking it up
     let account_service = state.account_service.lock().await;
-    let _account = account_service.get_account(account_id).await
+    let _account = account_service
+        .get_account(account_id)
+        .await
         .map_err(|e| ApiError::NotFound(format!("Account not found: {}", e)))?;
     drop(account_service); // Release lock
 
@@ -1455,7 +1470,10 @@ pub async fn execute_mcp_tool_inner(
     tool_name: &str,
     params: serde_json::Value,
 ) -> serde_json::Value {
-    debug!("Executing MCP tool: {} with params: {:?}", tool_name, params);
+    debug!(
+        "Executing MCP tool: {} with params: {:?}",
+        tool_name, params
+    );
 
     // Get the email service from the state
     let email_service = state.email_service.clone();
@@ -1469,11 +1487,13 @@ pub async fn execute_mcp_tool_inner(
             // Get account ID from request or use default
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
             match email_service.list_folders_for_account(&account_id).await {
@@ -1497,11 +1517,13 @@ pub async fn execute_mcp_tool_inner(
             // Get account ID from request or use default
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
             // For now, just use regular list_folders since hierarchical is not implemented
@@ -1526,24 +1548,31 @@ pub async fn execute_mcp_tool_inner(
         "create_folder" => {
             let folder_name = match params.get("folder_name").and_then(|v| v.as_str()) {
                 Some(f) => f,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'folder_name' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'folder_name' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
 
             // Get account ID from request or use default
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
-            match email_service.create_folder_for_account(folder_name, &account_id).await {
+            match email_service
+                .create_folder_for_account(folder_name, &account_id)
+                .await
+            {
                 Ok(_) => {
                     serde_json::json!({
                         "success": true,
@@ -1566,24 +1595,31 @@ pub async fn execute_mcp_tool_inner(
         "delete_folder" => {
             let folder_name = match params.get("folder_name").and_then(|v| v.as_str()) {
                 Some(f) => f,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'folder_name' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'folder_name' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
 
             // Get account ID from request or use default
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
-            match email_service.delete_folder_for_account(folder_name, &account_id).await {
+            match email_service
+                .delete_folder_for_account(folder_name, &account_id)
+                .await
+            {
                 Ok(_) => {
                     serde_json::json!({
                         "success": true,
@@ -1606,32 +1642,41 @@ pub async fn execute_mcp_tool_inner(
         "rename_folder" => {
             let old_name = match params.get("old_name").and_then(|v| v.as_str()) {
                 Some(f) => f,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'old_name' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'old_name' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
             let new_name = match params.get("new_name").and_then(|v| v.as_str()) {
                 Some(f) => f,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'new_name' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'new_name' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
 
             // Get account ID from request or use default
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
-            match email_service.rename_folder_for_account(old_name, new_name, &account_id).await {
+            match email_service
+                .rename_folder_for_account(old_name, new_name, &account_id)
+                .await
+            {
                 Ok(_) => {
                     serde_json::json!({
                         "success": true,
@@ -1655,33 +1700,42 @@ pub async fn execute_mcp_tool_inner(
         "fetch_emails_with_mime" => {
             let folder = match params.get("folder").and_then(|v| v.as_str()) {
                 Some(f) => f,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'folder' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'folder' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
             let uid = match params.get("uid").and_then(|v| v.as_u64()) {
                 Some(u) => u as u32,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'uid' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'uid' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
 
             // Get account ID from request or use default
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
             // fetch_emails expects an array of UIDs
-            match email_service.fetch_emails_for_account(folder, &[uid], &account_id).await {
+            match email_service
+                .fetch_emails_for_account(folder, &[uid], &account_id)
+                .await
+            {
                 Ok(emails) => {
                     // Return just the first email if found
                     let email_data = emails.into_iter().next();
@@ -1702,20 +1756,24 @@ pub async fn execute_mcp_tool_inner(
         }
         // Cache-based tools
         "list_cached_emails" => {
-            let folder = params.get("folder")
+            let folder = params
+                .get("folder")
                 .and_then(|v| v.as_str())
                 .unwrap_or("INBOX");
-            let limit = params.get("limit")
+            let limit = params
+                .get("limit")
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize)
                 .unwrap_or(20);
-            let offset = params.get("offset")
+            let offset = params
+                .get("offset")
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize)
                 .unwrap_or(0);
-            let preview_mode = params.get("preview_mode")
+            let preview_mode = params
+                .get("preview_mode")
                 .and_then(|v| v.as_bool())
-                .unwrap_or(true);  // Default to preview mode for token efficiency
+                .unwrap_or(true); // Default to preview mode for token efficiency
 
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state_data).await {
@@ -1729,7 +1787,17 @@ pub async fn execute_mcp_tool_inner(
                             });
                         }
                     };
-                    match state.cache_service.get_cached_emails_for_account(folder, &account_email, limit, offset, preview_mode).await {
+                    match state
+                        .cache_service
+                        .get_cached_emails_for_account(
+                            folder,
+                            &account_email,
+                            limit,
+                            offset,
+                            preview_mode,
+                        )
+                        .await
+                    {
                         Ok(emails) => {
                             serde_json::json!({
                                 "success": true,
@@ -1758,12 +1826,11 @@ pub async fn execute_mcp_tool_inner(
             }
         }
         "get_email_by_uid" => {
-            let folder = params.get("folder")
+            let folder = params
+                .get("folder")
                 .and_then(|v| v.as_str())
                 .unwrap_or("INBOX");
-            let uid = params.get("uid")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as u32);
+            let uid = params.get("uid").and_then(|v| v.as_u64()).map(|v| v as u32);
 
             // Get account ID from request or use default
             match get_account_id_to_use(&params, &state_data).await {
@@ -1778,25 +1845,35 @@ pub async fn execute_mcp_tool_inner(
                         }
                     };
                     if let Some(uid) = uid {
-                        match state.cache_service.get_email_by_uid_for_account(folder, uid, &account_email).await {
+                        match state
+                            .cache_service
+                            .get_email_by_uid_for_account(folder, uid, &account_email)
+                            .await
+                        {
                             Ok(Some(email)) => {
                                 // Serialize email and parse attachment_parts from
                                 // JSON string into a proper nested array
                                 let mut data = serde_json::to_value(&email)
                                     .unwrap_or_else(|_| serde_json::json!({}));
-                                if let Some(parts_str) = data.get("attachment_parts")
-                                    .and_then(|v| v.as_str())
+                                if let Some(parts_str) =
+                                    data.get("attachment_parts").and_then(|v| v.as_str())
                                 {
-                                    if let Ok(parts) = serde_json::from_str::<serde_json::Value>(parts_str) {
+                                    if let Ok(parts) =
+                                        serde_json::from_str::<serde_json::Value>(parts_str)
+                                    {
                                         data["attachment_parts"] = parts;
                                     }
                                 }
                                 // Fallback: if attachment_parts is still null but has_attachments
                                 // is true, query attachment_metadata table directly.
-                                let parts_is_null = data.get("attachment_parts")
-                                    .map(|v| v.is_null()).unwrap_or(true);
+                                let parts_is_null = data
+                                    .get("attachment_parts")
+                                    .map(|v| v.is_null())
+                                    .unwrap_or(true);
                                 if parts_is_null && email.has_attachments {
-                                    if let (Some(pool), Some(ref msg_id)) = (state.cache_service.db_pool.as_ref(), &email.message_id) {
+                                    if let (Some(pool), Some(ref msg_id)) =
+                                        (state.cache_service.db_pool.as_ref(), &email.message_id)
+                                    {
                                         if let Ok(metas) = crate::dashboard::services::attachment_storage::get_attachments_metadata(pool, &account_email, msg_id).await {
                                             if !metas.is_empty() {
                                                 let parts: Vec<serde_json::Value> = metas.iter().map(|m| {
@@ -1850,10 +1927,12 @@ pub async fn execute_mcp_tool_inner(
             }
         }
         "get_email_by_index" => {
-            let folder = params.get("folder")
+            let folder = params
+                .get("folder")
                 .and_then(|v| v.as_str())
                 .unwrap_or("INBOX");
-            let index = params.get("index")
+            let index = params
+                .get("index")
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize);
 
@@ -1872,28 +1951,38 @@ pub async fn execute_mcp_tool_inner(
                     if let Some(index) = index {
                         // Get emails sorted by date DESC, then select by index
                         // Dashboard UI needs full content for display
-                        match state.cache_service.get_cached_emails_for_account(folder, &account_email, index + 1, index, false).await {
-                    Ok(emails) if !emails.is_empty() => {
-                        serde_json::json!({
-                            "success": true,
-                            "data": emails[0],
-                            "tool": tool_name
-                        })
-                    }
-                    Ok(_) => {
-                        serde_json::json!({
-                            "success": false,
-                            "error": format!("No email at index {} in {}", index, folder),
-                            "tool": tool_name
-                        })
-                    }
-                    Err(e) => {
-                        serde_json::json!({
-                            "success": false,
-                            "error": format!("Failed to get email by index: {}", e),
-                            "tool": tool_name
-                        })
-                    }
+                        match state
+                            .cache_service
+                            .get_cached_emails_for_account(
+                                folder,
+                                &account_email,
+                                index + 1,
+                                index,
+                                false,
+                            )
+                            .await
+                        {
+                            Ok(emails) if !emails.is_empty() => {
+                                serde_json::json!({
+                                    "success": true,
+                                    "data": emails[0],
+                                    "tool": tool_name
+                                })
+                            }
+                            Ok(_) => {
+                                serde_json::json!({
+                                    "success": false,
+                                    "error": format!("No email at index {} in {}", index, folder),
+                                    "tool": tool_name
+                                })
+                            }
+                            Err(e) => {
+                                serde_json::json!({
+                                    "success": false,
+                                    "error": format!("Failed to get email by index: {}", e),
+                                    "tool": tool_name
+                                })
+                            }
                         }
                     } else {
                         serde_json::json!({
@@ -1904,16 +1993,17 @@ pub async fn execute_mcp_tool_inner(
                     }
                 }
                 Err(e) => {
-                serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                    serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
                 }
             }
         }
         "count_emails_in_folder" => {
-            let folder = params.get("folder")
+            let folder = params
+                .get("folder")
                 .and_then(|v| v.as_str())
                 .unwrap_or("INBOX");
 
@@ -1930,25 +2020,29 @@ pub async fn execute_mcp_tool_inner(
                         }
                     };
 
-            match state.cache_service.count_emails_in_folder_for_account(folder, &account_email).await {
-                Ok(count) => {
-                    serde_json::json!({
-                        "success": true,
-                        "data": {
-                            "count": count,
-                            "folder": folder
-                        },
-                        "tool": tool_name
-                    })
-                }
-                Err(e) => {
-                    serde_json::json!({
-                        "success": false,
-                        "error": format!("Failed to count emails: {}", e),
-                        "tool": tool_name
-                    })
-                }
-            }
+                    match state
+                        .cache_service
+                        .count_emails_in_folder_for_account(folder, &account_email)
+                        .await
+                    {
+                        Ok(count) => {
+                            serde_json::json!({
+                                "success": true,
+                                "data": {
+                                    "count": count,
+                                    "folder": folder
+                                },
+                                "tool": tool_name
+                            })
+                        }
+                        Err(e) => {
+                            serde_json::json!({
+                                "success": false,
+                                "error": format!("Failed to count emails: {}", e),
+                                "tool": tool_name
+                            })
+                        }
+                    }
                 }
                 Err(e) => {
                     serde_json::json!({
@@ -1960,7 +2054,8 @@ pub async fn execute_mcp_tool_inner(
             }
         }
         "get_folder_stats" => {
-            let folder = params.get("folder")
+            let folder = params
+                .get("folder")
                 .and_then(|v| v.as_str())
                 .unwrap_or("INBOX");
 
@@ -1977,22 +2072,26 @@ pub async fn execute_mcp_tool_inner(
                         }
                     };
 
-            match state.cache_service.get_folder_stats_for_account(folder, &account_email).await {
-                Ok(stats) => {
-                    serde_json::json!({
-                        "success": true,
-                        "data": stats,
-                        "tool": tool_name
-                    })
-                }
-                Err(e) => {
-                    serde_json::json!({
-                        "success": false,
-                        "error": format!("Failed to get folder stats: {}", e),
-                        "tool": tool_name
-                    })
-                }
-            }
+                    match state
+                        .cache_service
+                        .get_folder_stats_for_account(folder, &account_email)
+                        .await
+                    {
+                        Ok(stats) => {
+                            serde_json::json!({
+                                "success": true,
+                                "data": stats,
+                                "tool": tool_name
+                            })
+                        }
+                        Err(e) => {
+                            serde_json::json!({
+                                "success": false,
+                                "error": format!("Failed to get folder stats: {}", e),
+                                "tool": tool_name
+                            })
+                        }
+                    }
                 }
                 Err(e) => {
                     serde_json::json!({
@@ -2004,12 +2103,13 @@ pub async fn execute_mcp_tool_inner(
             }
         }
         "search_cached_emails" => {
-            let folder = params.get("folder")
+            let folder = params
+                .get("folder")
                 .and_then(|v| v.as_str())
                 .unwrap_or("INBOX");
-            let query = params.get("query")
-                .and_then(|v| v.as_str());
-            let limit = params.get("limit")
+            let query = params.get("query").and_then(|v| v.as_str());
+            let limit = params
+                .get("limit")
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize)
                 .unwrap_or(20);
@@ -2027,33 +2127,37 @@ pub async fn execute_mcp_tool_inner(
                         }
                     };
 
-            if let Some(query) = query {
-                match state.cache_service.search_cached_emails_for_account(folder, query, limit, &account_email).await {
-                    Ok(emails) => {
-                        serde_json::json!({
-                            "success": true,
-                            "data": emails,
-                            "query": query,
-                            "folder": folder,
-                            "count": emails.len(),
-                            "tool": tool_name
-                        })
-                    }
-                    Err(e) => {
+                    if let Some(query) = query {
+                        match state
+                            .cache_service
+                            .search_cached_emails_for_account(folder, query, limit, &account_email)
+                            .await
+                        {
+                            Ok(emails) => {
+                                serde_json::json!({
+                                    "success": true,
+                                    "data": emails,
+                                    "query": query,
+                                    "folder": folder,
+                                    "count": emails.len(),
+                                    "tool": tool_name
+                                })
+                            }
+                            Err(e) => {
+                                serde_json::json!({
+                                    "success": false,
+                                    "error": format!("Failed to search emails: {}", e),
+                                    "tool": tool_name
+                                })
+                            }
+                        }
+                    } else {
                         serde_json::json!({
                             "success": false,
-                            "error": format!("Failed to search emails: {}", e),
+                            "error": "query parameter is required",
                             "tool": tool_name
                         })
                     }
-                }
-            } else {
-                serde_json::json!({
-                    "success": false,
-                    "error": "query parameter is required",
-                    "tool": tool_name
-                })
-            }
                 }
                 Err(e) => {
                     serde_json::json!({
@@ -2067,30 +2171,39 @@ pub async fn execute_mcp_tool_inner(
         "atomic_move_message" => {
             let uid = match params.get("uid").and_then(|v| v.as_u64()) {
                 Some(u) => u as u32,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'uid' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'uid' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
             let from_folder = match params.get("from_folder").and_then(|v| v.as_str()) {
                 Some(f) => f,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'from_folder' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'from_folder' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
             let to_folder = match params.get("to_folder").and_then(|v| v.as_str()) {
                 Some(t) => t,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'to_folder' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'to_folder' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
 
-            match email_service.atomic_move_message(uid, from_folder, to_folder).await {
+            match email_service
+                .atomic_move_message(uid, from_folder, to_folder)
+                .await
+            {
                 Ok(_) => {
                     serde_json::json!({
                         "success": true,
@@ -2113,28 +2226,38 @@ pub async fn execute_mcp_tool_inner(
         }
         "atomic_batch_move" => {
             let uids = match params.get("uids").and_then(|v| v.as_array()) {
-                Some(arr) => arr.iter().filter_map(|v| v.as_u64()).map(|v| v as u32).collect::<Vec<u32>>(),
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'uids' parameter",
-                    "tool": tool_name
-                })
+                Some(arr) => arr
+                    .iter()
+                    .filter_map(|v| v.as_u64())
+                    .map(|v| v as u32)
+                    .collect::<Vec<u32>>(),
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'uids' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
             let from_folder = match params.get("from_folder").and_then(|v| v.as_str()) {
                 Some(f) => f,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'from_folder' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'from_folder' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
             let to_folder = match params.get("to_folder").and_then(|v| v.as_str()) {
                 Some(t) => t,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'to_folder' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'to_folder' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
 
             if uids.is_empty() {
@@ -2145,7 +2268,10 @@ pub async fn execute_mcp_tool_inner(
                 });
             }
 
-            match email_service.atomic_batch_move(&uids, from_folder, to_folder).await {
+            match email_service
+                .atomic_batch_move(&uids, from_folder, to_folder)
+                .await
+            {
                 Ok(_) => {
                     serde_json::json!({
                         "success": true,
@@ -2169,20 +2295,28 @@ pub async fn execute_mcp_tool_inner(
         }
         "mark_as_read" => {
             let uids = match params.get("uids").and_then(|v| v.as_array()) {
-                Some(arr) => arr.iter().filter_map(|v| v.as_u64()).map(|v| v as u32).collect::<Vec<u32>>(),
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'uids' parameter",
-                    "tool": tool_name
-                })
+                Some(arr) => arr
+                    .iter()
+                    .filter_map(|v| v.as_u64())
+                    .map(|v| v as u32)
+                    .collect::<Vec<u32>>(),
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'uids' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
             let folder = match params.get("folder").and_then(|v| v.as_str()) {
                 Some(f) => f,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'folder' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'folder' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
 
             if uids.is_empty() {
@@ -2216,20 +2350,28 @@ pub async fn execute_mcp_tool_inner(
         }
         "mark_as_unread" => {
             let uids = match params.get("uids").and_then(|v| v.as_array()) {
-                Some(arr) => arr.iter().filter_map(|v| v.as_u64()).map(|v| v as u32).collect::<Vec<u32>>(),
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'uids' parameter",
-                    "tool": tool_name
-                })
+                Some(arr) => arr
+                    .iter()
+                    .filter_map(|v| v.as_u64())
+                    .map(|v| v as u32)
+                    .collect::<Vec<u32>>(),
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'uids' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
             let folder = match params.get("folder").and_then(|v| v.as_str()) {
                 Some(f) => f,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'folder' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'folder' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
 
             if uids.is_empty() {
@@ -2263,20 +2405,28 @@ pub async fn execute_mcp_tool_inner(
         }
         "mark_as_deleted" => {
             let uids = match params.get("uids").and_then(|v| v.as_array()) {
-                Some(arr) => arr.iter().filter_map(|v| v.as_u64()).map(|v| v as u32).collect::<Vec<u32>>(),
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'uids' parameter",
-                    "tool": tool_name
-                })
+                Some(arr) => arr
+                    .iter()
+                    .filter_map(|v| v.as_u64())
+                    .map(|v| v as u32)
+                    .collect::<Vec<u32>>(),
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'uids' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
             let folder = match params.get("folder").and_then(|v| v.as_str()) {
                 Some(f) => f,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'folder' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'folder' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
 
             if uids.is_empty() {
@@ -2310,20 +2460,28 @@ pub async fn execute_mcp_tool_inner(
         }
         "delete_messages" => {
             let uids = match params.get("uids").and_then(|v| v.as_array()) {
-                Some(arr) => arr.iter().filter_map(|v| v.as_u64()).map(|v| v as u32).collect::<Vec<u32>>(),
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'uids' parameter",
-                    "tool": tool_name
-                })
+                Some(arr) => arr
+                    .iter()
+                    .filter_map(|v| v.as_u64())
+                    .map(|v| v as u32)
+                    .collect::<Vec<u32>>(),
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'uids' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
             let folder = match params.get("folder").and_then(|v| v.as_str()) {
                 Some(f) => f,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'folder' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'folder' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
 
             if uids.is_empty() {
@@ -2357,20 +2515,28 @@ pub async fn execute_mcp_tool_inner(
         }
         "undelete_messages" => {
             let uids = match params.get("uids").and_then(|v| v.as_array()) {
-                Some(arr) => arr.iter().filter_map(|v| v.as_u64()).map(|v| v as u32).collect::<Vec<u32>>(),
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'uids' parameter",
-                    "tool": tool_name
-                })
+                Some(arr) => arr
+                    .iter()
+                    .filter_map(|v| v.as_u64())
+                    .map(|v| v as u32)
+                    .collect::<Vec<u32>>(),
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'uids' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
             let folder = match params.get("folder").and_then(|v| v.as_str()) {
                 Some(f) => f,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'folder' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'folder' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
 
             if uids.is_empty() {
@@ -2405,11 +2571,13 @@ pub async fn execute_mcp_tool_inner(
         "expunge" => {
             let folder = match params.get("folder").and_then(|v| v.as_str()) {
                 Some(f) => f,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'folder' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'folder' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
 
             match email_service.expunge(folder).await {
@@ -2456,11 +2624,13 @@ pub async fn execute_mcp_tool_inner(
             // Set the current account context
             let account_id = match params.get("account_id").and_then(|v| v.as_str()) {
                 Some(id) => id,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing 'account_id' parameter",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing 'account_id' parameter",
+                        "tool": tool_name
+                    })
+                }
             };
 
             // Validate that the account exists
@@ -2490,7 +2660,7 @@ pub async fn execute_mcp_tool_inner(
             }
         }
         "send_email" => {
-            use crate::dashboard::services::{SendEmailRequest};
+            use crate::dashboard::services::SendEmailRequest;
 
             // Helper function to parse email addresses (handles string or array)
             let parse_emails = |key: &str, required: bool| -> Result<Vec<String>, String> {
@@ -2533,14 +2703,17 @@ pub async fn execute_mcp_tool_inner(
             // Parse required fields
             let to = match parse_emails("to", true) {
                 Ok(emails) => emails,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": e,
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": e,
+                        "tool": tool_name
+                    })
+                }
             };
 
-            let subject = params.get("subject")
+            let subject = params
+                .get("subject")
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
                 .ok_or("subject is required")
@@ -2548,14 +2721,17 @@ pub async fn execute_mcp_tool_inner(
 
             let subject = match subject {
                 Ok(s) => s,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": e,
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": e,
+                        "tool": tool_name
+                    })
+                }
             };
 
-            let body = params.get("body")
+            let body = params
+                .get("body")
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
                 .ok_or("body is required")
@@ -2563,21 +2739,22 @@ pub async fn execute_mcp_tool_inner(
 
             let body = match body {
                 Ok(b) => b,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": e,
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": e,
+                        "tool": tool_name
+                    })
+                }
             };
 
             // Parse optional fields
-            let cc = parse_emails("cc", false).ok()
-                .filter(|v| !v.is_empty());
+            let cc = parse_emails("cc", false).ok().filter(|v| !v.is_empty());
 
-            let bcc = parse_emails("bcc", false).ok()
-                .filter(|v| !v.is_empty());
+            let bcc = parse_emails("bcc", false).ok().filter(|v| !v.is_empty());
 
-            let body_html = params.get("body_html")
+            let body_html = params
+                .get("body_html")
                 .and_then(|v| v.as_str())
                 .filter(|s| !s.is_empty())
                 .map(String::from);
@@ -2601,16 +2778,20 @@ pub async fn execute_mcp_tool_inner(
                     let account_service = state.account_service.lock().await;
                     match account_service.get_default_account().await {
                         Ok(Some(account)) => account.email_address,
-                        Ok(None) => return serde_json::json!({
-                            "success": false,
-                            "error": "No default account configured",
-                            "tool": tool_name
-                        }),
-                        Err(e) => return serde_json::json!({
-                            "success": false,
-                            "error": format!("Failed to get default account: {}", e),
-                            "tool": tool_name
-                        })
+                        Ok(None) => {
+                            return serde_json::json!({
+                                "success": false,
+                                "error": "No default account configured",
+                                "tool": tool_name
+                            })
+                        }
+                        Err(e) => {
+                            return serde_json::json!({
+                                "success": false,
+                                "error": format!("Failed to get default account: {}", e),
+                                "tool": tool_name
+                            })
+                        }
                     }
                 }
             } else {
@@ -2618,21 +2799,29 @@ pub async fn execute_mcp_tool_inner(
                 let account_service = state.account_service.lock().await;
                 match account_service.get_default_account().await {
                     Ok(Some(account)) => account.email_address,
-                    Ok(None) => return serde_json::json!({
-                        "success": false,
-                        "error": "No default account configured",
-                        "tool": tool_name
-                    }),
-                    Err(e) => return serde_json::json!({
-                        "success": false,
-                        "error": format!("Failed to get default account: {}", e),
-                        "tool": tool_name
-                    })
+                    Ok(None) => {
+                        return serde_json::json!({
+                            "success": false,
+                            "error": "No default account configured",
+                            "tool": tool_name
+                        })
+                    }
+                    Err(e) => {
+                        return serde_json::json!({
+                            "success": false,
+                            "error": format!("Failed to get default account: {}", e),
+                            "tool": tool_name
+                        })
+                    }
                 }
             };
 
             // Send the email using SMTP service
-            match state.smtp_service.send_email(&account_email, send_request).await {
+            match state
+                .smtp_service
+                .send_email(&account_email, send_request)
+                .await
+            {
                 Ok(response) => {
                     serde_json::json!({
                         "success": response.success,
@@ -2656,21 +2845,25 @@ pub async fn execute_mcp_tool_inner(
             // Get account ID
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
             // Get database pool
             let db_pool = match state.cache_service.db_pool.as_ref() {
                 Some(pool) => pool,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Database not available",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Database not available",
+                        "tool": tool_name
+                    })
+                }
             };
 
             let folder_param = params.get("folder").and_then(|v| v.as_str());
@@ -2680,22 +2873,40 @@ pub async fn execute_mcp_tool_inner(
             // This avoids expensive IMAP re-fetch and works for all synced emails.
             // Enriches with storage_path/downloaded_at from attachment_metadata when available.
             if let (Some(folder), Some(uid)) = (folder_param, uid_param) {
-                if let Ok(Some(cached)) = state.cache_service
-                    .get_email_by_uid_for_account(folder, uid, &account_id).await
+                if let Ok(Some(cached)) = state
+                    .cache_service
+                    .get_email_by_uid_for_account(folder, uid, &account_id)
+                    .await
                 {
                     if let Some(ref parts_json) = cached.attachment_parts {
-                        if let Ok(mut parts) = serde_json::from_str::<serde_json::Value>(parts_json) {
+                        if let Ok(mut parts) = serde_json::from_str::<serde_json::Value>(parts_json)
+                        {
                             // Enrich with attachment_metadata (storage_path, downloaded_at, etc.)
                             if let Some(ref msg_id) = cached.message_id {
-                                if let Ok(metas) = attachment_storage::get_attachments_metadata(db_pool, &account_id, msg_id).await {
+                                if let Ok(metas) = attachment_storage::get_attachments_metadata(
+                                    db_pool,
+                                    &account_id,
+                                    msg_id,
+                                )
+                                .await
+                                {
                                     if let Some(arr) = parts.as_array_mut() {
                                         for part in arr.iter_mut() {
-                                            let fname = part.get("filename").and_then(|v| v.as_str()).unwrap_or("");
-                                            if let Some(meta) = metas.iter().find(|m| m.filename == fname) {
-                                                part["storage_path"] = serde_json::json!(meta.storage_path);
-                                                part["downloaded_at"] = serde_json::json!(meta.downloaded_at);
-                                                part["content_id"] = serde_json::json!(meta.content_id);
-                                                part["size_bytes"] = serde_json::json!(meta.size_bytes);
+                                            let fname = part
+                                                .get("filename")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("");
+                                            if let Some(meta) =
+                                                metas.iter().find(|m| m.filename == fname)
+                                            {
+                                                part["storage_path"] =
+                                                    serde_json::json!(meta.storage_path);
+                                                part["downloaded_at"] =
+                                                    serde_json::json!(meta.downloaded_at);
+                                                part["content_id"] =
+                                                    serde_json::json!(meta.content_id);
+                                                part["size_bytes"] =
+                                                    serde_json::json!(meta.size_bytes);
                                             }
                                         }
                                     }
@@ -2718,49 +2929,67 @@ pub async fn execute_mcp_tool_inner(
             }
 
             // Slow path: resolve message_id and query attachment_metadata table
-            let (message_id, folder_opt, uid_opt) = if let Some(msg_id) = params.get("message_id").and_then(|v| v.as_str()) {
-                (msg_id.to_string(), None, None)
-            } else {
-                let folder = match folder_param {
-                    Some(f) => f,
-                    None => return serde_json::json!({
-                        "success": false,
-                        "error": "folder parameter required when message_id not provided",
-                        "tool": tool_name
-                    })
-                };
+            let (message_id, folder_opt, uid_opt) =
+                if let Some(msg_id) = params.get("message_id").and_then(|v| v.as_str()) {
+                    (msg_id.to_string(), None, None)
+                } else {
+                    let folder = match folder_param {
+                        Some(f) => f,
+                        None => {
+                            return serde_json::json!({
+                                "success": false,
+                                "error": "folder parameter required when message_id not provided",
+                                "tool": tool_name
+                            })
+                        }
+                    };
 
-                let uid = match uid_param {
-                    Some(u) => u,
-                    None => return serde_json::json!({
-                        "success": false,
-                        "error": "uid parameter required when message_id not provided",
-                        "tool": tool_name
-                    })
-                };
+                    let uid = match uid_param {
+                        Some(u) => u,
+                        None => {
+                            return serde_json::json!({
+                                "success": false,
+                                "error": "uid parameter required when message_id not provided",
+                                "tool": tool_name
+                            })
+                        }
+                    };
 
-                let msg_id = match email_service.fetch_emails_for_account(folder, &[uid], &account_id).await {
-                    Ok(mut emails) if !emails.is_empty() => {
-                        let email = emails.remove(0);
-                        attachment_storage::ensure_message_id(&email, &account_id)
-                    }
-                    Ok(_) => return serde_json::json!({
-                        "success": false,
-                        "error": format!("Email with UID {} not found", uid),
-                        "tool": tool_name
-                    }),
-                    Err(e) => return serde_json::json!({
-                        "success": false,
-                        "error": format!("Failed to fetch email: {}", e),
-                        "tool": tool_name
-                    })
-                };
+                    let msg_id = match email_service
+                        .fetch_emails_for_account(folder, &[uid], &account_id)
+                        .await
+                    {
+                        Ok(mut emails) if !emails.is_empty() => {
+                            let email = emails.remove(0);
+                            attachment_storage::ensure_message_id(&email, &account_id)
+                        }
+                        Ok(_) => {
+                            return serde_json::json!({
+                                "success": false,
+                                "error": format!("Email with UID {} not found", uid),
+                                "tool": tool_name
+                            })
+                        }
+                        Err(e) => {
+                            return serde_json::json!({
+                                "success": false,
+                                "error": format!("Failed to fetch email: {}", e),
+                                "tool": tool_name
+                            })
+                        }
+                    };
 
-                (msg_id, Some(folder.to_string()), Some(uid))
-            };
+                    (msg_id, Some(folder.to_string()), Some(uid))
+                };
 
             // Get attachments metadata from database
-            let attachments = match attachment_storage::get_attachments_metadata(db_pool, &account_id, &message_id).await {
+            let attachments = match attachment_storage::get_attachments_metadata(
+                db_pool,
+                &account_id,
+                &message_id,
+            )
+            .await
+            {
                 Ok(atts) => atts,
                 Err(e) => {
                     return serde_json::json!({
@@ -2773,9 +3002,15 @@ pub async fn execute_mcp_tool_inner(
 
             // If no attachments found in database and we have folder+uid, fetch from IMAP
             if let (true, Some(folder), Some(uid)) = (attachments.is_empty(), folder_opt, uid_opt) {
-                debug!("No attachments in database for message_id {}. Fetching from IMAP...", message_id);
+                debug!(
+                    "No attachments in database for message_id {}. Fetching from IMAP...",
+                    message_id
+                );
 
-                match email_service.fetch_email_with_attachments(&folder, uid, &account_id).await {
+                match email_service
+                    .fetch_email_with_attachments(&folder, uid, &account_id)
+                    .await
+                {
                     Ok((_, attachment_infos)) => {
                         serde_json::json!({
                             "success": true,
@@ -2816,71 +3051,93 @@ pub async fn execute_mcp_tool_inner(
             // Get account ID
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
             // Get database pool
             let db_pool = match state.cache_service.db_pool.as_ref() {
                 Some(pool) => pool,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Database not available",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Database not available",
+                        "tool": tool_name
+                    })
+                }
             };
 
             // Determine message_id - either directly provided or resolve from folder+uid
             // Also track folder and uid for potential IMAP fetch
-            let (message_id, folder_opt, uid_opt) = if let Some(msg_id) = params.get("message_id").and_then(|v| v.as_str()) {
-                // message_id provided directly - no folder/uid available
-                (msg_id.to_string(), None, None)
-            } else {
-                // Resolve from folder + uid
-                let folder = match params.get("folder").and_then(|v| v.as_str()) {
-                    Some(f) => f,
-                    None => return serde_json::json!({
-                        "success": false,
-                        "error": "folder parameter required when message_id not provided",
-                        "tool": tool_name
-                    })
-                };
+            let (message_id, folder_opt, uid_opt) =
+                if let Some(msg_id) = params.get("message_id").and_then(|v| v.as_str()) {
+                    // message_id provided directly - no folder/uid available
+                    (msg_id.to_string(), None, None)
+                } else {
+                    // Resolve from folder + uid
+                    let folder = match params.get("folder").and_then(|v| v.as_str()) {
+                        Some(f) => f,
+                        None => {
+                            return serde_json::json!({
+                                "success": false,
+                                "error": "folder parameter required when message_id not provided",
+                                "tool": tool_name
+                            })
+                        }
+                    };
 
-                let uid = match params.get("uid").and_then(|v| v.as_u64()) {
-                    Some(u) => u as u32,
-                    None => return serde_json::json!({
-                        "success": false,
-                        "error": "uid parameter required when message_id not provided",
-                        "tool": tool_name
-                    })
-                };
+                    let uid = match params.get("uid").and_then(|v| v.as_u64()) {
+                        Some(u) => u as u32,
+                        None => {
+                            return serde_json::json!({
+                                "success": false,
+                                "error": "uid parameter required when message_id not provided",
+                                "tool": tool_name
+                            })
+                        }
+                    };
 
-                // Fetch email to get message_id
-                let msg_id = match email_service.fetch_emails_for_account(folder, &[uid], &account_id).await {
-                    Ok(mut emails) if !emails.is_empty() => {
-                        let email = emails.remove(0);
-                        attachment_storage::ensure_message_id(&email, &account_id)
-                    }
-                    Ok(_) => return serde_json::json!({
-                        "success": false,
-                        "error": format!("Email with UID {} not found", uid),
-                        "tool": tool_name
-                    }),
-                    Err(e) => return serde_json::json!({
-                        "success": false,
-                        "error": format!("Failed to fetch email: {}", e),
-                        "tool": tool_name
-                    })
-                };
+                    // Fetch email to get message_id
+                    let msg_id = match email_service
+                        .fetch_emails_for_account(folder, &[uid], &account_id)
+                        .await
+                    {
+                        Ok(mut emails) if !emails.is_empty() => {
+                            let email = emails.remove(0);
+                            attachment_storage::ensure_message_id(&email, &account_id)
+                        }
+                        Ok(_) => {
+                            return serde_json::json!({
+                                "success": false,
+                                "error": format!("Email with UID {} not found", uid),
+                                "tool": tool_name
+                            })
+                        }
+                        Err(e) => {
+                            return serde_json::json!({
+                                "success": false,
+                                "error": format!("Failed to fetch email: {}", e),
+                                "tool": tool_name
+                            })
+                        }
+                    };
 
-                (msg_id, Some(folder.to_string()), Some(uid))
-            };
+                    (msg_id, Some(folder.to_string()), Some(uid))
+                };
 
             // Check if attachments exist in database, fetch from IMAP if not
-            let mut attachments = match attachment_storage::get_attachments_metadata(db_pool, &account_id, &message_id).await {
+            let mut attachments = match attachment_storage::get_attachments_metadata(
+                db_pool,
+                &account_id,
+                &message_id,
+            )
+            .await
+            {
                 Ok(atts) => atts,
                 Err(e) => {
                     return serde_json::json!({
@@ -2892,17 +3149,34 @@ pub async fn execute_mcp_tool_inner(
             };
 
             // If no attachments found in database and we have folder+uid, fetch from IMAP
-            if let (true, Some(folder), Some(uid)) = (attachments.is_empty(), folder_opt.as_ref(), uid_opt) {
-                debug!("No attachments in database for message_id {}. Fetching from IMAP...", message_id);
+            if let (true, Some(folder), Some(uid)) =
+                (attachments.is_empty(), folder_opt.as_ref(), uid_opt)
+            {
+                debug!(
+                    "No attachments in database for message_id {}. Fetching from IMAP...",
+                    message_id
+                );
 
                 // Fetch email with attachments from IMAP (this will save them to DB)
-                match email_service.fetch_email_with_attachments(folder, uid, &account_id).await {
+                match email_service
+                    .fetch_email_with_attachments(folder, uid, &account_id)
+                    .await
+                {
                     Ok((_, attachment_infos)) => {
                         // Attachments now saved to database
-                        debug!("Successfully fetched and saved {} attachments from IMAP", attachment_infos.len());
+                        debug!(
+                            "Successfully fetched and saved {} attachments from IMAP",
+                            attachment_infos.len()
+                        );
 
                         // Re-query database to get the saved attachments
-                        attachments = match attachment_storage::get_attachments_metadata(db_pool, &account_id, &message_id).await {
+                        attachments = match attachment_storage::get_attachments_metadata(
+                            db_pool,
+                            &account_id,
+                            &message_id,
+                        )
+                        .await
+                        {
                             Ok(atts) => atts,
                             Err(e) => {
                                 return serde_json::json!({
@@ -2924,7 +3198,8 @@ pub async fn execute_mcp_tool_inner(
             }
 
             // Check if user wants ZIP archive
-            let create_zip = params.get("create_zip")
+            let create_zip = params
+                .get("create_zip")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(true); // Default to ZIP for convenience
 
@@ -2934,7 +3209,14 @@ pub async fn execute_mcp_tool_inner(
                 let sanitized_id = attachment_storage::sanitize_message_id(&message_id);
                 let zip_path = temp_dir.join(format!("rustymail_attachments_{}.zip", sanitized_id));
 
-                match attachment_storage::create_zip_archive(db_pool, &account_id, &message_id, &zip_path).await {
+                match attachment_storage::create_zip_archive(
+                    db_pool,
+                    &account_id,
+                    &message_id,
+                    &zip_path,
+                )
+                .await
+                {
                     Ok(result_path) => {
                         serde_json::json!({
                             "success": true,
@@ -2957,11 +3239,16 @@ pub async fn execute_mcp_tool_inner(
                 }
             } else {
                 // Just list attachment paths without creating ZIP
-                match attachment_storage::get_attachments_metadata(db_pool, &account_id, &message_id).await {
+                match attachment_storage::get_attachments_metadata(
+                    db_pool,
+                    &account_id,
+                    &message_id,
+                )
+                .await
+                {
                     Ok(attachments) => {
-                        let paths: Vec<String> = attachments.iter()
-                            .map(|a| a.storage_path.clone())
-                            .collect();
+                        let paths: Vec<String> =
+                            attachments.iter().map(|a| a.storage_path.clone()).collect();
 
                         serde_json::json!({
                             "success": true,
@@ -2991,34 +3278,42 @@ pub async fn execute_mcp_tool_inner(
             // Get required parameters
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
             let message_id = match params.get("message_id").and_then(|v| v.as_str()) {
                 Some(id) => id,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "message_id parameter is required",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "message_id parameter is required",
+                        "tool": tool_name
+                    })
+                }
             };
 
             // Get database pool
             let db_pool = match state.cache_service.db_pool.as_ref() {
                 Some(pool) => pool,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Database not available",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Database not available",
+                        "tool": tool_name
+                    })
+                }
             };
 
             // Delete attachments
-            match attachment_storage::delete_attachments_for_email(db_pool, message_id, &account_id).await {
+            match attachment_storage::delete_attachments_for_email(db_pool, message_id, &account_id)
+                .await
+            {
                 Ok(_) => {
                     serde_json::json!({
                         "success": true,
@@ -3039,33 +3334,39 @@ pub async fn execute_mcp_tool_inner(
         }
         "get_attachment_content" => {
             use crate::dashboard::services::attachment_storage;
-            use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
+            use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
             let filename = match params.get("filename").and_then(|v| v.as_str()) {
                 Some(f) => f.to_string(),
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "filename parameter is required",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "filename parameter is required",
+                        "tool": tool_name
+                    })
+                }
             };
 
             let db_pool = match state.cache_service.db_pool.as_ref() {
                 Some(pool) => pool,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Database not available",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Database not available",
+                        "tool": tool_name
+                    })
+                }
             };
 
             // Resolve message_id from params or folder+uid
@@ -3074,37 +3375,56 @@ pub async fn execute_mcp_tool_inner(
             } else {
                 let folder = match params.get("folder").and_then(|v| v.as_str()) {
                     Some(f) => f,
-                    None => return serde_json::json!({
-                        "success": false,
-                        "error": "folder parameter required when message_id not provided",
-                        "tool": tool_name
-                    })
+                    None => {
+                        return serde_json::json!({
+                            "success": false,
+                            "error": "folder parameter required when message_id not provided",
+                            "tool": tool_name
+                        })
+                    }
                 };
                 let uid = match params.get("uid").and_then(|v| v.as_u64()) {
                     Some(u) => u as u32,
-                    None => return serde_json::json!({
-                        "success": false,
-                        "error": "uid parameter required when message_id not provided",
-                        "tool": tool_name
-                    })
+                    None => {
+                        return serde_json::json!({
+                            "success": false,
+                            "error": "uid parameter required when message_id not provided",
+                            "tool": tool_name
+                        })
+                    }
                 };
-                match state.cache_service.get_email_by_uid_for_account(folder, uid, &account_id).await {
+                match state
+                    .cache_service
+                    .get_email_by_uid_for_account(folder, uid, &account_id)
+                    .await
+                {
                     Ok(Some(email)) => email.message_id.unwrap_or_default(),
-                    Ok(None) => return serde_json::json!({
-                        "success": false,
-                        "error": format!("Email UID {} not found in {}", uid, folder),
-                        "tool": tool_name
-                    }),
-                    Err(e) => return serde_json::json!({
-                        "success": false,
-                        "error": format!("Failed to look up email: {}", e),
-                        "tool": tool_name
-                    })
+                    Ok(None) => {
+                        return serde_json::json!({
+                            "success": false,
+                            "error": format!("Email UID {} not found in {}", uid, folder),
+                            "tool": tool_name
+                        })
+                    }
+                    Err(e) => {
+                        return serde_json::json!({
+                            "success": false,
+                            "error": format!("Failed to look up email: {}", e),
+                            "tool": tool_name
+                        })
+                    }
                 }
             };
 
             // Try reading from disk first; if metadata-only, fetch from IMAP
-            match attachment_storage::read_attachment_content(db_pool, &account_id, &message_id, &filename).await {
+            match attachment_storage::read_attachment_content(
+                db_pool,
+                &account_id,
+                &message_id,
+                &filename,
+            )
+            .await
+            {
                 Ok((_name, content_type, content)) => {
                     serde_json::json!({
                         "success": true,
@@ -3116,16 +3436,31 @@ pub async fn execute_mcp_tool_inner(
                         "tool": tool_name
                     })
                 }
-                Err(attachment_storage::AttachmentError::NotFound(msg)) if msg.contains("not yet downloaded") => {
+                Err(attachment_storage::AttachmentError::NotFound(msg))
+                    if msg.contains("not yet downloaded") =>
+                {
                     // Metadata exists but file not on disk - need IMAP fetch
-                    let folder = params.get("folder").and_then(|v| v.as_str()).unwrap_or("INBOX");
+                    let folder = params
+                        .get("folder")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("INBOX");
                     let uid = params.get("uid").and_then(|v| v.as_u64()).map(|u| u as u32);
 
                     if let Some(uid) = uid {
-                        match email_service.fetch_email_with_attachments(folder, uid, &account_id).await {
+                        match email_service
+                            .fetch_email_with_attachments(folder, uid, &account_id)
+                            .await
+                        {
                             Ok(_) => {
                                 // Retry reading after IMAP download
-                                match attachment_storage::read_attachment_content(db_pool, &account_id, &message_id, &filename).await {
+                                match attachment_storage::read_attachment_content(
+                                    db_pool,
+                                    &account_id,
+                                    &message_id,
+                                    &filename,
+                                )
+                                .await
+                                {
                                     Ok((_name, content_type, content)) => {
                                         serde_json::json!({
                                             "success": true,
@@ -3141,14 +3476,14 @@ pub async fn execute_mcp_tool_inner(
                                         "success": false,
                                         "error": format!("Failed to read after IMAP fetch: {}", e),
                                         "tool": tool_name
-                                    })
+                                    }),
                                 }
                             }
                             Err(e) => serde_json::json!({
                                 "success": false,
                                 "error": format!("Failed to fetch from IMAP: {}", e),
                                 "tool": tool_name
-                            })
+                            }),
                         }
                     } else {
                         serde_json::json!({
@@ -3162,7 +3497,7 @@ pub async fn execute_mcp_tool_inner(
                     "success": false,
                     "error": format!("Failed to read attachment: {}", e),
                     "tool": tool_name
-                })
+                }),
             }
         }
         // === Job Management Tools ===
@@ -3170,11 +3505,15 @@ pub async fn execute_mcp_tool_inner(
             use crate::dashboard::services::jobs::JobStatus;
             let status_filter = params.get("status_filter").and_then(|v| v.as_str());
 
-            let jobs: Vec<_> = state.jobs.iter()
+            let jobs: Vec<_> = state
+                .jobs
+                .iter()
                 .filter(|entry| {
                     match status_filter {
                         Some("running") => matches!(entry.value().status, JobStatus::Running),
-                        Some("completed") => matches!(entry.value().status, JobStatus::Completed(_)),
+                        Some("completed") => {
+                            matches!(entry.value().status, JobStatus::Completed(_))
+                        }
                         Some("failed") => matches!(entry.value().status, JobStatus::Failed(_)),
                         _ => true, // No filter, return all
                     }
@@ -3202,11 +3541,13 @@ pub async fn execute_mcp_tool_inner(
         "get_job_status" => {
             let job_id = match params.get("job_id").and_then(|v| v.as_str()) {
                 Some(id) => id,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing required parameter: job_id",
-                    "tool": tool_name
-                }),
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing required parameter: job_id",
+                        "tool": tool_name
+                    })
+                }
             };
 
             match state.jobs.get(job_id) {
@@ -3231,11 +3572,13 @@ pub async fn execute_mcp_tool_inner(
             use crate::dashboard::services::jobs::JobStatus;
             let job_id = match params.get("job_id").and_then(|v| v.as_str()) {
                 Some(id) => id,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "Missing required parameter: job_id",
-                    "tool": tool_name
-                }),
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "Missing required parameter: job_id",
+                        "tool": tool_name
+                    })
+                }
             };
 
             // Get current status before removal
@@ -3270,25 +3613,39 @@ pub async fn execute_mcp_tool_inner(
         "get_email_synopsis" => {
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
-            let folder = params.get("folder").and_then(|v| v.as_str()).unwrap_or("INBOX");
+            let folder = params
+                .get("folder")
+                .and_then(|v| v.as_str())
+                .unwrap_or("INBOX");
             let uid = match params.get("uid").and_then(|v| v.as_u64()).map(|u| u as u32) {
                 Some(u) => u,
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "uid parameter is required",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "uid parameter is required",
+                        "tool": tool_name
+                    })
+                }
             };
-            let max_lines = params.get("max_lines").and_then(|v| v.as_u64()).unwrap_or(3) as usize;
+            let max_lines = params
+                .get("max_lines")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(3) as usize;
 
-            match state.cache_service.get_email_by_uid_for_account(folder, uid, &account_id).await {
+            match state
+                .cache_service
+                .get_email_by_uid_for_account(folder, uid, &account_id)
+                .await
+            {
                 Ok(Some(email)) => {
                     let subject = email.subject.as_deref().unwrap_or("(no subject)");
                     let synopsis = match &email.body_text {
@@ -3335,43 +3692,54 @@ pub async fn execute_mcp_tool_inner(
                     "success": false,
                     "error": format!("Failed to fetch email: {}", e),
                     "tool": tool_name
-                })
+                }),
             }
         }
         "get_email_thread" => {
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
             let message_id = match params.get("message_id").and_then(|v| v.as_str()) {
                 Some(mid) => mid.to_string(),
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "message_id parameter is required",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "message_id parameter is required",
+                        "tool": tool_name
+                    })
+                }
             };
 
-            match state.cache_service.get_thread_emails(&message_id, &account_id).await {
+            match state
+                .cache_service
+                .get_thread_emails(&message_id, &account_id)
+                .await
+            {
                 Ok(emails) => {
-                    let thread: Vec<serde_json::Value> = emails.iter().map(|e| {
-                        serde_json::json!({
-                            "uid": e.uid,
-                            "message_id": e.message_id,
-                            "subject": e.subject,
-                            "from_address": e.from_address,
-                            "from_name": e.from_name,
-                            "date": e.date,
-                            "in_reply_to": e.in_reply_to,
-                            "has_attachments": e.has_attachments,
-                            "flags": e.flags,
+                    let thread: Vec<serde_json::Value> = emails
+                        .iter()
+                        .map(|e| {
+                            serde_json::json!({
+                                "uid": e.uid,
+                                "message_id": e.message_id,
+                                "subject": e.subject,
+                                "from_address": e.from_address,
+                                "from_name": e.from_name,
+                                "date": e.date,
+                                "in_reply_to": e.in_reply_to,
+                                "has_attachments": e.has_attachments,
+                                "flags": e.flags,
+                            })
                         })
-                    }).collect();
+                        .collect();
                     serde_json::json!({
                         "success": true,
                         "data": {
@@ -3385,47 +3753,59 @@ pub async fn execute_mcp_tool_inner(
                     "success": false,
                     "error": format!("Failed to fetch thread: {}", e),
                     "tool": tool_name
-                })
+                }),
             }
         }
         "search_by_domain" => {
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
             let domain = match params.get("domain").and_then(|v| v.as_str()) {
                 Some(d) => d.to_string(),
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "domain parameter is required",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "domain parameter is required",
+                        "tool": tool_name
+                    })
+                }
             };
 
-            let search_in: Vec<&str> = params.get("search_in")
+            let search_in: Vec<&str> = params
+                .get("search_in")
                 .and_then(|v| v.as_array())
                 .map(|arr| arr.iter().filter_map(|s| s.as_str()).collect())
                 .unwrap_or_else(|| vec!["from"]);
             let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
 
-            match state.cache_service.search_by_domain(&domain, &search_in, &account_id, limit).await {
+            match state
+                .cache_service
+                .search_by_domain(&domain, &search_in, &account_id, limit)
+                .await
+            {
                 Ok(emails) => {
-                    let results: Vec<serde_json::Value> = emails.iter().map(|e| {
-                        serde_json::json!({
-                            "uid": e.uid,
-                            "subject": e.subject,
-                            "from_address": e.from_address,
-                            "from_name": e.from_name,
-                            "date": e.date,
-                            "flags": e.flags,
-                            "has_attachments": e.has_attachments,
+                    let results: Vec<serde_json::Value> = emails
+                        .iter()
+                        .map(|e| {
+                            serde_json::json!({
+                                "uid": e.uid,
+                                "subject": e.subject,
+                                "from_address": e.from_address,
+                                "from_name": e.from_name,
+                                "date": e.date,
+                                "flags": e.flags,
+                                "has_attachments": e.has_attachments,
+                            })
                         })
-                    }).collect();
+                        .collect();
                     serde_json::json!({
                         "success": true,
                         "data": {
@@ -3440,17 +3820,19 @@ pub async fn execute_mcp_tool_inner(
                     "success": false,
                     "error": format!("Domain search failed: {}", e),
                     "tool": tool_name
-                })
+                }),
             }
         }
         "get_address_report" => {
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
             match state.cache_service.get_address_report(&account_id).await {
@@ -3465,41 +3847,69 @@ pub async fn execute_mcp_tool_inner(
                     "success": false,
                     "error": format!("Failed to generate report: {}", e),
                     "tool": tool_name
-                })
+                }),
             }
         }
         "list_emails_by_flag" => {
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
-            let folder = params.get("folder").and_then(|v| v.as_str()).unwrap_or("INBOX");
+            let folder = params
+                .get("folder")
+                .and_then(|v| v.as_str())
+                .unwrap_or("INBOX");
             let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
             let offset = params.get("offset").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
 
-            let flags_include: Vec<String> = params.get("flags_include")
+            let flags_include: Vec<String> = params
+                .get("flags_include")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
-            let flags_exclude: Vec<String> = params.get("flags_exclude")
+            let flags_exclude: Vec<String> = params
+                .get("flags_exclude")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
 
             // Shorthand: unread_only adds "Seen" to exclude list
-            if params.get("unread_only").and_then(|v| v.as_bool()).unwrap_or(false) {
+            if params
+                .get("unread_only")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
                 let mut exclude = flags_exclude;
                 if !exclude.contains(&"Seen".to_string()) {
                     exclude.push("Seen".to_string());
                 }
-                match state.cache_service.get_cached_emails_by_flags(
-                    folder, &account_id, &flags_include, &exclude, limit, offset,
-                ).await {
+                match state
+                    .cache_service
+                    .get_cached_emails_by_flags(
+                        folder,
+                        &account_id,
+                        &flags_include,
+                        &exclude,
+                        limit,
+                        offset,
+                    )
+                    .await
+                {
                     Ok(emails) => serde_json::json!({
                         "success": true,
                         "data": emails,
@@ -3511,12 +3921,21 @@ pub async fn execute_mcp_tool_inner(
                         "success": false,
                         "error": format!("Failed to filter emails: {}", e),
                         "tool": tool_name
-                    })
+                    }),
                 }
             } else {
-                match state.cache_service.get_cached_emails_by_flags(
-                    folder, &account_id, &flags_include, &flags_exclude, limit, offset,
-                ).await {
+                match state
+                    .cache_service
+                    .get_cached_emails_by_flags(
+                        folder,
+                        &account_id,
+                        &flags_include,
+                        &flags_exclude,
+                        limit,
+                        offset,
+                    )
+                    .await
+                {
                     Ok(emails) => serde_json::json!({
                         "success": true,
                         "data": emails,
@@ -3528,23 +3947,30 @@ pub async fn execute_mcp_tool_inner(
                         "success": false,
                         "error": format!("Failed to filter emails: {}", e),
                         "tool": tool_name
-                    })
+                    }),
                 }
             }
         }
         "search_by_attachment_type" => {
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
-            let mime_types: Vec<String> = params.get("mime_types")
+            let mime_types: Vec<String> = params
+                .get("mime_types")
                 .and_then(|v| v.as_array())
-                .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_str().map(String::from))
+                        .collect()
+                })
                 .unwrap_or_default();
 
             let limit = params.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
@@ -3553,8 +3979,13 @@ pub async fn execute_mcp_tool_inner(
             match pool {
                 Some(pool) => {
                     match crate::dashboard::services::attachment_storage::search_by_attachment_type(
-                        pool, &account_id, &mime_types, limit
-                    ).await {
+                        pool,
+                        &account_id,
+                        &mime_types,
+                        limit,
+                    )
+                    .await
+                    {
                         Ok(results) => serde_json::json!({
                             "success": true,
                             "data": results,
@@ -3565,32 +3996,40 @@ pub async fn execute_mcp_tool_inner(
                             "success": false,
                             "error": format!("Search failed: {}", e),
                             "tool": tool_name
-                        })
+                        }),
                     }
                 }
                 None => serde_json::json!({
                     "success": false,
                     "error": "Database not available",
                     "tool": tool_name
-                })
+                }),
             }
         }
         "sync_emails" => {
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
-            let folder = params.get("folder").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let folder = params
+                .get("folder")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
             let sync_service = state.sync_service.clone();
 
             match folder {
                 Some(ref f) => {
-                    info!("MCP sync_emails: syncing folder '{}' for account '{}'", f, account_id);
+                    info!(
+                        "MCP sync_emails: syncing folder '{}' for account '{}'",
+                        f, account_id
+                    );
                     match sync_service.sync_folder(&account_id, f).await {
                         Ok(()) => serde_json::json!({
                             "success": true,
@@ -3603,11 +4042,14 @@ pub async fn execute_mcp_tool_inner(
                             "success": false,
                             "error": format!("Failed to sync folder '{}': {}", f, e),
                             "tool": tool_name
-                        })
+                        }),
                     }
                 }
                 None => {
-                    info!("MCP sync_emails: syncing all folders for account '{}'", account_id);
+                    info!(
+                        "MCP sync_emails: syncing all folders for account '{}'",
+                        account_id
+                    );
                     match sync_service.sync_all_folders(&account_id).await {
                         Ok(()) => serde_json::json!({
                             "success": true,
@@ -3620,7 +4062,7 @@ pub async fn execute_mcp_tool_inner(
                             "success": false,
                             "error": format!("Failed to sync all folders: {}", e),
                             "tool": tool_name
-                        })
+                        }),
                     }
                 }
             }
@@ -3628,30 +4070,40 @@ pub async fn execute_mcp_tool_inner(
         "export_folder_metadata" => {
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
             let folder = match params.get("folder").and_then(|v| v.as_str()) {
                 Some(f) => f.to_string(),
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "folder parameter is required",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "folder parameter is required",
+                        "tool": tool_name
+                    })
+                }
             };
 
             let format = params.get("format").and_then(|v| v.as_str());
             let fields = params.get("fields").and_then(|v| v.as_str());
-            let limit = params.get("limit").and_then(|v| v.as_u64()).map(|v| v as usize);
+            let limit = params
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize);
 
             match state.cache_service.db_pool.as_ref() {
                 Some(pool) => {
                     let exporter = crate::metadata_export::MetadataExporter::new(pool.clone());
-                    match exporter.export(&account_id, &folder, format, fields, limit).await {
+                    match exporter
+                        .export(&account_id, &folder, format, fields, limit)
+                        .await
+                    {
                         Ok(result) => serde_json::json!({
                             "success": true,
                             "data": {
@@ -3665,60 +4117,81 @@ pub async fn execute_mcp_tool_inner(
                             "success": false,
                             "error": format!("Metadata export failed: {}", e),
                             "tool": tool_name
-                        })
+                        }),
                     }
                 }
                 None => serde_json::json!({
                     "success": false,
                     "error": "Database not available",
                     "tool": tool_name
-                })
+                }),
             }
         }
         "filter_emails_by_subject" => {
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
             let folder = match params.get("folder").and_then(|v| v.as_str()) {
                 Some(f) => f.to_string(),
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "folder parameter is required",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "folder parameter is required",
+                        "tool": tool_name
+                    })
+                }
             };
 
-            let patterns: Vec<String> = match params.get("subject_patterns").and_then(|v| v.as_array()) {
-                Some(arr) => arr.iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect(),
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "subject_patterns parameter is required (array of strings)",
-                    "tool": tool_name
-                })
-            };
+            let patterns: Vec<String> =
+                match params.get("subject_patterns").and_then(|v| v.as_array()) {
+                    Some(arr) => arr
+                        .iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect(),
+                    None => {
+                        return serde_json::json!({
+                            "success": false,
+                            "error": "subject_patterns parameter is required (array of strings)",
+                            "tool": tool_name
+                        })
+                    }
+                };
 
             let match_mode = params.get("match_mode").and_then(|v| v.as_str());
             let sender_filter = params.get("sender_filter").and_then(|v| v.as_str());
             let recipient_filter = params.get("recipient_filter").and_then(|v| v.as_str());
             let date_after = params.get("date_after").and_then(|v| v.as_str());
             let date_before = params.get("date_before").and_then(|v| v.as_str());
-            let max_results = params.get("max_results").and_then(|v| v.as_u64()).map(|v| v as usize);
+            let max_results = params
+                .get("max_results")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize);
 
             match state.cache_service.db_pool.as_ref() {
                 Some(pool) => {
                     let filter = crate::filter_emails::SubjectFilter::new(pool.clone());
-                    match filter.filter(
-                        &account_id, &folder, &patterns, match_mode,
-                        sender_filter, recipient_filter, date_after, date_before, max_results,
-                    ).await {
+                    match filter
+                        .filter(
+                            &account_id,
+                            &folder,
+                            &patterns,
+                            match_mode,
+                            sender_filter,
+                            recipient_filter,
+                            date_after,
+                            date_before,
+                            max_results,
+                        )
+                        .await
+                    {
                         Ok(result) => serde_json::json!({
                             "success": true,
                             "data": {
@@ -3735,54 +4208,63 @@ pub async fn execute_mcp_tool_inner(
                             "success": false,
                             "error": format!("Subject filter failed: {}", e),
                             "tool": tool_name
-                        })
+                        }),
                     }
                 }
                 None => serde_json::json!({
                     "success": false,
                     "error": "Database not available",
                     "tool": tool_name
-                })
+                }),
             }
         }
         "batch_get_synopsis" => {
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
             let folder = match params.get("folder").and_then(|v| v.as_str()) {
                 Some(f) => f.to_string(),
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "folder parameter is required",
-                    "tool": tool_name
-                })
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "folder parameter is required",
+                        "tool": tool_name
+                    })
+                }
             };
 
             let uids: Vec<i64> = match params.get("uids").and_then(|v| v.as_array()) {
-                Some(arr) => arr.iter()
-                    .filter_map(|v| v.as_i64())
-                    .collect(),
-                None => return serde_json::json!({
-                    "success": false,
-                    "error": "uids parameter is required (array of integers)",
-                    "tool": tool_name
-                })
+                Some(arr) => arr.iter().filter_map(|v| v.as_i64()).collect(),
+                None => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": "uids parameter is required (array of integers)",
+                        "tool": tool_name
+                    })
+                }
             };
 
-            let max_chars = params.get("max_chars_per_synopsis")
+            let max_chars = params
+                .get("max_chars_per_synopsis")
                 .and_then(|v| v.as_u64())
                 .map(|v| v as usize);
 
             match state.cache_service.db_pool.as_ref() {
                 Some(pool) => {
-                    let processor = crate::batch_synopsis::BatchSynopsisProcessor::new(pool.clone());
-                    match processor.process(&account_id, &folder, &uids, max_chars).await {
+                    let processor =
+                        crate::batch_synopsis::BatchSynopsisProcessor::new(pool.clone());
+                    match processor
+                        .process(&account_id, &folder, &uids, max_chars)
+                        .await
+                    {
                         Ok(result) => serde_json::json!({
                             "success": true,
                             "data": {
@@ -3799,24 +4281,26 @@ pub async fn execute_mcp_tool_inner(
                             "success": false,
                             "error": format!("Batch synopsis failed: {}", e),
                             "tool": tool_name
-                        })
+                        }),
                     }
                 }
                 None => serde_json::json!({
                     "success": false,
                     "error": "Database not available",
                     "tool": tool_name
-                })
+                }),
             }
         }
         "export_evidence" => {
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
-                Err(e) => return serde_json::json!({
-                    "success": false,
-                    "error": format!("Failed to determine account: {}", e),
-                    "tool": tool_name
-                })
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
             };
 
             let folder = params.get("folder").and_then(|v| v.as_str());
@@ -3826,9 +4310,13 @@ pub async fn execute_mcp_tool_inner(
             match state.cache_service.db_pool.as_ref() {
                 Some(pool) => {
                     let exporter = crate::evidence_export::EvidenceExporter::new(
-                        state.cache_service.clone(), pool.clone()
+                        state.cache_service.clone(),
+                        pool.clone(),
                     );
-                    match exporter.export(&account_id, folder, search_query, output_path).await {
+                    match exporter
+                        .export(&account_id, folder, search_query, output_path)
+                        .await
+                    {
                         Ok(result) => serde_json::json!({
                             "success": true,
                             "data": {
@@ -3842,14 +4330,14 @@ pub async fn execute_mcp_tool_inner(
                             "success": false,
                             "error": format!("Export failed: {}", e),
                             "tool": tool_name
-                        })
+                        }),
                     }
                 }
                 None => serde_json::json!({
                     "success": false,
                     "error": "Database not available",
                     "tool": tool_name
-                })
+                }),
             }
         }
         _ => {
@@ -3878,11 +4366,13 @@ pub async fn execute_mcp_tool(
     query: web::Query<McpExecuteQuery>,
     req: web::Json<serde_json::Value>,
 ) -> Result<impl Responder, ApiError> {
-    let tool_name = req.get("tool")
+    let tool_name = req
+        .get("tool")
         .and_then(|v| v.as_str())
         .ok_or_else(|| ApiError::BadRequest("Missing tool name".to_string()))?;
 
-    let params = req.get("parameters")
+    let params = req
+        .get("parameters")
         .cloned()
         .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
@@ -3904,7 +4394,10 @@ pub async fn stream_chatbot(
     state: web::Data<DashboardState>,
     req: web::Json<ChatbotQuery>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<sse::Event, Infallible>>>, ApiError> {
-    debug!("Handling POST /api/dashboard/chatbot/stream with body: {:?}", req);
+    debug!(
+        "Handling POST /api/dashboard/chatbot/stream with body: {:?}",
+        req
+    );
 
     let (tx, rx) = mpsc::channel(100);
     let ai_service = state.ai_service.clone();
@@ -3928,32 +4421,41 @@ pub async fn stream_chatbot(
             Ok(response) => {
                 // For now, send the full response at once
                 // TODO: Implement actual token-by-token streaming when provider supports it
-                let content_event = sse::Data::new(serde_json::json!({
-                    "type": "content",
-                    "text": response.text,
-                    "conversation_id": response.conversation_id,
-                    "email_data": response.email_data,
-                    "followup_suggestions": response.followup_suggestions
-                }).to_string())
-                    .event("chatbot");
+                let content_event = sse::Data::new(
+                    serde_json::json!({
+                        "type": "content",
+                        "text": response.text,
+                        "conversation_id": response.conversation_id,
+                        "email_data": response.email_data,
+                        "followup_suggestions": response.followup_suggestions
+                    })
+                    .to_string(),
+                )
+                .event("chatbot");
 
                 let _ = tx.send(Ok(sse::Event::Data(content_event))).await;
 
                 // Send completion event
-                let complete_event = sse::Data::new(serde_json::json!({
-                    "type": "complete"
-                }).to_string())
-                    .event("chatbot");
+                let complete_event = sse::Data::new(
+                    serde_json::json!({
+                        "type": "complete"
+                    })
+                    .to_string(),
+                )
+                .event("chatbot");
 
                 let _ = tx.send(Ok(sse::Event::Data(complete_event))).await;
             }
             Err(e) => {
                 // Send error event
-                let error_event = sse::Data::new(serde_json::json!({
-                    "type": "error",
-                    "error": format!("AI service error: {}", e)
-                }).to_string())
-                    .event("chatbot");
+                let error_event = sse::Data::new(
+                    serde_json::json!({
+                        "type": "error",
+                        "error": format!("AI service error: {}", e)
+                    })
+                    .to_string(),
+                )
+                .event("chatbot");
 
                 let _ = tx.send(Ok(sse::Event::Data(error_event))).await;
             }
@@ -3999,9 +4501,16 @@ pub async fn get_client_subscriptions(
     path: web::Path<ClientIdPath>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling GET /api/dashboard/clients/{}/subscriptions", path.client_id);
+    debug!(
+        "Handling GET /api/dashboard/clients/{}/subscriptions",
+        path.client_id
+    );
 
-    match state.sse_manager.get_client_subscriptions(&path.client_id).await {
+    match state
+        .sse_manager
+        .get_client_subscriptions(&path.client_id)
+        .await
+    {
         Some(subscriptions) => {
             let subscription_strings: Vec<String> = subscriptions
                 .iter()
@@ -4015,7 +4524,7 @@ pub async fn get_client_subscriptions(
 
             Ok(HttpResponse::Ok().json(response))
         }
-        None => Err(ApiError::NotFound("Client not found".to_string()))
+        None => Err(ApiError::NotFound("Client not found".to_string())),
     }
 }
 
@@ -4025,7 +4534,10 @@ pub async fn update_client_subscriptions(
     req: web::Json<SubscriptionRequest>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling PUT /api/dashboard/clients/{}/subscriptions", path.client_id);
+    debug!(
+        "Handling PUT /api/dashboard/clients/{}/subscriptions",
+        path.client_id
+    );
 
     // Convert string event types to EventType enum
     let mut event_types = HashSet::new();
@@ -4035,13 +4547,17 @@ pub async fn update_client_subscriptions(
                 event_types.insert(event_type);
             }
             None => {
-                return Err(ApiError::BadRequest(format!("Invalid event type: {}", event_str)));
+                return Err(ApiError::BadRequest(format!(
+                    "Invalid event type: {}",
+                    event_str
+                )));
             }
         }
     }
 
     // Update subscriptions
-    let success = state.sse_manager
+    let success = state
+        .sse_manager
         .update_client_subscriptions(&path.client_id, event_types.clone())
         .await;
 
@@ -4068,14 +4584,18 @@ pub async fn subscribe_to_event(
     req: web::Json<SubscribeRequest>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling POST /api/dashboard/clients/{}/subscribe", path.client_id);
+    debug!(
+        "Handling POST /api/dashboard/clients/{}/subscribe",
+        path.client_id
+    );
 
     // Convert string to EventType
     let event_type = EventType::from_string(&req.event_type)
         .ok_or_else(|| ApiError::BadRequest(format!("Invalid event type: {}", req.event_type)))?;
 
     // Subscribe client
-    let success = state.sse_manager
+    let success = state
+        .sse_manager
         .subscribe_client_to_event(&path.client_id, event_type)
         .await;
 
@@ -4094,14 +4614,18 @@ pub async fn unsubscribe_from_event(
     req: web::Json<UnsubscribeRequest>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling POST /api/dashboard/clients/{}/unsubscribe", path.client_id);
+    debug!(
+        "Handling POST /api/dashboard/clients/{}/unsubscribe",
+        path.client_id
+    );
 
     // Convert string to EventType
     let event_type = EventType::from_string(&req.event_type)
         .ok_or_else(|| ApiError::BadRequest(format!("Invalid event type: {}", req.event_type)))?;
 
     // Unsubscribe client
-    let success = state.sse_manager
+    let success = state
+        .sse_manager
         .unsubscribe_client_from_event(&path.client_id, &event_type)
         .await;
 
@@ -4191,8 +4715,10 @@ pub async fn set_ai_provider(
     req: web::Json<SetProviderRequest>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling POST /api/dashboard/ai/providers/set with provider: {}, model: {:?}",
-           req.provider_name, req.model_name);
+    debug!(
+        "Handling POST /api/dashboard/ai/providers/set with provider: {}, model: {:?}",
+        req.provider_name, req.model_name
+    );
 
     // Get the model name - use provided one or get current model for this provider
     let model_name = match &req.model_name {
@@ -4200,7 +4726,8 @@ pub async fn set_ai_provider(
         None => {
             // Look up the current model from provider configs
             let providers = state.ai_service.list_providers().await;
-            providers.iter()
+            providers
+                .iter()
                 .find(|p| p.name == req.provider_name)
                 .map(|p| p.model.clone())
                 .unwrap_or_else(|| "default".to_string())
@@ -4209,17 +4736,25 @@ pub async fn set_ai_provider(
 
     // Try to persist to database if pool is available
     if let Some(pool) = state.cache_service.db_pool.as_ref() {
-        state.ai_service
-            .set_current_provider_with_persistence(pool, req.provider_name.clone(), model_name.clone())
+        state
+            .ai_service
+            .set_current_provider_with_persistence(
+                pool,
+                req.provider_name.clone(),
+                model_name.clone(),
+            )
             .await
             .map_err(|e| ApiError::BadRequest(e))?;
 
-        info!("Persisted chatbot provider selection to database: provider={}, model={}",
-              req.provider_name, model_name);
+        info!(
+            "Persisted chatbot provider selection to database: provider={}, model={}",
+            req.provider_name, model_name
+        );
     } else {
         // Fallback to in-memory only if no database
         warn!("No database pool available, provider selection will not persist across restarts");
-        state.ai_service
+        state
+            .ai_service
             .set_current_provider(req.provider_name.clone())
             .await
             .map_err(|e| ApiError::BadRequest(e))?;
@@ -4233,9 +4768,7 @@ pub async fn set_ai_provider(
 }
 
 // Handler for getting available models for current AI provider
-pub async fn get_ai_models(
-    state: web::Data<DashboardState>,
-) -> Result<impl Responder, ApiError> {
+pub async fn get_ai_models(state: web::Data<DashboardState>) -> Result<impl Responder, ApiError> {
     debug!("Handling GET /api/dashboard/ai/models");
 
     let current_provider = state.ai_service.get_current_provider_name().await;
@@ -4243,7 +4776,8 @@ pub async fn get_ai_models(
 
     // Get current model from the current provider
     let current_model = if let Some(ref provider_name) = current_provider {
-        providers.iter()
+        providers
+            .iter()
             .find(|p| p.name == *provider_name)
             .map(|p| p.model.clone())
     } else {
@@ -4255,7 +4789,10 @@ pub async fn get_ai_models(
         match state.ai_service.get_available_models().await {
             Ok(models) => models,
             Err(e) => {
-                warn!("Failed to fetch models from provider {}: {:?}", provider_name, e);
+                warn!(
+                    "Failed to fetch models from provider {}: {:?}",
+                    provider_name, e
+                );
                 // Fallback to empty list if API call fails
                 vec![]
             }
@@ -4278,7 +4815,10 @@ pub async fn set_ai_model(
     req: web::Json<SetModelRequest>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling POST /api/dashboard/ai/models/set with model: {}", req.model_name);
+    debug!(
+        "Handling POST /api/dashboard/ai/models/set with model: {}",
+        req.model_name
+    );
 
     let current_provider = state.ai_service.get_current_provider_name().await;
 
@@ -4291,7 +4831,8 @@ pub async fn set_ai_model(
             new_config.model = req.model_name.clone();
 
             // Update the provider config
-            state.ai_service
+            state
+                .ai_service
                 .update_provider_config(&provider_name, new_config)
                 .await
                 .map_err(|e| ApiError::BadRequest(format!("Failed to update model: {}", e)))?;
@@ -4302,7 +4843,9 @@ pub async fn set_ai_model(
                 "provider": provider_name
             })))
         } else {
-            Err(ApiError::BadRequest("Current provider configuration not found".to_string()))
+            Err(ApiError::BadRequest(
+                "Current provider configuration not found".to_string(),
+            ))
         }
     } else {
         Err(ApiError::BadRequest("No current provider set".to_string()))
@@ -4327,7 +4870,11 @@ pub async fn get_model_configs(
 
     let pool = match state.cache_service.db_pool.as_ref() {
         Some(p) => p,
-        None => return Err(ApiError::InternalError("Database not initialized".to_string())),
+        None => {
+            return Err(ApiError::InternalError(
+                "Database not initialized".to_string(),
+            ))
+        }
     };
 
     use crate::dashboard::services::ai::model_config;
@@ -4338,7 +4885,10 @@ pub async fn get_model_configs(
         }))),
         Err(e) => {
             error!("Failed to get model configurations: {:?}", e);
-            Err(ApiError::InternalError(format!("Failed to get model configurations: {:?}", e)))
+            Err(ApiError::InternalError(format!(
+                "Failed to get model configurations: {:?}",
+                e
+            )))
         }
     }
 }
@@ -4348,14 +4898,23 @@ pub async fn set_model_config(
     req: web::Json<SetModelConfigRequest>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling POST /api/dashboard/ai/model-configs with role: {}", req.role);
+    debug!(
+        "Handling POST /api/dashboard/ai/model-configs with role: {}",
+        req.role
+    );
 
     let pool = match state.cache_service.db_pool.as_ref() {
         Some(p) => p,
-        None => return Err(ApiError::InternalError("Database not initialized".to_string())),
+        None => {
+            return Err(ApiError::InternalError(
+                "Database not initialized".to_string(),
+            ))
+        }
     };
 
-    use crate::dashboard::services::ai::model_config::{ModelConfiguration, set_model_config as save_model_config};
+    use crate::dashboard::services::ai::model_config::{
+        set_model_config as save_model_config, ModelConfiguration,
+    };
 
     let mut config = ModelConfiguration::new(&req.role, &req.provider, &req.model_name);
 
@@ -4374,7 +4933,10 @@ pub async fn set_model_config(
         }))),
         Err(e) => {
             error!("Failed to set model configuration: {:?}", e);
-            Err(ApiError::InternalError(format!("Failed to set model configuration: {:?}", e)))
+            Err(ApiError::InternalError(format!(
+                "Failed to set model configuration: {:?}",
+                e
+            )))
         }
     }
 }
@@ -4384,13 +4946,23 @@ pub async fn get_models_for_provider(
     query: web::Query<GetModelsForProviderQuery>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling GET /api/dashboard/ai/models-for-provider?provider={}", query.provider);
+    debug!(
+        "Handling GET /api/dashboard/ai/models-for-provider?provider={}",
+        query.provider
+    );
 
     // Get available models from the specified provider
-    let available_models = match state.ai_service.get_available_models_for_provider(&query.provider).await {
+    let available_models = match state
+        .ai_service
+        .get_available_models_for_provider(&query.provider)
+        .await
+    {
         Ok(models) => models,
         Err(e) => {
-            warn!("Failed to fetch models from provider {}: {:?}", query.provider, e);
+            warn!(
+                "Failed to fetch models from provider {}: {:?}",
+                query.provider, e
+            );
             // Return empty list if API call fails
             vec![]
         }
@@ -4454,12 +5026,18 @@ pub async fn get_sampler_config(
     query: web::Query<GetSamplerConfigQuery>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling GET /api/dashboard/ai/sampler-configs?provider={}&model_name={}",
-           query.provider, query.model_name);
+    debug!(
+        "Handling GET /api/dashboard/ai/sampler-configs?provider={}&model_name={}",
+        query.provider, query.model_name
+    );
 
     let pool = match state.cache_service.db_pool.as_ref() {
         Some(p) => p,
-        None => return Err(ApiError::InternalError("Database not initialized".to_string())),
+        None => {
+            return Err(ApiError::InternalError(
+                "Database not initialized".to_string(),
+            ))
+        }
     };
 
     use crate::dashboard::services::ai::sampler_config;
@@ -4468,7 +5046,10 @@ pub async fn get_sampler_config(
         Ok(config) => Ok(HttpResponse::Ok().json(config)),
         Err(e) => {
             error!("Failed to get sampler config: {:?}", e);
-            Err(ApiError::InternalError(format!("Failed to get sampler config: {:?}", e)))
+            Err(ApiError::InternalError(format!(
+                "Failed to get sampler config: {:?}",
+                e
+            )))
         }
     }
 }
@@ -4481,7 +5062,11 @@ pub async fn list_sampler_configs(
 
     let pool = match state.cache_service.db_pool.as_ref() {
         Some(p) => p,
-        None => return Err(ApiError::InternalError("Database not initialized".to_string())),
+        None => {
+            return Err(ApiError::InternalError(
+                "Database not initialized".to_string(),
+            ))
+        }
     };
 
     use crate::dashboard::services::ai::sampler_config;
@@ -4492,7 +5077,10 @@ pub async fn list_sampler_configs(
         }))),
         Err(e) => {
             error!("Failed to list sampler configs: {:?}", e);
-            Err(ApiError::InternalError(format!("Failed to list sampler configs: {:?}", e)))
+            Err(ApiError::InternalError(format!(
+                "Failed to list sampler configs: {:?}",
+                e
+            )))
         }
     }
 }
@@ -4502,15 +5090,21 @@ pub async fn set_sampler_config(
     req: web::Json<SamplerConfigRequest>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling POST /api/dashboard/ai/sampler-configs for {}/{}",
-           req.provider, req.model_name);
+    debug!(
+        "Handling POST /api/dashboard/ai/sampler-configs for {}/{}",
+        req.provider, req.model_name
+    );
 
     let pool = match state.cache_service.db_pool.as_ref() {
         Some(p) => p,
-        None => return Err(ApiError::InternalError("Database not initialized".to_string())),
+        None => {
+            return Err(ApiError::InternalError(
+                "Database not initialized".to_string(),
+            ))
+        }
     };
 
-    use crate::dashboard::services::ai::sampler_config::{SamplerConfig, save_sampler_config};
+    use crate::dashboard::services::ai::sampler_config::{save_sampler_config, SamplerConfig};
 
     let mut config = SamplerConfig::new(&req.provider, &req.model_name);
     config.temperature = req.temperature;
@@ -4544,12 +5138,18 @@ pub async fn delete_sampler_config(
     query: web::Query<GetSamplerConfigQuery>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling DELETE /api/dashboard/ai/sampler-configs?provider={}&model_name={}",
-           query.provider, query.model_name);
+    debug!(
+        "Handling DELETE /api/dashboard/ai/sampler-configs?provider={}&model_name={}",
+        query.provider, query.model_name
+    );
 
     let pool = match state.cache_service.db_pool.as_ref() {
         Some(p) => p,
-        None => return Err(ApiError::InternalError("Database not initialized".to_string())),
+        None => {
+            return Err(ApiError::InternalError(
+                "Database not initialized".to_string(),
+            ))
+        }
     };
 
     use crate::dashboard::services::ai::sampler_config;
@@ -4605,12 +5205,18 @@ pub async fn import_sampler_presets(
     req: web::Json<ImportPresetsRequest>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    debug!("Handling POST /api/dashboard/ai/sampler-configs/presets/import with {} presets",
-           req.presets.len());
+    debug!(
+        "Handling POST /api/dashboard/ai/sampler-configs/presets/import with {} presets",
+        req.presets.len()
+    );
 
     let pool = match state.cache_service.db_pool.as_ref() {
         Some(p) => p,
-        None => return Err(ApiError::InternalError("Database not initialized".to_string())),
+        None => {
+            return Err(ApiError::InternalError(
+                "Database not initialized".to_string(),
+            ))
+        }
     };
 
     use crate::dashboard::services::ai::sampler_config;
@@ -4619,7 +5225,8 @@ pub async fn import_sampler_presets(
     let all_presets = sampler_config::get_recommended_presets();
 
     // Filter to only the selected presets
-    let selected_presets: Vec<_> = all_presets.iter()
+    let selected_presets: Vec<_> = all_presets
+        .iter()
         .flat_map(|cat| cat.presets.iter())
         .filter(|preset| {
             req.presets.iter().any(|item| {
@@ -4630,7 +5237,9 @@ pub async fn import_sampler_presets(
         .collect();
 
     if selected_presets.is_empty() {
-        return Err(ApiError::BadRequest("No matching presets found".to_string()));
+        return Err(ApiError::BadRequest(
+            "No matching presets found".to_string(),
+        ));
     }
 
     match sampler_config::import_presets(pool, &selected_presets, req.overwrite).await {
@@ -4641,7 +5250,10 @@ pub async fn import_sampler_presets(
         }))),
         Err(e) => {
             error!("Failed to import presets: {:?}", e);
-            Err(ApiError::InternalError(format!("Failed to import presets: {:?}", e)))
+            Err(ApiError::InternalError(format!(
+                "Failed to import presets: {:?}",
+                e
+            )))
         }
     }
 }
@@ -4663,15 +5275,25 @@ pub async fn trigger_email_sync(
         Ok(id) => Some(id),
         Err(_) => None, // No account specified, will sync all
     };
-    let folder = query.get("folder").and_then(|v| v.as_str()).map(|s| s.to_string());
-    let force = query.get("force").and_then(|v| v.as_str()).map(|s| s == "true").unwrap_or(false);
+    let folder = query
+        .get("folder")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let force = query
+        .get("force")
+        .and_then(|v| v.as_str())
+        .map(|s| s == "true")
+        .unwrap_or(false);
 
     let mode_desc = match (&account_id, &folder) {
         (Some(acc), Some(f)) => format!("account {} folder {}", acc, f),
         (Some(acc), None) => format!("account {}", acc),
         (None, _) => "all accounts".to_string(),
     };
-    info!("Triggering email sync via separate process for {}", mode_desc);
+    info!(
+        "Triggering email sync via separate process for {}",
+        mode_desc
+    );
 
     // Find the sync binary - check multiple locations
     let sync_binary = if std::path::Path::new("./target/release/rustymail-sync").exists() {
@@ -4724,7 +5346,10 @@ pub async fn trigger_email_sync(
                     } else {
                         // Some other error
                         error!("Sync process exited with error code: {:?}", status.code());
-                        Err(ApiError::InternalError(format!("Sync process failed with exit code: {:?}", status.code())))
+                        Err(ApiError::InternalError(format!(
+                            "Sync process failed with exit code: {:?}",
+                            status.code()
+                        )))
                     }
                 }
                 Ok(None) => {
@@ -4748,7 +5373,10 @@ pub async fn trigger_email_sync(
         }
         Err(e) => {
             error!("Failed to spawn sync process '{}': {}", sync_binary, e);
-            Err(ApiError::InternalError(format!("Failed to start sync process: {}", e)))
+            Err(ApiError::InternalError(format!(
+                "Failed to start sync process: {}",
+                e
+            )))
         }
     }
 }
@@ -4759,17 +5387,29 @@ pub async fn sync_flags(
     query: web::Query<serde_json::Value>,
 ) -> Result<impl Responder, ApiError> {
     let account_id = get_account_id_to_use(&query.0, &state).await?;
-    let folder = query.get("folder").and_then(|v| v.as_str()).unwrap_or("INBOX");
+    let folder = query
+        .get("folder")
+        .and_then(|v| v.as_str())
+        .unwrap_or("INBOX");
 
-    info!("Triggering flag resync for account {} folder {}", account_id, folder);
+    info!(
+        "Triggering flag resync for account {} folder {}",
+        account_id, folder
+    );
 
     let sync_service = state.sync_service.clone();
     let account_id_owned = account_id.clone();
     let folder_owned = folder.to_string();
 
     tokio::spawn(async move {
-        if let Err(e) = sync_service.sync_flags_for_folder(&account_id_owned, &folder_owned).await {
-            error!("Flag resync failed for {}/{}: {}", account_id_owned, folder_owned, e);
+        if let Err(e) = sync_service
+            .sync_flags_for_folder(&account_id_owned, &folder_owned)
+            .await
+        {
+            error!(
+                "Flag resync failed for {}/{}: {}",
+                account_id_owned, folder_owned, e
+            );
         }
     });
 
@@ -4792,8 +5432,17 @@ pub async fn get_sync_status(
             let account_service = state.account_service.lock().await;
             match account_service.get_default_account().await {
                 Ok(Some(account)) => account.email_address,
-                Ok(None) => return Err(ApiError::NotFound("No default account configured".to_string())),
-                Err(e) => return Err(ApiError::InternalError(format!("Failed to get default account: {}", e))),
+                Ok(None) => {
+                    return Err(ApiError::NotFound(
+                        "No default account configured".to_string(),
+                    ))
+                }
+                Err(e) => {
+                    return Err(ApiError::InternalError(format!(
+                        "Failed to get default account: {}",
+                        e
+                    )))
+                }
             }
         }
     };
@@ -4809,34 +5458,37 @@ pub async fn get_sync_status(
     let folder = query.folder.as_deref().unwrap_or("INBOX");
 
     // Get sync state for folder
-    match state.cache_service.get_sync_state(folder, &account_email).await {
-        Ok(Some(sync_state)) => {
-            Ok(HttpResponse::Ok().json(serde_json::json!({
-                "folder": folder,
-                "status": format!("{:?}", sync_state.sync_status),
-                "last_uid_synced": sync_state.last_uid_synced,
-                "last_full_sync": sync_state.last_full_sync,
-                "last_incremental_sync": sync_state.last_incremental_sync,
-                "error_message": sync_state.error_message,
-                "emails_synced": sync_state.emails_synced,
-                "emails_total": sync_state.emails_total
-            })))
-        }
-        Ok(None) => {
-            Ok(HttpResponse::Ok().json(serde_json::json!({
-                "folder": folder,
-                "status": "never_synced",
-                "last_uid_synced": null,
-                "last_full_sync": null,
-                "last_incremental_sync": null,
-                "error_message": null,
-                "emails_synced": 0,
-                "emails_total": 0
-            })))
-        }
+    match state
+        .cache_service
+        .get_sync_state(folder, &account_email)
+        .await
+    {
+        Ok(Some(sync_state)) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "folder": folder,
+            "status": format!("{:?}", sync_state.sync_status),
+            "last_uid_synced": sync_state.last_uid_synced,
+            "last_full_sync": sync_state.last_full_sync,
+            "last_incremental_sync": sync_state.last_incremental_sync,
+            "error_message": sync_state.error_message,
+            "emails_synced": sync_state.emails_synced,
+            "emails_total": sync_state.emails_total
+        }))),
+        Ok(None) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "folder": folder,
+            "status": "never_synced",
+            "last_uid_synced": null,
+            "last_full_sync": null,
+            "last_incremental_sync": null,
+            "error_message": null,
+            "emails_synced": 0,
+            "emails_total": 0
+        }))),
         Err(e) => {
             error!("Failed to get sync status: {}", e);
-            Err(ApiError::InternalError(format!("Failed to get sync status: {}", e)))
+            Err(ApiError::InternalError(format!(
+                "Failed to get sync status: {}",
+                e
+            )))
         }
     }
 }
@@ -4862,8 +5514,17 @@ pub async fn list_folders(
             let account_service = state.account_service.lock().await;
             match account_service.get_default_account().await {
                 Ok(Some(account)) => account.email_address,
-                Ok(None) => return Err(ApiError::NotFound("No default account configured".to_string())),
-                Err(e) => return Err(ApiError::InternalError(format!("Failed to get default account: {}", e))),
+                Ok(None) => {
+                    return Err(ApiError::NotFound(
+                        "No default account configured".to_string(),
+                    ))
+                }
+                Err(e) => {
+                    return Err(ApiError::InternalError(format!(
+                        "Failed to get default account: {}",
+                        e
+                    )))
+                }
             }
         }
     };
@@ -4871,7 +5532,11 @@ pub async fn list_folders(
     info!("Listing folders for account: {}", account_id);
 
     // List folders for the account
-    match state.email_service.list_folders_for_account(&account_id).await {
+    match state
+        .email_service
+        .list_folders_for_account(&account_id)
+        .await
+    {
         Ok(folders) => {
             info!("Found {} folders for account {}", folders.len(), account_id);
             Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -4881,7 +5546,10 @@ pub async fn list_folders(
         }
         Err(e) => {
             error!("Failed to list folders for account {}: {}", account_id, e);
-            Err(ApiError::InternalError(format!("Failed to list folders: {}", e)))
+            Err(ApiError::InternalError(format!(
+                "Failed to list folders: {}",
+                e
+            )))
         }
     }
 }
@@ -4897,18 +5565,35 @@ pub async fn list_cached_folders(
             let account_service = state.account_service.lock().await;
             match account_service.get_default_account().await {
                 Ok(Some(account)) => account.email_address,
-                Ok(None) => return Err(ApiError::NotFound("No default account configured".to_string())),
-                Err(e) => return Err(ApiError::InternalError(format!("Failed to get default account: {}", e))),
+                Ok(None) => {
+                    return Err(ApiError::NotFound(
+                        "No default account configured".to_string(),
+                    ))
+                }
+                Err(e) => {
+                    return Err(ApiError::InternalError(format!(
+                        "Failed to get default account: {}",
+                        e
+                    )))
+                }
             }
         }
     };
 
     info!("Listing cached folders for account: {}", account_id);
 
-    match state.cache_service.get_all_cached_folders_for_account(&account_id).await {
+    match state
+        .cache_service
+        .get_all_cached_folders_for_account(&account_id)
+        .await
+    {
         Ok(folders) => {
             let folder_names: Vec<&str> = folders.iter().map(|f| f.name.as_str()).collect();
-            info!("Found {} cached folders for account {}", folders.len(), account_id);
+            info!(
+                "Found {} cached folders for account {}",
+                folders.len(),
+                account_id
+            );
             Ok(HttpResponse::Ok().json(serde_json::json!({
                 "account_id": account_id,
                 "folders": folder_names,
@@ -4916,8 +5601,14 @@ pub async fn list_cached_folders(
             })))
         }
         Err(e) => {
-            error!("Failed to list cached folders for account {}: {}", account_id, e);
-            Err(ApiError::InternalError(format!("Failed to list cached folders: {}", e)))
+            error!(
+                "Failed to list cached folders for account {}: {}",
+                account_id, e
+            );
+            Err(ApiError::InternalError(format!(
+                "Failed to list cached folders: {}",
+                e
+            )))
         }
     }
 }
@@ -4938,8 +5629,17 @@ pub async fn get_cached_emails(
             let account_service = state.account_service.lock().await;
             match account_service.get_default_account().await {
                 Ok(Some(account)) => account.email_address,
-                Ok(None) => return Err(ApiError::NotFound("No default account configured".to_string())),
-                Err(e) => return Err(ApiError::InternalError(format!("Failed to get default account: {}", e))),
+                Ok(None) => {
+                    return Err(ApiError::NotFound(
+                        "No default account configured".to_string(),
+                    ))
+                }
+                Err(e) => {
+                    return Err(ApiError::InternalError(format!(
+                        "Failed to get default account: {}",
+                        e
+                    )))
+                }
             }
         }
     };
@@ -4952,17 +5652,30 @@ pub async fn get_cached_emails(
         }
     };
 
-    info!("Getting cached emails for folder: {}, account: {}, limit: {}, offset: {}",
-          folder, account_id, limit, offset);
+    info!(
+        "Getting cached emails for folder: {}, account: {}, limit: {}, offset: {}",
+        folder, account_id, limit, offset
+    );
 
     // Dashboard UI needs full content for display
-    match state.cache_service.get_cached_emails_for_account(folder, &account_email, limit, offset, false).await {
+    match state
+        .cache_service
+        .get_cached_emails_for_account(folder, &account_email, limit, offset, false)
+        .await
+    {
         Ok(emails) => {
             // Get total count for this folder and account
-            let total_count = state.cache_service.count_emails_in_folder_for_account(folder, &account_email).await
+            let total_count = state
+                .cache_service
+                .count_emails_in_folder_for_account(folder, &account_email)
+                .await
                 .unwrap_or(0);
 
-            info!("Retrieved {} of {} cached emails", emails.len(), total_count);
+            info!(
+                "Retrieved {} of {} cached emails",
+                emails.len(),
+                total_count
+            );
             Ok(HttpResponse::Ok().json(serde_json::json!({
                 "emails": emails,
                 "folder": folder,
@@ -4971,7 +5684,10 @@ pub async fn get_cached_emails(
         }
         Err(e) => {
             error!("Failed to get cached emails: {}", e);
-            Err(ApiError::InternalError(format!("Failed to get cached emails: {}", e)))
+            Err(ApiError::InternalError(format!(
+                "Failed to get cached emails: {}",
+                e
+            )))
         }
     }
 }
@@ -4987,13 +5703,20 @@ pub async fn send_email(
     query: web::Query<SendEmailQueryParams>,
     body: web::Json<crate::dashboard::services::SendEmailRequest>,
 ) -> Result<impl Responder, ApiError> {
-    use lettre::{Message, message::{header::ContentType, Mailbox, MultiPart, SinglePart, header}};
     use chrono::Utc;
+    use lettre::{
+        message::{header, header::ContentType, Mailbox, MultiPart, SinglePart},
+        Message,
+    };
 
     // REQUIRE account_email parameter - do NOT fall back to default account
     // This prevents accidentally sending from the wrong account
-    let account_email = query.account_email.as_ref()
-        .ok_or_else(|| ApiError::BadRequest("account_email query parameter is required".to_string()))?
+    let account_email = query
+        .account_email
+        .as_ref()
+        .ok_or_else(|| {
+            ApiError::BadRequest("account_email query parameter is required".to_string())
+        })?
         .clone();
 
     info!("Queueing email from account: {}", account_email);
@@ -5002,54 +5725,79 @@ pub async fn send_email(
 
     // Get account details to build proper From header
     let account_service = state.account_service.lock().await;
-    let account = account_service.get_account(&account_email).await
+    let account = account_service
+        .get_account(&account_email)
+        .await
         .map_err(|e| ApiError::InternalError(format!("Account not found: {}", e)))?;
     drop(account_service);
 
     // Build from address with properly quoted display name
     let from_mailbox: Mailbox = if account.display_name.is_empty() {
-        account.email_address.parse()
+        account
+            .email_address
+            .parse()
             .map_err(|e| ApiError::InternalError(format!("Invalid from address: {}", e)))?
     } else {
-        let quoted_name = if account.display_name.contains(|c: char| "()<>[]:;@\\,\"".contains(c)) {
+        let quoted_name = if account
+            .display_name
+            .contains(|c: char| "()<>[]:;@\\,\"".contains(c))
+        {
             format!("\"{}\"", account.display_name.replace('\"', "\\\""))
         } else {
             account.display_name.clone()
         };
-        format!("{} <{}>", quoted_name, account.email_address).parse()
+        format!("{} <{}>", quoted_name, account.email_address)
+            .parse()
             .map_err(|e| ApiError::InternalError(format!("Invalid from address: {}", e)))?
     };
 
     // Build email message
-    let mut email_builder = Message::builder().from(from_mailbox).subject(&request.subject);
+    let mut email_builder = Message::builder()
+        .from(from_mailbox)
+        .subject(&request.subject);
 
     // Add recipients
     for to_addr in &request.to {
-        email_builder = email_builder.to(to_addr.parse()
+        email_builder = email_builder.to(to_addr
+            .parse()
             .map_err(|e| ApiError::BadRequest(format!("Invalid to address {}: {}", to_addr, e)))?);
     }
     if let Some(cc_addrs) = &request.cc {
         for cc_addr in cc_addrs {
-            email_builder = email_builder.cc(cc_addr.parse()
-                .map_err(|e| ApiError::BadRequest(format!("Invalid cc address {}: {}", cc_addr, e)))?);
+            email_builder = email_builder.cc(cc_addr.parse().map_err(|e| {
+                ApiError::BadRequest(format!("Invalid cc address {}: {}", cc_addr, e))
+            })?);
         }
     }
     if let Some(bcc_addrs) = &request.bcc {
         for bcc_addr in bcc_addrs {
-            email_builder = email_builder.bcc(bcc_addr.parse()
-                .map_err(|e| ApiError::BadRequest(format!("Invalid bcc address {}: {}", bcc_addr, e)))?);
+            email_builder = email_builder.bcc(bcc_addr.parse().map_err(|e| {
+                ApiError::BadRequest(format!("Invalid bcc address {}: {}", bcc_addr, e))
+            })?);
         }
     }
 
     // Build multipart body
     let email = if let Some(html_body) = &request.body_html {
-        email_builder.multipart(
-            MultiPart::alternative()
-                .singlepart(SinglePart::builder().header(header::ContentType::TEXT_PLAIN).body(request.body.clone()))
-                .singlepart(SinglePart::builder().header(header::ContentType::TEXT_HTML).body(html_body.clone()))
-        ).map_err(|e| ApiError::InternalError(format!("Failed to build email: {}", e)))?
+        email_builder
+            .multipart(
+                MultiPart::alternative()
+                    .singlepart(
+                        SinglePart::builder()
+                            .header(header::ContentType::TEXT_PLAIN)
+                            .body(request.body.clone()),
+                    )
+                    .singlepart(
+                        SinglePart::builder()
+                            .header(header::ContentType::TEXT_HTML)
+                            .body(html_body.clone()),
+                    ),
+            )
+            .map_err(|e| ApiError::InternalError(format!("Failed to build email: {}", e)))?
     } else {
-        email_builder.header(ContentType::TEXT_PLAIN).body(request.body.clone())
+        email_builder
+            .header(ContentType::TEXT_PLAIN)
+            .body(request.body.clone())
             .map_err(|e| ApiError::InternalError(format!("Failed to build email: {}", e)))?
     };
 
@@ -5085,7 +5833,10 @@ pub async fn send_email(
     // Enqueue the email
     match state.outbox_queue_service.enqueue(queue_item).await {
         Ok(queue_id) => {
-            info!("Email queued successfully with ID: {} (will be sent asynchronously)", queue_id);
+            info!(
+                "Email queued successfully with ID: {} (will be sent asynchronously)",
+                queue_id
+            );
 
             let response = crate::dashboard::services::SendEmailResponse {
                 success: true,
@@ -5097,7 +5848,10 @@ pub async fn send_email(
         }
         Err(e) => {
             error!("Failed to queue email: {}", e);
-            Err(ApiError::InternalError(format!("Failed to queue email: {}", e)))
+            Err(ApiError::InternalError(format!(
+                "Failed to queue email: {}",
+                e
+            )))
         }
     }
 }
@@ -5116,8 +5870,12 @@ pub async fn delete_email(
 ) -> Result<impl Responder, ApiError> {
     let request = body.into_inner();
 
-    info!("Deleting {} email(s) from folder {} for account {}",
-          request.uids.len(), request.folder, request.account_email);
+    info!(
+        "Deleting {} email(s) from folder {} for account {}",
+        request.uids.len(),
+        request.folder,
+        request.account_email
+    );
 
     if request.uids.is_empty() {
         return Err(ApiError::BadRequest("No UIDs provided".to_string()));
@@ -5125,20 +5883,28 @@ pub async fn delete_email(
 
     // Get account details
     let account_service = state.account_service.lock().await;
-    let account = account_service.get_account(&request.account_email).await
+    let account = account_service
+        .get_account(&request.account_email)
+        .await
         .map_err(|e| ApiError::InternalError(format!("Account not found: {}", e)))?;
     drop(account_service);
 
     // Create IMAP session for this account
-    let session = state.imap_session_factory.create_session_for_account(&account).await
+    let session = state
+        .imap_session_factory
+        .create_session_for_account(&account)
+        .await
         .map_err(|e| ApiError::InternalError(format!("Failed to create IMAP session: {}", e)))?;
 
     // Select the folder
-    session.select_folder(&request.folder).await
-        .map_err(|e| ApiError::InternalError(format!("Failed to select folder {}: {}", request.folder, e)))?;
+    session.select_folder(&request.folder).await.map_err(|e| {
+        ApiError::InternalError(format!("Failed to select folder {}: {}", request.folder, e))
+    })?;
 
     // Delete the messages
-    session.delete_messages(&request.uids).await
+    session
+        .delete_messages(&request.uids)
+        .await
         .map_err(|e| ApiError::InternalError(format!("Failed to delete messages: {}", e)))?;
 
     // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
@@ -5146,10 +5912,18 @@ pub async fn delete_email(
         warn!("Failed to logout IMAP session: {}", e);
     }
 
-    info!("Successfully deleted {} email(s) from {}", request.uids.len(), request.folder);
+    info!(
+        "Successfully deleted {} email(s) from {}",
+        request.uids.len(),
+        request.folder
+    );
 
     // Remove deleted emails from cache
-    if let Err(e) = state.cache_service.delete_emails_by_uids(&request.folder, &request.uids, &request.account_email).await {
+    if let Err(e) = state
+        .cache_service
+        .delete_emails_by_uids(&request.folder, &request.uids, &request.account_email)
+        .await
+    {
         warn!("Failed to remove deleted emails from cache: {}", e);
     }
 
@@ -5181,7 +5955,12 @@ pub async fn get_jobs(
 
     // First try to get jobs from persistence service if available
     if let Some(ref persistence) = state.job_persistence {
-        let jobs = persistence.get_all_jobs(query.status.as_deref(), query.limit, query.account_id.as_deref())
+        let jobs = persistence
+            .get_all_jobs(
+                query.status.as_deref(),
+                query.limit,
+                query.account_id.as_deref(),
+            )
             .await
             .map_err(|e| ApiError::InternalError(format!("Failed to get jobs: {}", e)))?;
 
@@ -5192,12 +5971,16 @@ pub async fn get_jobs(
     }
 
     // Fall back to in-memory jobs
-    let jobs: Vec<_> = state.jobs.iter()
+    let jobs: Vec<_> = state
+        .jobs
+        .iter()
         .filter(|entry| {
             if let Some(ref status_filter) = query.status {
                 match (&entry.status, status_filter.as_str()) {
                     (crate::dashboard::services::jobs::JobStatus::Running, "running") => true,
-                    (crate::dashboard::services::jobs::JobStatus::Completed(_), "completed") => true,
+                    (crate::dashboard::services::jobs::JobStatus::Completed(_), "completed") => {
+                        true
+                    }
                     (crate::dashboard::services::jobs::JobStatus::Failed(_), "failed") => true,
                     _ => false,
                 }
@@ -5225,7 +6008,8 @@ pub async fn get_job(
 
     // First try persistence service
     if let Some(ref persistence) = state.job_persistence {
-        if let Some(job) = persistence.get_job(&job_id)
+        if let Some(job) = persistence
+            .get_job(&job_id)
             .await
             .map_err(|e| ApiError::InternalError(format!("Failed to get job: {}", e)))?
         {
@@ -5251,23 +6035,35 @@ pub async fn cancel_job(
     req: web::Json<CancelJobRequest>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    info!("Handling POST /api/dashboard/jobs/cancel for job: {}", req.job_id);
+    info!(
+        "Handling POST /api/dashboard/jobs/cancel for job: {}",
+        req.job_id
+    );
 
     // Update in database if persistence is enabled
     if let Some(ref persistence) = state.job_persistence {
-        let cancelled = persistence.cancel_job(&req.job_id)
+        let cancelled = persistence
+            .cancel_job(&req.job_id)
             .await
             .map_err(|e| ApiError::InternalError(format!("Failed to cancel job: {}", e)))?;
 
         if !cancelled {
-            return Err(ApiError::BadRequest(format!("Job {} is not running or not found", req.job_id)));
+            return Err(ApiError::BadRequest(format!(
+                "Job {} is not running or not found",
+                req.job_id
+            )));
         }
     }
 
     // Update in-memory state
     if let Some(mut entry) = state.jobs.get_mut(&req.job_id) {
-        if matches!(entry.status, crate::dashboard::services::jobs::JobStatus::Running) {
-            entry.status = crate::dashboard::services::jobs::JobStatus::Failed("Cancelled by user".to_string());
+        if matches!(
+            entry.status,
+            crate::dashboard::services::jobs::JobStatus::Running
+        ) {
+            entry.status = crate::dashboard::services::jobs::JobStatus::Failed(
+                "Cancelled by user".to_string(),
+            );
         }
     }
 
@@ -5283,15 +6079,22 @@ pub async fn pause_job(
     req: web::Json<CancelJobRequest>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    info!("Handling POST /api/dashboard/jobs/pause for job: {}", req.job_id);
+    info!(
+        "Handling POST /api/dashboard/jobs/pause for job: {}",
+        req.job_id
+    );
 
     if let Some(ref persistence) = state.job_persistence {
-        let paused = persistence.pause_job(&req.job_id)
+        let paused = persistence
+            .pause_job(&req.job_id)
             .await
             .map_err(|e| ApiError::InternalError(format!("Failed to pause job: {}", e)))?;
 
         if !paused {
-            return Err(ApiError::BadRequest(format!("Job {} is not running or not found", req.job_id)));
+            return Err(ApiError::BadRequest(format!(
+                "Job {} is not running or not found",
+                req.job_id
+            )));
         }
     }
 
@@ -5307,15 +6110,22 @@ pub async fn resume_job(
     req: web::Json<CancelJobRequest>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    info!("Handling POST /api/dashboard/jobs/resume for job: {}", req.job_id);
+    info!(
+        "Handling POST /api/dashboard/jobs/resume for job: {}",
+        req.job_id
+    );
 
     if let Some(ref persistence) = state.job_persistence {
-        let resumed = persistence.resume_job(&req.job_id)
+        let resumed = persistence
+            .resume_job(&req.job_id)
             .await
             .map_err(|e| ApiError::InternalError(format!("Failed to resume job: {}", e)))?;
 
         if !resumed {
-            return Err(ApiError::BadRequest(format!("Job {} is not paused or not found", req.job_id)));
+            return Err(ApiError::BadRequest(format!(
+                "Job {} is not paused or not found",
+                req.job_id
+            )));
         }
     }
 
@@ -5335,7 +6145,8 @@ pub async fn delete_job_handler(
     info!("Handling DELETE /api/dashboard/jobs/{}", job_id);
 
     if let Some(ref persistence) = state.job_persistence {
-        persistence.delete_job(&job_id)
+        persistence
+            .delete_job(&job_id)
             .await
             .map_err(|e| ApiError::InternalError(format!("Failed to delete job: {}", e)))?;
     }
@@ -5358,17 +6169,20 @@ pub async fn clear_finished_jobs(
     let mut deleted_count: u64 = 0;
 
     if let Some(ref persistence) = state.job_persistence {
-        deleted_count = persistence.delete_finished_jobs()
-            .await
-            .map_err(|e| ApiError::InternalError(format!("Failed to clear finished jobs: {}", e)))?;
+        deleted_count = persistence.delete_finished_jobs().await.map_err(|e| {
+            ApiError::InternalError(format!("Failed to clear finished jobs: {}", e))
+        })?;
     }
 
     // Also clean from in-memory state
-    let keys_to_remove: Vec<String> = state.jobs.iter()
+    let keys_to_remove: Vec<String> = state
+        .jobs
+        .iter()
         .filter(|entry| {
-            matches!(&entry.status,
-                crate::dashboard::services::jobs::JobStatus::Completed(_) |
-                crate::dashboard::services::jobs::JobStatus::Failed(_)
+            matches!(
+                &entry.status,
+                crate::dashboard::services::jobs::JobStatus::Completed(_)
+                    | crate::dashboard::services::jobs::JobStatus::Failed(_)
             )
         })
         .map(|entry| entry.key().clone())
@@ -5396,8 +6210,10 @@ pub async fn start_process_email_instructions(
     req: web::Json<StartProcessEmailInstructionsRequest>,
     state: web::Data<DashboardState>,
 ) -> Result<impl Responder, ApiError> {
-    info!("Handling POST /api/dashboard/jobs/process-emails with instruction: {} for account: {}",
-          req.instruction, req.account_id);
+    info!(
+        "Handling POST /api/dashboard/jobs/process-emails with instruction: {} for account: {}",
+        req.instruction, req.account_id
+    );
 
     let folder = req.folder.clone().unwrap_or_else(|| "INBOX".to_string());
 
@@ -5410,20 +6226,30 @@ pub async fn start_process_email_instructions(
 
     // Call the high-level tool which internally handles job creation and spawning
     let result = crate::dashboard::api::high_level_tools::handle_process_email_instructions(
-        &state,
-        arguments,
-    ).await;
+        &state, arguments,
+    )
+    .await;
 
     // The result contains success and job_id fields
-    if result.get("success").and_then(|v| v.as_bool()).unwrap_or(false) {
-        let job_id = result.get("job_id").and_then(|v| v.as_str()).unwrap_or("unknown");
+    if result
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+    {
+        let job_id = result
+            .get("job_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
         Ok(HttpResponse::Accepted().json(serde_json::json!({
             "job_id": job_id,
             "status": "running",
             "message": "Job started successfully"
         })))
     } else {
-        let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("Unknown error");
+        let error = result
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown error");
         Err(ApiError::BadRequest(error.to_string()))
     }
 }

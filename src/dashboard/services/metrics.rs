@@ -3,14 +3,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use crate::dashboard::api::models::{DashboardStats, SystemHealth, SystemStatus};
+use chrono::Utc;
+use log::{debug, info};
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use chrono::Utc;
+use sysinfo::{CpuRefreshKind, MemoryRefreshKind, RefreshKind, System};
 use tokio::sync::RwLock;
-use sysinfo::{System, RefreshKind, CpuRefreshKind, MemoryRefreshKind};
-use log::{debug, info};
-use crate::dashboard::api::models::{DashboardStats, SystemHealth, SystemStatus};
-use std::collections::VecDeque;
 
 // Store for metrics data
 #[derive(Debug)]
@@ -54,25 +54,25 @@ impl MetricsService {
         // In a real implementation, this would set up the service
         // and potentially store it in a global registry
     }
-    
+
     pub fn new(collection_interval: Duration) -> Self {
         let metrics_store = Arc::new(RwLock::new(MetricsStore::default()));
         // Don't spawn task here, will be spawned from main.rs after state is created
-        Self { 
+        Self {
             metrics_store,
             collection_interval,
         }
     }
-    
+
     async fn collect_metrics(
         sys: &mut System,
         store: Arc<RwLock<MetricsStore>>,
-        connection_pool: Arc<crate::connection_pool::ConnectionPool>
+        connection_pool: Arc<crate::connection_pool::ConnectionPool>,
     ) {
         sys.refresh_specifics(
             RefreshKind::new()
                 .with_cpu(CpuRefreshKind::everything())
-                .with_memory(MemoryRefreshKind::everything())
+                .with_memory(MemoryRefreshKind::everything()),
         );
 
         let mut store_guard = store.write().await;
@@ -84,47 +84,57 @@ impl MetricsService {
         // --- Get active IMAP connection count from connection pool ---
         let pool_stats = connection_pool.stats().await;
         store_guard.active_imap_connections = pool_stats.active_connections;
-        debug!("Collected IMAP connection pool stats: active={}, total={}, available={}",
-               pool_stats.active_connections, pool_stats.total_connections, pool_stats.available_connections);
-        // --- End connection count --- 
+        debug!(
+            "Collected IMAP connection pool stats: active={}, total={}, available={}",
+            pool_stats.active_connections,
+            pool_stats.total_connections,
+            pool_stats.available_connections
+        );
+        // --- End connection count ---
 
         // TODO: Update request_rate_points (needs tracking mechanism)
         if store_guard.request_timestamps.len() >= 24 {
-             store_guard.request_timestamps.pop_front();
+            store_guard.request_timestamps.pop_front();
         }
         store_guard.request_timestamps.push_back(Instant::now());
 
         store_guard.last_updated = Utc::now();
-        debug!("Collected metrics - CPU: {:.1}%, Mem: {:.1}%, Active IMAP Connections: {}",
-               store_guard.cpu_usage, store_guard.memory_usage, store_guard.active_imap_connections);
+        debug!(
+            "Collected metrics - CPU: {:.1}%, Mem: {:.1}%, Active IMAP Connections: {}",
+            store_guard.cpu_usage, store_guard.memory_usage, store_guard.active_imap_connections
+        );
     }
-    
+
     pub async fn get_current_stats(&self) -> DashboardStats {
         // Read store data
         let store = self.metrics_store.read().await;
-        
+
         // Calculate Requests Per Minute (RPM)
         let now = Instant::now();
-        let cutoff = now.checked_sub(Duration::from_secs(60)).unwrap_or(now); 
-        let requests_in_last_minute = store.request_timestamps.iter().filter(|ts| **ts >= cutoff).count();
-        let requests_per_minute = requests_in_last_minute as f64; 
+        let cutoff = now.checked_sub(Duration::from_secs(60)).unwrap_or(now);
+        let requests_in_last_minute = store
+            .request_timestamps
+            .iter()
+            .filter(|ts| **ts >= cutoff)
+            .count();
+        let requests_per_minute = requests_in_last_minute as f64;
 
         // Calculate Average Response Time
         let total_response_time_ms: u128 = store.response_times_ms.iter().sum();
         let response_count = store.response_times_ms.len();
         let average_response_time_ms = if response_count > 0 {
-             total_response_time_ms as f64 / response_count as f64 
+            total_response_time_ms as f64 / response_count as f64
         } else {
             0.0
         };
 
-        // Determine system health status 
+        // Determine system health status
         let status = if store.cpu_usage > 90.0 || store.memory_usage > 90.0 {
-            SystemStatus::Critical 
+            SystemStatus::Critical
         } else if store.cpu_usage > 70.0 || store.memory_usage > 70.0 {
-            SystemStatus::Degraded 
+            SystemStatus::Degraded
         } else {
-            SystemStatus::Healthy 
+            SystemStatus::Healthy
         };
 
         DashboardStats {
@@ -165,13 +175,13 @@ impl MetricsService {
         // Prune old response times (e.g., older than 60 seconds)
         // We need a way to associate response times with timestamps or just keep a fixed window
         // For simplicity, let's prune based on count for now, keeping last N entries
-        const MAX_RESPONSE_TIMES: usize = 1000; 
+        const MAX_RESPONSE_TIMES: usize = 1000;
         while store.response_times_ms.len() > MAX_RESPONSE_TIMES {
             store.response_times_ms.pop_front();
         }
         // Also prune request timestamps to avoid unbounded growth if response isn't recorded
         let cutoff = now - Duration::from_secs(60);
-         while let Some(ts) = store.request_timestamps.front() {
+        while let Some(ts) = store.request_timestamps.front() {
             if *ts < cutoff {
                 store.request_timestamps.pop_front();
             } else {
@@ -181,7 +191,10 @@ impl MetricsService {
     }
 
     // Start background collection task with only the connection pool (breaks circular reference)
-    pub fn start_background_collection(&self, connection_pool: Arc<crate::connection_pool::ConnectionPool>) {
+    pub fn start_background_collection(
+        &self,
+        connection_pool: Arc<crate::connection_pool::ConnectionPool>,
+    ) {
         let metrics_store_clone = Arc::clone(&self.metrics_store);
         let collection_interval = self.collection_interval;
 
@@ -195,7 +208,12 @@ impl MetricsService {
             loop {
                 interval.tick().await;
                 // Only pass the connection pool, not the entire DashboardState
-                MetricsService::collect_metrics(&mut sys, metrics_store_clone.clone(), connection_pool.clone()).await;
+                MetricsService::collect_metrics(
+                    &mut sys,
+                    metrics_store_clone.clone(),
+                    connection_pool.clone(),
+                )
+                .await;
             }
         });
         info!("Started background metrics collection task");

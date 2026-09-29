@@ -10,10 +10,10 @@
 //   2. Environment variables (deployment-time defaults)
 //   3. Code defaults (fallback)
 
-use serde::{Serialize, Deserialize};
-use sqlx::{SqlitePool, FromRow};
-use log::{debug, error, info};
 use crate::api::errors::ApiError;
+use log::{debug, error, info};
+use serde::{Deserialize, Serialize};
+use sqlx::{FromRow, SqlitePool};
 
 /// Database row for ai_sampler_configs table
 /// Used internally for SQLx queries (derives FromRow)
@@ -42,9 +42,10 @@ struct SamplerConfigRow {
 impl SamplerConfigRow {
     /// Convert database row to SamplerConfig
     fn into_config(self) -> SamplerConfig {
-        let stop_sequences: Vec<String> = serde_json::from_str(&self.stop_sequences).unwrap_or_default();
-        let provider_options: serde_json::Value = serde_json::from_str(&self.provider_options)
-            .unwrap_or_else(|_| serde_json::json!({}));
+        let stop_sequences: Vec<String> =
+            serde_json::from_str(&self.stop_sequences).unwrap_or_default();
+        let provider_options: serde_json::Value =
+            serde_json::from_str(&self.provider_options).unwrap_or_else(|_| serde_json::json!({}));
 
         SamplerConfig {
             id: Some(self.id),
@@ -90,13 +91,13 @@ pub struct SamplerConfig {
     pub top_p: Option<f32>,
     pub top_k: Option<i32>,
     pub min_p: Option<f32>,
-    pub typical_p: Option<f32>,  // top-n-sigma / tail-free sampling
+    pub typical_p: Option<f32>, // top-n-sigma / tail-free sampling
     pub repeat_penalty: Option<f32>,
     pub num_ctx: Option<u32>,
     pub max_tokens: Option<u32>,
     pub think_mode: bool,
     pub stop_sequences: Vec<String>,
-    pub system_prompt: Option<String>,  // Custom system prompt override
+    pub system_prompt: Option<String>, // Custom system prompt override
     pub provider_options: serde_json::Value,
     pub description: Option<String>,
     pub created_at: Option<String>,
@@ -175,8 +176,7 @@ impl SamplerConfig {
             .ok()
             .and_then(|v| v.parse().ok());
 
-        config.system_prompt = std::env::var("SAMPLER_DEFAULT_SYSTEM_PROMPT")
-            .ok();
+        config.system_prompt = std::env::var("SAMPLER_DEFAULT_SYSTEM_PROMPT").ok();
 
         config
     }
@@ -246,7 +246,10 @@ pub async fn get_sampler_config(
     provider: &str,
     model_name: &str,
 ) -> Result<SamplerConfig, ApiError> {
-    debug!("Fetching sampler config for provider: {}, model: {}", provider, model_name);
+    debug!(
+        "Fetching sampler config for provider: {}, model: {}",
+        provider, model_name
+    );
 
     // Try to get from database first
     let row = sqlx::query_as::<_, SamplerConfigRow>(
@@ -267,11 +270,17 @@ pub async fn get_sampler_config(
 
     match row {
         Some(db_row) => {
-            info!("Found sampler config in database for {}/{}", provider, model_name);
+            info!(
+                "Found sampler config in database for {}/{}",
+                provider, model_name
+            );
             Ok(db_row.into_config())
         }
         None => {
-            debug!("No sampler config in DB for {}/{}, using env defaults", provider, model_name);
+            debug!(
+                "No sampler config in DB for {}/{}, using env defaults",
+                provider, model_name
+            );
             Ok(SamplerConfig::from_env_defaults(provider, model_name))
         }
     }
@@ -279,16 +288,22 @@ pub async fn get_sampler_config(
 
 /// Save sampler config to database
 /// Uses UPSERT to insert or update existing config
-pub async fn save_sampler_config(pool: &SqlitePool, config: &SamplerConfig) -> Result<i64, ApiError> {
-    debug!("Saving sampler config for provider: {}, model: {}", config.provider, config.model_name);
+pub async fn save_sampler_config(
+    pool: &SqlitePool,
+    config: &SamplerConfig,
+) -> Result<i64, ApiError> {
+    debug!(
+        "Saving sampler config for provider: {}, model: {}",
+        config.provider, config.model_name
+    );
 
     // Serialize stop_sequences to JSON
-    let stop_seq_json = serde_json::to_string(&config.stop_sequences)
-        .unwrap_or_else(|_| "[]".to_string());
+    let stop_seq_json =
+        serde_json::to_string(&config.stop_sequences).unwrap_or_else(|_| "[]".to_string());
 
     // Serialize provider_options to JSON
-    let prov_opts_json = serde_json::to_string(&config.provider_options)
-        .unwrap_or_else(|_| "{}".to_string());
+    let prov_opts_json =
+        serde_json::to_string(&config.provider_options).unwrap_or_else(|_| "{}".to_string());
 
     let result = sqlx::query(
         "INSERT INTO ai_sampler_configs (
@@ -332,7 +347,10 @@ pub async fn save_sampler_config(pool: &SqlitePool, config: &SamplerConfig) -> R
         ApiError::InternalError { message: format!("Failed to save sampler config: {}", e) }
     })?;
 
-    info!("Saved sampler config for {}/{}", config.provider, config.model_name);
+    info!(
+        "Saved sampler config for {}/{}",
+        config.provider, config.model_name
+    );
     Ok(result.last_insert_rowid())
 }
 
@@ -391,23 +409,27 @@ pub async fn delete_sampler_config(
     provider: &str,
     model_name: &str,
 ) -> Result<(), ApiError> {
-    debug!("Deleting sampler config for provider: {}, model: {}", provider, model_name);
+    debug!(
+        "Deleting sampler config for provider: {}, model: {}",
+        provider, model_name
+    );
 
-    let result = sqlx::query(
-        "DELETE FROM ai_sampler_configs WHERE provider = ? AND model_name = ?"
-    )
-    .bind(provider)
-    .bind(model_name)
-    .execute(pool)
-    .await
-    .map_err(|e| {
-        error!("Database error deleting sampler config: {}", e);
-        ApiError::InternalError { message: format!("Failed to delete sampler config: {}", e) }
-    })?;
+    let result =
+        sqlx::query("DELETE FROM ai_sampler_configs WHERE provider = ? AND model_name = ?")
+            .bind(provider)
+            .bind(model_name)
+            .execute(pool)
+            .await
+            .map_err(|e| {
+                error!("Database error deleting sampler config: {}", e);
+                ApiError::InternalError {
+                    message: format!("Failed to delete sampler config: {}", e),
+                }
+            })?;
 
     if result.rows_affected() == 0 {
         return Err(ApiError::NotFound {
-            resource: format!("Sampler config for {}/{}", provider, model_name)
+            resource: format!("Sampler config for {}/{}", provider, model_name),
         });
     }
 
@@ -441,57 +463,174 @@ pub fn get_recommended_presets() -> Vec<PresetCategory> {
             name: "Ollama - Recommended".to_string(),
             description: "Optimized settings for popular Ollama models".to_string(),
             presets: vec![
-                create_preset("ollama", "hf.co/unsloth/GLM-4.7-Flash-GGUF:q8_0",
-                    0.7, 1.0, None, Some(0.01), 1.0, 51200, false,
-                    "GLM-4.7-Flash Q8 - Recommended for tool-calling with 50k context"),
-                create_preset("ollama", "qwen2.5:7b",
-                    0.7, 0.95, None, Some(0.05), 1.1, 32768, false,
-                    "Qwen 2.5 7B - Fast local model for simple tasks"),
-                create_preset("ollama", "qwen2.5:14b",
-                    0.7, 0.95, None, Some(0.05), 1.1, 32768, false,
-                    "Qwen 2.5 14B - Balanced performance"),
-                create_preset("ollama", "qwen2.5:32b",
-                    0.7, 0.95, None, Some(0.05), 1.1, 32768, false,
-                    "Qwen 2.5 32B - Larger model for complex reasoning"),
-                create_preset("ollama", "llama3.2:7b",
-                    0.8, 0.9, None, Some(0.05), 1.15, 8192, false,
-                    "Llama 3.2 7B - General purpose model"),
-                create_preset("ollama", "llama3.3:70b",
-                    0.7, 0.9, None, Some(0.05), 1.1, 131072, false,
-                    "Llama 3.3 70B - Large model with 128k context"),
-                create_preset("ollama", "mistral:7b",
-                    0.7, 0.95, None, Some(0.05), 1.1, 32768, false,
-                    "Mistral 7B - Fast reasoning model"),
+                create_preset(
+                    "ollama",
+                    "hf.co/unsloth/GLM-4.7-Flash-GGUF:q8_0",
+                    0.7,
+                    1.0,
+                    None,
+                    Some(0.01),
+                    1.0,
+                    51200,
+                    false,
+                    "GLM-4.7-Flash Q8 - Recommended for tool-calling with 50k context",
+                ),
+                create_preset(
+                    "ollama",
+                    "qwen2.5:7b",
+                    0.7,
+                    0.95,
+                    None,
+                    Some(0.05),
+                    1.1,
+                    32768,
+                    false,
+                    "Qwen 2.5 7B - Fast local model for simple tasks",
+                ),
+                create_preset(
+                    "ollama",
+                    "qwen2.5:14b",
+                    0.7,
+                    0.95,
+                    None,
+                    Some(0.05),
+                    1.1,
+                    32768,
+                    false,
+                    "Qwen 2.5 14B - Balanced performance",
+                ),
+                create_preset(
+                    "ollama",
+                    "qwen2.5:32b",
+                    0.7,
+                    0.95,
+                    None,
+                    Some(0.05),
+                    1.1,
+                    32768,
+                    false,
+                    "Qwen 2.5 32B - Larger model for complex reasoning",
+                ),
+                create_preset(
+                    "ollama",
+                    "llama3.2:7b",
+                    0.8,
+                    0.9,
+                    None,
+                    Some(0.05),
+                    1.15,
+                    8192,
+                    false,
+                    "Llama 3.2 7B - General purpose model",
+                ),
+                create_preset(
+                    "ollama",
+                    "llama3.3:70b",
+                    0.7,
+                    0.9,
+                    None,
+                    Some(0.05),
+                    1.1,
+                    131072,
+                    false,
+                    "Llama 3.3 70B - Large model with 128k context",
+                ),
+                create_preset(
+                    "ollama",
+                    "mistral:7b",
+                    0.7,
+                    0.95,
+                    None,
+                    Some(0.05),
+                    1.1,
+                    32768,
+                    false,
+                    "Mistral 7B - Fast reasoning model",
+                ),
             ],
         },
         PresetCategory {
             name: "llama.cpp - Recommended".to_string(),
             description: "Optimized settings for llama.cpp server".to_string(),
             presets: vec![
-                create_preset("llamacpp", "default",
-                    0.7, 1.0, None, Some(0.01), 1.0, 51200, false,
-                    "Default llama.cpp settings - applies when no model-specific config exists"),
-                create_preset("llamacpp", "GLM-4.7-Flash",
-                    0.7, 1.0, None, Some(0.01), 1.0, 51200, false,
-                    "GLM-4.7-Flash - Optimized for 50k context and tool-calling"),
+                create_preset(
+                    "llamacpp",
+                    "default",
+                    0.7,
+                    1.0,
+                    None,
+                    Some(0.01),
+                    1.0,
+                    51200,
+                    false,
+                    "Default llama.cpp settings - applies when no model-specific config exists",
+                ),
+                create_preset(
+                    "llamacpp",
+                    "GLM-4.7-Flash",
+                    0.7,
+                    1.0,
+                    None,
+                    Some(0.01),
+                    1.0,
+                    51200,
+                    false,
+                    "GLM-4.7-Flash - Optimized for 50k context and tool-calling",
+                ),
             ],
         },
         PresetCategory {
             name: "Cloud Providers".to_string(),
             description: "Settings for OpenAI, Anthropic, and other cloud APIs".to_string(),
             presets: vec![
-                create_preset("openai", "gpt-4o",
-                    0.7, 1.0, None, None, 1.0, 128000, false,
-                    "GPT-4o - OpenAI's latest multimodal model"),
-                create_preset("openai", "gpt-4-turbo",
-                    0.7, 1.0, None, None, 1.0, 128000, false,
-                    "GPT-4 Turbo - Fast and capable"),
-                create_preset("anthropic", "claude-3-opus",
-                    0.7, 1.0, None, None, 1.0, 200000, false,
-                    "Claude 3 Opus - Most capable Anthropic model"),
-                create_preset("anthropic", "claude-3-sonnet",
-                    0.7, 1.0, None, None, 1.0, 200000, false,
-                    "Claude 3 Sonnet - Balanced performance"),
+                create_preset(
+                    "openai",
+                    "gpt-4o",
+                    0.7,
+                    1.0,
+                    None,
+                    None,
+                    1.0,
+                    128000,
+                    false,
+                    "GPT-4o - OpenAI's latest multimodal model",
+                ),
+                create_preset(
+                    "openai",
+                    "gpt-4-turbo",
+                    0.7,
+                    1.0,
+                    None,
+                    None,
+                    1.0,
+                    128000,
+                    false,
+                    "GPT-4 Turbo - Fast and capable",
+                ),
+                create_preset(
+                    "anthropic",
+                    "claude-3-opus",
+                    0.7,
+                    1.0,
+                    None,
+                    None,
+                    1.0,
+                    200000,
+                    false,
+                    "Claude 3 Opus - Most capable Anthropic model",
+                ),
+                create_preset(
+                    "anthropic",
+                    "claude-3-sonnet",
+                    0.7,
+                    1.0,
+                    None,
+                    None,
+                    1.0,
+                    200000,
+                    false,
+                    "Claude 3 Sonnet - Balanced performance",
+                ),
             ],
         },
     ]
@@ -544,13 +683,14 @@ pub async fn import_presets(
     for preset in presets {
         // Check if config already exists
         let exists = sqlx::query_scalar::<_, i32>(
-            "SELECT COUNT(*) FROM ai_sampler_configs WHERE provider = ? AND model_name = ?"
+            "SELECT COUNT(*) FROM ai_sampler_configs WHERE provider = ? AND model_name = ?",
         )
         .bind(&preset.provider)
         .bind(&preset.model_name)
         .fetch_one(pool)
         .await
-        .unwrap_or(0) > 0;
+        .unwrap_or(0)
+            > 0;
 
         if exists && !overwrite {
             skipped += 1;
@@ -560,7 +700,10 @@ pub async fn import_presets(
         match save_sampler_config(pool, preset).await {
             Ok(_) => imported += 1,
             Err(e) => {
-                error!("Failed to import preset {}/{}: {:?}", preset.provider, preset.model_name, e);
+                error!(
+                    "Failed to import preset {}/{}: {:?}",
+                    preset.provider, preset.model_name, e
+                );
                 skipped += 1;
             }
         }

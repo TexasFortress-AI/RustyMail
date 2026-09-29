@@ -3,13 +3,15 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use rustymail::dashboard::services::account::{AccountService, Account, AccountError};
-use rustymail::dashboard::services::account_store::{AccountStore, StoredAccount, ImapConfig, SmtpConfig};
 use chrono::Utc;
+use rustymail::dashboard::services::account::{Account, AccountError, AccountService};
+use rustymail::dashboard::services::account_store::{
+    AccountStore, ImapConfig, SmtpConfig, StoredAccount,
+};
 use serial_test::serial;
+use sqlx::SqlitePool;
 use std::fs;
 use tempfile::TempDir;
-use sqlx::SqlitePool;
 
 // Helper function to create test database pool
 async fn create_test_db_pool(test_name: &str) -> SqlitePool {
@@ -32,10 +34,7 @@ async fn create_test_db_pool(test_name: &str) -> SqlitePool {
     let pool = SqlitePool::connect(&db_url).await.unwrap();
 
     // Run migrations
-    sqlx::migrate!("./migrations")
-        .run(&pool)
-        .await
-        .unwrap();
+    sqlx::migrate!("./migrations").run(&pool).await.unwrap();
 
     pool
 }
@@ -89,7 +88,10 @@ async fn test_account_service_initialization() {
     let pool = create_test_db_pool(test_name).await;
 
     let result = service.initialize(pool).await;
-    assert!(result.is_ok(), "Account service initialization should succeed");
+    assert!(
+        result.is_ok(),
+        "Account service initialization should succeed"
+    );
 
     // Verify config file was created
     assert!(config_path.exists(), "Config file should exist");
@@ -115,7 +117,11 @@ async fn test_account_creation() {
     // Create account
     let account_id = service.create_account(account.clone()).await;
     assert!(account_id.is_ok(), "Account creation should succeed");
-    assert_eq!(account_id.unwrap(), "test@gmail.com", "Account ID should be email address");
+    assert_eq!(
+        account_id.unwrap(),
+        "test@gmail.com",
+        "Account ID should be email address"
+    );
 
     // Verify account was created
     let retrieved = service.get_account("test@gmail.com").await.unwrap();
@@ -165,9 +171,18 @@ async fn test_account_list() {
     service.initialize(pool).await.unwrap();
 
     // Create multiple accounts
-    service.create_account(create_test_account("user1@gmail.com", "User 1")).await.unwrap();
-    service.create_account(create_test_account("user2@gmail.com", "User 2")).await.unwrap();
-    service.create_account(create_test_account("user3@gmail.com", "User 3")).await.unwrap();
+    service
+        .create_account(create_test_account("user1@gmail.com", "User 1"))
+        .await
+        .unwrap();
+    service
+        .create_account(create_test_account("user2@gmail.com", "User 2"))
+        .await
+        .unwrap();
+    service
+        .create_account(create_test_account("user3@gmail.com", "User 3"))
+        .await
+        .unwrap();
 
     // List accounts
     let accounts = service.list_accounts().await.unwrap();
@@ -227,8 +242,14 @@ async fn test_account_deletion() {
     service.initialize(pool).await.unwrap();
 
     // Create accounts
-    service.create_account(create_test_account("user1@gmail.com", "User 1")).await.unwrap();
-    service.create_account(create_test_account("user2@gmail.com", "User 2")).await.unwrap();
+    service
+        .create_account(create_test_account("user1@gmail.com", "User 1"))
+        .await
+        .unwrap();
+    service
+        .create_account(create_test_account("user2@gmail.com", "User 2"))
+        .await
+        .unwrap();
 
     // Delete one account
     let result = service.delete_account("user1@gmail.com").await;
@@ -260,15 +281,27 @@ async fn test_default_account_management() {
     service.initialize(pool).await.unwrap();
 
     // Create accounts
-    service.create_account(create_test_account("user1@gmail.com", "User 1")).await.unwrap();
-    service.create_account(create_test_account("user2@gmail.com", "User 2")).await.unwrap();
+    service
+        .create_account(create_test_account("user1@gmail.com", "User 1"))
+        .await
+        .unwrap();
+    service
+        .create_account(create_test_account("user2@gmail.com", "User 2"))
+        .await
+        .unwrap();
 
     // Initially no default
     let default = service.get_default_account().await.unwrap();
-    assert!(default.is_none(), "Initially should have no default account");
+    assert!(
+        default.is_none(),
+        "Initially should have no default account"
+    );
 
     // Set default account
-    service.set_default_account("user1@gmail.com").await.unwrap();
+    service
+        .set_default_account("user1@gmail.com")
+        .await
+        .unwrap();
 
     // Verify default is set
     let default = service.get_default_account().await.unwrap();
@@ -277,8 +310,14 @@ async fn test_default_account_management() {
 
     // Verify is_default flag in list
     let accounts = service.list_accounts().await.unwrap();
-    let user1 = accounts.iter().find(|a| a.email_address == "user1@gmail.com").unwrap();
-    let user2 = accounts.iter().find(|a| a.email_address == "user2@gmail.com").unwrap();
+    let user1 = accounts
+        .iter()
+        .find(|a| a.email_address == "user1@gmail.com")
+        .unwrap();
+    let user2 = accounts
+        .iter()
+        .find(|a| a.email_address == "user2@gmail.com")
+        .unwrap();
     assert!(user1.is_default, "User1 should be marked as default");
     assert!(!user2.is_default, "User2 should not be marked as default");
 
@@ -299,16 +338,28 @@ async fn test_default_account_deletion_clears_default() {
     service.initialize(pool).await.unwrap();
 
     // Create accounts
-    service.create_account(create_test_account("user1@gmail.com", "User 1")).await.unwrap();
-    service.create_account(create_test_account("user2@gmail.com", "User 2")).await.unwrap();
+    service
+        .create_account(create_test_account("user1@gmail.com", "User 1"))
+        .await
+        .unwrap();
+    service
+        .create_account(create_test_account("user2@gmail.com", "User 2"))
+        .await
+        .unwrap();
 
     // Set default and delete it
-    service.set_default_account("user1@gmail.com").await.unwrap();
+    service
+        .set_default_account("user1@gmail.com")
+        .await
+        .unwrap();
     service.delete_account("user1@gmail.com").await.unwrap();
 
     // Verify default was cleared
     let default = service.get_default_account().await.unwrap();
-    assert!(default.is_none(), "Default should be cleared after deleting default account");
+    assert!(
+        default.is_none(),
+        "Default should be cleared after deleting default account"
+    );
 
     cleanup_test_db(test_name);
 }
@@ -355,9 +406,15 @@ async fn test_auto_configure_unknown_provider() {
     service.initialize(pool).await.unwrap();
 
     // Test unknown provider
-    let result = service.auto_configure("user@unknown-provider-xyz.com").await.unwrap();
+    let result = service
+        .auto_configure("user@unknown-provider-xyz.com")
+        .await
+        .unwrap();
 
-    assert!(!result.provider_found, "Unknown provider should not be found");
+    assert!(
+        !result.provider_found,
+        "Unknown provider should not be found"
+    );
     assert!(result.provider_type.is_none());
     assert!(result.imap_host.is_none());
 
@@ -466,7 +523,10 @@ async fn test_password_storage_and_file_security() {
     // Verify passwords ARE stored in JSON (required for account persistence)
     // accounts.json is the source of truth, database is ephemeral cache
     let contents = fs::read_to_string(&config_path).unwrap();
-    assert!(contents.contains("test_password"), "Password must be in accounts.json for persistence");
+    assert!(
+        contents.contains("test_password"),
+        "Password must be in accounts.json for persistence"
+    );
 
     // Verify file permissions are restrictive (0600 - owner only)
     #[cfg(unix)]
@@ -476,12 +536,19 @@ async fn test_password_storage_and_file_security() {
         let permissions = metadata.permissions();
         let mode = permissions.mode();
         // Check that only owner has read/write, no group or other permissions
-        assert_eq!(mode & 0o777, 0o600, "accounts.json should have 0600 permissions (owner read/write only)");
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "accounts.json should have 0600 permissions (owner read/write only)"
+        );
     }
 
     // Verify we can retrieve the password through the service API
     let retrieved = service.get_account("test@gmail.com").await.unwrap();
-    assert_eq!(retrieved.imap_pass, "test_password", "Password should be accessible through API");
+    assert_eq!(
+        retrieved.imap_pass, "test_password",
+        "Password should be accessible through API"
+    );
 
     cleanup_test_db(test_name);
 }

@@ -8,16 +8,15 @@
 // This module provides helper functions to integrate the event bus
 // with various dashboard services for automatic event publishing.
 
-use std::sync::Arc;
-use crate::dashboard::services::{
-    EventBus, DashboardEvent, DashboardState,
-    ClientManager, MetricsService, ConfigService,
-};
+use crate::dashboard::api::models::{ClientStatus, ClientType};
 use crate::dashboard::services::events::{AlertLevel, ConfigSection};
-use crate::dashboard::api::models::{ClientType, ClientStatus};
-use tokio::time::{interval, Duration};
-use log::{info, debug};
+use crate::dashboard::services::{
+    ClientManager, ConfigService, DashboardEvent, DashboardState, EventBus, MetricsService,
+};
+use log::{debug, info};
 use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::time::{interval, Duration};
 
 /// Start all event publishers for dashboard services
 pub async fn start_event_publishers(dashboard_state: Arc<DashboardState>) {
@@ -27,7 +26,8 @@ pub async fn start_event_publishers(dashboard_state: Arc<DashboardState>) {
     start_metrics_publisher(
         Arc::clone(&dashboard_state.metrics_service),
         Arc::clone(&dashboard_state.event_bus),
-    ).await;
+    )
+    .await;
 
     // Start SSE event bus listener
     dashboard_state.sse_manager.start_event_bus_listener().await;
@@ -78,11 +78,14 @@ async fn start_health_monitor(dashboard_state: Arc<DashboardState>) {
                 issues.push("High CPU usage detected".to_string());
                 healthy = false;
 
-                dashboard_state.event_bus.publish_system_alert(
-                    AlertLevel::Warning,
-                    format!("CPU usage is at {:.1}%", stats.system_health.cpu_usage),
-                    None,
-                ).await;
+                dashboard_state
+                    .event_bus
+                    .publish_system_alert(
+                        AlertLevel::Warning,
+                        format!("CPU usage is at {:.1}%", stats.system_health.cpu_usage),
+                        None,
+                    )
+                    .await;
             }
 
             // Check memory usage
@@ -90,11 +93,17 @@ async fn start_health_monitor(dashboard_state: Arc<DashboardState>) {
                 issues.push("High memory usage detected".to_string());
                 healthy = false;
 
-                dashboard_state.event_bus.publish_system_alert(
-                    AlertLevel::Warning,
-                    format!("Memory usage is at {:.1}%", stats.system_health.memory_usage),
-                    None,
-                ).await;
+                dashboard_state
+                    .event_bus
+                    .publish_system_alert(
+                        AlertLevel::Warning,
+                        format!(
+                            "Memory usage is at {:.1}%",
+                            stats.system_health.memory_usage
+                        ),
+                        None,
+                    )
+                    .await;
             }
 
             // Check connection pool health
@@ -103,25 +112,37 @@ async fn start_health_monitor(dashboard_state: Arc<DashboardState>) {
                 issues.push("Connection pool experiencing timeouts".to_string());
                 healthy = false;
 
-                dashboard_state.event_bus.publish_system_alert(
-                    AlertLevel::Error,
-                    format!("Connection pool has {} acquire timeouts", pool_stats.acquire_timeouts),
-                    None,
-                ).await;
+                dashboard_state
+                    .event_bus
+                    .publish_system_alert(
+                        AlertLevel::Error,
+                        format!(
+                            "Connection pool has {} acquire timeouts",
+                            pool_stats.acquire_timeouts
+                        ),
+                        None,
+                    )
+                    .await;
             }
 
             // Publish health change event if status changed
             if healthy != last_health_status {
-                dashboard_state.event_bus.publish(DashboardEvent::SystemHealthChanged {
-                    healthy,
-                    issues: issues.clone(),
-                    timestamp: chrono::Utc::now(),
-                }).await;
+                dashboard_state
+                    .event_bus
+                    .publish(DashboardEvent::SystemHealthChanged {
+                        healthy,
+                        issues: issues.clone(),
+                        timestamp: chrono::Utc::now(),
+                    })
+                    .await;
 
                 last_health_status = healthy;
             }
 
-            debug!("Health monitor check completed - healthy: {}, issues: {:?}", healthy, issues);
+            debug!(
+                "Health monitor check completed - healthy: {}, issues: {:?}",
+                healthy, issues
+            );
         }
     });
 
@@ -148,19 +169,15 @@ impl EventedClientManager {
         ip_address: Option<String>,
         user_agent: Option<String>,
     ) -> String {
-        let client_id = self.inner.register_client(
-            client_type.clone(),
-            ip_address.clone(),
-            user_agent.clone(),
-        ).await;
+        let client_id = self
+            .inner
+            .register_client(client_type.clone(), ip_address.clone(), user_agent.clone())
+            .await;
 
         // Publish client connected event
-        self.event_bus.publish_client_connected(
-            client_id.clone(),
-            client_type,
-            ip_address,
-            user_agent,
-        ).await;
+        self.event_bus
+            .publish_client_connected(client_id.clone(), client_type, ip_address, user_agent)
+            .await;
 
         client_id
     }
@@ -169,29 +186,34 @@ impl EventedClientManager {
         self.inner.remove_client(client_id).await;
 
         // Publish client disconnected event
-        self.event_bus.publish_client_disconnected(
-            client_id.to_string(),
-            Some("Client removed".to_string()),
-        ).await;
+        self.event_bus
+            .publish_client_disconnected(client_id.to_string(), Some("Client removed".to_string()))
+            .await;
     }
 
     pub async fn update_client_status(&self, client_id: &str, new_status: ClientStatus) {
         // Get current status before update
         let clients = self.inner.get_clients(1, 1000, None).await;
-        let old_status = clients.clients.iter()
+        let old_status = clients
+            .clients
+            .iter()
             .find(|c| c.id == client_id)
             .map(|c| c.status.clone())
             .unwrap_or(ClientStatus::Active); // Default to Active if not found
 
-        self.inner.update_client_status(client_id, new_status.clone()).await;
+        self.inner
+            .update_client_status(client_id, new_status.clone())
+            .await;
 
         // Publish status change event
-        self.event_bus.publish(DashboardEvent::ClientStatusChanged {
-            client_id: client_id.to_string(),
-            old_status,
-            new_status,
-            timestamp: chrono::Utc::now(),
-        }).await;
+        self.event_bus
+            .publish(DashboardEvent::ClientStatusChanged {
+                client_id: client_id.to_string(),
+                old_status,
+                new_status,
+                timestamp: chrono::Utc::now(),
+            })
+            .await;
     }
 }
 
@@ -216,7 +238,10 @@ impl EventedConfigService {
         user: String,
         pass: String,
     ) -> Result<(), String> {
-        let result = self.inner.update_imap_config(host.clone(), port, user.clone(), pass).await;
+        let result = self
+            .inner
+            .update_imap_config(host.clone(), port, user.clone(), pass)
+            .await;
 
         match &result {
             Ok(_) => {
@@ -225,17 +250,18 @@ impl EventedConfigService {
                 changes.insert("port".to_string(), serde_json::json!(port));
                 changes.insert("user".to_string(), serde_json::json!(user));
 
-                self.event_bus.publish_configuration_updated(
-                    ConfigSection::Imap,
-                    changes,
-                ).await;
+                self.event_bus
+                    .publish_configuration_updated(ConfigSection::Imap, changes)
+                    .await;
             }
             Err(e) => {
-                self.event_bus.publish(DashboardEvent::ConfigurationError {
-                    section: ConfigSection::Imap,
-                    error: e.clone(),
-                    timestamp: chrono::Utc::now(),
-                }).await;
+                self.event_bus
+                    .publish(DashboardEvent::ConfigurationError {
+                        section: ConfigSection::Imap,
+                        error: e.clone(),
+                        timestamp: chrono::Utc::now(),
+                    })
+                    .await;
             }
         }
 
@@ -248,7 +274,10 @@ impl EventedConfigService {
         host: String,
         port: u16,
     ) -> Result<(), String> {
-        let result = self.inner.update_rest_config(enabled, host.clone(), port).await;
+        let result = self
+            .inner
+            .update_rest_config(enabled, host.clone(), port)
+            .await;
 
         match &result {
             Ok(_) => {
@@ -257,17 +286,18 @@ impl EventedConfigService {
                 changes.insert("host".to_string(), serde_json::json!(host));
                 changes.insert("port".to_string(), serde_json::json!(port));
 
-                self.event_bus.publish_configuration_updated(
-                    ConfigSection::Rest,
-                    changes,
-                ).await;
+                self.event_bus
+                    .publish_configuration_updated(ConfigSection::Rest, changes)
+                    .await;
             }
             Err(e) => {
-                self.event_bus.publish(DashboardEvent::ConfigurationError {
-                    section: ConfigSection::Rest,
-                    error: e.clone(),
-                    timestamp: chrono::Utc::now(),
-                }).await;
+                self.event_bus
+                    .publish(DashboardEvent::ConfigurationError {
+                        section: ConfigSection::Rest,
+                        error: e.clone(),
+                        timestamp: chrono::Utc::now(),
+                    })
+                    .await;
             }
         }
 
@@ -280,7 +310,10 @@ impl EventedConfigService {
         port: u16,
         path: Option<String>,
     ) -> Result<(), String> {
-        let result = self.inner.update_dashboard_config(enabled, port, path.clone()).await;
+        let result = self
+            .inner
+            .update_dashboard_config(enabled, port, path.clone())
+            .await;
 
         match &result {
             Ok(_) => {
@@ -291,17 +324,18 @@ impl EventedConfigService {
                     changes.insert("path".to_string(), serde_json::json!(p));
                 }
 
-                self.event_bus.publish_configuration_updated(
-                    ConfigSection::Dashboard,
-                    changes,
-                ).await;
+                self.event_bus
+                    .publish_configuration_updated(ConfigSection::Dashboard, changes)
+                    .await;
             }
             Err(e) => {
-                self.event_bus.publish(DashboardEvent::ConfigurationError {
-                    section: ConfigSection::Dashboard,
-                    error: e.clone(),
-                    timestamp: chrono::Utc::now(),
-                }).await;
+                self.event_bus
+                    .publish(DashboardEvent::ConfigurationError {
+                        section: ConfigSection::Dashboard,
+                        error: e.clone(),
+                        timestamp: chrono::Utc::now(),
+                    })
+                    .await;
             }
         }
 

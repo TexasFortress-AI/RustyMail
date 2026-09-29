@@ -4,13 +4,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 // Standard library imports
-use std::{
-    pin::Pin,
-    future::Future,
-    fmt::Debug,
-    sync::Arc,
-    time::Duration,
-};
+use std::{fmt::Debug, future::Future, pin::Pin, sync::Arc, time::Duration};
 
 // Async runtime and utilities
 use async_trait::async_trait;
@@ -19,26 +13,25 @@ use log::{debug, error, info, warn};
 
 // IMAP types and client
 use async_imap::{
-    types::{
-        Fetch, Flag, Name as AsyncImapName, Mailbox as AsyncImapMailbox,
-    },
+    types::{Fetch, Flag, Mailbox as AsyncImapMailbox, Name as AsyncImapName},
     Session as AsyncImapSession,
 };
 
 // Local types
 use crate::imap::{
-    types::{Email, FlagOperation, MailboxInfo, SearchCriteria},
     error::ImapError,
+    types::{Email, FlagOperation, MailboxInfo, SearchCriteria},
 };
 
 // TLS Stream types
 use tokio::net::TcpStream as TokioTcpStream;
-use tokio_util::compat::TokioAsyncReadCompatExt;
-use tokio_native_tls::{native_tls, TlsConnector};
 use tokio::sync::Mutex as TokioMutex;
+use tokio_native_tls::{native_tls, TlsConnector};
+use tokio_util::compat::TokioAsyncReadCompatExt;
 
 // Type aliases
-pub type TlsCompatibleStream = tokio_util::compat::Compat<tokio_native_tls::TlsStream<TokioTcpStream>>;
+pub type TlsCompatibleStream =
+    tokio_util::compat::Compat<tokio_native_tls::TlsStream<TokioTcpStream>>;
 pub type TlsImapSession = async_imap::Session<TlsCompatibleStream>;
 pub type ImapClientFactory = fn(TlsCompatibleStream) -> async_imap::Client<TlsCompatibleStream>;
 
@@ -51,23 +44,43 @@ pub trait AsyncImapOps: Send + Sync + Debug {
     async fn login(&self, username: &str, password: &str) -> Result<(), ImapError>;
     async fn logout(&self) -> Result<(), ImapError>;
     async fn list_folders(&self) -> Result<Vec<String>, ImapError>;
-    async fn list_folders_hierarchical(&self) -> Result<Vec<crate::imap::types::Folder>, ImapError>;
+    async fn list_folders_hierarchical(&self)
+        -> Result<Vec<crate::imap::types::Folder>, ImapError>;
     async fn create_folder(&self, name: &str) -> Result<(), ImapError>;
     async fn delete_folder(&self, name: &str) -> Result<(), ImapError>;
     async fn rename_folder(&self, old_name: &str, new_name: &str) -> Result<(), ImapError>;
     async fn select_folder(&self, name: &str) -> Result<MailboxInfo, ImapError>;
     async fn search_emails(&self, criteria: &str) -> Result<Vec<u32>, ImapError>;
-    async fn search_emails_structured(&self, criteria: &SearchCriteria) -> Result<Vec<u32>, ImapError>;
+    async fn search_emails_structured(
+        &self,
+        criteria: &SearchCriteria,
+    ) -> Result<Vec<u32>, ImapError>;
     async fn fetch_emails(&self, uids: &[u32]) -> Result<Vec<Email>, ImapError>;
     /// Fetch only FLAGS for the given UIDs (lightweight, no body download).
     async fn fetch_flags(&self, uids: &[u32]) -> Result<Vec<(u32, Vec<String>)>, ImapError>;
-    async fn move_email(&self, uid: u32, from_folder: &str, to_folder: &str) -> Result<(), ImapError>;
-    async fn store_flags(&self, uids: &[u32], operation: FlagOperation, flags: &[String]) -> Result<(), ImapError>;
-    async fn append(&self, folder: &str, content: &[u8], flags: &[String]) -> Result<(), ImapError>;
+    async fn move_email(
+        &self,
+        uid: u32,
+        from_folder: &str,
+        to_folder: &str,
+    ) -> Result<(), ImapError>;
+    async fn store_flags(
+        &self,
+        uids: &[u32],
+        operation: FlagOperation,
+        flags: &[String],
+    ) -> Result<(), ImapError>;
+    async fn append(&self, folder: &str, content: &[u8], flags: &[String])
+        -> Result<(), ImapError>;
     async fn fetch_raw_message(&self, uid: u32) -> Result<Vec<u8>, ImapError>;
     async fn expunge(&self) -> Result<(), ImapError>;
     async fn copy_messages(&self, uids: &[u32], to_folder: &str) -> Result<(), ImapError>;
-    async fn move_messages(&self, uids: &[u32], from_folder: &str, to_folder: &str) -> Result<(), ImapError>;
+    async fn move_messages(
+        &self,
+        uids: &[u32],
+        from_folder: &str,
+        to_folder: &str,
+    ) -> Result<(), ImapError>;
     async fn mark_as_deleted(&self, uids: &[u32]) -> Result<(), ImapError>;
     async fn delete_messages(&self, uids: &[u32]) -> Result<(), ImapError>;
     async fn undelete_messages(&self, uids: &[u32]) -> Result<(), ImapError>;
@@ -101,7 +114,9 @@ impl AsyncImapSessionWrapper {
             warn!("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS is enabled; IMAP certificate validation is disabled");
             tls_builder.danger_accept_invalid_certs(true);
         }
-        let tls = tls_builder.build().map_err(|e| ImapError::Tls(e.to_string()))?;
+        let tls = tls_builder
+            .build()
+            .map_err(|e| ImapError::Tls(e.to_string()))?;
         Ok(TlsConnector::from(tls))
     }
 
@@ -111,14 +126,27 @@ impl AsyncImapSessionWrapper {
         append_timeout: Duration,
     ) -> Result<TokioTcpStream, ImapError> {
         let addr = format!("{}:{}", server, port);
-        let tcp_stream = TokioTcpStream::connect(&addr).await.map_err(|e| ImapError::Connection(e.to_string()))?;
+        let tcp_stream = TokioTcpStream::connect(&addr)
+            .await
+            .map_err(|e| ImapError::Connection(e.to_string()))?;
 
-        info!("Setting socket timeouts: read={:?}, write={:?}", append_timeout, append_timeout);
+        info!(
+            "Setting socket timeouts: read={:?}, write={:?}",
+            append_timeout, append_timeout
+        );
 
-        let std_stream = tcp_stream.into_std().map_err(|e| ImapError::Connection(format!("Failed to convert to std stream: {}", e)))?;
-        std_stream.set_read_timeout(Some(append_timeout)).map_err(|e| ImapError::Connection(format!("Failed to set read timeout: {}", e)))?;
-        std_stream.set_write_timeout(Some(append_timeout)).map_err(|e| ImapError::Connection(format!("Failed to set write timeout: {}", e)))?;
-        TokioTcpStream::from_std(std_stream).map_err(|e| ImapError::Connection(format!("Failed to convert back to tokio stream: {}", e)))
+        let std_stream = tcp_stream.into_std().map_err(|e| {
+            ImapError::Connection(format!("Failed to convert to std stream: {}", e))
+        })?;
+        std_stream
+            .set_read_timeout(Some(append_timeout))
+            .map_err(|e| ImapError::Connection(format!("Failed to set read timeout: {}", e)))?;
+        std_stream
+            .set_write_timeout(Some(append_timeout))
+            .map_err(|e| ImapError::Connection(format!("Failed to set write timeout: {}", e)))?;
+        TokioTcpStream::from_std(std_stream).map_err(|e| {
+            ImapError::Connection(format!("Failed to convert back to tokio stream: {}", e))
+        })
     }
 
     async fn tls_stream(
@@ -135,16 +163,34 @@ impl AsyncImapSessionWrapper {
             let mut client = async_imap::Client::new(tcp_stream.compat());
             match client.read_response().await {
                 Some(Ok(_)) => {}
-                Some(Err(e)) => return Err(ImapError::Connection(format!("Failed to read IMAP greeting: {}", e))),
-                None => return Err(ImapError::Connection("IMAP server closed connection before greeting".to_string())),
+                Some(Err(e)) => {
+                    return Err(ImapError::Connection(format!(
+                        "Failed to read IMAP greeting: {}",
+                        e
+                    )))
+                }
+                None => {
+                    return Err(ImapError::Connection(
+                        "IMAP server closed connection before greeting".to_string(),
+                    ))
+                }
             }
-            client.run_command_and_check_ok("STARTTLS", None).await.map_err(ImapError::from)?;
+            client
+                .run_command_and_check_ok("STARTTLS", None)
+                .await
+                .map_err(ImapError::from)?;
             let tcp_stream = client.into_inner().into_inner();
-            let tls_stream = tls_connector.connect(server, tcp_stream).await.map_err(|e| ImapError::Tls(e.to_string()))?;
+            let tls_stream = tls_connector
+                .connect(server, tcp_stream)
+                .await
+                .map_err(|e| ImapError::Tls(e.to_string()))?;
             info!("IMAP STARTTLS upgrade completed");
             Ok(tls_stream.compat())
         } else {
-            let tls_stream = tls_connector.connect(server, tcp_stream).await.map_err(|e| ImapError::Tls(e.to_string()))?;
+            let tls_stream = tls_connector
+                .connect(server, tcp_stream)
+                .await
+                .map_err(|e| ImapError::Tls(e.to_string()))?;
             Ok(tls_stream.compat())
         }
     }
@@ -167,7 +213,16 @@ impl AsyncImapSessionWrapper {
         append_timeout: Duration,
         use_starttls: bool,
     ) -> Result<Self, ImapError> {
-        Self::connect_with_transport_security(server, port, username, password, append_timeout, !use_starttls, use_starttls).await
+        Self::connect_with_transport_security(
+            server,
+            port,
+            username,
+            password,
+            append_timeout,
+            !use_starttls,
+            use_starttls,
+        )
+        .await
     }
 
     pub async fn connect_with_transport_security(
@@ -180,16 +235,22 @@ impl AsyncImapSessionWrapper {
         use_starttls: bool,
     ) -> Result<Self, ImapError> {
         if !use_tls && !use_starttls {
-            return Err(ImapError::Connection("Plaintext IMAP is not supported; enable TLS/SSL or STARTTLS".to_string()));
+            return Err(ImapError::Connection(
+                "Plaintext IMAP is not supported; enable TLS/SSL or STARTTLS".to_string(),
+            ));
         }
         let compat_stream = Self::tls_stream(server, port, append_timeout, use_starttls).await?;
         let client = async_imap::Client::new(compat_stream);
-        let session = client.login(&*username, &*password).await.map_err(|(err, _client)| {
-            match err {
-                async_imap::error::Error::No(msg) | async_imap::error::Error::Bad(msg) => ImapError::Auth(format!("Login failed: {}", msg)),
-                _ => ImapError::Auth(format!("Login failed: {:?}", err)),
-            }
-        })?;
+        let session =
+            client
+                .login(&*username, &*password)
+                .await
+                .map_err(|(err, _client)| match err {
+                    async_imap::error::Error::No(msg) | async_imap::error::Error::Bad(msg) => {
+                        ImapError::Auth(format!("Login failed: {}", msg))
+                    }
+                    _ => ImapError::Auth(format!("Login failed: {:?}", err)),
+                })?;
 
         Ok(Self::with_append_timeout(session, append_timeout))
     }
@@ -202,7 +263,15 @@ impl AsyncImapSessionWrapper {
         access_token: Arc<String>,
         append_timeout: Duration,
     ) -> Result<Self, ImapError> {
-        Self::connect_with_xoauth2_and_security(server, port, username, access_token, append_timeout, false).await
+        Self::connect_with_xoauth2_and_security(
+            server,
+            port,
+            username,
+            access_token,
+            append_timeout,
+            false,
+        )
+        .await
     }
 
     pub async fn connect_with_xoauth2_and_security(
@@ -213,7 +282,16 @@ impl AsyncImapSessionWrapper {
         append_timeout: Duration,
         use_starttls: bool,
     ) -> Result<Self, ImapError> {
-        Self::connect_with_xoauth2_transport_security(server, port, username, access_token, append_timeout, !use_starttls, use_starttls).await
+        Self::connect_with_xoauth2_transport_security(
+            server,
+            port,
+            username,
+            access_token,
+            append_timeout,
+            !use_starttls,
+            use_starttls,
+        )
+        .await
     }
 
     pub async fn connect_with_xoauth2_transport_security(
@@ -228,7 +306,9 @@ impl AsyncImapSessionWrapper {
         use crate::imap::xoauth2::XOAuth2Authenticator;
 
         if !use_tls && !use_starttls {
-            return Err(ImapError::Connection("Plaintext IMAP is not supported; enable TLS/SSL or STARTTLS".to_string()));
+            return Err(ImapError::Connection(
+                "Plaintext IMAP is not supported; enable TLS/SSL or STARTTLS".to_string(),
+            ));
         }
         let compat_stream = Self::tls_stream(server, port, append_timeout, use_starttls).await?;
         let mut client = async_imap::Client::new(compat_stream);
@@ -243,12 +323,15 @@ impl AsyncImapSessionWrapper {
 
         // Use XOAUTH2 authentication
         let authenticator = XOAuth2Authenticator::new(&username, &access_token);
-        let session = client.authenticate("XOAUTH2", authenticator).await.map_err(|(err, _client)| {
-            match err {
-                async_imap::error::Error::No(msg) | async_imap::error::Error::Bad(msg) => ImapError::Auth(format!("XOAUTH2 login failed: {}", msg)),
+        let session = client
+            .authenticate("XOAUTH2", authenticator)
+            .await
+            .map_err(|(err, _client)| match err {
+                async_imap::error::Error::No(msg) | async_imap::error::Error::Bad(msg) => {
+                    ImapError::Auth(format!("XOAUTH2 login failed: {}", msg))
+                }
                 _ => ImapError::Auth(format!("XOAUTH2 login failed: {:?}", err)),
-            }
-        })?;
+            })?;
 
         info!("XOAUTH2 authentication successful for user: {}", username);
         Ok(Self::with_append_timeout(session, append_timeout))
@@ -262,7 +345,10 @@ impl AsyncImapSessionWrapper {
         let current = self.current_folder().await;
         if current.as_deref() != Some(folder) {
             let mut session_guard = self.session.lock().await;
-            session_guard.select(folder).await.map_err(ImapError::from)?;
+            session_guard
+                .select(folder)
+                .await
+                .map_err(ImapError::from)?;
             drop(session_guard);
             let mut folder_guard = self.current_folder.lock().await;
             *folder_guard = Some(folder.to_string());
@@ -287,7 +373,10 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
 
     async fn list_folders(&self) -> Result<Vec<String>, ImapError> {
         let mut session_guard = self.session.lock().await;
-        let mut folders_stream = session_guard.list(None, Some("*")).await.map_err(ImapError::from)?;
+        let mut folders_stream = session_guard
+            .list(None, Some("*"))
+            .await
+            .map_err(ImapError::from)?;
         let mut folder_names = Vec::new();
         while let Some(folder_result) = folders_stream.try_next().await.map_err(ImapError::from)? {
             folder_names.push(folder_result.name().to_string());
@@ -295,14 +384,23 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
         Ok(folder_names)
     }
 
-    async fn list_folders_hierarchical(&self) -> Result<Vec<crate::imap::types::Folder>, ImapError> {
+    async fn list_folders_hierarchical(
+        &self,
+    ) -> Result<Vec<crate::imap::types::Folder>, ImapError> {
         let mut session_guard = self.session.lock().await;
-        let mut folders_stream = session_guard.list(None, Some("*")).await.map_err(ImapError::from)?;
+        let mut folders_stream = session_guard
+            .list(None, Some("*"))
+            .await
+            .map_err(ImapError::from)?;
         let mut folder_data = Vec::new();
         while let Some(folder_result) = folders_stream.try_next().await.map_err(ImapError::from)? {
             let name = folder_result.name().to_string();
             let delimiter = folder_result.delimiter().map(|d| d.to_string());
-            let attributes: Vec<String> = folder_result.attributes().iter().map(|attr| format!("{:?}", attr)).collect();
+            let attributes: Vec<String> = folder_result
+                .attributes()
+                .iter()
+                .map(|attr| format!("{:?}", attr))
+                .collect();
             folder_data.push((name, delimiter, attributes));
         }
         let hierarchy = crate::imap::types::Folder::build_hierarchy(folder_data);
@@ -321,7 +419,10 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
 
     async fn rename_folder(&self, old_name: &str, new_name: &str) -> Result<(), ImapError> {
         let mut session_guard = self.session.lock().await;
-        session_guard.rename(old_name, new_name).await.map_err(ImapError::from)
+        session_guard
+            .rename(old_name, new_name)
+            .await
+            .map_err(ImapError::from)
     }
 
     async fn select_folder(&self, name: &str) -> Result<MailboxInfo, ImapError> {
@@ -336,23 +437,41 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
 
     async fn search_emails(&self, criteria: &str) -> Result<Vec<u32>, ImapError> {
         let mut session_guard = self.session.lock().await;
-        let sequence_set = session_guard.uid_search(criteria).await.map_err(ImapError::from)?;
+        let sequence_set = session_guard
+            .uid_search(criteria)
+            .await
+            .map_err(ImapError::from)?;
         Ok(sequence_set.into_iter().collect())
     }
 
-    async fn search_emails_structured(&self, criteria: &SearchCriteria) -> Result<Vec<u32>, ImapError> {
+    async fn search_emails_structured(
+        &self,
+        criteria: &SearchCriteria,
+    ) -> Result<Vec<u32>, ImapError> {
         let criteria_string = criteria.to_string();
         if criteria_string.trim().is_empty() {
-            return Err(ImapError::InvalidCriteria("Empty search criteria".to_string()));
+            return Err(ImapError::InvalidCriteria(
+                "Empty search criteria".to_string(),
+            ));
         }
         debug!("Executing IMAP search with criteria: {}", criteria_string);
         let mut session_guard = self.session.lock().await;
-        let sequence_set = session_guard.uid_search(&criteria_string).await.map_err(|e| {
-            error!("IMAP UID search failed for criteria '{}': {}", criteria_string, e);
-            ImapError::InvalidCriteria(format!("Search failed: {}", e))
-        })?;
+        let sequence_set = session_guard
+            .uid_search(&criteria_string)
+            .await
+            .map_err(|e| {
+                error!(
+                    "IMAP UID search failed for criteria '{}': {}",
+                    criteria_string, e
+                );
+                ImapError::InvalidCriteria(format!("Search failed: {}", e))
+            })?;
         let results: Vec<u32> = sequence_set.into_iter().collect();
-        info!("IMAP search returned {} results for criteria: {}", results.len(), criteria_string);
+        info!(
+            "IMAP search returned {} results for criteria: {}",
+            results.len(),
+            criteria_string
+        );
         Ok(results)
     }
 
@@ -362,8 +481,15 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
             uids: &[u32],
         ) -> Result<Vec<Email>, ImapError> {
             let mut session_guard = session.lock().await;
-            let sequence = uids.iter().map(|uid| uid.to_string()).collect::<Vec<_>>().join(",");
-            let mut fetch_stream = session_guard.uid_fetch(&sequence, "(UID INTERNALDATE BODY.PEEK[])").await.map_err(ImapError::from)?;
+            let sequence = uids
+                .iter()
+                .map(|uid| uid.to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            let mut fetch_stream = session_guard
+                .uid_fetch(&sequence, "(UID INTERNALDATE BODY.PEEK[])")
+                .await
+                .map_err(ImapError::from)?;
             let mut emails = Vec::new();
             while let Some(fetch_result) = fetch_stream.try_next().await.map_err(ImapError::from)? {
                 let email = Email::from_fetch(&fetch_result)?;
@@ -381,12 +507,19 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
         let mut emails = match fetch_sequence(&self.session, uids).await {
             Ok(emails) => emails,
             Err(err) if uids.len() > 1 => {
-                warn!("Batch fetch failed for {} UIDs, retrying messages individually: {}", uids.len(), err);
+                warn!(
+                    "Batch fetch failed for {} UIDs, retrying messages individually: {}",
+                    uids.len(),
+                    err
+                );
                 let mut retry_emails = Vec::new();
                 for uid in uids {
                     match fetch_sequence(&self.session, &[*uid]).await {
                         Ok(mut fetched) => retry_emails.append(&mut fetched),
-                        Err(retry_err) => warn!("Skipping UID {} after individual fetch failed: {}", uid, retry_err),
+                        Err(retry_err) => warn!(
+                            "Skipping UID {} after individual fetch failed: {}",
+                            uid, retry_err
+                        ),
                     }
                 }
                 retry_emails
@@ -394,24 +527,41 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
             Err(err) => return Err(err),
         };
         emails.sort_by_key(|email| email.uid);
-        debug!("Fetch complete: requested {} UIDs, received {} emails", uids.len(), emails.len());
+        debug!(
+            "Fetch complete: requested {} UIDs, received {} emails",
+            uids.len(),
+            emails.len()
+        );
         if emails.len() != uids.len() {
-            warn!("UID mismatch: requested {}, received {}. Missing UIDs: {:?}",
-                  uids.len(), emails.len(),
-                  uids.iter().filter(|uid| !emails.iter().any(|e| e.uid == **uid)).collect::<Vec<_>>());
+            warn!(
+                "UID mismatch: requested {}, received {}. Missing UIDs: {:?}",
+                uids.len(),
+                emails.len(),
+                uids.iter()
+                    .filter(|uid| !emails.iter().any(|e| e.uid == **uid))
+                    .collect::<Vec<_>>()
+            );
         }
         Ok(emails)
     }
 
     async fn fetch_flags(&self, uids: &[u32]) -> Result<Vec<(u32, Vec<String>)>, ImapError> {
         let mut session_guard = self.session.lock().await;
-        let sequence = uids.iter().map(|uid| uid.to_string()).collect::<Vec<_>>().join(",");
-        let mut fetch_stream = session_guard.uid_fetch(&sequence, "FLAGS").await.map_err(ImapError::from)?;
+        let sequence = uids
+            .iter()
+            .map(|uid| uid.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let mut fetch_stream = session_guard
+            .uid_fetch(&sequence, "FLAGS")
+            .await
+            .map_err(ImapError::from)?;
         let mut results = Vec::new();
         while let Some(fetch_result) = fetch_stream.try_next().await.map_err(ImapError::from)? {
             if let Some(uid) = fetch_result.uid {
                 let mut seen_flags = std::collections::HashSet::new();
-                let flags: Vec<String> = fetch_result.flags()
+                let flags: Vec<String> = fetch_result
+                    .flags()
                     .map(|f| format!("{:?}", f))
                     .filter(|f| seen_flags.insert(f.clone()))
                     .collect();
@@ -421,9 +571,17 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
         Ok(results)
     }
 
-    async fn move_email(&self, uid: u32, from_folder: &str, to_folder: &str) -> Result<(), ImapError> {
+    async fn move_email(
+        &self,
+        uid: u32,
+        from_folder: &str,
+        to_folder: &str,
+    ) -> Result<(), ImapError> {
         let mut session_guard = self.session.lock().await;
-        session_guard.select(from_folder).await.map_err(ImapError::from)?;
+        session_guard
+            .select(from_folder)
+            .await
+            .map_err(ImapError::from)?;
         {
             let mut folder_guard = self.current_folder.lock().await;
             *folder_guard = Some(from_folder.to_string());
@@ -437,19 +595,43 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
 
         debug!("MOVE command failed, falling back to COPY+DELETE");
 
-        session_guard.uid_copy(&sequence, to_folder).await.map_err(|e| ImapError::Other(format!("Failed to copy message: {}", e)))?;
-        let store_stream = session_guard.uid_store(&sequence, r#"+FLAGS (\Deleted)"#).await.map_err(|e| ImapError::Other(format!("Failed to mark as deleted: {}", e)))?;
-        store_stream.try_collect::<Vec<_>>().await.map_err(|e| ImapError::Other(format!("Failed to process store results: {}", e)))?;
+        session_guard
+            .uid_copy(&sequence, to_folder)
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to copy message: {}", e)))?;
+        let store_stream = session_guard
+            .uid_store(&sequence, r#"+FLAGS (\Deleted)"#)
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to mark as deleted: {}", e)))?;
+        store_stream
+            .try_collect::<Vec<_>>()
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to process store results: {}", e)))?;
 
-        let expunge_stream = session_guard.expunge().await.map_err(|e| ImapError::Other(format!("Failed to expunge: {}", e)))?;
-        expunge_stream.try_collect::<Vec<_>>().await.map_err(|e| ImapError::Other(format!("Failed to process expunge results: {}", e)))?;
+        let expunge_stream = session_guard
+            .expunge()
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to expunge: {}", e)))?;
+        expunge_stream
+            .try_collect::<Vec<_>>()
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to process expunge results: {}", e)))?;
 
         Ok(())
     }
 
-    async fn store_flags(&self, uids: &[u32], operation: FlagOperation, flags: &[String]) -> Result<(), ImapError> {
+    async fn store_flags(
+        &self,
+        uids: &[u32],
+        operation: FlagOperation,
+        flags: &[String],
+    ) -> Result<(), ImapError> {
         let mut session_guard = self.session.lock().await;
-        let sequence = uids.iter().map(|uid| uid.to_string()).collect::<Vec<_>>().join(",");
+        let sequence = uids
+            .iter()
+            .map(|uid| uid.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
         let flags_str = flags.join(" ");
         let op_str = match operation {
             FlagOperation::Add => format!("+FLAGS ({})", flags_str),
@@ -457,28 +639,46 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
             FlagOperation::Set => format!("FLAGS ({})", flags_str),
         };
         let stream = session_guard.uid_store(&sequence, &op_str).await?;
-        stream.try_collect::<Vec<_>>().await.map(|_| ()).map_err(ImapError::from)
+        stream
+            .try_collect::<Vec<_>>()
+            .await
+            .map(|_| ())
+            .map_err(ImapError::from)
     }
 
-    async fn append(&self, folder: &str, content: &[u8], _flags: &[String]) -> Result<(), ImapError> {
+    async fn append(
+        &self,
+        folder: &str,
+        content: &[u8],
+        _flags: &[String],
+    ) -> Result<(), ImapError> {
         let session_arc = self.session.clone();
         let folder_str = folder.to_string();
         let folder_for_error = folder_str.clone();
         let content = content.to_vec();
         let append_timeout = self.append_timeout;
 
-        info!("Starting IMAP APPEND to folder '{}' with spawn_blocking (timeout: {:?})", folder_str, append_timeout);
+        info!(
+            "Starting IMAP APPEND to folder '{}' with spawn_blocking (timeout: {:?})",
+            folder_str, append_timeout
+        );
 
         let blocking_task = tokio::task::spawn_blocking(move || {
             let runtime_handle = tokio::runtime::Handle::current();
             let mut session_guard = runtime_handle.block_on(session_arc.lock());
-            debug!("Executing IMAP APPEND in blocking thread for folder '{}'", folder_str);
+            debug!(
+                "Executing IMAP APPEND in blocking thread for folder '{}'",
+                folder_str
+            );
             runtime_handle.block_on(session_guard.append(folder_str, &content))
         });
 
         match tokio::time::timeout(append_timeout, blocking_task).await {
             Ok(Ok(Ok(()))) => {
-                info!("APPEND to folder '{}' completed successfully", folder_for_error);
+                info!(
+                    "APPEND to folder '{}' completed successfully",
+                    folder_for_error
+                );
                 Ok(())
             }
             Ok(Ok(Err(e))) => {
@@ -487,11 +687,17 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
             }
             Ok(Err(join_err)) => {
                 error!("APPEND spawn_blocking task panicked: {}", join_err);
-                Err(ImapError::Other(format!("APPEND task panicked: {}", join_err)))
+                Err(ImapError::Other(format!(
+                    "APPEND task panicked: {}",
+                    join_err
+                )))
             }
             Err(_elapsed) => {
                 error!("APPEND to folder '{}' timed out after {:?}. The blocking thread was terminated.", folder_for_error, append_timeout);
-                Err(ImapError::Timeout(format!("APPEND operation timed out after {:?}.", append_timeout)))
+                Err(ImapError::Timeout(format!(
+                    "APPEND operation timed out after {:?}.",
+                    append_timeout
+                )))
             }
         }
     }
@@ -499,32 +705,62 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
     async fn fetch_raw_message(&self, uid: u32) -> Result<Vec<u8>, ImapError> {
         let mut session_guard = self.session.lock().await;
         let sequence = uid.to_string();
-        let mut fetch_stream = session_guard.uid_fetch(&sequence, "BODY.PEEK[]").await.map_err(ImapError::from)?;
+        let mut fetch_stream = session_guard
+            .uid_fetch(&sequence, "BODY.PEEK[]")
+            .await
+            .map_err(ImapError::from)?;
         if let Some(fetch_result) = fetch_stream.try_next().await.map_err(ImapError::from)? {
-            fetch_result.body().map(|b| b.to_vec()).ok_or_else(|| ImapError::MissingData("Message body not found".to_string()))
+            fetch_result
+                .body()
+                .map(|b| b.to_vec())
+                .ok_or_else(|| ImapError::MissingData("Message body not found".to_string()))
         } else {
-            Err(ImapError::MissingData("No fetch result found for UID".to_string()))
+            Err(ImapError::MissingData(
+                "No fetch result found for UID".to_string(),
+            ))
         }
     }
 
     async fn expunge(&self) -> Result<(), ImapError> {
         let mut session_guard = self.session.lock().await;
         let stream = session_guard.expunge().await?;
-        stream.try_collect::<Vec<_>>().await.map(|_| ()).map_err(ImapError::from)
+        stream
+            .try_collect::<Vec<_>>()
+            .await
+            .map(|_| ())
+            .map_err(ImapError::from)
     }
 
     async fn copy_messages(&self, uids: &[u32], to_folder: &str) -> Result<(), ImapError> {
         let mut session_guard = self.session.lock().await;
-        let sequence = uids.iter().map(|uid| uid.to_string()).collect::<Vec<_>>().join(",");
-        session_guard.uid_copy(&sequence, to_folder).await.map_err(|e| ImapError::Other(format!("Failed to copy messages: {}", e)))?;
+        let sequence = uids
+            .iter()
+            .map(|uid| uid.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        session_guard
+            .uid_copy(&sequence, to_folder)
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to copy messages: {}", e)))?;
         Ok(())
     }
 
-    async fn move_messages(&self, uids: &[u32], from_folder: &str, to_folder: &str) -> Result<(), ImapError> {
-        if uids.is_empty() { return Ok(()); }
+    async fn move_messages(
+        &self,
+        uids: &[u32],
+        from_folder: &str,
+        to_folder: &str,
+    ) -> Result<(), ImapError> {
+        if uids.is_empty() {
+            return Ok(());
+        }
         self.ensure_folder_selected(from_folder).await?;
         let mut session_guard = self.session.lock().await;
-        let sequence = uids.iter().map(|uid| uid.to_string()).collect::<Vec<_>>().join(",");
+        let sequence = uids
+            .iter()
+            .map(|uid| uid.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
 
         let move_result = session_guard.uid_mv(&sequence, to_folder).await;
         if move_result.is_ok() {
@@ -534,30 +770,52 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
 
         debug!("Batch MOVE command failed, falling back to COPY+DELETE+EXPUNGE.");
 
-        session_guard.uid_copy(&sequence, to_folder).await.map_err(|e| ImapError::Other(format!("Failed to copy messages: {}", e)))?;
+        session_guard
+            .uid_copy(&sequence, to_folder)
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to copy messages: {}", e)))?;
 
-        let store_stream = session_guard.uid_store(&sequence, r#"+FLAGS (\Deleted)"#).await.map_err(|e| ImapError::Other(format!("Failed to mark messages as deleted: {}", e)))?;
-        store_stream.try_collect::<Vec<_>>().await.map_err(|e| ImapError::Other(format!("Failed to process store results: {}", e)))?;
+        let store_stream = session_guard
+            .uid_store(&sequence, r#"+FLAGS (\Deleted)"#)
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to mark messages as deleted: {}", e)))?;
+        store_stream
+            .try_collect::<Vec<_>>()
+            .await
+            .map_err(|e| ImapError::Other(format!("Failed to process store results: {}", e)))?;
 
         drop(session_guard);
 
         self.expunge().await?;
 
-        info!("Successfully moved {} messages from {} to {} using COPY+DELETE+EXPUNGE", uids.len(), from_folder, to_folder);
+        info!(
+            "Successfully moved {} messages from {} to {} using COPY+DELETE+EXPUNGE",
+            uids.len(),
+            from_folder,
+            to_folder
+        );
         Ok(())
     }
 
     async fn mark_as_deleted(&self, uids: &[u32]) -> Result<(), ImapError> {
-        if uids.is_empty() { return Ok(()); }
+        if uids.is_empty() {
+            return Ok(());
+        }
         debug!("Marking {} messages as deleted", uids.len());
-        self.store_flags(uids, FlagOperation::Add, &[String::from(r"\Deleted")]).await?;
+        self.store_flags(uids, FlagOperation::Add, &[String::from(r"\Deleted")])
+            .await?;
         info!("Successfully marked {} messages as deleted", uids.len());
         Ok(())
     }
 
     async fn delete_messages(&self, uids: &[u32]) -> Result<(), ImapError> {
-        if uids.is_empty() { return Ok(()); }
-        debug!("Deleting {} messages (mark as deleted + expunge)", uids.len());
+        if uids.is_empty() {
+            return Ok(());
+        }
+        debug!(
+            "Deleting {} messages (mark as deleted + expunge)",
+            uids.len()
+        );
         self.mark_as_deleted(uids).await?;
         self.expunge().await?;
         info!("Successfully deleted {} messages permanently", uids.len());
@@ -565,9 +823,12 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
     }
 
     async fn undelete_messages(&self, uids: &[u32]) -> Result<(), ImapError> {
-        if uids.is_empty() { return Ok(()); }
+        if uids.is_empty() {
+            return Ok(());
+        }
         debug!("Removing \\Deleted flag from {} messages", uids.len());
-        self.store_flags(uids, FlagOperation::Remove, &[String::from(r"\Deleted")]).await?;
+        self.store_flags(uids, FlagOperation::Remove, &[String::from(r"\Deleted")])
+            .await?;
         info!("Successfully undeleted {} messages", uids.len());
         Ok(())
     }

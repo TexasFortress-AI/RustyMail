@@ -5,12 +5,12 @@
 
 // src/dashboard/services/ai/providers/anthropic.rs
 
-use async_trait::async_trait;
-use reqwest::Client;
-use serde::{Serialize, Deserialize};
-use log::{debug, warn, error};
-use super::{AiProvider, AiChatMessage, get_ai_request_timeout}; // Import trait, common message struct, and timeout helper
+use super::{get_ai_request_timeout, AiChatMessage, AiProvider}; // Import trait, common message struct, and timeout helper
 use crate::api::errors::ApiError as RestApiError;
+use async_trait::async_trait;
+use log::{debug, error, warn};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 // Get Anthropic API base URL from environment or use default
 fn get_base_url() -> String {
@@ -114,10 +114,15 @@ impl AiProvider for AnthropicAdapter {
             temperature: Some(0.7),
         };
 
-        debug!("Sending request to Anthropic API: model={}, messages_count={}, url={}",
-               request_payload.model, request_payload.messages.len(), url);
+        debug!(
+            "Sending request to Anthropic API: model={}, messages_count={}, url={}",
+            request_payload.model,
+            request_payload.messages.len(),
+            url
+        );
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .header("x-api-key", &self.api_key)
             .header("anthropic-version", ANTHROPIC_VERSION)
@@ -125,21 +130,34 @@ impl AiProvider for AnthropicAdapter {
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Anthropic: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("Anthropic: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("Anthropic API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "Anthropic API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("Anthropic API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "Anthropic API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
         let response_body = response
             .json::<AnthropicMessagesResponse>()
             .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize Anthropic response: {}", e) })?;
+            .map_err(|e| RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize Anthropic response: {}", e),
+            })?;
 
         // Extract the first content block's text
         if let Some(content) = response_body.content.first() {
@@ -147,7 +165,9 @@ impl AiProvider for AnthropicAdapter {
             Ok(content.text.clone())
         } else {
             warn!("Anthropic API response did not contain any content blocks.");
-            Err(RestApiError::UnprocessableEntity { message: "Anthropic response was empty or missing content".to_string() })
+            Err(RestApiError::UnprocessableEntity {
+                message: "Anthropic response was empty or missing content".to_string(),
+            })
         }
     }
 }

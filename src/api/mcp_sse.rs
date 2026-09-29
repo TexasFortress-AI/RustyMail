@@ -3,36 +3,30 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use actix::fut;
 use actix::prelude::*;
 use actix::{Actor, Addr, Handler, Message, ResponseFuture, Running, StreamHandler};
 use actix_web::{
     web::{self, Data, Payload},
     Error as ActixError, HttpRequest, HttpResponse,
 };
-use actix_web_lab::sse::{self};
 use actix_web_actors::ws;
-use futures_util::{StreamExt as _};
-use log::{debug, info, error, warn};
+use actix_web_lab::sse::{self};
+use futures_util::StreamExt as _;
+use log::{debug, error, info, warn};
 use serde_json::json;
-use std::{
-    collections::HashMap,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 use tokio::{
     sync::{mpsc, Mutex as TokioMutex},
-    time::{Instant},
+    time::Instant,
 };
 use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
-use actix::fut;
 
-use crate::{
-    mcp::{
-        handler::McpHandler,
-        types::{McpPortState, JsonRpcRequest, JsonRpcResponse, JsonRpcError},
-        ErrorCode,
-    },
+use crate::mcp::{
+    handler::McpHandler,
+    types::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, McpPortState},
+    ErrorCode,
 };
 
 // --- SSE State Actor (Simplified - combines SseState and ClientState handling) ---
@@ -65,20 +59,23 @@ impl std::fmt::Debug for McpSseState {
 }
 
 impl McpSseState {
-    pub fn new(mcp_handler: Arc<dyn McpHandler>, port_state: Arc<TokioMutex<McpPortState>>) -> Self {
+    pub fn new(
+        mcp_handler: Arc<dyn McpHandler>,
+        port_state: Arc<TokioMutex<McpPortState>>,
+    ) -> Self {
         McpSseState {
             sessions: HashMap::new(),
             hb_interval: Duration::from_secs(
                 std::env::var("SSE_HEARTBEAT_INTERVAL_SECONDS")
                     .ok()
                     .and_then(|v| v.parse().ok())
-                    .unwrap_or(5)
+                    .unwrap_or(5),
             ),
             client_timeout: Duration::from_secs(
                 std::env::var("SSE_CLIENT_TIMEOUT_SECONDS")
                     .ok()
                     .and_then(|v| v.parse().ok())
-                    .unwrap_or(15)
+                    .unwrap_or(15),
             ),
             mcp_handler,
             port_state,
@@ -95,7 +92,10 @@ impl McpSseState {
                     warn!("SSE session {} timed out. Removing.", session.id);
                     dead_sessions.push(session.id.clone());
                 } else if session.sender.is_closed() {
-                    warn!("SSE session {} disconnected (sender closed). Removing.", session.id);
+                    warn!(
+                        "SSE session {} disconnected (sender closed). Removing.",
+                        session.id
+                    );
                     dead_sessions.push(session.id.clone());
                 }
             }
@@ -108,7 +108,14 @@ impl McpSseState {
 
     fn add_session(&mut self, id: String, sender: mpsc::Sender<sse::Event>) {
         info!("Adding new SSE session: {}", id);
-        self.sessions.insert(id.clone(), SseSession { id, hb: Instant::now(), sender });
+        self.sessions.insert(
+            id.clone(),
+            SseSession {
+                id,
+                hb: Instant::now(),
+                sender,
+            },
+        );
     }
 
     fn remove_session(&mut self, id: &str) {
@@ -131,33 +138,52 @@ impl McpSseState {
             }
         };
         let event = sse::Event::Data(sse::Data::new(event_data));
-        
+
         for session in self.sessions.values() {
             if let Err(e) = session.sender.send(event.clone()).await {
-                error!("Failed to broadcast message to session {}: {:?}", session.id, e);
+                error!(
+                    "Failed to broadcast message to session {}: {:?}",
+                    session.id, e
+                );
             }
         }
     }
 
-    async fn handle_mcp_request(&self, session_id: &str, request: JsonRpcRequest) -> Option<JsonRpcResponse> {
-        debug!("Handling MCP request from SSE session {}: {:?}", session_id, request);
+    async fn handle_mcp_request(
+        &self,
+        session_id: &str,
+        request: JsonRpcRequest,
+    ) -> Option<JsonRpcResponse> {
+        debug!(
+            "Handling MCP request from SSE session {}: {:?}",
+            session_id, request
+        );
         let request_json = match serde_json::to_value(request) {
             Ok(v) => v,
             Err(e) => {
                 error!("Failed to serialize request to JSON: {}", e);
-                return Some(JsonRpcResponse::error(None, JsonRpcError::server_error(ErrorCode::ParseError as i64, e.to_string())));
+                return Some(JsonRpcResponse::error(
+                    None,
+                    JsonRpcError::server_error(ErrorCode::ParseError as i64, e.to_string()),
+                ));
             }
         };
 
         let port_state_clone = self.port_state.clone();
 
         // TODO: Session ID needs to be handled differently - perhaps stored in state
-        let response_value = self.mcp_handler.handle_request(port_state_clone, request_json).await;
+        let response_value = self
+            .mcp_handler
+            .handle_request(port_state_clone, request_json)
+            .await;
         match serde_json::from_value(response_value) {
             Ok(resp) => Some(resp),
             Err(e) => {
                 error!("Failed to deserialize MCP response: {}", e);
-                Some(JsonRpcResponse::error(None, JsonRpcError::server_error(ErrorCode::InternalError as i64, e.to_string())))
+                Some(JsonRpcResponse::error(
+                    None,
+                    JsonRpcError::server_error(ErrorCode::InternalError as i64, e.to_string()),
+                ))
             }
         }
     }
@@ -191,7 +217,9 @@ impl Handler<Connect> for McpSseState {
 
 #[derive(Message)]
 #[rtype(result = "()")]
-struct Disconnect { id: String }
+struct Disconnect {
+    id: String,
+}
 
 impl Handler<Disconnect> for McpSseState {
     type Result = ();
@@ -202,7 +230,9 @@ impl Handler<Disconnect> for McpSseState {
 
 #[derive(Message)]
 #[rtype(result = "()")]
-struct Heartbeat { id: String }
+struct Heartbeat {
+    id: String,
+}
 
 impl Handler<Heartbeat> for McpSseState {
     type Result = ();
@@ -225,7 +255,13 @@ impl Handler<IncomingRequest> for McpSseState {
         let handler = self.mcp_handler.clone();
         let port_state = self.port_state.clone();
         Box::pin(async move {
-            McpSseState::handle_mcp_request_static(handler, port_state, &msg.session_id, msg.request).await
+            McpSseState::handle_mcp_request_static(
+                handler,
+                port_state,
+                &msg.session_id,
+                msg.request,
+            )
+            .await
         })
     }
 }
@@ -235,14 +271,20 @@ impl McpSseState {
         mcp_handler: Arc<dyn McpHandler>,
         port_state: Arc<TokioMutex<McpPortState>>,
         session_id: &str,
-        request: JsonRpcRequest
+        request: JsonRpcRequest,
     ) -> Option<JsonRpcResponse> {
-         debug!("(Static) Handling MCP request from SSE session {}: {:?}", session_id, request);
+        debug!(
+            "(Static) Handling MCP request from SSE session {}: {:?}",
+            session_id, request
+        );
         let request_json = match serde_json::to_value(request) {
             Ok(v) => v,
             Err(e) => {
                 error!("Failed to serialize request to JSON: {}", e);
-                return Some(JsonRpcResponse::error(None, JsonRpcError::server_error(ErrorCode::ParseError as i64, e.to_string())));
+                return Some(JsonRpcResponse::error(
+                    None,
+                    JsonRpcError::server_error(ErrorCode::ParseError as i64, e.to_string()),
+                ));
             }
         };
 
@@ -252,7 +294,10 @@ impl McpSseState {
             Ok(resp) => Some(resp),
             Err(e) => {
                 error!("Failed to deserialize MCP response: {}", e);
-                Some(JsonRpcResponse::error(None, JsonRpcError::server_error(ErrorCode::InternalError as i64, e.to_string())))
+                Some(JsonRpcResponse::error(
+                    None,
+                    JsonRpcError::server_error(ErrorCode::InternalError as i64, e.to_string()),
+                ))
             }
         }
     }
@@ -273,11 +318,18 @@ pub async fn mcp_sse_handler(
     state_addr: Data<Addr<McpSseState>>,
 ) -> Result<HttpResponse, ActixError> {
     info!("Handling new MCP SSE connection request");
-    
+
     let session_id = Uuid::new_v4().to_string();
     let state_addr = state_addr.get_ref().clone();
 
-    ws::start(WsSession { id: session_id, state_addr }, &req, stream)
+    ws::start(
+        WsSession {
+            id: session_id,
+            state_addr,
+        },
+        &req,
+        stream,
+    )
 }
 
 struct WsSession {
@@ -292,8 +344,11 @@ impl Actor for WsSession {
         info!("WebSocket session started for SSE: {}", self.id);
         let addr = ctx.address();
         let (tx, rx) = mpsc::channel(100);
-        
-        self.state_addr.do_send(Connect { id: self.id.clone(), sender: tx });
+
+        self.state_addr.do_send(Connect {
+            id: self.id.clone(),
+            sender: tx,
+        });
 
         // Spawn a future that will handle incoming SSE events
         let id_clone = self.id.clone();
@@ -325,7 +380,9 @@ impl Actor for WsSession {
 
     fn stopping(&mut self, ctx: &mut Self::Context) -> Running {
         info!("WebSocket session stopping for SSE: {}", self.id);
-        self.state_addr.do_send(Disconnect { id: self.id.clone() });
+        self.state_addr.do_send(Disconnect {
+            id: self.id.clone(),
+        });
         Running::Stop
     }
 }
@@ -355,39 +412,53 @@ impl StreamHandler<Result<ws::Message, ws::ProtocolError>> for WsSession {
                 match serde_json::from_str::<JsonRpcRequest>(&text) {
                     Ok(request) => {
                         let session_id = self.id.clone();
-                        self.state_addr.clone()
-                           .send(IncomingRequest { session_id, request })
-                           .into_actor(self)
-                           .then(|res, _act, ws_ctx| {
-                               match res {
-                                   Ok(Some(response)) => {
-                                       match serde_json::to_string(&response) {
-                                           Ok(resp_text) => ws_ctx.text(resp_text),
-                                           Err(e) => error!("Failed to serialize MCP response for WS: {}", e),
-                                       }
-                                   }
-                                   Ok(None) => { }
-                                   Err(e) => error!("Mailbox error handling MCP request: {}", e),
-                               }
-                               fut::ready(())
-                           })
-                           .wait(ctx);
+                        self.state_addr
+                            .clone()
+                            .send(IncomingRequest {
+                                session_id,
+                                request,
+                            })
+                            .into_actor(self)
+                            .then(|res, _act, ws_ctx| {
+                                match res {
+                                    Ok(Some(response)) => match serde_json::to_string(&response) {
+                                        Ok(resp_text) => ws_ctx.text(resp_text),
+                                        Err(e) => {
+                                            error!("Failed to serialize MCP response for WS: {}", e)
+                                        }
+                                    },
+                                    Ok(None) => {}
+                                    Err(e) => error!("Mailbox error handling MCP request: {}", e),
+                                }
+                                fut::ready(())
+                            })
+                            .wait(ctx);
                     }
                     Err(e) => {
-                        warn!("Failed to parse incoming WS message as JsonRpcRequest: {}. Text: {}", e, text);
-                         let err_resp = JsonRpcResponse::error(None, JsonRpcError::server_error(ErrorCode::ParseError as i64, e.to_string()));
-                         if let Ok(err_str) = serde_json::to_string(&err_resp) {
-                             ctx.text(err_str);
-                         }
+                        warn!(
+                            "Failed to parse incoming WS message as JsonRpcRequest: {}. Text: {}",
+                            e, text
+                        );
+                        let err_resp = JsonRpcResponse::error(
+                            None,
+                            JsonRpcError::server_error(ErrorCode::ParseError as i64, e.to_string()),
+                        );
+                        if let Ok(err_str) = serde_json::to_string(&err_resp) {
+                            ctx.text(err_str);
+                        }
                     }
                 }
             }
             Ok(ws::Message::Ping(msg)) => {
                 ctx.pong(&msg);
-                self.state_addr.do_send(Heartbeat { id: self.id.clone() });
+                self.state_addr.do_send(Heartbeat {
+                    id: self.id.clone(),
+                });
             }
             Ok(ws::Message::Pong(_)) => {
-                self.state_addr.do_send(Heartbeat { id: self.id.clone() });
+                self.state_addr.do_send(Heartbeat {
+                    id: self.id.clone(),
+                });
             }
             Ok(ws::Message::Close(reason)) => {
                 ctx.close(reason);
@@ -402,4 +473,4 @@ pub fn configure_mcp_sse_service(cfg: &mut web::ServiceConfig, state_addr: Addr<
     info!("Configuring MCP SSE service endpoint (/api/mcp/sse)...");
     cfg.app_data(Data::new(state_addr))
         .route("/api/mcp/sse", web::get().to(mcp_sse_handler));
-} 
+}

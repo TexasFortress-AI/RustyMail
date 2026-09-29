@@ -3,41 +3,46 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use actix_web::{web, App, HttpServer};
 use actix_cors::Cors;
+use actix_web::{web, App, HttpServer};
 use rustymail::config::Settings;
 // Remove direct ImapClient import if only used for connect check, keep if factory needs it explicitly
 // use rustymail::imap::ImapClient;
-use rustymail::api::rest::{AppState, configure_rest_service};
+use dotenvy::dotenv;
+use log::{error, info, warn};
 use rustymail::api::auth::ApiKeyStore;
 use rustymail::api::rate_limit::{RateLimitConfig, RateLimitMiddleware};
+use rustymail::api::rest::{configure_rest_service, AppState};
 use std::sync::Arc;
-use dotenvy::dotenv;
-use log::{info, error, warn};
 // Remove tool registry creation
 // use rustymail::mcp_port::create_mcp_tool_registry;
 // --- Add McpHandler and SdkMcpAdapter imports ---
-use rustymail::mcp::handler::McpHandler;
 use rustymail::mcp::adapters::sdk::SdkMcpAdapter;
+use rustymail::mcp::handler::McpHandler;
 // --- End imports ---
 use env_logger;
+use rustymail::api::openapi_docs;
 use rustymail::dashboard;
 use rustymail::dashboard::api::SseManager;
-use rustymail::api::openapi_docs;
 use rustymail::dashboard::services::account_store::AccountStore;
 // --- Add imports for factory ---
 use rustymail::imap::client::ImapClient; // Needed for the factory closure
-// --- End imports for factory ---
-// Remove non-existent imports
-// use rustymail::mcp::adapters::stdio::run_stdio_handler;
-// use rustymail::mcp::handler::JsonRpcHandler;
+                                         // --- End imports for factory ---
+                                         // Remove non-existent imports
+                                         // use rustymail::mcp::adapters::stdio::run_stdio_handler;
+                                         // use rustymail::mcp::handler::JsonRpcHandler;
 use rustymail::prelude::*; // Import many common types
 
 // Use jemalloc as the global allocator for better memory management
 // jemalloc releases memory back to the OS, unlike the default system allocator
 // This prevents memory bloat from IMAP session BytePools being held by the allocator
 // NOTE: Can be disabled with --features system-alloc or --features mimalloc-alloc for testing
-#[cfg(all(not(target_env = "msvc"), not(feature = "dhat-heap"), not(feature = "system-alloc"), not(feature = "mimalloc-alloc")))]
+#[cfg(all(
+    not(target_env = "msvc"),
+    not(feature = "dhat-heap"),
+    not(feature = "system-alloc"),
+    not(feature = "mimalloc-alloc")
+))]
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
@@ -81,7 +86,10 @@ async fn main() -> std::io::Result<()> {
     // Determine active interface from settings and print config details
     let active_interface = settings.interface.clone();
     info!("Using interface: {:?}", active_interface);
-    info!("IMAP config: host={}, port={}, user={}", settings.imap_host, settings.imap_port, settings.imap_user);
+    info!(
+        "IMAP config: host={}, port={}, user={}",
+        settings.imap_host, settings.imap_port, settings.imap_user
+    );
 
     // --- Perform initial IMAP connection check --- (Optional but good for validation)
     // TEMPORARILY DISABLED: Skip IMAP connection check for dashboard testing
@@ -109,17 +117,29 @@ async fn main() -> std::io::Result<()> {
 
     // --- Load Account Credentials from accounts.json (single source of truth) ---
     let account_store = AccountStore::new("config/accounts.json");
-    account_store.initialize().await.expect("Failed to initialize account store");
-    let default_account = account_store.get_default_account().await
+    account_store
+        .initialize()
+        .await
+        .expect("Failed to initialize account store");
+    let default_account = account_store
+        .get_default_account()
+        .await
         .expect("Failed to load default account from accounts.json")
         .expect("No default account configured in accounts.json");
 
-    info!("Loaded default account from accounts.json: {}", default_account.email_address);
+    info!(
+        "Loaded default account from accounts.json: {}",
+        default_account.email_address
+    );
 
     // --- Create IMAP Session Factory ---
     use futures_util::future::BoxFuture;
     let imap_account = default_account.clone();
-    let raw_imap_session_factory: Box<dyn Fn() -> BoxFuture<'static, Result<ImapClient<AsyncImapSessionWrapper>, ImapError>> + Send + Sync> = Box::new(move || {
+    let raw_imap_session_factory: Box<
+        dyn Fn() -> BoxFuture<'static, Result<ImapClient<AsyncImapSessionWrapper>, ImapError>>
+            + Send
+            + Sync,
+    > = Box::new(move || {
         let account = imap_account.clone();
         Box::pin(async move {
             info!("ImapSessionFactory: Creating new IMAP session...");
@@ -128,7 +148,9 @@ async fn main() -> std::io::Result<()> {
                 account.imap.port,
                 &account.imap.username,
                 &account.imap.password,
-            ).await.map_err(|e| {
+            )
+            .await
+            .map_err(|e| {
                 error!("ImapSessionFactory: Failed to connect: {:?}", e);
                 e
             })?;
@@ -141,7 +163,7 @@ async fn main() -> std::io::Result<()> {
     info!("IMAP Session Factory created.");
 
     // --- Create Connection Pool ---
-    use rustymail::connection_pool::{ConnectionPool, ConnectionFactory, PoolConfig};
+    use rustymail::connection_pool::{ConnectionFactory, ConnectionPool, PoolConfig};
     use std::time::Duration;
 
     // Create connection factory that uses our IMAP session factory
@@ -179,7 +201,10 @@ async fn main() -> std::io::Result<()> {
     });
 
     let connection_pool = ConnectionPool::new(connection_factory, pool_config.clone());
-    info!("Connection Pool created with min={}, max={} connections", pool_config.min_connections, pool_config.max_connections);
+    info!(
+        "Connection Pool created with min={}, max={} connections",
+        pool_config.min_connections, pool_config.max_connections
+    );
 
     // --- Create Tool Registry (REMOVED) ---
     // let tool_registry_rest = create_mcp_tool_registry(imap_client_rest.clone());
@@ -189,7 +214,7 @@ async fn main() -> std::io::Result<()> {
     // TODO: Implement SdkMcpAdapter::new properly
     let mcp_handler: Arc<dyn McpHandler> = Arc::new(
         SdkMcpAdapter::new(imap_session_factory.clone())
-            .expect("SdkMcpAdapter initialization failed")
+            .expect("SdkMcpAdapter initialization failed"),
     );
     info!("MCP Handler (SdkMcpAdapter) created.");
 
@@ -218,12 +243,15 @@ async fn main() -> std::io::Result<()> {
     let dashboard_state = dashboard::services::init(
         config.clone(),
         imap_session_factory.clone(),
-        connection_pool
-    ).await;
+        connection_pool,
+    )
+    .await;
     info!("Dashboard state initialized.");
 
     // Start background metrics collection task (pass only connection pool to avoid circular reference)
-    dashboard_state.metrics_service.start_background_collection(Arc::clone(&dashboard_state.connection_pool));
+    dashboard_state
+        .metrics_service
+        .start_background_collection(Arc::clone(&dashboard_state.connection_pool));
 
     // Start sync process spawner instead of in-process sync
     // This runs sync in a separate process that exits after each cycle,
@@ -261,7 +289,10 @@ async fn main() -> std::io::Result<()> {
     }
 
     // Start event publishers for dashboard integration
-    dashboard::services::event_integration::start_event_publishers(Arc::new(dashboard_state.as_ref().clone())).await;
+    dashboard::services::event_integration::start_event_publishers(Arc::new(
+        dashboard_state.as_ref().clone(),
+    ))
+    .await;
     info!("Event publishers started");
 
     // Start MCP session cleanup task
@@ -271,7 +302,7 @@ async fn main() -> std::io::Result<()> {
     // Create and initialize SSE manager for dashboard
     let sse_manager = Arc::new(SseManager::new(
         Arc::clone(&dashboard_state.metrics_service),
-        Arc::clone(&dashboard_state.client_manager)
+        Arc::clone(&dashboard_state.client_manager),
     ));
     info!("Dashboard SSE Manager initialized.");
     // --- End Dashboard Setup ---
@@ -290,18 +321,21 @@ async fn main() -> std::io::Result<()> {
     let server = HttpServer::new(move || {
         // Configure rate limiting from environment variables
         let rate_limit_config = RateLimitConfig::from_env();
-        info!("Rate limiting configured: {} req/min, {} req/hour per IP",
-            rate_limit_config.per_ip_per_minute,
-            rate_limit_config.per_ip_per_hour);
+        info!(
+            "Rate limiting configured: {} req/min, {} req/hour per IP",
+            rate_limit_config.per_ip_per_minute, rate_limit_config.per_ip_per_hour
+        );
 
         // Configure CORS with secure whitelist-based approach
         // Fallback uses DASHBOARD_PORT env var to avoid hardcoding port numbers
-        let allowed_origins_str = std::env::var("ALLOWED_ORIGINS")
-            .unwrap_or_else(|_| {
-                let port = std::env::var("DASHBOARD_PORT").unwrap_or_else(|_| "9439".to_string());
-                warn!("ALLOWED_ORIGINS not set, defaulting to localhost:{} only for development safety", port);
-                format!("http://localhost:{},http://127.0.0.1:{}", port, port)
-            });
+        let allowed_origins_str = std::env::var("ALLOWED_ORIGINS").unwrap_or_else(|_| {
+            let port = std::env::var("DASHBOARD_PORT").unwrap_or_else(|_| "9439".to_string());
+            warn!(
+                "ALLOWED_ORIGINS not set, defaulting to localhost:{} only for development safety",
+                port
+            );
+            format!("http://localhost:{},http://127.0.0.1:{}", port, port)
+        });
 
         let allowed_origins: Vec<String> = allowed_origins_str
             .split(',')
@@ -310,7 +344,9 @@ async fn main() -> std::io::Result<()> {
             .collect();
 
         if allowed_origins.is_empty() {
-            warn!("No valid ALLOWED_ORIGINS configured, CORS will reject all cross-origin requests");
+            warn!(
+                "No valid ALLOWED_ORIGINS configured, CORS will reject all cross-origin requests"
+            );
         }
 
         // Build CORS configuration with specific allowed origins
@@ -333,20 +369,20 @@ async fn main() -> std::io::Result<()> {
 
         let mut app = App::new()
             // --- Register updated state ---
-            .app_data(web::Data::new(app_state.clone()))        // Core AppState (handler, factory)
+            .app_data(web::Data::new(app_state.clone())) // Core AppState (handler, factory)
             .app_data(web::Data::new(imap_session_factory.clone())) // Pass factory directly for REST handlers
             // .app_data(web::Data::new(sse_state.clone()))     // SSE not implemented yet
             // --- End updated state ---
-            .app_data(config.clone())                             // Dashboard config
-            .app_data(dashboard_state.clone())                  // Dashboard state
-            .app_data(web::Data::new(sse_manager.clone()))      // Dashboard SSE Manager
+            .app_data(config.clone()) // Dashboard config
+            .app_data(dashboard_state.clone()) // Dashboard state
+            .app_data(web::Data::new(sse_manager.clone())) // Dashboard SSE Manager
             .wrap(RateLimitMiddleware::new(rate_limit_config.clone()))
             .wrap(cors)
             .wrap(actix_web::middleware::Logger::default())
             .wrap(dashboard::api::middleware::Metrics)
             // Configure routes
-            .configure(configure_rest_service)                // RustyMail REST API
-            .configure(openapi_docs::configure_openapi)       // OpenAPI/Swagger documentation
+            .configure(configure_rest_service) // RustyMail REST API
+            .configure(openapi_docs::configure_openapi) // OpenAPI/Swagger documentation
             // .configure(configure_sse_service)              // SSE not implemented yet
             .configure(|cfg| dashboard::api::init_routes(cfg)) // Dashboard API routes
             .configure(rustymail::api::mcp_http::configure_mcp_routes); // MCP Streamable HTTP transport
@@ -361,13 +397,15 @@ async fn main() -> std::io::Result<()> {
         error!("Failed to bind server to {}: {}", listen_addr, e);
         e
     })?
-    .workers(1)  // TEMPORARY: Use single worker to debug memory leak
+    .workers(1) // TEMPORARY: Use single worker to debug memory leak
     .run();
 
     // Spawn the Dashboard SSE broadcast task
     info!("Spawning Dashboard SSE broadcast task...");
     tokio::spawn(async move {
-        sse_manager_clone_for_task.start_stats_broadcast(dashboard_state_clone_for_task).await;
+        sse_manager_clone_for_task
+            .start_stats_broadcast(dashboard_state_clone_for_task)
+            .await;
     });
 
     // Await the server

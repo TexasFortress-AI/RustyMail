@@ -5,13 +5,13 @@
 
 // src/dashboard/services/ai/providers/morpheus.rs
 
-use async_trait::async_trait;
-use reqwest::Client;
-use serde::{Serialize, Deserialize};
-use serde_json;
-use log::{debug, warn, error};
-use super::{AiProvider, AiChatMessage, get_ai_request_timeout}; // Import trait, common message struct, and timeout helper
+use super::{get_ai_request_timeout, AiChatMessage, AiProvider}; // Import trait, common message struct, and timeout helper
 use crate::api::errors::ApiError as RestApiError;
+use async_trait::async_trait;
+use log::{debug, error, warn};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use serde_json;
 
 // Get Morpheus API base URL from environment or use default
 fn get_base_url() -> String {
@@ -91,28 +91,43 @@ impl AiProvider for MorpheusAdapter {
         let base_url = get_base_url();
         let models_url = format!("{}/models/allmodels", base_url);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .get(&models_url)
             .bearer_auth(&self.api_key)
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Morpheus models: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("Morpheus models: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("Morpheus models API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "Morpheus models API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("Morpheus models API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "Morpheus models API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
         // First get the raw response text to see what format it's in
-        let response_text = response
-            .text()
-            .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Failed to read Morpheus response: {}", e) })?;
+        let response_text =
+            response
+                .text()
+                .await
+                .map_err(|e| RestApiError::ServiceUnavailable {
+                    service: format!("Failed to read Morpheus response: {}", e),
+                })?;
 
         debug!("Morpheus models raw response: {}", response_text);
 
@@ -120,14 +135,18 @@ impl AiProvider for MorpheusAdapter {
         let response_body = match serde_json::from_str::<MorpheusModelsResponse>(&response_text) {
             Ok(body) => body,
             Err(e) => {
-                error!("Failed to deserialize Morpheus models response: {}. Raw response: {}", e, response_text);
+                error!(
+                    "Failed to deserialize Morpheus models response: {}. Raw response: {}",
+                    e, response_text
+                );
                 return Err(RestApiError::UnprocessableEntity {
-                    message: format!("Failed to parse Morpheus models response: {}", e)
+                    message: format!("Failed to parse Morpheus models response: {}", e),
                 });
             }
         };
 
-        let models: Vec<String> = response_body.data
+        let models: Vec<String> = response_body
+            .data
             .into_iter()
             // Return ALL models - no filtering whatsoever
             .map(|model| model.id)
@@ -148,36 +167,55 @@ impl AiProvider for MorpheusAdapter {
             max_tokens: Some(2000),
         };
 
-        debug!("Sending request to Morpheus API: model={}, messages_count={}, url={}",
-               request_payload.model, request_payload.messages.len(), url);
+        debug!(
+            "Sending request to Morpheus API: model={}, messages_count={}, url={}",
+            request_payload.model,
+            request_payload.messages.len(),
+            url
+        );
 
         // Log the API key details to verify it's being passed correctly
-        debug!("Morpheus API key length: {}, first 10 chars: {}",
-               self.api_key.len(),
-               &self.api_key.chars().take(10).collect::<String>());
+        debug!(
+            "Morpheus API key length: {}, first 10 chars: {}",
+            self.api_key.len(),
+            &self.api_key.chars().take(10).collect::<String>()
+        );
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .bearer_auth(&self.api_key)
             .json(&request_payload)
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("Morpheus: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("Morpheus: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("Morpheus API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "Morpheus API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("Morpheus API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "Morpheus API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
-        let response_body = response
-            .json::<MorpheusChatResponse>()
-            .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize Morpheus response: {}", e) })?;
+        let response_body = response.json::<MorpheusChatResponse>().await.map_err(|e| {
+            RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize Morpheus response: {}", e),
+            }
+        })?;
 
         // Extract the first choice's message content
         if let Some(choice) = response_body.choices.first() {
@@ -185,7 +223,9 @@ impl AiProvider for MorpheusAdapter {
             Ok(choice.message.content.clone())
         } else {
             warn!("Morpheus API response did not contain any choices.");
-            Err(RestApiError::UnprocessableEntity { message: "Morpheus response was empty or missing choices".to_string() })
+            Err(RestApiError::UnprocessableEntity {
+                message: "Morpheus response was empty or missing choices".to_string(),
+            })
         }
     }
 }

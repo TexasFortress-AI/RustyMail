@@ -65,27 +65,61 @@ async fn seed_test_data(pool: &SqlitePool, account_id: &str, folder_name: &str) 
         .await
         .unwrap();
 
-    let (folder_id,): (i64,) = sqlx::query_as(
-        "SELECT id FROM folders WHERE account_id = ? AND name = ?"
-    )
-    .bind(account_id)
-    .bind(folder_name)
-    .fetch_one(pool)
-    .await
-    .unwrap();
+    let (folder_id,): (i64,) =
+        sqlx::query_as("SELECT id FROM folders WHERE account_id = ? AND name = ?")
+            .bind(account_id)
+            .bind(folder_name)
+            .fetch_one(pool)
+            .await
+            .unwrap();
 
     // Insert test emails with varying subjects
     let emails = vec![
-        (1, "FW: Resume for John Doe", "mason@example.com", "aaron@client.com",
-         "2024-03-14T10:00:00Z", true, "Forwarded candidate resume. John has 10 years experience in histology."),
-        (2, "MLee Candidate Submittal - Jane Smith", "mason@example.com", "aaron@client.com",
-         "2024-03-13T14:00:00Z", true, "Candidate submittal for Jane Smith, Lab Tech with 5 years experience."),
-        (3, "Meeting notes from Thursday", "bob@example.com", "team@example.com",
-         "2024-03-12T09:00:00Z", false, "Notes from the weekly standup meeting. Action items discussed."),
-        (4, "RE: Invoice #12345", "billing@vendor.com", "mason@example.com",
-         "2024-03-11T16:00:00Z", true, "Please find attached the updated invoice for March services."),
-        (5, "Candidate Resume - Alex Johnson", "hr@example.com", "mason@example.com",
-         "2024-03-10T11:00:00Z", true, "Alex Johnson resume attached. Strong background in medical lab work."),
+        (
+            1,
+            "FW: Resume for John Doe",
+            "mason@example.com",
+            "aaron@client.com",
+            "2024-03-14T10:00:00Z",
+            true,
+            "Forwarded candidate resume. John has 10 years experience in histology.",
+        ),
+        (
+            2,
+            "MLee Candidate Submittal - Jane Smith",
+            "mason@example.com",
+            "aaron@client.com",
+            "2024-03-13T14:00:00Z",
+            true,
+            "Candidate submittal for Jane Smith, Lab Tech with 5 years experience.",
+        ),
+        (
+            3,
+            "Meeting notes from Thursday",
+            "bob@example.com",
+            "team@example.com",
+            "2024-03-12T09:00:00Z",
+            false,
+            "Notes from the weekly standup meeting. Action items discussed.",
+        ),
+        (
+            4,
+            "RE: Invoice #12345",
+            "billing@vendor.com",
+            "mason@example.com",
+            "2024-03-11T16:00:00Z",
+            true,
+            "Please find attached the updated invoice for March services.",
+        ),
+        (
+            5,
+            "Candidate Resume - Alex Johnson",
+            "hr@example.com",
+            "mason@example.com",
+            "2024-03-10T11:00:00Z",
+            true,
+            "Alex Johnson resume attached. Strong background in medical lab work.",
+        ),
     ];
 
     for (uid, subject, from_addr, to_addr, date, has_attach, body) in &emails {
@@ -148,7 +182,13 @@ async fn test_metadata_export_csv_filtered_fields() {
 
     let exporter = rustymail::metadata_export::MetadataExporter::new(pool.clone());
     let result = exporter
-        .export("test@example.com", "INBOX", Some("csv"), Some("uid,subject"), None)
+        .export(
+            "test@example.com",
+            "INBOX",
+            Some("csv"),
+            Some("uid,subject"),
+            None,
+        )
         .await
         .unwrap();
 
@@ -194,7 +234,17 @@ async fn test_filter_any_mode() {
     let filter = rustymail::filter_emails::SubjectFilter::new(pool.clone());
     let patterns = vec!["resume".to_string(), "candidate".to_string()];
     let result = filter
-        .filter("test@example.com", "Sent Items", &patterns, None, None, None, None, None, None)
+        .filter(
+            "test@example.com",
+            "Sent Items",
+            &patterns,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await
         .unwrap();
 
@@ -206,7 +256,8 @@ async fn test_filter_any_mode() {
     for email in &result.results {
         assert!(
             !email.matched_patterns.is_empty(),
-            "UID {} should have matched patterns", email.uid
+            "UID {} should have matched patterns",
+            email.uid
         );
     }
 
@@ -224,8 +275,15 @@ async fn test_filter_all_mode() {
     let patterns = vec!["candidate".to_string(), "resume".to_string()];
     let result = filter
         .filter(
-            "test@example.com", "Sent Items", &patterns, Some("all"),
-            None, None, None, None, None,
+            "test@example.com",
+            "Sent Items",
+            &patterns,
+            Some("all"),
+            None,
+            None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -248,8 +306,15 @@ async fn test_filter_sender_filter() {
     let patterns = vec!["resume".to_string(), "candidate".to_string()];
     let result = filter
         .filter(
-            "test@example.com", "Sent Items", &patterns, None,
-            Some("mason@"), None, None, None, None,
+            "test@example.com",
+            "Sent Items",
+            &patterns,
+            None,
+            Some("mason@"),
+            None,
+            None,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -274,8 +339,15 @@ async fn test_filter_max_results() {
     let patterns = vec!["e".to_string()]; // matches all subjects
     let result = filter
         .filter(
-            "test@example.com", "Sent Items", &patterns, None,
-            None, None, None, None, Some(2),
+            "test@example.com",
+            "Sent Items",
+            &patterns,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(2),
         )
         .await
         .unwrap();
@@ -293,11 +365,24 @@ async fn test_filter_empty_patterns_error() {
 
     let filter = rustymail::filter_emails::SubjectFilter::new(pool.clone());
     let result = filter
-        .filter("test@example.com", "Sent Items", &[], None, None, None, None, None, None)
+        .filter(
+            "test@example.com",
+            "Sent Items",
+            &[],
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await;
 
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("At least one subject pattern"));
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("At least one subject pattern"));
 
     cleanup_test_db("filter_empty");
 }
@@ -311,7 +396,17 @@ async fn test_filter_folder_not_found() {
     let filter = rustymail::filter_emails::SubjectFilter::new(pool.clone());
     let patterns = vec!["test".to_string()];
     let result = filter
-        .filter("test@example.com", "NonExistent", &patterns, None, None, None, None, None, None)
+        .filter(
+            "test@example.com",
+            "NonExistent",
+            &patterns,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
         .await;
 
     assert!(result.is_err());

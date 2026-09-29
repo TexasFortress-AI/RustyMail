@@ -84,7 +84,16 @@ impl SubjectFilter {
 
         // 2. Build and execute query
         let rows = self
-            .query_filtered(folder_id, patterns, mode, sender_filter, recipient_filter, date_after, date_before, limit)
+            .query_filtered(
+                folder_id,
+                patterns,
+                mode,
+                sender_filter,
+                recipient_filter,
+                date_after,
+                date_before,
+                limit,
+            )
             .await?;
 
         // 3. Compute matched_patterns for each result
@@ -112,19 +121,20 @@ impl SubjectFilter {
         account_id: &str,
         folder_name: &str,
     ) -> Result<i64, Box<dyn std::error::Error>> {
-        let row: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM folders WHERE account_id = ? AND name = ?"
-        )
-        .bind(account_id)
-        .bind(folder_name)
-        .fetch_optional(&self.db_pool)
-        .await?;
+        let row: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM folders WHERE account_id = ? AND name = ?")
+                .bind(account_id)
+                .bind(folder_name)
+                .fetch_optional(&self.db_pool)
+                .await?;
 
         match row {
             Some((id,)) => Ok(id),
             None => Err(format!(
-                "Folder '{}' not found for account '{}'", folder_name, account_id
-            ).into()),
+                "Folder '{}' not found for account '{}'",
+                folder_name, account_id
+            )
+            .into()),
         }
     }
 
@@ -150,12 +160,13 @@ impl SubjectFilter {
             "SELECT e.uid, e.subject, e.from_address, e.to_addresses, \
              e.date, e.has_attachments \
              FROM emails e \
-             WHERE e.folder_id = ?"
+             WHERE e.folder_id = ?",
         );
 
         // Subject pattern conditions
         let joiner = if match_mode == "all" { " AND " } else { " OR " };
-        let pattern_clauses: Vec<String> = patterns.iter()
+        let pattern_clauses: Vec<String> = patterns
+            .iter()
             .map(|_| "e.subject LIKE ? COLLATE NOCASE".to_string())
             .collect();
         sql.push_str(&format!(" AND ({})", pattern_clauses.join(joiner)));
@@ -178,8 +189,7 @@ impl SubjectFilter {
         sql.push_str(&format!(" LIMIT {}", limit));
 
         // Bind parameters in order
-        let mut query = sqlx::query_as::<_, RawFilterRow>(&sql)
-            .bind(folder_id);
+        let mut query = sqlx::query_as::<_, RawFilterRow>(&sql).bind(folder_id);
 
         for pattern in patterns {
             query = query.bind(format!("%{}%", pattern));
@@ -215,14 +225,12 @@ struct RawFilterRow {
 
 /// For each row, determine which of the input patterns matched its subject.
 /// This is a pure function that can be tested without a database.
-fn compute_matched_patterns(
-    rows: Vec<RawFilterRow>,
-    patterns: &[String],
-) -> Vec<FilteredEmail> {
+fn compute_matched_patterns(rows: Vec<RawFilterRow>, patterns: &[String]) -> Vec<FilteredEmail> {
     rows.into_iter()
         .map(|row| {
             let subject_lower = row.subject.as_deref().unwrap_or("").to_lowercase();
-            let matched: Vec<String> = patterns.iter()
+            let matched: Vec<String> = patterns
+                .iter()
                 .filter(|p| subject_lower.contains(&p.to_lowercase()))
                 .cloned()
                 .collect();
@@ -290,7 +298,9 @@ mod tests {
         let results = compute_matched_patterns(rows, &patterns);
 
         assert_eq!(results[0].matched_patterns.len(), 2);
-        assert!(results[0].matched_patterns.contains(&"candidate".to_string()));
+        assert!(results[0]
+            .matched_patterns
+            .contains(&"candidate".to_string()));
         assert!(results[0].matched_patterns.contains(&"resume".to_string()));
     }
 
@@ -314,7 +324,10 @@ mod tests {
     fn test_matched_patterns_proper_nouns_and_acronyms() {
         // Acronyms should match
         let rows = vec![
-            make_row(1, "FW: NCHCR Candidate DR Saima Yasir inquiring about your Ultrasound Tech"),
+            make_row(
+                1,
+                "FW: NCHCR Candidate DR Saima Yasir inquiring about your Ultrasound Tech",
+            ),
             make_row(2, "MLee Healthcare - Candidate Submittal - Yazen Amra"),
         ];
         let patterns = vec!["NCHCR".to_string()];
@@ -323,19 +336,22 @@ mod tests {
         assert!(results[1].matched_patterns.is_empty());
 
         // Proper names should match
-        let rows = vec![make_row(3, "FW: Kentrail Conyers for Laboratory Leadership")];
+        let rows = vec![make_row(
+            3,
+            "FW: Kentrail Conyers for Laboratory Leadership",
+        )];
         let patterns = vec!["Kentrail".to_string()];
         let results = compute_matched_patterns(rows, &patterns);
         assert_eq!(results[0].matched_patterns, vec!["Kentrail"]);
 
         // Both a generic term and a proper noun on the same email
-        let rows = vec![
-            make_row(1, "FW: NCHCR Candidate DR Saima Yasir"),
-        ];
+        let rows = vec![make_row(1, "FW: NCHCR Candidate DR Saima Yasir")];
         let patterns = vec!["candidate".to_string(), "NCHCR".to_string()];
         let results = compute_matched_patterns(rows, &patterns);
         assert_eq!(results[0].matched_patterns.len(), 2);
-        assert!(results[0].matched_patterns.contains(&"candidate".to_string()));
+        assert!(results[0]
+            .matched_patterns
+            .contains(&"candidate".to_string()));
         assert!(results[0].matched_patterns.contains(&"NCHCR".to_string()));
     }
 }

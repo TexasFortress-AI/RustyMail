@@ -38,13 +38,13 @@ pub enum TransportError {
 pub trait Transport: Send + Sync {
     /// Send a message through the transport
     async fn send(&self, message: Message) -> Result<(), TransportError>;
-    
+
     /// Receive a message from the transport
     async fn receive(&self) -> Result<Message, TransportError>;
-    
+
     /// Close the transport connection
     async fn close(&self) -> Result<(), TransportError>;
-    
+
     /// Check if the transport is connected
     async fn is_connected(&self) -> bool;
 }
@@ -84,4 +84,4 @@ impl Message {
             }),
         }
     }
-} 
+}

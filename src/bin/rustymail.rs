@@ -3,17 +3,17 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use rustymail::config::Settings;
 use rustymail::api::rest::run_server as run_rest_server;
+use rustymail::config::Settings;
 // Comment out MCP server import for now
 // use rustymail::mcp_port::run_mcp_port_server;
 // Comment out unused SSE import
 // use rustymail::api::sse::SseAdapter;
 // Import ImapClient directly
+use log::{error, info};
 use rustymail::imap::client::ImapClient;
-use std::sync::Arc;
-use log::{info, error};
 use std::process::exit;
+use std::sync::Arc;
 // Remove unused imports
 // use actix_web::{web, App, HttpServer, Responder, HttpResponse};
 // --- Add imports for registry ---
@@ -41,15 +41,19 @@ async fn main() -> std::io::Result<()> {
 
     // Call connect and handle the Result directly
     use rustymail::prelude::AsyncImapSessionWrapper;
-    let imap_client_result = ImapClient::<AsyncImapSessionWrapper>::connect(host, port, user, pass).await;
+    let imap_client_result =
+        ImapClient::<AsyncImapSessionWrapper>::connect(host, port, user, pass).await;
 
     let imap_client = match imap_client_result {
         Ok(client) => {
             info!("IMAP connection and client creation successful.");
             Arc::new(client)
-        },
+        }
         Err(e) => {
-            error!("Initial IMAP connection/client creation failed: {}. Exiting.", e);
+            error!(
+                "Initial IMAP connection/client creation failed: {}. Exiting.",
+                e
+            );
             exit(1);
         }
     };
@@ -66,10 +70,13 @@ async fn main() -> std::io::Result<()> {
     // --- Start REST Server Directly (if configured) ---
     if let Some(ref rest_config) = config.rest {
         if !rest_config.enabled {
-             error!("REST server is configured but not enabled in rustymail binary. Exiting.");
-             exit(1);
+            error!("REST server is configured but not enabled in rustymail binary. Exiting.");
+            exit(1);
         }
-        info!("Starting REST server directly on {}:{}...", rest_config.host, rest_config.port);
+        info!(
+            "Starting REST server directly on {}:{}...",
+            rest_config.host, rest_config.port
+        );
         // Need to create MCP handler and session manager for the server
         use rustymail::mcp::adapters::sdk::SdkMcpAdapter;
         use rustymail::session_manager::SessionManager;
@@ -78,7 +85,9 @@ async fn main() -> std::io::Result<()> {
         let session_factory: rustymail::imap::ImapSessionFactory = Box::new(move || {
             let config = config_clone.clone();
             Box::pin(async move {
-                rustymail::imap::client::ImapClient::<rustymail::imap::session::AsyncImapSessionWrapper>::connect(
+                rustymail::imap::client::ImapClient::<
+                    rustymail::imap::session::AsyncImapSessionWrapper,
+                >::connect(
                     &config.imap_host,
                     config.imap_port,
                     &config.imap_user,
@@ -89,8 +98,10 @@ async fn main() -> std::io::Result<()> {
         });
 
         let mcp_handler: Arc<dyn rustymail::mcp::handler::McpHandler> = Arc::new(
-            SdkMcpAdapter::new(rustymail::imap::CloneableImapSessionFactory::new(session_factory))
-                .expect("Failed to create MCP adapter")
+            SdkMcpAdapter::new(rustymail::imap::CloneableImapSessionFactory::new(
+                session_factory,
+            ))
+            .expect("Failed to create MCP adapter"),
         );
         let session_manager = Arc::new(SessionManager::new(Arc::new(config.clone())));
 

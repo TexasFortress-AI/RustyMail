@@ -5,17 +5,16 @@
 
 // src/dashboard/services/ai/providers/deepseek.rs
 
-use async_trait::async_trait;
-use reqwest::Client;
-use serde::{Serialize, Deserialize};
-use log::{debug, warn, error};
-use super::{AiProvider, AiChatMessage, get_ai_request_timeout};
+use super::{get_ai_request_timeout, AiChatMessage, AiProvider};
 use crate::api::errors::ApiError as RestApiError;
+use async_trait::async_trait;
+use log::{debug, error, warn};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
 
 // Get DeepSeek API base URL from environment or use default
 fn get_base_url() -> String {
-    std::env::var("DEEPSEEK_BASE_URL")
-        .unwrap_or_else(|_| "https://api.deepseek.com".to_string())
+    std::env::var("DEEPSEEK_BASE_URL").unwrap_or_else(|_| "https://api.deepseek.com".to_string())
 }
 
 const DEFAULT_DEEPSEEK_MODEL: &str = "deepseek-chat";
@@ -82,29 +81,44 @@ impl AiProvider for DeepSeekAdapter {
         let base_url = get_base_url();
         let models_url = format!("{}/models", base_url);
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .get(&models_url)
             .bearer_auth(&self.api_key)
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("DeepSeek models: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("DeepSeek models: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("DeepSeek models API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "DeepSeek models API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("DeepSeek models API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "DeepSeek models API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
         let response_body = response
             .json::<DeepSeekModelsResponse>()
             .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize DeepSeek models response: {}", e) })?;
+            .map_err(|e| RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize DeepSeek models response: {}", e),
+            })?;
 
-        let models: Vec<String> = response_body.data
+        let models: Vec<String> = response_body
+            .data
             .into_iter()
             .map(|model| model.id)
             .collect();
@@ -124,38 +138,57 @@ impl AiProvider for DeepSeekAdapter {
             max_tokens: Some(2000),
         };
 
-        debug!("Sending request to DeepSeek API: model={}, messages_count={}, url={}",
-               request_payload.model, request_payload.messages.len(), url);
+        debug!(
+            "Sending request to DeepSeek API: model={}, messages_count={}, url={}",
+            request_payload.model,
+            request_payload.messages.len(),
+            url
+        );
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .bearer_auth(&self.api_key)
             .json(&request_payload)
             .timeout(get_ai_request_timeout())
             .send()
             .await
-            .map_err(|e| RestApiError::ServiceUnavailable { service: format!("DeepSeek: {}", e) })?;
+            .map_err(|e| RestApiError::ServiceUnavailable {
+                service: format!("DeepSeek: {}", e),
+            })?;
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error body>".to_string());
-            error!("DeepSeek API request failed with status {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error body>".to_string());
+            error!(
+                "DeepSeek API request failed with status {}: {}",
+                status, error_body
+            );
             return Err(RestApiError::ServiceUnavailable {
-                service: format!("DeepSeek API returned error status {}: {}", status, error_body)
+                service: format!(
+                    "DeepSeek API returned error status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
-        let response_body = response
-            .json::<DeepSeekChatResponse>()
-            .await
-            .map_err(|e| RestApiError::UnprocessableEntity { message: format!("Failed to deserialize DeepSeek response: {}", e) })?;
+        let response_body = response.json::<DeepSeekChatResponse>().await.map_err(|e| {
+            RestApiError::UnprocessableEntity {
+                message: format!("Failed to deserialize DeepSeek response: {}", e),
+            }
+        })?;
 
         if let Some(choice) = response_body.choices.first() {
             debug!("Received response from DeepSeek API.");
             Ok(choice.message.content.clone())
         } else {
             warn!("DeepSeek API response did not contain any choices.");
-            Err(RestApiError::UnprocessableEntity { message: "DeepSeek response was empty or missing choices".to_string() })
+            Err(RestApiError::UnprocessableEntity {
+                message: "DeepSeek response was empty or missing choices".to_string(),
+            })
         }
     }
 }

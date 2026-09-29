@@ -92,7 +92,7 @@ This shouldn't parse."#;
                 "parameters": {
                     "account_id": "Email account identifier"
                 }
-            })
+            }),
         ];
 
         // We'll need to test this through a public interface or make it pub(crate)
@@ -180,15 +180,13 @@ This shouldn't parse."#;
 
         // Verify accounts are different
         assert_ne!(
-            account1_params["account_id"],
-            account2_params["account_id"],
+            account1_params["account_id"], account2_params["account_id"],
             "Different accounts should have different IDs"
         );
 
         // Verify same folder name
         assert_eq!(
-            account1_params["folder"],
-            account2_params["folder"],
+            account1_params["folder"], account2_params["folder"],
             "Same folder name should be used for both"
         );
     }

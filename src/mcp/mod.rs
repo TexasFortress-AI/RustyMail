@@ -17,7 +17,7 @@ pub use handler::McpHandler; // Only export the main trait
 pub use types::{JsonRpcError, JsonRpcRequest, JsonRpcResponse, McpPortState};
 
 // Re-export adapters if needed - Check if LegacyMcpHandler is needed outside mcp
-// pub use adapters::{ 
+// pub use adapters::{
 //     legacy::LegacyMcpHandler,
 //     sdk::SdkMcpAdapter,
-// }; 
+// };

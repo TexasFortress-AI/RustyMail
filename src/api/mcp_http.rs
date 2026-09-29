@@ -3,27 +3,25 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use actix_web::{web, HttpRequest, HttpResponse, Error as ActixError};
-use serde::Deserialize;
 use actix_web::http::header::{ACCEPT, ORIGIN};
+use actix_web::web::Bytes;
+use actix_web::{web, Error as ActixError, HttpRequest, HttpResponse};
 use futures::stream::Stream;
 use futures::StreamExt;
-use log::{info, error, debug, warn};
+use log::{debug, error, info, warn};
+use serde::Deserialize;
 use serde_json::{json, Value};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 use std::collections::{HashMap, VecDeque};
-use tokio::sync::{RwLock, mpsc};
+use std::pin::Pin;
+use std::sync::Arc;
+use std::task::{Context, Poll};
+use std::time::{Duration, Instant};
+use tokio::sync::{mpsc, RwLock};
 use tokio::time::interval;
 use tokio_stream::wrappers::IntervalStream;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use uuid::Uuid;
-use actix_web::web::Bytes;
 
 use crate::dashboard::services::DashboardState;
-
-
 
 const SESSION_TIMEOUT: Duration = Duration::from_secs(600); // 10 minutes
 const EVENT_HISTORY_SIZE: usize = 100;
@@ -46,7 +44,7 @@ struct SessionData {
     last_activity: Instant,
     event_history: VecDeque<(u64, String)>,
     next_event_id: u64,
-    variant: String,  // "standard" or "high-level"
+    variant: String, // "standard" or "high-level"
 }
 
 impl SessionData {
@@ -81,8 +79,7 @@ impl SessionData {
             self.event_history.pop_front();
         }
 
-        self.sender.send(message).await
-            .map_err(|e| e.to_string())?;
+        self.sender.send(message).await.map_err(|e| e.to_string())?;
 
         self.update_activity();
         Ok(())
@@ -172,11 +169,10 @@ impl Stream for McpSseStream {
 fn validate_origin(req: &HttpRequest) -> bool {
     // Get allowed origins from environment (same as CORS config)
     // Fallback uses DASHBOARD_PORT env var to avoid hardcoding port numbers
-    let allowed_origins_str = std::env::var("ALLOWED_ORIGINS")
-        .unwrap_or_else(|_| {
-            let port = std::env::var("DASHBOARD_PORT").unwrap_or_else(|_| "9439".to_string());
-            format!("http://localhost:{},http://127.0.0.1:{}", port, port)
-        });
+    let allowed_origins_str = std::env::var("ALLOWED_ORIGINS").unwrap_or_else(|_| {
+        let port = std::env::var("DASHBOARD_PORT").unwrap_or_else(|_| "9439".to_string());
+        format!("http://localhost:{},http://127.0.0.1:{}", port, port)
+    });
 
     let allowed_origins: Vec<String> = allowed_origins_str
         .split(',')
@@ -191,7 +187,10 @@ fn validate_origin(req: &HttpRequest) -> bool {
             if allowed_origins.iter().any(|allowed| allowed == origin_str) {
                 return true;
             }
-            warn!("Rejected request from non-whitelisted origin: {}", origin_str);
+            warn!(
+                "Rejected request from non-whitelisted origin: {}",
+                origin_str
+            );
             return false;
         }
     }
@@ -220,7 +219,8 @@ fn validate_api_key(req: &HttpRequest) -> Result<(), Value> {
     };
 
     // Try to extract API key from headers
-    let api_key = req.headers()
+    let api_key = req
+        .headers()
         .get("X-Api-Key")
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string())
@@ -263,10 +263,12 @@ fn validate_api_key(req: &HttpRequest) -> Result<(), Value> {
 
 /// Handle MCP request and generate JSON-RPC response
 /// Returns None for notifications (requests without id), Some(Value) for requests
-async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, variant: &str) -> Option<Value> {
-    let method = request.get("method")
-        .and_then(|m| m.as_str())
-        .unwrap_or("");
+async fn handle_mcp_request(
+    request: Value,
+    state: web::Data<DashboardState>,
+    variant: &str,
+) -> Option<Value> {
+    let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
 
     let params = request.get("params").cloned().unwrap_or(json!({}));
     let request_id = request.get("id").cloned();
@@ -281,9 +283,12 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, va
             "notifications/initialized" => {
                 debug!("Received notifications/initialized - no response per spec");
                 return None;
-            },
+            }
             _ => {
-                debug!("Received unknown notification: {} - no response per spec", method);
+                debug!(
+                    "Received unknown notification: {} - no response per spec",
+                    method
+                );
                 return None;
             }
         }
@@ -312,7 +317,7 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, va
                     }
                 }
             })
-        },
+        }
         "tools/list" => {
             let tools = if variant == "high-level" {
                 crate::dashboard::api::high_level_tools::get_mcp_high_level_tools_jsonrpc_format()
@@ -327,7 +332,7 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, va
                     "tools": tools
                 }
             })
-        },
+        }
         "tools/call" => {
             let tool_name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
             let tool_params = params.get("arguments").cloned().unwrap_or(json!({}));
@@ -368,43 +373,44 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, va
                 return Some(response);
             }
 
+            // process_email_instructions is handled by execute_high_level_tool
+            // which manages its own background job. Just delegate to it directly.
+            if tool_name == "process_email_instructions" {
+                let result = crate::dashboard::api::high_level_tools::execute_high_level_tool(
+                    state.as_ref(),
+                    "process_email_instructions",
+                    tool_params.clone(),
+                )
+                .await;
 
-                // process_email_instructions is handled by execute_high_level_tool
-                // which manages its own background job. Just delegate to it directly.
-                if tool_name == "process_email_instructions" {
-                    let result = crate::dashboard::api::high_level_tools::execute_high_level_tool(
-                        state.as_ref(),
-                        "process_email_instructions",
-                        tool_params.clone()
-                    ).await;
-
-                    let response = json!({
-                        "jsonrpc": "2.0",
-                        "id": request_id,
-                        "result": {
-                            "content": [{
-                                "type": "text",
-                                "text": serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string())
-                            }]
-                        }
-                    });
-                    return Some(response);
-                }
-
+                let response = json!({
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "result": {
+                        "content": [{
+                            "type": "text",
+                            "text": serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string())
+                        }]
+                    }
+                });
+                return Some(response);
+            }
 
             // Call the appropriate tool execution logic based on variant
-                        let result = if variant == "high-level" {
+            let result = if variant == "high-level" {
                 crate::dashboard::api::high_level_tools::execute_high_level_tool(
                     state.as_ref(),
                     tool_name,
-                    tool_params
-                ).await
+                    tool_params,
+                )
+                .await
             } else {
                 crate::dashboard::api::handlers::execute_mcp_tool_inner(
                     state.as_ref(),
                     tool_name,
-                    tool_params
-                ).await
+                    tool_params,
+                )
+                .await
             };
 
             // Format result for MCP protocol
@@ -412,7 +418,8 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, va
                 Some(true) => {
                     // Success - format data as MCP content
                     let data = result.get("data").cloned().unwrap_or(json!(null));
-                    let data_str = serde_json::to_string(&data).unwrap_or_else(|_| "null".to_string());
+                    let data_str =
+                        serde_json::to_string(&data).unwrap_or_else(|_| "null".to_string());
 
                     json!({
                         "jsonrpc": "2.0",
@@ -424,11 +431,12 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, va
                             }]
                         }
                     })
-                },
+                }
                 Some(false) | None => {
                     // Tool-level error: return as MCP content with isError flag
                     // so the LLM sees the message instead of a protocol error
-                    let error_msg = result.get("error")
+                    let error_msg = result
+                        .get("error")
                         .and_then(|v| v.as_str())
                         .unwrap_or("Tool execution failed");
 
@@ -445,7 +453,7 @@ async fn handle_mcp_request(request: Value, state: web::Data<DashboardState>, va
                     })
                 }
             }
-        },
+        }
         _ => {
             json!({
                 "jsonrpc": "2.0",
@@ -491,14 +499,18 @@ pub async fn mcp_post_handler(
     }
 
     // Check Accept header
-    let accept_header = req.headers().get(ACCEPT)
+    let accept_header = req
+        .headers()
+        .get(ACCEPT)
         .and_then(|h| h.to_str().ok())
         .unwrap_or("application/json");
 
     debug!("Accept header: {}", accept_header);
 
     // Extract session ID if present
-    let session_id = req.headers().get("Mcp-Session-Id")
+    let session_id = req
+        .headers()
+        .get("Mcp-Session-Id")
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string());
 
@@ -560,7 +572,10 @@ pub async fn mcp_get_handler(
     _state: web::Data<DashboardState>,
 ) -> Result<HttpResponse, ActixError> {
     let variant = query.variant.clone();
-    info!("MCP GET request received for SSE stream (variant: {})", variant);
+    info!(
+        "MCP GET request received for SSE stream (variant: {})",
+        variant
+    );
 
     // Validate Origin header
     if !validate_origin(&req) {
@@ -575,7 +590,9 @@ pub async fn mcp_get_handler(
     }
 
     // Check Accept header - must request text/event-stream
-    let accept_header = req.headers().get(ACCEPT)
+    let accept_header = req
+        .headers()
+        .get(ACCEPT)
         .and_then(|h| h.to_str().ok())
         .unwrap_or("");
 
@@ -586,17 +603,24 @@ pub async fn mcp_get_handler(
     }
 
     // Extract or create session ID
-    let session_id = req.headers().get("Mcp-Session-Id")
+    let session_id = req
+        .headers()
+        .get("Mcp-Session-Id")
         .and_then(|h| h.to_str().ok())
         .map(|s| s.to_string())
         .unwrap_or_else(|| Uuid::new_v4().to_string());
 
     // Check for Last-Event-ID for connection resumption
-    let last_event_id = req.headers().get("Last-Event-ID")
+    let last_event_id = req
+        .headers()
+        .get("Last-Event-ID")
         .and_then(|h| h.to_str().ok())
         .and_then(|s| s.parse::<u64>().ok());
 
-    info!("Creating SSE stream for session: {} (last_event_id: {:?})", session_id, last_event_id);
+    info!(
+        "Creating SSE stream for session: {} (last_event_id: {:?})",
+        session_id, last_event_id
+    );
 
     // Create channel for SSE messages
     let (sender, receiver) = mpsc::channel(100);
@@ -614,7 +638,11 @@ pub async fn mcp_get_handler(
             // Get missed events if Last-Event-ID provided
             if let Some(last_id) = last_event_id {
                 missed_events = existing_session.get_events_since(last_id);
-                info!("Found {} missed events since ID {}", missed_events.len(), last_id);
+                info!(
+                    "Found {} missed events since ID {}",
+                    missed_events.len(),
+                    last_id
+                );
             }
 
             // Update sender for new connection
@@ -622,7 +650,10 @@ pub async fn mcp_get_handler(
         } else {
             // New session
             info!("Creating new session: {}", session_id);
-            sessions.insert(session_id.clone(), SessionData::new(sender.clone(), variant.clone()));
+            sessions.insert(
+                session_id.clone(),
+                SessionData::new(sender.clone(), variant.clone()),
+            );
         }
     }
 
@@ -668,13 +699,13 @@ pub fn configure_mcp_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::resource("/mcp")
             .route(web::post().to(mcp_post_handler))
-            .route(web::get().to(mcp_get_handler))
+            .route(web::get().to(mcp_get_handler)),
     );
 
     // API versioned endpoint
     cfg.service(
         web::resource("/mcp/v1")
             .route(web::post().to(mcp_post_handler))
-            .route(web::get().to(mcp_get_handler))
+            .route(web::get().to(mcp_get_handler)),
     );
 }

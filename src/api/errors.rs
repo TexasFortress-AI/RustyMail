@@ -11,18 +11,11 @@
 //! - Detailed error context and tracing
 //! - Client-friendly error messages
 
-use actix_web::{
-    error::ResponseError,
-    http::StatusCode,
-    HttpResponse,
-};
+use actix_web::{error::ResponseError, http::StatusCode, HttpResponse};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::{
-    dashboard::api::errors::ApiError as DashboardApiError,
-    imap::error::ImapError,
-};
+use crate::{dashboard::api::errors::ApiError as DashboardApiError, imap::error::ImapError};
 
 /// Standardized error response format
 #[derive(Debug, Serialize, Deserialize)]
@@ -210,7 +203,7 @@ impl ApiError {
     pub fn suggestions(&self) -> Option<Vec<String>> {
         match self {
             ApiError::Unauthorized => Some(vec![
-                "Include a valid API key in the X-API-Key header".to_string(),
+                "Include a valid API key in the X-API-Key header".to_string()
             ]),
             ApiError::InvalidApiKey { .. } => Some(vec![
                 "Check your API key is correct".to_string(),
@@ -239,15 +232,13 @@ impl ApiError {
     /// Get help links for the error
     pub fn help_links(&self) -> Option<Vec<String>> {
         match self {
-            ApiError::Unauthorized | ApiError::InvalidApiKey { .. } => Some(vec![
-                "/docs/authentication".to_string(),
-            ]),
-            ApiError::ValidationFailed { .. } | ApiError::BadRequest { .. } => Some(vec![
-                "/docs/api-reference".to_string(),
-            ]),
-            ApiError::RateLimitExceeded { .. } => Some(vec![
-                "/docs/rate-limits".to_string(),
-            ]),
+            ApiError::Unauthorized | ApiError::InvalidApiKey { .. } => {
+                Some(vec!["/docs/authentication".to_string()])
+            }
+            ApiError::ValidationFailed { .. } | ApiError::BadRequest { .. } => {
+                Some(vec!["/docs/api-reference".to_string()])
+            }
+            ApiError::RateLimitExceeded { .. } => Some(vec!["/docs/rate-limits".to_string()]),
             _ => None,
         }
     }
@@ -257,25 +248,25 @@ impl ResponseError for ApiError {
     fn status_code(&self) -> StatusCode {
         match self {
             // 400 Bad Request
-            ApiError::BadRequest { .. } |
-            ApiError::ValidationFailed { .. } |
-            ApiError::InvalidQueryParam { .. } |
-            ApiError::InvalidPathParam { .. } |
-            ApiError::MissingField { .. } |
-            ApiError::InvalidFieldValue { .. } => StatusCode::BAD_REQUEST,
+            ApiError::BadRequest { .. }
+            | ApiError::ValidationFailed { .. }
+            | ApiError::InvalidQueryParam { .. }
+            | ApiError::InvalidPathParam { .. }
+            | ApiError::MissingField { .. }
+            | ApiError::InvalidFieldValue { .. } => StatusCode::BAD_REQUEST,
 
             // 401 Unauthorized
-            ApiError::Unauthorized |
-            ApiError::InvalidApiKey { .. } |
-            ApiError::ApiKeyExpired => StatusCode::UNAUTHORIZED,
+            ApiError::Unauthorized | ApiError::InvalidApiKey { .. } | ApiError::ApiKeyExpired => {
+                StatusCode::UNAUTHORIZED
+            }
 
             // 403 Forbidden
             ApiError::Forbidden { .. } => StatusCode::FORBIDDEN,
 
             // 404 Not Found
-            ApiError::NotFound { .. } |
-            ApiError::FolderNotFound { .. } |
-            ApiError::EmailNotFound { .. } => StatusCode::NOT_FOUND,
+            ApiError::NotFound { .. }
+            | ApiError::FolderNotFound { .. }
+            | ApiError::EmailNotFound { .. } => StatusCode::NOT_FOUND,
 
             // 405 Method Not Allowed
             ApiError::MethodNotAllowed { .. } => StatusCode::METHOD_NOT_ALLOWED,
@@ -299,10 +290,10 @@ impl ResponseError for ApiError {
             ApiError::RateLimitExceeded { .. } => StatusCode::TOO_MANY_REQUESTS,
 
             // 500 Internal Server Error
-            ApiError::InternalError { .. } |
-            ApiError::ImapConnection { .. } |
-            ApiError::ImapOperation { .. } |
-            ApiError::DatabaseError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::InternalError { .. }
+            | ApiError::ImapConnection { .. }
+            | ApiError::ImapOperation { .. }
+            | ApiError::DatabaseError { .. } => StatusCode::INTERNAL_SERVER_ERROR,
 
             // 501 Not Implemented
             ApiError::NotImplemented { .. } => StatusCode::NOT_IMPLEMENTED,
@@ -342,7 +333,8 @@ impl ResponseError for ApiError {
             message: self.to_string(),
             details: if details.validation_errors.is_some()
                 || details.suggestions.is_some()
-                || details.help_links.is_some() {
+                || details.help_links.is_some()
+            {
                 Some(details)
             } else {
                 None
@@ -364,22 +356,26 @@ impl From<ImapError> for ApiError {
             ImapError::Auth(msg) => ApiError::InvalidApiKey { reason: msg },
             ImapError::FolderNotFound(folder) => ApiError::FolderNotFound { folder },
             ImapError::EmailNotFound(uids) => ApiError::EmailNotFound {
-                uid: uids.first().copied().unwrap_or(0)
+                uid: uids.first().copied().unwrap_or(0),
             },
             ImapError::FolderExists(folder) => ApiError::Conflict {
-                resource: format!("Folder '{}'", folder)
+                resource: format!("Folder '{}'", folder),
             },
-            ImapError::Tls(msg) | ImapError::InvalidMailbox(msg) => ApiError::ImapConnection {
-                message: msg
+            ImapError::Tls(msg) | ImapError::InvalidMailbox(msg) => {
+                ApiError::ImapConnection { message: msg }
+            }
+            _ => ApiError::InternalError {
+                message: err.to_string(),
             },
-            _ => ApiError::InternalError { message: err.to_string() },
         }
     }
 }
 
 impl From<DashboardApiError> for ApiError {
     fn from(err: DashboardApiError) -> Self {
-        ApiError::InternalError { message: format!("Dashboard error: {}", err) }
+        ApiError::InternalError {
+            message: format!("Dashboard error: {}", err),
+        }
     }
 }
 
@@ -391,7 +387,9 @@ impl From<validator::ValidationErrors> for ApiError {
             .flat_map(|(field, field_errors)| {
                 field_errors.iter().map(|e| ValidationError {
                     field: field.to_string(),
-                    message: e.message.as_ref()
+                    message: e
+                        .message
+                        .as_ref()
                         .map(|m| m.to_string())
                         .unwrap_or_else(|| e.code.to_string()),
                     constraint: Some(e.code.to_string()),
@@ -448,34 +446,51 @@ mod tests {
             ApiError::ValidationFailed {
                 message: "test".to_string(),
                 errors: vec![]
-            }.code(),
+            }
+            .code(),
             "VALIDATION_FAILED"
         );
         assert_eq!(
             ApiError::FolderNotFound {
                 folder: "test".to_string()
-            }.code(),
+            }
+            .code(),
             "FOLDER_NOT_FOUND"
         );
     }
 
     #[test]
     fn test_status_codes() {
-        assert_eq!(ApiError::Unauthorized.status_code(), StatusCode::UNAUTHORIZED);
         assert_eq!(
-            ApiError::BadRequest { message: "test".to_string() }.status_code(),
+            ApiError::Unauthorized.status_code(),
+            StatusCode::UNAUTHORIZED
+        );
+        assert_eq!(
+            ApiError::BadRequest {
+                message: "test".to_string()
+            }
+            .status_code(),
             StatusCode::BAD_REQUEST
         );
         assert_eq!(
-            ApiError::NotFound { resource: "test".to_string() }.status_code(),
+            ApiError::NotFound {
+                resource: "test".to_string()
+            }
+            .status_code(),
             StatusCode::NOT_FOUND
         );
         assert_eq!(
-            ApiError::InternalError { message: "test".to_string() }.status_code(),
+            ApiError::InternalError {
+                message: "test".to_string()
+            }
+            .status_code(),
             StatusCode::INTERNAL_SERVER_ERROR
         );
         assert_eq!(
-            ApiError::RateLimitExceeded { message: "test".to_string() }.status_code(),
+            ApiError::RateLimitExceeded {
+                message: "test".to_string()
+            }
+            .status_code(),
             StatusCode::TOO_MANY_REQUESTS
         );
     }
@@ -486,10 +501,14 @@ mod tests {
         assert!(auth_error.suggestions().is_some());
         assert!(auth_error.suggestions().unwrap().len() > 0);
 
-        let rate_error = ApiError::RateLimitExceeded { message: "test".to_string() };
+        let rate_error = ApiError::RateLimitExceeded {
+            message: "test".to_string(),
+        };
         assert!(rate_error.suggestions().is_some());
 
-        let internal_error = ApiError::InternalError { message: "test".to_string() };
+        let internal_error = ApiError::InternalError {
+            message: "test".to_string(),
+        };
         assert!(internal_error.suggestions().is_none());
     }
 
@@ -503,7 +522,9 @@ mod tests {
             field: String,
         }
 
-        let test = TestStruct { field: "".to_string() };
+        let test = TestStruct {
+            field: "".to_string(),
+        };
         let validation_result = test.validate();
         assert!(validation_result.is_err());
 

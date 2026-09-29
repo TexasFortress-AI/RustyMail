@@ -6,22 +6,21 @@
 // src/dashboard/services/ai/provider_manager.rs
 // Unified AI Provider Management with dynamic selection and failover
 
-use log::{debug, warn, error, info};
-use serde::{Serialize, Deserialize};
+use super::model_config::{get_model_config, set_model_config, ModelConfiguration};
+use super::provider::{
+    AiChatMessage, AiProvider, AnthropicAdapter, AzureOpenAIAdapter, DeepSeekAdapter,
+    GeminiAdapter, LlamaCppAdapter, LmStudioAdapter, MistralAdapter, MockAiProvider,
+    MorpheusAdapter, OllamaAdapter, OpenAiAdapter, OpenRouterAdapter, TogetherAdapter, XAIAdapter,
+};
+use crate::api::errors::ApiError as RestApiError;
+use crate::api::errors::ApiError; // For pattern matching
+use log::{debug, error, info, warn};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use sqlx::SqlitePool;
-use crate::api::errors::ApiError as RestApiError;
-use crate::api::errors::ApiError;  // For pattern matching
-use super::provider::{
-    AiProvider, AiChatMessage,
-    OpenAiAdapter, OpenRouterAdapter, MorpheusAdapter, OllamaAdapter, LlamaCppAdapter, LmStudioAdapter, MockAiProvider,
-    AnthropicAdapter, DeepSeekAdapter, XAIAdapter, GeminiAdapter,
-    MistralAdapter, TogetherAdapter, AzureOpenAIAdapter
-};
-use super::model_config::{get_model_config, set_model_config, ModelConfiguration};
-use reqwest::Client;
 
 /// Role constant for chatbot configuration
 pub const ROLE_CHATBOT: &str = "chatbot";
@@ -35,7 +34,7 @@ pub struct ProviderConfig {
     pub model: String,
     pub max_tokens: Option<usize>,
     pub temperature: Option<f32>,
-    pub priority: u32,  // Lower number = higher priority
+    pub priority: u32, // Lower number = higher priority
     pub enabled: bool,
 }
 
@@ -76,7 +75,6 @@ impl ProviderManager {
         }
     }
 
-
     // Initialize from environment variables
     pub async fn init_from_env(&mut self) -> Result<(), RestApiError> {
         let mut configs = Vec::new();
@@ -102,7 +100,10 @@ impl ProviderManager {
 
                 // Create OpenAI provider
                 let provider = Arc::new(OpenAiAdapter::new(api_key, self.http_client.clone()));
-                self.providers.write().await.insert("openai".to_string(), provider);
+                self.providers
+                    .write()
+                    .await
+                    .insert("openai".to_string(), provider);
                 info!("Initialized OpenAI provider");
             } else {
                 warn!("OPENAI_API_KEY is set but OPENAI_MODEL is not - skipping OpenAI provider");
@@ -130,7 +131,10 @@ impl ProviderManager {
 
                 // Create OpenRouter provider
                 let provider = Arc::new(OpenRouterAdapter::new(api_key, self.http_client.clone()));
-                self.providers.write().await.insert("openrouter".to_string(), provider);
+                self.providers
+                    .write()
+                    .await
+                    .insert("openrouter".to_string(), provider);
                 info!("Initialized OpenRouter provider");
             } else {
                 warn!("OPENROUTER_API_KEY is set but OPENROUTER_MODEL is not - skipping OpenRouter provider");
@@ -157,9 +161,13 @@ impl ProviderManager {
                 configs.push(config.clone());
 
                 // Create Morpheus provider
-                let provider = Arc::new(MorpheusAdapter::new(api_key, self.http_client.clone())
-                    .with_model(model));
-                self.providers.write().await.insert("morpheus".to_string(), provider);
+                let provider = Arc::new(
+                    MorpheusAdapter::new(api_key, self.http_client.clone()).with_model(model),
+                );
+                self.providers
+                    .write()
+                    .await
+                    .insert("morpheus".to_string(), provider);
                 info!("Initialized Morpheus provider");
             } else {
                 warn!("MORPHEUS_API_KEY is set but MORPHEUS_MODEL is not - skipping Morpheus provider");
@@ -186,9 +194,13 @@ impl ProviderManager {
                 configs.push(config.clone());
 
                 // Create Ollama provider with model from env
-                let provider = Arc::new(OllamaAdapter::new(base_url, self.http_client.clone())
-                    .with_model(config.model));
-                self.providers.write().await.insert("ollama".to_string(), provider);
+                let provider = Arc::new(
+                    OllamaAdapter::new(base_url, self.http_client.clone()).with_model(config.model),
+                );
+                self.providers
+                    .write()
+                    .await
+                    .insert("ollama".to_string(), provider);
                 info!("Initialized Ollama provider");
             } else {
                 warn!("OLLAMA_BASE_URL is set but OLLAMA_MODEL is not - skipping Ollama provider");
@@ -215,7 +227,10 @@ impl ProviderManager {
 
             // Create llama.cpp provider
             let provider = Arc::new(LlamaCppAdapter::new(base_url, self.http_client.clone()));
-            self.providers.write().await.insert("llamacpp".to_string(), provider);
+            self.providers
+                .write()
+                .await
+                .insert("llamacpp".to_string(), provider);
             info!("Initialized llama.cpp provider");
         }
 
@@ -224,7 +239,7 @@ impl ProviderManager {
             let config = ProviderConfig {
                 name: "lmstudio".to_string(),
                 provider_type: ProviderType::LmStudio,
-                api_key: None, // LM Studio doesn't require an API key
+                api_key: None,              // LM Studio doesn't require an API key
                 model: "local".to_string(), // Model is loaded in LM Studio
                 max_tokens: std::env::var("LMSTUDIO_MAX_TOKENS")
                     .ok()
@@ -239,7 +254,10 @@ impl ProviderManager {
 
             // Create LM Studio provider
             let provider = Arc::new(LmStudioAdapter::new(base_url, self.http_client.clone()));
-            self.providers.write().await.insert("lmstudio".to_string(), provider);
+            self.providers
+                .write()
+                .await
+                .insert("lmstudio".to_string(), provider);
             info!("Initialized LM Studio provider");
         }
 
@@ -258,7 +276,10 @@ impl ProviderManager {
                 };
                 configs.push(config);
                 let provider = Arc::new(AnthropicAdapter::new(api_key, self.http_client.clone()));
-                self.providers.write().await.insert("anthropic".to_string(), provider);
+                self.providers
+                    .write()
+                    .await
+                    .insert("anthropic".to_string(), provider);
                 info!("Initialized Anthropic Claude provider");
             } else {
                 warn!("ANTHROPIC_API_KEY is set but ANTHROPIC_MODEL is not - skipping Anthropic provider");
@@ -280,7 +301,10 @@ impl ProviderManager {
                 };
                 configs.push(config);
                 let provider = Arc::new(DeepSeekAdapter::new(api_key, self.http_client.clone()));
-                self.providers.write().await.insert("deepseek".to_string(), provider);
+                self.providers
+                    .write()
+                    .await
+                    .insert("deepseek".to_string(), provider);
                 info!("Initialized DeepSeek provider");
             } else {
                 warn!("DEEPSEEK_API_KEY is set but DEEPSEEK_MODEL is not - skipping DeepSeek provider");
@@ -302,7 +326,10 @@ impl ProviderManager {
                 };
                 configs.push(config);
                 let provider = Arc::new(XAIAdapter::new(api_key, self.http_client.clone()));
-                self.providers.write().await.insert("xai".to_string(), provider);
+                self.providers
+                    .write()
+                    .await
+                    .insert("xai".to_string(), provider);
                 info!("Initialized xAI (Grok) provider");
             } else {
                 warn!("XAI_API_KEY is set but XAI_MODEL is not - skipping xAI provider");
@@ -324,7 +351,10 @@ impl ProviderManager {
                 };
                 configs.push(config);
                 let provider = Arc::new(GeminiAdapter::new(api_key, self.http_client.clone()));
-                self.providers.write().await.insert("gemini".to_string(), provider);
+                self.providers
+                    .write()
+                    .await
+                    .insert("gemini".to_string(), provider);
                 info!("Initialized Google Gemini provider");
             } else {
                 warn!("GEMINI_API_KEY is set but GEMINI_MODEL is not - skipping Gemini provider");
@@ -346,10 +376,15 @@ impl ProviderManager {
                 };
                 configs.push(config);
                 let provider = Arc::new(MistralAdapter::new(api_key, self.http_client.clone()));
-                self.providers.write().await.insert("mistral".to_string(), provider);
+                self.providers
+                    .write()
+                    .await
+                    .insert("mistral".to_string(), provider);
                 info!("Initialized Mistral AI provider");
             } else {
-                warn!("MISTRAL_API_KEY is set but MISTRAL_MODEL is not - skipping Mistral provider");
+                warn!(
+                    "MISTRAL_API_KEY is set but MISTRAL_MODEL is not - skipping Mistral provider"
+                );
             }
         }
 
@@ -368,7 +403,10 @@ impl ProviderManager {
                 };
                 configs.push(config);
                 let provider = Arc::new(TogetherAdapter::new(api_key, self.http_client.clone()));
-                self.providers.write().await.insert("together".to_string(), provider);
+                self.providers
+                    .write()
+                    .await
+                    .insert("together".to_string(), provider);
                 info!("Initialized Together AI provider");
             } else {
                 warn!("TOGETHER_API_KEY is set but TOGETHER_MODEL is not - skipping Together provider");
@@ -393,7 +431,10 @@ impl ProviderManager {
                 configs.push(config);
                 match AzureOpenAIAdapter::new(api_key, self.http_client.clone()) {
                     Ok(provider) => {
-                        self.providers.write().await.insert("azure".to_string(), Arc::new(provider));
+                        self.providers
+                            .write()
+                            .await
+                            .insert("azure".to_string(), Arc::new(provider));
                         info!("Initialized Azure OpenAI provider");
                     }
                     Err(e) => {
@@ -415,7 +456,10 @@ impl ProviderManager {
             enabled: true,
         };
         configs.push(mock_config);
-        self.providers.write().await.insert("mock".to_string(), Arc::new(MockAiProvider));
+        self.providers
+            .write()
+            .await
+            .insert("mock".to_string(), Arc::new(MockAiProvider));
         info!("Initialized Mock provider as fallback");
 
         // Sort configs by priority
@@ -436,37 +480,55 @@ impl ProviderManager {
     pub async fn add_provider(&mut self, config: ProviderConfig) -> Result<(), RestApiError> {
         let provider: Arc<dyn AiProvider> = match config.provider_type {
             ProviderType::OpenAI => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "OpenAI provider requires API key".to_string()
-                    })?;
-                Arc::new(OpenAiAdapter::new(api_key.clone(), self.http_client.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "OpenAI provider requires API key".to_string(),
+                        })?;
+                Arc::new(OpenAiAdapter::new(
+                    api_key.clone(),
+                    self.http_client.clone(),
+                ))
+            }
             ProviderType::OpenRouter => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "OpenRouter provider requires API key".to_string()
-                    })?;
-                Arc::new(OpenRouterAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "OpenRouter provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    OpenRouterAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::Morpheus => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "Morpheus provider requires API key".to_string()
-                    })?;
-                Arc::new(MorpheusAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "Morpheus provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    MorpheusAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::Ollama => {
                 // For Ollama, we need a base URL from environment variable
                 let base_url = std::env::var("OLLAMA_BASE_URL")
                     .map_err(|_| RestApiError::UnprocessableEntity {
                         message: "Ollama provider requires OLLAMA_BASE_URL environment variable to be set".to_string()
                     })?;
-                Arc::new(OllamaAdapter::new(base_url, self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                Arc::new(
+                    OllamaAdapter::new(base_url, self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::LlamaCpp => {
                 // For llama.cpp, we need a base URL from environment variable
                 let base_url = std::env::var("LLAMACPP_BASE_URL")
@@ -474,7 +536,7 @@ impl ProviderManager {
                         message: "llama.cpp provider requires LLAMACPP_BASE_URL environment variable to be set".to_string()
                     })?;
                 Arc::new(LlamaCppAdapter::new(base_url, self.http_client.clone()))
-            },
+            }
             ProviderType::LmStudio => {
                 // For LM Studio, we need a base URL from environment variable
                 let base_url = std::env::var("LMSTUDIO_BASE_URL")
@@ -482,69 +544,103 @@ impl ProviderManager {
                         message: "LM Studio provider requires LMSTUDIO_BASE_URL environment variable to be set".to_string()
                     })?;
                 Arc::new(LmStudioAdapter::new(base_url, self.http_client.clone()))
-            },
+            }
             ProviderType::Anthropic => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "Anthropic provider requires API key".to_string()
-                    })?;
-                Arc::new(AnthropicAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "Anthropic provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    AnthropicAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::DeepSeek => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "DeepSeek provider requires API key".to_string()
-                    })?;
-                Arc::new(DeepSeekAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "DeepSeek provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    DeepSeekAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::XAI => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "xAI provider requires API key".to_string()
-                    })?;
-                Arc::new(XAIAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "xAI provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    XAIAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::Gemini => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "Gemini provider requires API key".to_string()
-                    })?;
-                Arc::new(GeminiAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "Gemini provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    GeminiAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::Mistral => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "Mistral provider requires API key".to_string()
-                    })?;
-                Arc::new(MistralAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "Mistral provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    MistralAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::Together => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "Together AI provider requires API key".to_string()
-                    })?;
-                Arc::new(TogetherAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "Together AI provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    TogetherAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::Azure => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "Azure OpenAI provider requires API key".to_string()
-                    })?;
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "Azure OpenAI provider requires API key".to_string(),
+                        })?;
                 AzureOpenAIAdapter::new(api_key.clone(), self.http_client.clone())
                     .map(|adapter| Arc::new(adapter) as Arc<dyn AiProvider>)?
-            },
-            ProviderType::Mock => {
-                Arc::new(MockAiProvider)
-            },
+            }
+            ProviderType::Mock => Arc::new(MockAiProvider),
         };
 
-        self.providers.write().await.insert(config.name.clone(), provider);
+        self.providers
+            .write()
+            .await
+            .insert(config.name.clone(), provider);
 
         let mut configs = self.configs.write().await;
         configs.push(config.clone());
@@ -570,7 +666,7 @@ impl ProviderManager {
         let providers = self.providers.read().await;
         if !providers.contains_key(&name) {
             return Err(RestApiError::UnprocessableEntity {
-                message: format!("Provider '{}' not found", name)
+                message: format!("Provider '{}' not found", name),
             });
         }
         drop(providers); // Release read lock before write
@@ -592,7 +688,7 @@ impl ProviderManager {
         let providers = self.providers.read().await;
         if !providers.contains_key(&provider_name) {
             return Err(RestApiError::UnprocessableEntity {
-                message: format!("Provider '{}' not found", provider_name)
+                message: format!("Provider '{}' not found", provider_name),
             });
         }
         drop(providers);
@@ -611,8 +707,10 @@ impl ProviderManager {
         let db_config = ModelConfiguration::new(ROLE_CHATBOT, &provider_name, &model_name);
         match set_model_config(pool, &db_config).await {
             Ok(_) => {
-                info!("Persisted chatbot configuration to database: provider={}, model={}",
-                      provider_name, model_name);
+                info!(
+                    "Persisted chatbot configuration to database: provider={}, model={}",
+                    provider_name, model_name
+                );
             }
             Err(e) => {
                 // Log error but don't fail - in-memory state is already updated
@@ -620,17 +718,25 @@ impl ProviderManager {
             }
         }
 
-        info!("Switched current provider to: {} with model: {}", provider_name, model_name);
+        info!(
+            "Switched current provider to: {} with model: {}",
+            provider_name, model_name
+        );
         Ok(())
     }
 
     /// Load chatbot configuration from database and set as current provider
     /// Call this on startup to restore user's saved Email Assistant model selection
-    pub async fn load_chatbot_config_from_db(&mut self, pool: &SqlitePool) -> Result<bool, RestApiError> {
+    pub async fn load_chatbot_config_from_db(
+        &mut self,
+        pool: &SqlitePool,
+    ) -> Result<bool, RestApiError> {
         match get_model_config(pool, ROLE_CHATBOT).await {
             Ok(config) => {
-                info!("Found saved chatbot configuration: provider={}, model={}",
-                      config.provider, config.model_name);
+                info!(
+                    "Found saved chatbot configuration: provider={}, model={}",
+                    config.provider, config.model_name
+                );
 
                 // Check if provider is available
                 let providers = self.providers.read().await;
@@ -646,7 +752,10 @@ impl ProviderManager {
                         cfg.model = config.model_name.clone();
                     }
 
-                    info!("Restored chatbot provider from database: {}", config.provider);
+                    info!(
+                        "Restored chatbot provider from database: {}",
+                        config.provider
+                    );
                     Ok(true)
                 } else {
                     warn!("Saved chatbot provider '{}' is not available, using first available provider",
@@ -659,7 +768,10 @@ impl ProviderManager {
                 Ok(false)
             }
             Err(e) => {
-                error!("Failed to load chatbot configuration from database: {:?}", e);
+                error!(
+                    "Failed to load chatbot configuration from database: {:?}",
+                    e
+                );
                 Err(e)
             }
         }
@@ -674,27 +786,43 @@ impl ProviderManager {
         let configs = self.configs.read().await;
         let current_name = self.current_provider.read().await.clone()?;
 
-        configs.iter()
+        configs
+            .iter()
             .find(|c| c.name == current_name)
             .map(|c| c.model.clone())
     }
 
     // Generate response using ONLY the current selected provider - NO FALLBACKS
-    pub async fn generate_response(&self, messages: &[AiChatMessage]) -> Result<String, RestApiError> {
+    pub async fn generate_response(
+        &self,
+        messages: &[AiChatMessage],
+    ) -> Result<String, RestApiError> {
         // Use ONLY the current provider - no fallbacks
         if let Some(current_provider) = self.get_current_provider().await {
-            let current_name = self.get_current_provider_name().await.unwrap_or_else(|| "unknown".to_string());
-            info!("Using provider: {} with model: {}", current_name, self.get_current_model_name().await.unwrap_or_else(|| "unknown".to_string()));
+            let current_name = self
+                .get_current_provider_name()
+                .await
+                .unwrap_or_else(|| "unknown".to_string());
+            info!(
+                "Using provider: {} with model: {}",
+                current_name,
+                self.get_current_model_name()
+                    .await
+                    .unwrap_or_else(|| "unknown".to_string())
+            );
 
             match current_provider.generate_response(messages).await {
                 Ok(response) => {
                     info!("Successfully got response from provider: {}", current_name);
                     return Ok(response);
-                },
+                }
                 Err(e) => {
                     error!("Provider {} failed: {}. NO FALLBACK - user must select different provider.", current_name, e);
                     return Err(RestApiError::ServiceUnavailable {
-                        service: format!("Provider '{}' failed: {}. Please select a different provider.", current_name, e)
+                        service: format!(
+                            "Provider '{}' failed: {}. Please select a different provider.",
+                            current_name, e
+                        ),
                     });
                 }
             }
@@ -702,7 +830,7 @@ impl ProviderManager {
 
         error!("No provider selected");
         Err(RestApiError::ServiceUnavailable {
-            service: "No AI provider selected. Please select a provider first.".to_string()
+            service: "No AI provider selected. Please select a provider first.".to_string(),
         })
     }
 
@@ -711,7 +839,7 @@ impl ProviderManager {
         &self,
         messages: &[AiChatMessage],
         provider_name: Option<String>,
-        model_name: Option<String>
+        model_name: Option<String>,
     ) -> Result<String, RestApiError> {
         // If no override specified, use default generation
         if provider_name.is_none() && model_name.is_none() {
@@ -727,8 +855,13 @@ impl ProviderManager {
                     // For Morpheus, we can update the model
                     if provider_name == "morpheus" {
                         if let Ok(api_key) = std::env::var("MORPHEUS_API_KEY") {
-                            Arc::new(super::provider::morpheus::MorpheusAdapter::new(api_key, self.http_client.clone())
-                                .with_model(model_override.clone()))
+                            Arc::new(
+                                super::provider::morpheus::MorpheusAdapter::new(
+                                    api_key,
+                                    self.http_client.clone(),
+                                )
+                                .with_model(model_override.clone()),
+                            )
                         } else {
                             provider.clone()
                         }
@@ -740,23 +873,30 @@ impl ProviderManager {
                     provider.clone()
                 };
 
-                info!("Using override provider: {} with model: {}", provider_name, model_name.as_deref().unwrap_or("default"));
+                info!(
+                    "Using override provider: {} with model: {}",
+                    provider_name,
+                    model_name.as_deref().unwrap_or("default")
+                );
 
                 match provider_to_use.generate_response(messages).await {
                     Ok(response) => {
-                        info!("Successfully got response from override provider: {}", provider_name);
+                        info!(
+                            "Successfully got response from override provider: {}",
+                            provider_name
+                        );
                         return Ok(response);
-                    },
+                    }
                     Err(e) => {
                         error!("Override provider {} failed: {}", provider_name, e);
                         return Err(RestApiError::ServiceUnavailable {
-                            service: format!("Provider '{}' failed: {}", provider_name, e)
+                            service: format!("Provider '{}' failed: {}", provider_name, e),
                         });
                     }
                 }
             } else {
                 return Err(RestApiError::NotFound {
-                    resource: format!("Provider '{}' not found", provider_name)
+                    resource: format!("Provider '{}' not found", provider_name),
                 });
             }
         }
@@ -771,7 +911,11 @@ impl ProviderManager {
     }
 
     // Enable/disable a provider
-    pub async fn set_provider_enabled(&self, name: &str, enabled: bool) -> Result<(), RestApiError> {
+    pub async fn set_provider_enabled(
+        &self,
+        name: &str,
+        enabled: bool,
+    ) -> Result<(), RestApiError> {
         let mut configs = self.configs.write().await;
 
         if let Some(config) = configs.iter_mut().find(|c| c.name == name) {
@@ -780,126 +924,182 @@ impl ProviderManager {
             Ok(())
         } else {
             Err(RestApiError::UnprocessableEntity {
-                message: format!("Provider '{}' not found", name)
+                message: format!("Provider '{}' not found", name),
             })
         }
     }
 
     // Update provider configuration
-    pub async fn update_provider_config(&self, name: &str, config: ProviderConfig) -> Result<(), RestApiError> {
+    pub async fn update_provider_config(
+        &self,
+        name: &str,
+        config: ProviderConfig,
+    ) -> Result<(), RestApiError> {
         // Remove old provider
         self.providers.write().await.remove(name);
 
         // Create new provider with updated config
         let provider: Arc<dyn AiProvider> = match config.provider_type {
             ProviderType::OpenAI => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "OpenAI provider requires API key".to_string()
-                    })?;
-                Arc::new(OpenAiAdapter::new(api_key.clone(), self.http_client.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "OpenAI provider requires API key".to_string(),
+                        })?;
+                Arc::new(OpenAiAdapter::new(
+                    api_key.clone(),
+                    self.http_client.clone(),
+                ))
+            }
             ProviderType::OpenRouter => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "OpenRouter provider requires API key".to_string()
-                    })?;
-                Arc::new(OpenRouterAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "OpenRouter provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    OpenRouterAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::Morpheus => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "Morpheus provider requires API key".to_string()
-                    })?;
-                Arc::new(MorpheusAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "Morpheus provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    MorpheusAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::Ollama => {
                 let base_url = std::env::var("OLLAMA_BASE_URL")
                     .map_err(|_| RestApiError::UnprocessableEntity {
                         message: "Ollama provider requires OLLAMA_BASE_URL environment variable to be set".to_string()
                     })?;
-                Arc::new(OllamaAdapter::new(base_url, self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                Arc::new(
+                    OllamaAdapter::new(base_url, self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::LlamaCpp => {
                 let base_url = std::env::var("LLAMACPP_BASE_URL")
                     .map_err(|_| RestApiError::UnprocessableEntity {
                         message: "llama.cpp provider requires LLAMACPP_BASE_URL environment variable to be set".to_string()
                     })?;
                 Arc::new(LlamaCppAdapter::new(base_url, self.http_client.clone()))
-            },
+            }
             ProviderType::LmStudio => {
                 let base_url = std::env::var("LMSTUDIO_BASE_URL")
                     .map_err(|_| RestApiError::UnprocessableEntity {
                         message: "LM Studio provider requires LMSTUDIO_BASE_URL environment variable to be set".to_string()
                     })?;
                 Arc::new(LmStudioAdapter::new(base_url, self.http_client.clone()))
-            },
+            }
             ProviderType::Anthropic => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "Anthropic provider requires API key".to_string()
-                    })?;
-                Arc::new(AnthropicAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "Anthropic provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    AnthropicAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::DeepSeek => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "DeepSeek provider requires API key".to_string()
-                    })?;
-                Arc::new(DeepSeekAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "DeepSeek provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    DeepSeekAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::XAI => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "xAI provider requires API key".to_string()
-                    })?;
-                Arc::new(XAIAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "xAI provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    XAIAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::Gemini => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "Gemini provider requires API key".to_string()
-                    })?;
-                Arc::new(GeminiAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "Gemini provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    GeminiAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::Mistral => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "Mistral provider requires API key".to_string()
-                    })?;
-                Arc::new(MistralAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "Mistral provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    MistralAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::Together => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "Together AI provider requires API key".to_string()
-                    })?;
-                Arc::new(TogetherAdapter::new(api_key.clone(), self.http_client.clone())
-                    .with_model(config.model.clone()))
-            },
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "Together AI provider requires API key".to_string(),
+                        })?;
+                Arc::new(
+                    TogetherAdapter::new(api_key.clone(), self.http_client.clone())
+                        .with_model(config.model.clone()),
+                )
+            }
             ProviderType::Azure => {
-                let api_key = config.api_key.as_ref()
-                    .ok_or_else(|| RestApiError::UnprocessableEntity {
-                        message: "Azure OpenAI provider requires API key".to_string()
-                    })?;
+                let api_key =
+                    config
+                        .api_key
+                        .as_ref()
+                        .ok_or_else(|| RestApiError::UnprocessableEntity {
+                            message: "Azure OpenAI provider requires API key".to_string(),
+                        })?;
                 AzureOpenAIAdapter::new(api_key.clone(), self.http_client.clone())
                     .map(|adapter| Arc::new(adapter) as Arc<dyn AiProvider>)?
-            },
-            ProviderType::Mock => {
-                Arc::new(MockAiProvider)
-            },
+            }
+            ProviderType::Mock => Arc::new(MockAiProvider),
         };
 
         // Add provider to the providers map
-        self.providers.write().await.insert(config.name.clone(), provider);
+        self.providers
+            .write()
+            .await
+            .insert(config.name.clone(), provider);
 
         // Update configs
         let mut configs = self.configs.write().await;
@@ -918,30 +1118,25 @@ impl ProviderManager {
         let current_provider = self.get_current_provider().await;
 
         match current_provider {
-            Some(provider) => {
-                provider.get_available_models().await
-            },
-            None => {
-                Err(RestApiError::UnprocessableEntity {
-                    message: "No provider currently selected".to_string()
-                })
-            }
+            Some(provider) => provider.get_available_models().await,
+            None => Err(RestApiError::UnprocessableEntity {
+                message: "No provider currently selected".to_string(),
+            }),
         }
     }
 
     // Get available models for a specific provider by name
-    pub async fn get_available_models_for_provider(&self, provider_name: &str) -> Result<Vec<String>, RestApiError> {
+    pub async fn get_available_models_for_provider(
+        &self,
+        provider_name: &str,
+    ) -> Result<Vec<String>, RestApiError> {
         let providers = self.providers.read().await;
 
         match providers.get(provider_name) {
-            Some(provider) => {
-                provider.get_available_models().await
-            },
-            None => {
-                Err(RestApiError::UnprocessableEntity {
-                    message: format!("Provider '{}' not found", provider_name)
-                })
-            }
+            Some(provider) => provider.get_available_models().await,
+            None => Err(RestApiError::UnprocessableEntity {
+                message: format!("Provider '{}' not found", provider_name),
+            }),
         }
     }
 
@@ -968,14 +1163,20 @@ impl ProviderManager {
                             let mut updated_config = config.clone();
                             updated_config.model = first_model.clone();
                             updated_configs.push(updated_config);
-                            info!("Updated {} provider to use model: {}", config.name, first_model);
+                            info!(
+                                "Updated {} provider to use model: {}",
+                                config.name, first_model
+                            );
                         } else {
                             warn!("No models available for provider: {}", config.name);
                             updated_configs.push(config);
                         }
-                    },
+                    }
                     Err(e) => {
-                        warn!("Failed to fetch models for provider {}: {:?}", config.name, e);
+                        warn!(
+                            "Failed to fetch models for provider {}: {:?}",
+                            config.name, e
+                        );
                         // Keep original config if model fetching fails
                         updated_configs.push(config);
                     }
@@ -1011,7 +1212,7 @@ impl ConversationContext {
             metadata: serde_json::json!({}),
             created_at: now,
             updated_at: now,
-            max_messages: 50,  // Default max messages to keep in context
+            max_messages: 50, // Default max messages to keep in context
         }
     }
 
@@ -1054,7 +1255,7 @@ impl ConversationManager {
     pub fn new() -> Self {
         Self {
             contexts: Arc::new(RwLock::new(HashMap::new())),
-            max_conversations: 100,  // Maximum number of conversations to keep
+            max_conversations: 100, // Maximum number of conversations to keep
         }
     }
 
@@ -1066,7 +1267,8 @@ impl ConversationManager {
             self.cleanup_old_conversations(&mut contexts).await;
         }
 
-        contexts.entry(id.clone())
+        contexts
+            .entry(id.clone())
             .or_insert_with(|| ConversationContext::new(id.clone()))
             .clone()
     }
@@ -1093,7 +1295,8 @@ impl ConversationManager {
 
     // Clean up old conversations (keep most recent ones)
     async fn cleanup_old_conversations(&self, contexts: &mut HashMap<String, ConversationContext>) {
-        let mut conversations: Vec<_> = contexts.iter()
+        let mut conversations: Vec<_> = contexts
+            .iter()
             .map(|(id, ctx)| (id.clone(), ctx.updated_at))
             .collect();
 
@@ -1101,7 +1304,7 @@ impl ConversationManager {
         conversations.sort_by_key(|(_, time)| *time);
 
         // Remove oldest conversations to make room
-        let to_remove = conversations.len() / 4;  // Remove 25% of oldest conversations
+        let to_remove = conversations.len() / 4; // Remove 25% of oldest conversations
         for (id, _) in conversations.iter().take(to_remove) {
             contexts.remove(id);
             debug!("Removed old conversation: {}", id);
@@ -1157,6 +1360,8 @@ mod tests {
         assert!(!providers.is_empty());
 
         // Should have at least mock provider
-        assert!(providers.iter().any(|p| p.provider_type == ProviderType::Mock));
+        assert!(providers
+            .iter()
+            .any(|p| p.provider_type == ProviderType::Mock));
     }
 }

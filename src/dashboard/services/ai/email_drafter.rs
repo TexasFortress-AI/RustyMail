@@ -1,14 +1,14 @@
 // src/dashboard/services/ai/email_drafter.rs
 // Email drafting service using configured AI models
 
-use serde::{Serialize, Deserialize};
-use serde_json::{json, Value};
-use reqwest::Client;
-use log::{debug, error, warn, info};
-use sqlx::SqlitePool;
-use crate::api::errors::ApiError;
 use super::model_config::{get_model_config, ModelConfiguration};
 use super::sampler_config::{get_sampler_config, SamplerConfig};
+use crate::api::errors::ApiError;
+use log::{debug, error, info, warn};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sqlx::SqlitePool;
 
 /// Providers that support email drafting
 /// These have been tested with their respective API formats
@@ -55,20 +55,29 @@ impl EmailDrafter {
         let config = get_model_config(pool, "drafting").await?;
 
         // Fetch sampler config from database for this provider/model
-        let sampler_config = get_sampler_config(pool, &config.provider, &config.model_name).await
+        let sampler_config = get_sampler_config(pool, &config.provider, &config.model_name)
+            .await
             .map_err(|e| {
-                warn!("Failed to get sampler config for drafting, using defaults: {:?}", e);
-            }).ok();
+                warn!(
+                    "Failed to get sampler config for drafting, using defaults: {:?}",
+                    e
+                );
+            })
+            .ok();
 
         if sampler_config.is_some() {
-            info!("Loaded sampler config from database for drafting {}/{}", config.provider, config.model_name);
+            info!(
+                "Loaded sampler config from database for drafting {}/{}",
+                config.provider, config.model_name
+            );
         }
 
         // Build the prompt for the AI
         let prompt = self.build_reply_prompt(&request);
 
         // Generate the draft using the configured model
-        self.generate_with_model(&config, &prompt, sampler_config.as_ref()).await
+        self.generate_with_model(&config, &prompt, sampler_config.as_ref())
+            .await
     }
 
     /// Draft a new email from scratch
@@ -77,31 +86,46 @@ impl EmailDrafter {
         pool: &SqlitePool,
         request: DraftEmailRequest,
     ) -> Result<String, ApiError> {
-        debug!("Drafting new email to {} with subject: {}", request.to, request.subject);
+        debug!(
+            "Drafting new email to {} with subject: {}",
+            request.to, request.subject
+        );
 
         // Get drafting model configuration
         let config = get_model_config(pool, "drafting").await?;
 
         // Fetch sampler config from database for this provider/model
-        let sampler_config = get_sampler_config(pool, &config.provider, &config.model_name).await
+        let sampler_config = get_sampler_config(pool, &config.provider, &config.model_name)
+            .await
             .map_err(|e| {
-                warn!("Failed to get sampler config for drafting, using defaults: {:?}", e);
-            }).ok();
+                warn!(
+                    "Failed to get sampler config for drafting, using defaults: {:?}",
+                    e
+                );
+            })
+            .ok();
 
         if sampler_config.is_some() {
-            info!("Loaded sampler config from database for drafting {}/{}", config.provider, config.model_name);
+            info!(
+                "Loaded sampler config from database for drafting {}/{}",
+                config.provider, config.model_name
+            );
         }
 
         // Build the prompt for the AI
         let prompt = self.build_email_prompt(&request);
 
         // Generate the draft using the configured model
-        self.generate_with_model(&config, &prompt, sampler_config.as_ref()).await
+        self.generate_with_model(&config, &prompt, sampler_config.as_ref())
+            .await
     }
 
     /// Build prompt for replying to an email
     fn build_reply_prompt(&self, request: &DraftReplyRequest) -> String {
-        let instruction = request.instruction.as_deref().unwrap_or("write a professional reply");
+        let instruction = request
+            .instruction
+            .as_deref()
+            .unwrap_or("write a professional reply");
 
         format!(
             r#"You are drafting a reply to an email. Please write ONLY the body of the reply email, without any greeting or signature (those will be added automatically).
@@ -115,10 +139,7 @@ Subject: {}
 Instructions: {}
 
 Draft reply body:"#,
-            request.original_from,
-            request.original_subject,
-            request.original_body,
-            instruction
+            request.original_from, request.original_subject, request.original_body, instruction
         )
     }
 
@@ -133,9 +154,7 @@ Subject: {}
 Context/Instructions: {}
 
 Draft email body:"#,
-            request.to,
-            request.subject,
-            request.context
+            request.to, request.subject, request.context
         )
     }
 
@@ -147,14 +166,43 @@ Draft email body:"#,
         sampler_config: Option<&SamplerConfig>,
     ) -> Result<String, ApiError> {
         match config.provider.as_str() {
-            "ollama" => self.generate_with_ollama(config, prompt, sampler_config).await,
-            "openai" => self.generate_with_openai(config, prompt, sampler_config).await,
-            "llamacpp" => self.generate_with_openai_compatible(config, prompt, sampler_config, "LLAMACPP_BASE_URL").await,
-            "lmstudio" => self.generate_with_openai_compatible(config, prompt, sampler_config, "LMSTUDIO_BASE_URL").await,
+            "ollama" => {
+                self.generate_with_ollama(config, prompt, sampler_config)
+                    .await
+            }
+            "openai" => {
+                self.generate_with_openai(config, prompt, sampler_config)
+                    .await
+            }
+            "llamacpp" => {
+                self.generate_with_openai_compatible(
+                    config,
+                    prompt,
+                    sampler_config,
+                    "LLAMACPP_BASE_URL",
+                )
+                .await
+            }
+            "lmstudio" => {
+                self.generate_with_openai_compatible(
+                    config,
+                    prompt,
+                    sampler_config,
+                    "LMSTUDIO_BASE_URL",
+                )
+                .await
+            }
             provider => {
-                error!("Unsupported provider for drafting: {}. Supported: {:?}", provider, DRAFTING_PROVIDERS);
+                error!(
+                    "Unsupported provider for drafting: {}. Supported: {:?}",
+                    provider, DRAFTING_PROVIDERS
+                );
                 Err(ApiError::BadRequest {
-                    message: format!("Unsupported drafting provider: '{}'. Supported: {}", provider, DRAFTING_PROVIDERS.join(", ")),
+                    message: format!(
+                        "Unsupported drafting provider: '{}'. Supported: {}",
+                        provider,
+                        DRAFTING_PROVIDERS.join(", ")
+                    ),
                 })
             }
         }
@@ -167,17 +215,23 @@ Draft email body:"#,
         prompt: &str,
         sampler_config: Option<&SamplerConfig>,
     ) -> Result<String, ApiError> {
-        let base_url = config.base_url.as_deref()
+        let base_url = config
+            .base_url
+            .as_deref()
             .map(|s| s.to_string())
             .or_else(|| std::env::var("OLLAMA_BASE_URL").ok())
             .ok_or_else(|| ApiError::BadRequest {
-                message: "OLLAMA_BASE_URL environment variable or base_url config must be set".to_string(),
+                message: "OLLAMA_BASE_URL environment variable or base_url config must be set"
+                    .to_string(),
             })?;
 
         // Use native /api/chat for full sampler control
         let url = format!("{}/api/chat", base_url);
 
-        debug!("Calling Ollama native API at {} with model {}", url, config.model_name);
+        debug!(
+            "Calling Ollama native API at {} with model {}",
+            url, config.model_name
+        );
 
         // Build request with sampler config from database if available
         let request_body = if let Some(cfg) = sampler_config {
@@ -218,7 +272,8 @@ Draft email body:"#,
             })
         };
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&request_body)
@@ -234,20 +289,22 @@ Draft email body:"#,
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error>".to_string());
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error>".to_string());
             error!("Ollama API returned error {}: {}", status, error_body);
             return Err(ApiError::ServiceUnavailable {
                 service: format!("Ollama returned status {}: {}", status, error_body),
             });
         }
 
-        let response_body: Value = response.json().await
-            .map_err(|e| {
-                error!("Failed to parse Ollama response: {}", e);
-                ApiError::InternalError {
-                    message: format!("Failed to parse response: {}", e),
-                }
-            })?;
+        let response_body: Value = response.json().await.map_err(|e| {
+            error!("Failed to parse Ollama response: {}", e);
+            ApiError::InternalError {
+                message: format!("Failed to parse response: {}", e),
+            }
+        })?;
 
         // Native API returns: {"message": {"role": "assistant", "content": "..."}}
         let content = response_body
@@ -255,13 +312,19 @@ Draft email body:"#,
             .and_then(|m| m.get("content"))
             .and_then(|c| c.as_str())
             .ok_or_else(|| {
-                error!("Ollama native API response missing expected content field: {:?}", response_body);
+                error!(
+                    "Ollama native API response missing expected content field: {:?}",
+                    response_body
+                );
                 ApiError::InternalError {
                     message: "Invalid response format from Ollama native API".to_string(),
                 }
             })?;
 
-        debug!("Successfully generated draft with {} characters", content.len());
+        debug!(
+            "Successfully generated draft with {} characters",
+            content.len()
+        );
         Ok(content.to_string())
     }
 
@@ -272,24 +335,30 @@ Draft email body:"#,
         prompt: &str,
         sampler_config: Option<&SamplerConfig>,
     ) -> Result<String, ApiError> {
-        let base_url = config.base_url.as_deref()
+        let base_url = config
+            .base_url
+            .as_deref()
             .map(|s| s.to_string())
             .or_else(|| std::env::var("OPENAI_BASE_URL").ok())
             .ok_or_else(|| ApiError::BadRequest {
-                message: "OPENAI_BASE_URL environment variable or base_url config must be set".to_string(),
+                message: "OPENAI_BASE_URL environment variable or base_url config must be set"
+                    .to_string(),
             })?;
         let url = format!("{}/chat/completions", base_url);
 
-        let api_key = config.api_key.as_deref().ok_or_else(|| {
-            ApiError::BadRequest {
+        let api_key = config
+            .api_key
+            .as_deref()
+            .ok_or_else(|| ApiError::BadRequest {
                 message: "OpenAI API key not configured".to_string(),
-            }
-        })?;
+            })?;
 
         debug!("Calling OpenAI API with model {}", config.model_name);
 
         // Apply sampler config if available (OpenAI supports temperature, top_p, max_tokens)
-        let temperature = sampler_config.map(|c| c.effective_temperature()).unwrap_or(0.7);
+        let temperature = sampler_config
+            .map(|c| c.effective_temperature())
+            .unwrap_or(0.7);
         let top_p = sampler_config.and_then(|c| c.top_p);
 
         let mut request_body = json!({
@@ -313,7 +382,8 @@ Draft email body:"#,
             }
         }
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .header("Content-Type", "application/json")
             .header("Authorization", format!("Bearer {}", api_key))
@@ -330,20 +400,22 @@ Draft email body:"#,
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error>".to_string());
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error>".to_string());
             error!("OpenAI API returned error {}: {}", status, error_body);
             return Err(ApiError::ServiceUnavailable {
                 service: format!("OpenAI returned status {}: {}", status, error_body),
             });
         }
 
-        let response_body: Value = response.json().await
-            .map_err(|e| {
-                error!("Failed to parse OpenAI response: {}", e);
-                ApiError::InternalError {
-                    message: format!("Failed to parse response: {}", e),
-                }
-            })?;
+        let response_body: Value = response.json().await.map_err(|e| {
+            error!("Failed to parse OpenAI response: {}", e);
+            ApiError::InternalError {
+                message: format!("Failed to parse response: {}", e),
+            }
+        })?;
 
         // Extract the generated text
         let content = response_body
@@ -359,7 +431,10 @@ Draft email body:"#,
                 }
             })?;
 
-        debug!("Successfully generated draft with {} characters", content.len());
+        debug!(
+            "Successfully generated draft with {} characters",
+            content.len()
+        );
         Ok(content.to_string())
     }
 
@@ -371,19 +446,29 @@ Draft email body:"#,
         sampler_config: Option<&SamplerConfig>,
         env_var: &str,
     ) -> Result<String, ApiError> {
-        let base_url = config.base_url.as_deref()
+        let base_url = config
+            .base_url
+            .as_deref()
             .map(|s| s.to_string())
             .or_else(|| std::env::var(env_var).ok())
             .ok_or_else(|| ApiError::BadRequest {
-                message: format!("{} environment variable or base_url config must be set", env_var),
+                message: format!(
+                    "{} environment variable or base_url config must be set",
+                    env_var
+                ),
             })?;
 
         let url = format!("{}/v1/chat/completions", base_url);
 
-        debug!("Calling OpenAI-compatible API at {} with model {}", url, config.model_name);
+        debug!(
+            "Calling OpenAI-compatible API at {} with model {}",
+            url, config.model_name
+        );
 
         // Apply sampler config if available
-        let temperature = sampler_config.map(|c| c.effective_temperature()).unwrap_or(0.7);
+        let temperature = sampler_config
+            .map(|c| c.effective_temperature())
+            .unwrap_or(0.7);
         let top_p = sampler_config.and_then(|c| c.top_p);
         let min_p = sampler_config.and_then(|c| c.min_p);
 
@@ -415,11 +500,12 @@ Draft email body:"#,
             }
         }
 
-        let response = self.http_client
+        let response = self
+            .http_client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&request_body)
-            .timeout(std::time::Duration::from_secs(120))  // Longer timeout for local models
+            .timeout(std::time::Duration::from_secs(120)) // Longer timeout for local models
             .send()
             .await
             .map_err(|e| {
@@ -431,20 +517,28 @@ Draft email body:"#,
 
         if !response.status().is_success() {
             let status = response.status();
-            let error_body = response.text().await.unwrap_or_else(|_| "<failed to read error>".to_string());
-            error!("OpenAI-compatible API returned error {}: {}", status, error_body);
+            let error_body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read error>".to_string());
+            error!(
+                "OpenAI-compatible API returned error {}: {}",
+                status, error_body
+            );
             return Err(ApiError::ServiceUnavailable {
-                service: format!("OpenAI-compatible API returned status {}: {}", status, error_body),
+                service: format!(
+                    "OpenAI-compatible API returned status {}: {}",
+                    status, error_body
+                ),
             });
         }
 
-        let response_body: Value = response.json().await
-            .map_err(|e| {
-                error!("Failed to parse OpenAI-compatible response: {}", e);
-                ApiError::InternalError {
-                    message: format!("Failed to parse response: {}", e),
-                }
-            })?;
+        let response_body: Value = response.json().await.map_err(|e| {
+            error!("Failed to parse OpenAI-compatible response: {}", e);
+            ApiError::InternalError {
+                message: format!("Failed to parse response: {}", e),
+            }
+        })?;
 
         // OpenAI-compatible format: {"choices": [{"message": {"content": "..."}}]}
         let content = response_body
@@ -454,13 +548,19 @@ Draft email body:"#,
             .and_then(|m| m.get("content"))
             .and_then(|c| c.as_str())
             .ok_or_else(|| {
-                error!("OpenAI-compatible API response missing expected content field: {:?}", response_body);
+                error!(
+                    "OpenAI-compatible API response missing expected content field: {:?}",
+                    response_body
+                );
                 ApiError::InternalError {
                     message: "Invalid response format from OpenAI-compatible API".to_string(),
                 }
             })?;
 
-        debug!("Successfully generated draft with {} characters", content.len());
+        debug!(
+            "Successfully generated draft with {} characters",
+            content.len()
+        );
         Ok(content.to_string())
     }
 }

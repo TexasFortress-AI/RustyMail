@@ -16,28 +16,28 @@
 //! Some tests may initially pass with INSECURE behavior - they will be
 //! updated as security fixes are implemented to verify the fixes work.
 
-use actix_web::{test, web, App, http::header, http::StatusCode};
+use actix_web::{http::header, http::StatusCode, test, web, App};
+use async_trait::async_trait;
 use serde_json::json;
 use serial_test::serial;
-use std::sync::Arc;
+use sqlx::SqlitePool;
 use std::fs;
 use std::path::PathBuf;
-use tokio::sync::Mutex as TokioMutex;
-use sqlx::SqlitePool;
-use async_trait::async_trait;
+use std::sync::Arc;
 use tempfile::TempDir;
+use tokio::sync::Mutex as TokioMutex;
 
-use rustymail::dashboard::services::{
-    DashboardState, ClientManager, MetricsService, CacheService, CacheConfig,
-    ConfigService, AiService, EmailService, SyncService, AccountService,
-    EventBus, SmtpService, OutboxQueueService, OAuthService, OAuthConfig
-};
-use rustymail::dashboard::api::sse::SseManager;
-use rustymail::connection_pool::{ConnectionPool, ConnectionFactory, PoolConfig};
-use rustymail::prelude::CloneableImapSessionFactory;
-use rustymail::imap::{ImapClient, AsyncImapSessionWrapper, ImapError};
-use rustymail::config::Settings;
 use dashmap::DashMap;
+use rustymail::config::Settings;
+use rustymail::connection_pool::{ConnectionFactory, ConnectionPool, PoolConfig};
+use rustymail::dashboard::api::sse::SseManager;
+use rustymail::dashboard::services::{
+    AccountService, AiService, CacheConfig, CacheService, ClientManager, ConfigService,
+    DashboardState, EmailService, EventBus, MetricsService, OAuthConfig, OAuthService,
+    OutboxQueueService, SmtpService, SyncService,
+};
+use rustymail::imap::{AsyncImapSessionWrapper, ImapClient, ImapError};
+use rustymail::prelude::CloneableImapSessionFactory;
 
 /// Initialize test environment with required environment variables
 fn setup_test_env() {
@@ -94,12 +94,17 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
 
     let mut account_service_temp = AccountService::new(&accounts_config_path);
     let account_db_pool = SqlitePool::connect(&db_url).await.unwrap();
-    account_service_temp.initialize(account_db_pool.clone()).await.unwrap();
+    account_service_temp
+        .initialize(account_db_pool.clone())
+        .await
+        .unwrap();
     let account_service = Arc::new(TokioMutex::new(account_service_temp));
 
     let mock_factory: rustymail::imap::ImapSessionFactory = Box::new(|| {
         Box::pin(async {
-            Err(rustymail::imap::ImapError::Connection("Mock IMAP client".to_string()))
+            Err(rustymail::imap::ImapError::Connection(
+                "Mock IMAP client".to_string(),
+            ))
         })
     });
     let imap_session_factory = CloneableImapSessionFactory::new(mock_factory);
@@ -117,15 +122,13 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
         }
     }
 
-    let connection_pool = ConnectionPool::new(
-        Arc::new(MockConnectionFactory),
-        PoolConfig::default()
-    );
+    let connection_pool =
+        ConnectionPool::new(Arc::new(MockConnectionFactory), PoolConfig::default());
 
     let email_service = Arc::new(
         EmailService::new(imap_session_factory.clone(), connection_pool.clone())
             .with_cache(cache_service.clone())
-            .with_account_service(account_service.clone())
+            .with_account_service(account_service.clone()),
     );
 
     let sync_service = Arc::new(SyncService::new(
@@ -136,7 +139,10 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
     ));
 
     let ai_service = Arc::new(AiService::new_mock());
-    let smtp_service = Arc::new(SmtpService::new(account_service.clone(), imap_session_factory.clone()));
+    let smtp_service = Arc::new(SmtpService::new(
+        account_service.clone(),
+        imap_session_factory.clone(),
+    ));
     let outbox_queue_service = Arc::new(OutboxQueueService::new(account_db_pool.clone()));
     let event_bus = Arc::new(EventBus::new());
 
@@ -212,9 +218,13 @@ async fn test_cors_blocks_unauthorized_origins() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .wrap(create_secure_cors(&["http://localhost:9439", "http://127.0.0.1:9439"]))
-            .route("/api/health", web::get().to(|| async { "ok" }))
-    ).await;
+            .wrap(create_secure_cors(&[
+                "http://localhost:9439",
+                "http://127.0.0.1:9439",
+            ]))
+            .route("/api/health", web::get().to(|| async { "ok" })),
+    )
+    .await;
 
     // Test with external origin - should NOT receive CORS headers
     let req = test::TestRequest::get()
@@ -227,7 +237,10 @@ async fn test_cors_blocks_unauthorized_origins() {
     // The request itself succeeds but CORS headers should not be present
     // This means browser-based requests from evil.example.com would fail
     let cors_origin = resp.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN);
-    assert!(cors_origin.is_none(), "External origin should NOT receive CORS headers");
+    assert!(
+        cors_origin.is_none(),
+        "External origin should NOT receive CORS headers"
+    );
 
     println!("  External origin correctly blocked (no CORS headers)");
 }
@@ -244,9 +257,13 @@ async fn test_cors_allows_configured_origins() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .wrap(create_secure_cors(&["http://localhost:9439", "http://127.0.0.1:9439"]))
-            .route("/api/health", web::get().to(|| async { "ok" }))
-    ).await;
+            .wrap(create_secure_cors(&[
+                "http://localhost:9439",
+                "http://127.0.0.1:9439",
+            ]))
+            .route("/api/health", web::get().to(|| async { "ok" })),
+    )
+    .await;
 
     // Test with allowed localhost origin
     let req = test::TestRequest::get()
@@ -259,8 +276,14 @@ async fn test_cors_allows_configured_origins() {
 
     // CORS headers should be present for allowed origin
     let cors_origin = resp.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN);
-    assert!(cors_origin.is_some(), "Allowed origin should receive CORS headers");
-    assert_eq!(cors_origin.unwrap().to_str().unwrap(), "http://localhost:9439");
+    assert!(
+        cors_origin.is_some(),
+        "Allowed origin should receive CORS headers"
+    );
+    assert_eq!(
+        cors_origin.unwrap().to_str().unwrap(),
+        "http://localhost:9439"
+    );
 
     println!("  Configured origin correctly allowed");
 }
@@ -278,8 +301,9 @@ async fn test_cors_preflight_options_allowed() {
         App::new()
             .app_data(dashboard_state.clone())
             .wrap(create_secure_cors(&["http://localhost:9439"]))
-            .route("/api/test", web::post().to(|| async { "ok" }))
-    ).await;
+            .route("/api/test", web::post().to(|| async { "ok" })),
+    )
+    .await;
 
     // Test preflight request from allowed origin
     let req = test::TestRequest::with_uri("/api/test")
@@ -296,7 +320,10 @@ async fn test_cors_preflight_options_allowed() {
 
     // Should have CORS headers
     let cors_origin = resp.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN);
-    assert!(cors_origin.is_some(), "Preflight from allowed origin should have CORS headers");
+    assert!(
+        cors_origin.is_some(),
+        "Preflight from allowed origin should have CORS headers"
+    );
 
     println!("  Preflight OPTIONS request handled for allowed origin");
 }
@@ -314,8 +341,9 @@ async fn test_cors_preflight_options_blocked() {
         App::new()
             .app_data(dashboard_state.clone())
             .wrap(create_secure_cors(&["http://localhost:9439"]))
-            .route("/api/test", web::post().to(|| async { "ok" }))
-    ).await;
+            .route("/api/test", web::post().to(|| async { "ok" })),
+    )
+    .await;
 
     // Test preflight request from non-allowed origin
     let req = test::TestRequest::with_uri("/api/test")
@@ -329,7 +357,10 @@ async fn test_cors_preflight_options_blocked() {
 
     // Preflight may succeed but should not have CORS headers for blocked origin
     let cors_origin = resp.headers().get(header::ACCESS_CONTROL_ALLOW_ORIGIN);
-    assert!(cors_origin.is_none(), "Preflight from blocked origin should NOT have CORS headers");
+    assert!(
+        cors_origin.is_none(),
+        "Preflight from blocked origin should NOT have CORS headers"
+    );
 
     println!("  Preflight OPTIONS correctly blocked for unauthorized origin");
 }
@@ -351,8 +382,9 @@ async fn test_mcp_origin_localhost_accepted() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     let request = json!({
         "jsonrpc": "2.0",
@@ -372,7 +404,10 @@ async fn test_mcp_origin_localhost_accepted() {
     let resp = test::call_service(&app, req).await;
 
     // localhost should be accepted
-    assert!(resp.status().is_success(), "localhost origin should be accepted");
+    assert!(
+        resp.status().is_success(),
+        "localhost origin should be accepted"
+    );
     println!("  localhost origin accepted");
 }
 
@@ -389,8 +424,9 @@ async fn test_mcp_origin_127_0_0_1_accepted() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     let request = json!({
         "jsonrpc": "2.0",
@@ -409,7 +445,10 @@ async fn test_mcp_origin_127_0_0_1_accepted() {
 
     let resp = test::call_service(&app, req).await;
 
-    assert!(resp.status().is_success(), "127.0.0.1 origin should be accepted");
+    assert!(
+        resp.status().is_success(),
+        "127.0.0.1 origin should be accepted"
+    );
     println!("  127.0.0.1 origin accepted");
 }
 
@@ -429,8 +468,9 @@ async fn test_mcp_origin_substring_bypass_blocked() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     let request = json!({
         "jsonrpc": "2.0",
@@ -450,8 +490,11 @@ async fn test_mcp_origin_substring_bypass_blocked() {
     let resp = test::call_service(&app, req).await;
 
     // After Task 23 fix: This should return 403 Forbidden
-    assert_eq!(resp.status(), StatusCode::FORBIDDEN,
-        "evil.localhost.com should be BLOCKED - substring matching vulnerability fixed");
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "evil.localhost.com should be BLOCKED - substring matching vulnerability fixed"
+    );
     println!("  Substring bypass attack correctly blocked");
 }
 
@@ -471,8 +514,9 @@ async fn test_mcp_origin_missing_header_allowed_with_api_key() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     let request = json!({
         "jsonrpc": "2.0",
@@ -493,8 +537,10 @@ async fn test_mcp_origin_missing_header_allowed_with_api_key() {
     let resp = test::call_service(&app, req).await;
 
     // Allowed for CLI clients with valid API key
-    assert!(resp.status().is_success(),
-        "Requests without Origin should be accepted for CLI clients with valid API key");
+    assert!(
+        resp.status().is_success(),
+        "Requests without Origin should be accepted for CLI clients with valid API key"
+    );
     println!("  Missing Origin header allowed for authenticated CLI clients");
 }
 
@@ -510,8 +556,9 @@ async fn test_mcp_origin_external_rejected() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     let request = json!({
         "jsonrpc": "2.0",
@@ -531,8 +578,11 @@ async fn test_mcp_origin_external_rejected() {
     let resp = test::call_service(&app, req).await;
 
     // External origins should be rejected
-    assert_eq!(resp.status(), StatusCode::FORBIDDEN,
-        "External origins should be rejected with 403");
+    assert_eq!(
+        resp.status(),
+        StatusCode::FORBIDDEN,
+        "External origins should be rejected with 403"
+    );
     println!("  External origin correctly rejected");
 }
 
@@ -550,8 +600,14 @@ async fn test_path_traversal_sanitization() {
     // Test that dangerous characters are sanitized
     let dangerous_inputs = vec![
         ("../../../etc/passwd", "should not contain path separators"),
-        ("..\\..\\windows\\system32", "should not contain backslashes"),
-        ("<script>alert(1)</script>", "should sanitize angle brackets"),
+        (
+            "..\\..\\windows\\system32",
+            "should not contain backslashes",
+        ),
+        (
+            "<script>alert(1)</script>",
+            "should sanitize angle brackets",
+        ),
         ("file:///etc/passwd", "should sanitize colons"),
     ];
 
@@ -580,14 +636,17 @@ async fn test_attachment_path_containment() {
     println!("=== SECURITY TEST: Attachment Path Containment ===");
 
     // Test normal path construction - should succeed
-    let path_result = get_attachment_path("user@example.com", "<msg123@example.com>", "document.pdf");
+    let path_result =
+        get_attachment_path("user@example.com", "<msg123@example.com>", "document.pdf");
     assert!(path_result.is_ok(), "Valid filename should return Ok");
 
     let path = path_result.unwrap();
 
     // Path should be within attachments directory
-    assert!(path.to_string_lossy().contains("attachments"),
-        "Path should contain 'attachments'");
+    assert!(
+        path.to_string_lossy().contains("attachments"),
+        "Path should contain 'attachments'"
+    );
 
     // Path components should be sanitized
     let path_str = path.to_string_lossy();
@@ -599,22 +658,26 @@ async fn test_attachment_path_containment() {
     let malicious_result = get_attachment_path(
         "user@example.com",
         "<msg123@example.com>",
-        "../../../etc/passwd"
+        "../../../etc/passwd",
     );
 
     // Path traversal attempts should now be rejected with an error
-    assert!(malicious_result.is_err(),
-        "Path traversal attempt should return Err, not a sanitized path");
+    assert!(
+        malicious_result.is_err(),
+        "Path traversal attempt should return Err, not a sanitized path"
+    );
     println!("  Malicious filename correctly rejected with error");
 
     // Test backslash traversal (Windows-style)
     let backslash_result = get_attachment_path(
         "user@example.com",
         "<msg123@example.com>",
-        "..\\..\\windows\\system32\\config"
+        "..\\..\\windows\\system32\\config",
     );
-    assert!(backslash_result.is_err(),
-        "Backslash path traversal should be rejected");
+    assert!(
+        backslash_result.is_err(),
+        "Backslash path traversal should be rejected"
+    );
     println!("  Backslash traversal correctly rejected");
 
     println!("  Path containment security verified");
@@ -660,8 +723,9 @@ async fn test_mcp_requires_api_key() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(rustymail::api::mcp_http::configure_mcp_routes)
-    ).await;
+            .configure(rustymail::api::mcp_http::configure_mcp_routes),
+    )
+    .await;
 
     let request = json!({
         "jsonrpc": "2.0",
@@ -679,8 +743,11 @@ async fn test_mcp_requires_api_key() {
         .to_request();
 
     let resp = test::call_service(&app, req).await;
-    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED,
-        "MCP endpoint should return 401 when no API key provided");
+    assert_eq!(
+        resp.status(),
+        StatusCode::UNAUTHORIZED,
+        "MCP endpoint should return 401 when no API key provided"
+    );
     println!("  Request without API key correctly rejected with 401");
 
     // Request WITH valid API key - should succeed
@@ -693,8 +760,10 @@ async fn test_mcp_requires_api_key() {
         .to_request();
 
     let resp_with_key = test::call_service(&app, req_with_key).await;
-    assert!(resp_with_key.status().is_success(),
-        "MCP endpoint should accept request with valid API key");
+    assert!(
+        resp_with_key.status().is_success(),
+        "MCP endpoint should accept request with valid API key"
+    );
     println!("  Request with valid API key accepted");
 
     // Request WITH invalid API key - should be rejected
@@ -707,8 +776,11 @@ async fn test_mcp_requires_api_key() {
         .to_request();
 
     let resp_invalid = test::call_service(&app, req_invalid_key).await;
-    assert_eq!(resp_invalid.status(), StatusCode::UNAUTHORIZED,
-        "MCP endpoint should return 401 for invalid API key");
+    assert_eq!(
+        resp_invalid.status(),
+        StatusCode::UNAUTHORIZED,
+        "MCP endpoint should return 401 for invalid API key"
+    );
     println!("  Request with invalid API key correctly rejected with 401");
 }
 
@@ -727,13 +799,12 @@ async fn test_rest_api_key_validation() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .configure(|cfg| rustymail::dashboard::api::init_routes(cfg))
-    ).await;
+            .configure(|cfg| rustymail::dashboard::api::init_routes(cfg)),
+    )
+    .await;
 
     // Request without API key should fail
-    let req = test::TestRequest::get()
-        .uri("/api/accounts")
-        .to_request();
+    let req = test::TestRequest::get().uri("/api/accounts").to_request();
 
     let resp = test::call_service(&app, req).await;
 
@@ -750,18 +821,26 @@ async fn test_no_hardcoded_credentials() {
     let env_example = fs::read_to_string(".env.example").unwrap_or_default();
 
     // Verify no hardcoded test keys
-    assert!(!env_example.contains("test-rustymail-key-2024"),
-        ".env.example should NOT contain hardcoded test keys");
-    assert!(!env_example.contains("test-api-key"),
-        ".env.example should NOT contain test-api-key patterns");
+    assert!(
+        !env_example.contains("test-rustymail-key-2024"),
+        ".env.example should NOT contain hardcoded test keys"
+    );
+    assert!(
+        !env_example.contains("test-api-key"),
+        ".env.example should NOT contain test-api-key patterns"
+    );
 
     // Verify placeholder is present
-    assert!(env_example.contains("your-secure-api-key-here"),
-        ".env.example should contain placeholder for API key");
+    assert!(
+        env_example.contains("your-secure-api-key-here"),
+        ".env.example should contain placeholder for API key"
+    );
 
     // Verify security guidance is present
-    assert!(env_example.contains("openssl rand -hex 32"),
-        ".env.example should contain secure key generation instructions");
+    assert!(
+        env_example.contains("openssl rand -hex 32"),
+        ".env.example should contain secure key generation instructions"
+    );
 
     println!("  Task 24 FIXED: No hardcoded credentials in .env.example");
     println!("  Placeholder and security guidance present");
@@ -810,26 +889,40 @@ async fn test_rate_limit_headers_present() {
         App::new()
             .app_data(dashboard_state.clone())
             .wrap(RateLimitMiddleware::new(rate_limit_config))
-            .route("/api/health", web::get().to(|| async { "ok" }))
-    ).await;
+            .route("/api/health", web::get().to(|| async { "ok" })),
+    )
+    .await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/health")
-        .to_request();
+    let req = test::TestRequest::get().uri("/api/health").to_request();
 
     let resp = test::call_service(&app, req).await;
 
     // Verify rate limit headers are present
-    assert!(resp.headers().contains_key("x-ratelimit-limit"),
-        "X-RateLimit-Limit header should be present");
-    assert!(resp.headers().contains_key("x-ratelimit-remaining"),
-        "X-RateLimit-Remaining header should be present");
-    assert!(resp.headers().contains_key("x-ratelimit-reset"),
-        "X-RateLimit-Reset header should be present");
+    assert!(
+        resp.headers().contains_key("x-ratelimit-limit"),
+        "X-RateLimit-Limit header should be present"
+    );
+    assert!(
+        resp.headers().contains_key("x-ratelimit-remaining"),
+        "X-RateLimit-Remaining header should be present"
+    );
+    assert!(
+        resp.headers().contains_key("x-ratelimit-reset"),
+        "X-RateLimit-Reset header should be present"
+    );
 
-    println!("  X-RateLimit-Limit: {:?}", resp.headers().get("x-ratelimit-limit"));
-    println!("  X-RateLimit-Remaining: {:?}", resp.headers().get("x-ratelimit-remaining"));
-    println!("  X-RateLimit-Reset: {:?}", resp.headers().get("x-ratelimit-reset"));
+    println!(
+        "  X-RateLimit-Limit: {:?}",
+        resp.headers().get("x-ratelimit-limit")
+    );
+    println!(
+        "  X-RateLimit-Remaining: {:?}",
+        resp.headers().get("x-ratelimit-remaining")
+    );
+    println!(
+        "  X-RateLimit-Reset: {:?}",
+        resp.headers().get("x-ratelimit-reset")
+    );
     println!("  Rate limit headers correctly present on all responses");
 }
 
@@ -846,7 +939,7 @@ async fn test_rate_limit_429_response() {
 
     // Configure very low rate limit to trigger 429
     let rate_limit_config = RateLimitConfig {
-        per_ip_per_minute: 2,  // Only allow 2 requests per minute
+        per_ip_per_minute: 2, // Only allow 2 requests per minute
         per_ip_per_hour: 100,
         whitelist_ips: vec![],
     };
@@ -855,37 +948,52 @@ async fn test_rate_limit_429_response() {
         App::new()
             .app_data(dashboard_state.clone())
             .wrap(RateLimitMiddleware::new(rate_limit_config))
-            .route("/api/health", web::get().to(|| async { "ok" }))
-    ).await;
+            .route("/api/health", web::get().to(|| async { "ok" })),
+    )
+    .await;
 
     // First two requests should succeed
     for i in 0..2 {
-        let req = test::TestRequest::get()
-            .uri("/api/health")
-            .to_request();
+        let req = test::TestRequest::get().uri("/api/health").to_request();
         let resp = test::call_service(&app, req).await;
-        assert_eq!(resp.status(), StatusCode::OK,
-            "Request {} should succeed", i + 1);
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "Request {} should succeed",
+            i + 1
+        );
     }
 
     // Third request should get 429
-    let req = test::TestRequest::get()
-        .uri("/api/health")
-        .to_request();
+    let req = test::TestRequest::get().uri("/api/health").to_request();
     let resp = test::call_service(&app, req).await;
 
-    assert_eq!(resp.status(), StatusCode::TOO_MANY_REQUESTS,
-        "Request 3 should return 429 Too Many Requests");
+    assert_eq!(
+        resp.status(),
+        StatusCode::TOO_MANY_REQUESTS,
+        "Request 3 should return 429 Too Many Requests"
+    );
 
     // Verify response includes proper headers
-    assert!(resp.headers().contains_key("retry-after"),
-        "429 response should include Retry-After header");
-    assert_eq!(resp.headers().get("x-ratelimit-remaining").map(|v| v.to_str().ok()).flatten(),
-        Some("0"), "X-RateLimit-Remaining should be 0");
+    assert!(
+        resp.headers().contains_key("retry-after"),
+        "429 response should include Retry-After header"
+    );
+    assert_eq!(
+        resp.headers()
+            .get("x-ratelimit-remaining")
+            .map(|v| v.to_str().ok())
+            .flatten(),
+        Some("0"),
+        "X-RateLimit-Remaining should be 0"
+    );
 
     println!("  First 2 requests succeeded (within limit)");
     println!("  Third request correctly returned 429 Too Many Requests");
-    println!("  Retry-After header: {:?}", resp.headers().get("retry-after"));
+    println!(
+        "  Retry-After header: {:?}",
+        resp.headers().get("retry-after")
+    );
     println!("  Rate limiting correctly rejects requests over limit");
 }
 
@@ -905,12 +1013,11 @@ async fn test_security_headers_baseline() {
     let app = test::init_service(
         App::new()
             .app_data(dashboard_state.clone())
-            .route("/api/health", web::get().to(|| async { "ok" }))
-    ).await;
+            .route("/api/health", web::get().to(|| async { "ok" })),
+    )
+    .await;
 
-    let req = test::TestRequest::get()
-        .uri("/api/health")
-        .to_request();
+    let req = test::TestRequest::get().uri("/api/health").to_request();
 
     let resp = test::call_service(&app, req).await;
 

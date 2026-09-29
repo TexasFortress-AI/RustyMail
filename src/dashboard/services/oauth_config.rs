@@ -8,19 +8,25 @@
 //! Loads client credentials from environment variables.
 //! Microsoft endpoints are constants (they don't change).
 
-use log::{info, debug};
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 
 /// Microsoft OAuth2 authorization endpoint (tenant-specific or "common").
 pub fn microsoft_auth_url() -> String {
     let tenant = std::env::var("MICROSOFT_TENANT_ID").unwrap_or_else(|_| "common".to_string());
-    format!("https://login.microsoftonline.com/{}/oauth2/v2.0/authorize", tenant)
+    format!(
+        "https://login.microsoftonline.com/{}/oauth2/v2.0/authorize",
+        tenant
+    )
 }
 
 /// Microsoft OAuth2 token endpoint (tenant-specific or "common").
 pub fn microsoft_token_url() -> String {
     let tenant = std::env::var("MICROSOFT_TENANT_ID").unwrap_or_else(|_| "common".to_string());
-    format!("https://login.microsoftonline.com/{}/oauth2/v2.0/token", tenant)
+    format!(
+        "https://login.microsoftonline.com/{}/oauth2/v2.0/token",
+        tenant
+    )
 }
 
 /// Required scopes for IMAP + SMTP access via OAuth2.
