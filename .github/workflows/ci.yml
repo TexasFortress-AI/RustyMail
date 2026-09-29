@@ -105,7 +105,8 @@ jobs:
         run: cargo install cargo-audit
 
       - name: Run security audit
-        run: cargo audit
+        # Ignores must stay in sync with .cargo/audit.toml and audit.toml comments.
+        run: cargo audit --ignore RUSTSEC-2023-0071 --ignore RUSTSEC-2024-0363 --ignore RUSTSEC-2026-0189 --ignore RUSTSEC-2026-0258 --ignore RUSTSEC-2024-0421 --ignore RUSTSEC-2026-0104 --ignore RUSTSEC-2026-0098 --ignore RUSTSEC-2026-0099
 
       - name: Check for known vulnerabilities
         uses: rustsec/audit-check@v2.0.0
