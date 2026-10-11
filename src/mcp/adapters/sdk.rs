@@ -86,7 +86,7 @@ impl RustyMailService {
             .await;
         drop(state_guard);
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = client.logout().await {
             warn!("Failed to logout IMAP session after tool execution: {}", e);
         }

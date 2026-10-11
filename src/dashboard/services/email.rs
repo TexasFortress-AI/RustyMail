@@ -144,7 +144,7 @@ impl EmailService {
         // List folders
         let folders = session.list_folders().await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -169,7 +169,7 @@ impl EmailService {
         // List folders
         let folders = session.list_folders().await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -204,7 +204,7 @@ impl EmailService {
         // Search for emails
         let uids = session.search_emails(criteria).await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -238,7 +238,7 @@ impl EmailService {
         // Search for emails
         let uids = session.search_emails(criteria).await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -320,7 +320,7 @@ impl EmailService {
 
             emails.extend(fetched_emails);
 
-            // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+            // Log out so the server closes the IMAP session cleanly
             if let Err(e) = session.logout().await {
                 warn!("Failed to logout IMAP session: {}", e);
             }
@@ -362,7 +362,7 @@ impl EmailService {
         // Fetch the emails
         let emails = session.fetch_emails(uids).await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -402,7 +402,7 @@ impl EmailService {
         // Fetch the emails
         let emails = session.fetch_emails(&recent_uids).await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -433,7 +433,7 @@ impl EmailService {
         // Fetch the emails
         let emails = session.fetch_emails(&unread_uids).await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -525,7 +525,7 @@ impl EmailService {
         let atomic_ops = crate::imap::atomic::AtomicImapOperations::new((*session).clone());
         atomic_ops.atomic_move(uid, from_folder, to_folder).await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = client.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -563,7 +563,7 @@ impl EmailService {
             .atomic_batch_move(uids, from_folder, to_folder)
             .await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = client.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -593,7 +593,7 @@ impl EmailService {
             .store_flags(uids, FlagOperation::Add, &["\\Seen".to_string()])
             .await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = client.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -622,7 +622,7 @@ impl EmailService {
             .store_flags(uids, FlagOperation::Remove, &["\\Seen".to_string()])
             .await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = client.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -647,7 +647,7 @@ impl EmailService {
         client.select_folder(folder).await?;
         client.mark_as_deleted(uids).await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = client.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -750,7 +750,7 @@ impl EmailService {
         client.mark_as_deleted(uids).await?;
         client.expunge().await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = client.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -778,7 +778,7 @@ impl EmailService {
         client.select_folder(folder).await?;
         client.undelete_messages(uids).await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = client.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -798,7 +798,7 @@ impl EmailService {
         client.select_folder(folder).await?;
         client.expunge().await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = client.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -826,7 +826,7 @@ impl EmailService {
         // Create the folder
         session.create_folder(name).await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -857,7 +857,7 @@ impl EmailService {
         // Delete the folder
         session.delete_folder(name).await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -892,7 +892,7 @@ impl EmailService {
         // Rename the folder
         session.rename_folder(old_name, new_name).await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -1021,7 +1021,7 @@ impl EmailService {
             }
         }
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }

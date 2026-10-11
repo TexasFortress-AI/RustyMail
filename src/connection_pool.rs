@@ -34,11 +34,15 @@ pub enum PoolError {
 /// Configuration for the connection pool
 #[derive(Debug, Clone)]
 pub struct PoolConfig {
-    /// Minimum number of connections to maintain
+    /// Minimum number of idle connections to keep warm. These are kept alive
+    /// with NOOP health checks and are never recycled just for being idle.
     pub min_connections: usize,
     /// Maximum number of connections allowed
     pub max_connections: usize,
-    /// Time before an idle connection is closed
+    /// Time before a *surplus* idle connection (one above `min_connections`)
+    /// is closed. Also the minimum "proof of life" window: a connection that
+    /// has neither been used nor passed a NOOP health check within
+    /// `max(idle_timeout, 3 * health_check_interval)` is treated as stale.
     pub idle_timeout: Duration,
     /// Time between health checks
     pub health_check_interval: Duration,
@@ -53,7 +57,12 @@ pub struct PoolConfig {
 impl Default for PoolConfig {
     fn default() -> Self {
         Self {
-            min_connections: 5, // Reduced to limit memory usage
+            // Default 1: every extra warm connection is another IMAP session the
+            // server has to hold open. Bursts grow the pool on demand.
+            min_connections: std::env::var("POOL_MIN_CONNECTIONS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1),
             max_connections: std::env::var("MAX_CONNECTIONS")
                 .ok()
                 .and_then(|v| v.parse().ok())
@@ -97,6 +106,8 @@ struct PooledConnection {
     client: Arc<ImapClient<AsyncImapSessionWrapper>>,
     created_at: Instant,
     last_used: Instant,
+    /// Last time this connection passed a NOOP health check
+    last_validated: Instant,
     is_healthy: bool,
     in_use: bool,
 }
@@ -109,6 +120,7 @@ impl PooledConnection {
             client,
             created_at: now,
             last_used: now,
+            last_validated: now,
             is_healthy: true,
             in_use: false,
         }
@@ -118,8 +130,21 @@ impl PooledConnection {
         self.last_used = Instant::now();
     }
 
+    /// Idle (unused) for longer than `idle_timeout`. Only surplus connections
+    /// above `min_connections` are closed for this reason.
     fn is_expired(&self, idle_timeout: Duration) -> bool {
         self.last_used.elapsed() > idle_timeout
+    }
+
+    /// Most recent evidence that the connection works: last use or last
+    /// successful NOOP, whichever is newer.
+    fn last_alive(&self) -> Instant {
+        self.last_used.max(self.last_validated)
+    }
+
+    /// No use and no successful health check within `window`.
+    fn is_stale(&self, window: Duration) -> bool {
+        is_stale_at(self.last_used, self.last_validated, window, Instant::now())
     }
 
     fn mark_in_use(&mut self) {
@@ -294,6 +319,14 @@ impl ConnectionPool {
         pool
     }
 
+    /// How long an idle connection may go without use or a passing NOOP
+    /// before it is considered stale and replaced.
+    fn liveness_window(&self) -> Duration {
+        self.config
+            .idle_timeout
+            .max(self.config.health_check_interval * 3)
+    }
+
     /// Create a new connection and add to pool
     async fn create_connection(&self) -> Result<Uuid, PoolError> {
         // Check connection limit semaphore
@@ -343,11 +376,12 @@ impl ConnectionPool {
         Ok(conn_id)
     }
 
-    /// Remove a connection from the pool with proper cleanup (logout)
-    /// This ensures the IMAP session's BytePool buffers are released
+    /// Remove a connection from the pool with proper cleanup (logout).
+    /// Logout closes the server-side IMAP session cleanly; the client's read
+    /// buffers are freed when the last `Arc` to the client is dropped.
     async fn remove_connection_with_logout(&self, conn_id: &Uuid) {
         if let Some((_, conn)) = self.connections.remove(conn_id) {
-            // Attempt to logout to properly release async_imap's BytePool buffers
+            // Log out so the server closes the session cleanly
             if let Err(e) = conn.client.logout().await {
                 debug!("Logout failed for connection {} during cleanup (may already be disconnected): {}", conn_id, e);
             } else {
@@ -376,7 +410,7 @@ impl ConnectionPool {
                             conn_id
                         );
                     }
-                    // Connection is dropped here, releasing the BytePool
+                    // Connection (and its read buffer) is dropped here
                 });
             }
         }
@@ -397,7 +431,7 @@ impl ConnectionPool {
         if let Some(conn_id) = self.available.pop() {
             if let Some(mut conn_ref) = self.connections.get_mut(&conn_id) {
                 // Check if connection is still valid
-                if !conn_ref.is_expired(self.config.idle_timeout) && conn_ref.is_healthy {
+                if !conn_ref.is_stale(self.liveness_window()) && conn_ref.is_healthy {
                     conn_ref.mark_in_use();
                     let client = conn_ref.client.clone();
                     drop(conn_ref); // Release the reference early
@@ -408,10 +442,10 @@ impl ConnectionPool {
                     debug!("Acquired connection {} from pool (fast path)", conn_id);
                     return Ok(SessionHandle::new(conn_id, client, Arc::clone(&self)));
                 } else {
-                    // Remove expired/unhealthy connection with logout (non-blocking)
+                    // Remove stale/unhealthy connection with logout (non-blocking)
                     if let Some((_, conn)) = self.connections.remove(&conn_id) {
                         debug!(
-                            "Removed expired/unhealthy connection {}, spawning logout task",
+                            "Removed stale/unhealthy connection {}, spawning logout task",
                             conn_id
                         );
                         tokio::spawn(async move {
@@ -521,20 +555,35 @@ impl ConnectionPool {
             let mut expired_ids = Vec::new();
             let mut stuck_ids = Vec::new();
 
-            // Iterate through connections to find expired/stuck ones
+            // Idle connections are only closed when they are surplus (above
+            // min_connections) or stale (no use and no passing NOOP recently).
+            // Healthy warm connections are kept: closing and reopening them was
+            // creating thousands of IMAP sessions per day.
+            let liveness_window = self.liveness_window();
+            let mut idle_candidates = Vec::new();
             for entry in self.connections.iter() {
                 let (id, conn) = entry.pair();
-                // Remove idle expired connections
-                if conn.is_expired(self.config.idle_timeout) && !conn.in_use {
+                if conn.in_use {
+                    // Detect stuck in-use connections
+                    if conn.last_used.elapsed() > self.config.max_session_duration {
+                        stuck_ids.push(*id);
+                        warn!(
+                            "Detected stuck connection {} (in use for > {:?})",
+                            id, self.config.max_session_duration
+                        );
+                    }
+                } else if conn.is_stale(liveness_window) {
                     expired_ids.push(*id);
-                }
-                // Detect stuck in-use connections
-                else if conn.in_use && conn.last_used.elapsed() > self.config.max_session_duration
-                {
-                    stuck_ids.push(*id);
-                    warn!("Detected stuck connection {} (in use for > 1 hour)", id);
+                } else if conn.is_expired(self.config.idle_timeout) {
+                    idle_candidates.push((*id, conn.last_used));
                 }
             }
+            let remaining = self.connections.len().saturating_sub(expired_ids.len());
+            expired_ids.extend(select_surplus_idle(
+                idle_candidates,
+                remaining,
+                self.config.min_connections,
+            ));
 
             // Clean up expired connections with proper logout
             if !expired_ids.is_empty() {
@@ -552,7 +601,7 @@ impl ConnectionPool {
                 .iter()
                 .filter(|entry| {
                     let (_, conn) = entry.pair();
-                    !conn.in_use && conn.is_healthy && !conn.is_expired(self.config.idle_timeout)
+                    !conn.in_use && conn.is_healthy && !conn.is_stale(liveness_window)
                 })
                 .map(|entry| *entry.key())
                 .collect();
@@ -600,11 +649,12 @@ impl ConnectionPool {
             sleep(self.config.health_check_interval).await;
 
             let mut to_check = Vec::new();
-            // Collect connections to health check (lock-free iteration)
+            // Re-check anything idle that hasn't shown signs of life for about
+            // half an interval (so each idle connection is NOOP'd once per loop).
+            let recheck_after = self.config.health_check_interval / 2;
             for entry in self.connections.iter() {
                 let (id, conn) = entry.pair();
-                // Only check connections that are available and haven't been checked recently
-                if !conn.in_use && conn.last_used.elapsed() > Duration::from_secs(30) {
+                if !conn.in_use && conn.last_alive().elapsed() > recheck_after {
                     to_check.push((*id, conn.client.clone()));
                 }
             }
@@ -619,6 +669,11 @@ impl ConnectionPool {
                     to_reconnect.push(id);
                     warn!("Connection {} failed health check", id);
                 } else {
+                    // Passing NOOP counts as proof of life, so the connection
+                    // is kept instead of being recycled as "idle".
+                    if let Some(mut conn_ref) = self.connections.get_mut(&id) {
+                        conn_ref.last_validated = Instant::now();
+                    }
                     debug!("Connection {} passed health check", id);
                 }
             }
@@ -792,13 +847,41 @@ impl ConnectionPool {
     pub async fn is_session_valid(&self, session_id: Uuid) -> bool {
         if let Some(conn_ref) = self.connections.get(&session_id) {
             conn_ref.is_healthy
-                && !conn_ref.is_expired(self.config.idle_timeout)
+                && !conn_ref.is_stale(self.liveness_window())
                 && (conn_ref.in_use
                     || conn_ref.last_used.elapsed() < self.config.max_session_duration)
         } else {
             false
         }
     }
+}
+
+/// True if neither use nor a passing health check happened within `window`
+/// before `now`.
+fn is_stale_at(
+    last_used: Instant,
+    last_validated: Instant,
+    window: Duration,
+    now: Instant,
+) -> bool {
+    now.saturating_duration_since(last_used.max(last_validated)) > window
+}
+
+/// Pick which idle connections to close so that at least `min_connections`
+/// remain. `candidates` are idle-expired connections as `(id, last_used)`;
+/// `total` is the current connection count. Oldest-idle connections go first.
+fn select_surplus_idle(
+    mut candidates: Vec<(Uuid, Instant)>,
+    total: usize,
+    min_connections: usize,
+) -> Vec<Uuid> {
+    let surplus = total.saturating_sub(min_connections);
+    candidates.sort_by_key(|(_, last_used)| *last_used);
+    candidates
+        .into_iter()
+        .take(surplus)
+        .map(|(id, _)| id)
+        .collect()
 }
 
 /// Statistics about the pool
@@ -852,5 +935,64 @@ mod tests {
 
         let stats = pool.stats().await;
         assert_eq!(stats.max_connections, 50); // Updated to match new memory-optimized default
+    }
+
+    #[test]
+    fn test_default_min_connections_is_one() {
+        if std::env::var("POOL_MIN_CONNECTIONS").is_err() {
+            assert_eq!(PoolConfig::default().min_connections, 1);
+        }
+    }
+
+    #[test]
+    fn test_warm_connections_are_not_trimmed() {
+        // Regression: idle connections at or below min_connections used to be
+        // closed every idle_timeout and immediately recreated (~5,500
+        // IMAP sessions/day with min=5, idle_timeout=60s).
+        let now = Instant::now();
+        let ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
+        let candidates: Vec<(Uuid, Instant)> = ids.iter().map(|id| (*id, now)).collect();
+
+        // At the minimum: nothing is closed.
+        assert!(select_surplus_idle(candidates.clone(), 3, 3).is_empty());
+        // Below the minimum: nothing is closed.
+        assert!(select_surplus_idle(candidates.clone(), 3, 5).is_empty());
+        // One above the minimum: exactly one is closed.
+        assert_eq!(select_surplus_idle(candidates, 3, 2).len(), 1);
+    }
+
+    #[test]
+    fn test_surplus_trim_closes_oldest_first() {
+        let oldest = Instant::now();
+        let older = oldest + Duration::from_secs(300);
+        let newest = oldest + Duration::from_secs(600);
+        let (a, b, c) = (Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4());
+        let picked = select_surplus_idle(vec![(a, newest), (b, oldest), (c, older)], 3, 1);
+        assert_eq!(picked, vec![b, c]);
+    }
+
+    #[test]
+    fn test_passing_noop_keeps_idle_connection_fresh() {
+        let window = Duration::from_secs(90);
+        let t0 = Instant::now();
+        let now = t0 + Duration::from_secs(3600);
+        // Unused for an hour and never validated: stale.
+        assert!(is_stale_at(t0, t0, window, now));
+        // Unused for an hour but passed NOOP 30s ago: kept.
+        let validated = now - Duration::from_secs(30);
+        assert!(!is_stale_at(t0, validated, window, now));
+    }
+
+    #[test]
+    fn test_byte_pool_not_in_dependency_tree() {
+        // async-imap < 0.9.1 used a process-global byte-pool that never
+        // freed returned buffers, so every IMAP session leaked its read
+        // buffers (17 GB after 11 days in production). Guard against it
+        // coming back through a downgrade or another crate.
+        let lock = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.lock"));
+        assert!(
+            !lock.contains("name = \"byte-pool\""),
+            "byte-pool is back in Cargo.lock; see docs/MEMORY_LEAK_ANALYSIS.md"
+        );
     }
 }

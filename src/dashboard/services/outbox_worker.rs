@@ -262,7 +262,7 @@ impl OutboxWorker {
             .append(folder, &item.raw_email_bytes, &flags)
             .await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -320,7 +320,7 @@ impl OutboxWorker {
         // Delete the messages (mark as deleted + expunge)
         session.delete_messages(&uids).await?;
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }
@@ -489,7 +489,7 @@ impl OutboxWorker {
                 }
             }
 
-            // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+            // Log out so the server closes the IMAP session cleanly
             if let Err(e) = session.logout().await {
                 warn!("Failed to logout IMAP session for {}: {}", account_email, e);
             }

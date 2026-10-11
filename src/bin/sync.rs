@@ -355,7 +355,7 @@ async fn sync_account(
         }
     }
 
-    // IMPORTANT: Logout to release BytePool buffers
+    // Log out so the server closes the IMAP session cleanly
     if let Err(e) = client.logout().await {
         warn!("Failed to logout IMAP session: {}", e);
     }

@@ -138,8 +138,7 @@ impl SyncService {
 
         let folders = session.list_folders().await?;
 
-        // IMPORTANT: Reuse the same session for all folders to prevent memory leak
-        // Previously, each folder created its own session with separate BytePools
+        // Reuse one session for all folders rather than logging in once per folder
         for folder in folders {
             if let Err(e) = self
                 .sync_folder_with_session(account_id, &folder, &session)
@@ -153,7 +152,7 @@ impl SyncService {
             }
         }
 
-        // IMPORTANT: Explicitly logout to ensure the session and its BytePool are freed
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             warn!("Failed to logout IMAP session: {}", e);
         }

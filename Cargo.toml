@@ -13,7 +13,7 @@ default-run = "rustymail-server"
 # Remove imap-next
 # imap-next = { git = "https://github.com/duesee/imap-next.git", branch = "main", package = "imap-next", features = ["runtime-tokio", "tls-rustls"] }
 # Use async-imap
-async-imap = "0.8.0"
+async-imap = "0.10.4"
 # imap-types removed - using only async-imap now
 
 rustls = "0.23.45"
