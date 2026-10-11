@@ -1,4 +1,8 @@
 #![recursion_limit = "256"]
+// clippy 1.99 (`double_must_use`) flags the `#[must_use]` that `#[async_trait]`
+// emits on every async trait method returning a boxed future. That code is
+// macro-generated, not ours, so allow it crate-wide to keep `-D warnings` green.
+#![allow(clippy::double_must_use)]
 // Copyright (c) 2025 TexasFortress.AI
 // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
