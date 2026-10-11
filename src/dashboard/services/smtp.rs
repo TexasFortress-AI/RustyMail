@@ -382,7 +382,7 @@ impl SmtpService {
                 }
             };
 
-            // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+            // Log out so the server closes the IMAP session cleanly
             if let Err(e) = session.logout().await {
                 log::warn!("Failed to logout IMAP session: {}", e);
             }
@@ -444,7 +444,7 @@ impl SmtpService {
             match session.append(folder, email_bytes, &flags).await {
                 Ok(_) => {
                     log::info!("Successfully saved email to Outbox folder: {}", folder);
-                    // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+                    // Log out so the server closes the IMAP session cleanly
                     if let Err(e) = session.logout().await {
                         log::warn!("Failed to logout IMAP session: {}", e);
                     }
@@ -457,7 +457,7 @@ impl SmtpService {
             }
         }
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             log::warn!("Failed to logout IMAP session: {}", e);
         }
@@ -525,7 +525,7 @@ impl SmtpService {
                                 match session.delete_messages(&uids).await {
                                     Ok(_) => {
                                         log::info!("Successfully deleted {} message(s) from Outbox folder: {}", uids.len(), folder);
-                                        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+                                        // Log out so the server closes the IMAP session cleanly
                                         if let Err(e) = session.logout().await {
                                             log::warn!("Failed to logout IMAP session: {}", e);
                                         }
@@ -561,7 +561,7 @@ impl SmtpService {
             }
         }
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             log::warn!("Failed to logout IMAP session: {}", e);
         }
@@ -614,7 +614,7 @@ impl SmtpService {
             match session.append(folder, email_bytes, &flags).await {
                 Ok(_) => {
                     log::info!("Successfully saved sent email to folder: {}", folder);
-                    // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+                    // Log out so the server closes the IMAP session cleanly
                     if let Err(e) = session.logout().await {
                         log::warn!("Failed to logout IMAP session: {}", e);
                     }
@@ -627,7 +627,7 @@ impl SmtpService {
             }
         }
 
-        // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+        // Log out so the server closes the IMAP session cleanly
         if let Err(e) = session.logout().await {
             log::warn!("Failed to logout IMAP session: {}", e);
         }
@@ -895,7 +895,7 @@ impl SmtpService {
                 }
             };
 
-            // IMPORTANT: Logout to release BytePool buffers and prevent memory leak
+            // Log out so the server closes the IMAP session cleanly
             if let Err(e) = session.logout().await {
                 log::warn!("Failed to logout IMAP session: {}", e);
             }

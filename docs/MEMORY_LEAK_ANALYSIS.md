@@ -1,4 +1,46 @@
-# RustyMail Memory Leak Analysis - 2025-01-27
+# RustyMail Memory Leak Analysis
+
+## Update 2026-10-11: IMAP read-buffer leak (byte-pool) and connection churn
+
+**Symptom.** The long-running `rustymail-server` (pm2 `rustymail-backend`) reached a
+17.2 GB footprint after 11 days of uptime, growing about 1.4 GB/day. Almost all of it
+was jemalloc heap that had been swapped out (~140 MB resident), i.e. memory that was
+allocated, never freed, and no longer touched. The on-disk email cache (~1 GB) is not
+involved.
+
+**Root cause: async-imap 0.8.0's global byte-pool.** async-imap 0.8 read IMAP responses
+into buffers from a process-global `byte_pool::BytePool` (`imap_stream.rs`:
+`static POOL: Lazy<Arc<BytePool>>`). In byte-pool 0.2.4, dropping a `Block` pushes the
+buffer back into the pool and never frees it, and `alloc()` only reuses a buffer if the
+first one popped has *exactly* the requested capacity; otherwise it allocates a new one.
+Response buffers are sized in block multiples to fit each response (large FETCH bodies
+make them big and varied), so exact matches are rare and the pool only ever grows. Logging out or dropping a session does **not** release this
+memory (earlier comments in the code assumed it did), and no allocator choice can help,
+because the memory is still owned by the pool.
+
+Upstream fixed this in async-imap 0.9.1 ("Replace byte pool with bytes to fix memory
+leak", async-email/async-imap#79): each stream now owns a `BytesMut` buffer that is
+freed with the stream.
+
+**Amplifier: connection-pool churn.** The connection pool kept `min_connections = 5`,
+closed any connection idle for 60 s (`POOL_IDLE_TIMEOUT_SECONDS=60`) and refilled to the
+minimum every 10 s. The NOOP health check (every 30 s) succeeded but did not count as
+activity, so every warm connection was closed and replaced about once a minute, roughly
+5,500 new IMAP sessions (logins) per day, each leaving its read buffers in the global pool.
+
+**Fix.**
+1. Upgrade `async-imap` 0.8.0 -> 0.10.4 (removes `byte-pool` from the dependency tree).
+   A unit test fails if `byte-pool` reappears in `Cargo.lock`.
+2. Connection pool: a passing NOOP now refreshes a connection's liveness, warm
+   connections up to `min_connections` are kept indefinitely, and only *surplus* idle
+   connections above the minimum are closed after `idle_timeout`. Connections that fail
+   NOOP are still marked unhealthy and replaced; connections with no use and no passing
+   NOOP within `max(idle_timeout, 3 x health_check_interval)` are treated as stale.
+   Default `min_connections` is now 1 (`POOL_MIN_CONNECTIONS`).
+
+---
+
+# Earlier analysis - 2025-01-27
 
 ## Executive Summary
 

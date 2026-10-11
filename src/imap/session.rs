@@ -670,7 +670,7 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
                 "Executing IMAP APPEND in blocking thread for folder '{}'",
                 folder_str
             );
-            runtime_handle.block_on(session_guard.append(folder_str, &content))
+            runtime_handle.block_on(session_guard.append(folder_str, None, None, &content))
         });
 
         match tokio::time::timeout(append_timeout, blocking_task).await {

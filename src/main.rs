@@ -33,9 +33,12 @@ use rustymail::imap::client::ImapClient; // Needed for the factory closure
                                          // use rustymail::mcp::handler::JsonRpcHandler;
 use rustymail::prelude::*; // Import many common types
 
-// Use jemalloc as the global allocator for better memory management
-// jemalloc releases memory back to the OS, unlike the default system allocator
-// This prevents memory bloat from IMAP session BytePools being held by the allocator
+// Use jemalloc as the global allocator for better memory management.
+// jemalloc returns freed memory to the OS more readily than the system allocator.
+// Note: no allocator can reclaim memory a library never frees. The 17 GB growth
+// seen in Oct 2026 came from async-imap < 0.9.1's global byte-pool, which kept
+// every returned read buffer forever; it was fixed by upgrading async-imap
+// (see docs/MEMORY_LEAK_ANALYSIS.md), not by the allocator choice.
 // NOTE: Can be disabled with --features system-alloc or --features mimalloc-alloc for testing
 #[cfg(all(
     not(target_env = "msvc"),
