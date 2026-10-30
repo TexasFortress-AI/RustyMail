@@ -1489,3 +1489,66 @@ async fn test_mcp_rename_folder() {
 
     cleanup_test_db(test_name);
 }
+
+/// Every mailbox write tool, with its required parameters apart from account_id.
+fn write_tool_calls() -> Vec<(&'static str, serde_json::Value)> {
+    let folder_uids = json!({"folder": "INBOX", "uids": [1]});
+    vec![
+        (
+            "atomic_move_message",
+            json!({"source_folder": "INBOX", "target_folder": "Archive", "uid": 1}),
+        ),
+        (
+            "atomic_batch_move",
+            json!({"source_folder": "INBOX", "target_folder": "Archive", "uids": [1]}),
+        ),
+        ("mark_as_read", folder_uids.clone()),
+        ("mark_as_unread", folder_uids.clone()),
+        ("mark_as_deleted", folder_uids.clone()),
+        ("delete_messages", folder_uids.clone()),
+        ("undelete_messages", folder_uids),
+        ("expunge", json!({"folder": "INBOX"})),
+    ]
+}
+
+#[tokio::test]
+#[serial]
+async fn test_write_tools_require_account_id() {
+    setup_test_env();
+    let dashboard_state = create_test_dashboard_state("write_tools_require_account").await;
+    for (tool, params) in write_tool_calls() {
+        let result = rustymail::dashboard::api::handlers::execute_mcp_tool_inner(
+            &dashboard_state,
+            tool,
+            params,
+        )
+        .await;
+        assert_eq!(result["success"], false, "{}: {}", tool, result);
+        let error = result["error"].as_str().unwrap();
+        assert!(error.contains("account_id"), "{}: {}", tool, error);
+    }
+}
+
+#[tokio::test]
+#[serial]
+async fn test_write_tools_reject_unknown_account() {
+    setup_test_env();
+    let dashboard_state = create_test_dashboard_state("write_tools_unknown_account").await;
+    for (tool, mut params) in write_tool_calls() {
+        params["account_id"] = json!("nobody@example.test");
+        let result = rustymail::dashboard::api::handlers::execute_mcp_tool_inner(
+            &dashboard_state,
+            tool,
+            params,
+        )
+        .await;
+        assert_eq!(result["success"], false, "{}: {}", tool, result);
+        let error = result["error"].as_str().unwrap();
+        assert!(
+            error.contains("nobody@example.test") || error.to_lowercase().contains("not found"),
+            "{}: {}",
+            tool,
+            error
+        );
+    }
+}

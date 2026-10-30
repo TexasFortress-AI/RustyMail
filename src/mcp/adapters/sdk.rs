@@ -33,6 +33,19 @@ pub struct RustyMailService {
     pub tool_registry: crate::mcp_port::McpToolRegistry,
 }
 
+/// This transport only holds a session for the default account, so a request naming an
+/// account is refused rather than silently applied to the default mailbox.
+fn ensure_default_account_only(params: Option<&Value>) -> Result<(), ErrorData> {
+    if params.and_then(|p| p.get("account_id")).is_some() {
+        return Err(ErrorData::new(
+            ErrorCode(-32602), // Invalid params
+            "account_id is not supported on this transport; use the HTTP MCP endpoint",
+            None,
+        ));
+    }
+    Ok(())
+}
+
 impl RustyMailService {
     pub fn new(session_factory: CloneableImapSessionFactory) -> Self {
         let tool_registry = create_mcp_tool_registry();
@@ -52,6 +65,8 @@ impl RustyMailService {
         params: Option<Value>,
     ) -> Result<CallToolResult, ErrorData> {
         debug!("Executing legacy tool '{}' via SDK", tool_name);
+
+        ensure_default_account_only(params.as_ref())?;
 
         let tool = self.tool_registry.get(&tool_name).ok_or_else(|| {
             ErrorData::new(
@@ -292,4 +307,22 @@ pub struct McpSdkState {
     pub session_factory: CloneableImapSessionFactory,
     pub sse_tx: Option<UnboundedSender<String>>,
     pub mcp_state: Arc<TokioMutex<McpPortState>>,
+}
+
+#[cfg(test)]
+mod account_scope_tests {
+    use super::ensure_default_account_only;
+    use serde_json::json;
+
+    #[test]
+    fn named_account_is_refused() {
+        let params = json!({"account_id": "user@example.test", "uid": 1});
+        assert!(ensure_default_account_only(Some(&params)).is_err());
+    }
+
+    #[test]
+    fn requests_without_an_account_are_allowed() {
+        assert!(ensure_default_account_only(None).is_ok());
+        assert!(ensure_default_account_only(Some(&json!({"uid": 1}))).is_ok());
+    }
 }

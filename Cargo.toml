@@ -148,6 +148,7 @@ tikv-jemallocator = "0.6"
 mimalloc = { version = "0.1", optional = true }
 
 [dev-dependencies]
+rcgen = "0.13" # Throwaway self-signed certs for TLS fake servers in tests
 # Remove reqwest native-tls feature if not needed
 reqwest = { version = "0.12", features = ["json", "stream"] }
 urlencoding = "2.1" # For URL encoding folder names in E2E tests

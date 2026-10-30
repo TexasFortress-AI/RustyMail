@@ -13,6 +13,7 @@ pub mod error;
 pub mod oauth2;
 pub mod session;
 pub mod types;
+pub mod verified_move;
 pub mod xoauth2;
 
 // --- Re-exports ---
