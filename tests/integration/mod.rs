@@ -14,6 +14,7 @@ pub mod chatbot_integration; // Email Assistant chatbot MCP client integration t
 pub mod connection_pool; // Connection pool integration tests
 pub mod dashboard; // Dashboard API endpoints integration tests
 pub mod dashboard_smtp_attachments; // Dashboard SMTP and attachment endpoints integration tests
+pub mod fake_imap_server; // TLS fake IMAP server shared by account-routing tests
 pub mod mcp_http; // MCP HTTP endpoint integration tests
 pub mod mcp_stdio; // MCP stdio proxy integration tests
 pub mod multi_account_sync;
