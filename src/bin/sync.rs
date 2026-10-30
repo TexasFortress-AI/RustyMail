@@ -24,7 +24,9 @@
 use chrono::Utc;
 use clap::Parser;
 use log::{debug, error, info, warn};
+use rustymail::backoff::BackoffPolicy;
 use rustymail::dashboard::services::encryption::{CredentialEncryption, EncryptionError};
+use rustymail::dashboard::services::sync_backoff::SyncBackoffStore;
 use sqlx::{Row, SqlitePool};
 use std::fs::File;
 use std::io::Write as IoWrite;
@@ -261,14 +263,63 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Found {} account(s) to sync", accounts.len());
 
     // Sync each account (or single account if filtered)
+    let backoff = SyncBackoffStore::new(pool.clone(), BackoffPolicy::from_env());
+    let bypass_backoff = cli.force || cli.account.is_some();
     for account in accounts {
-        if let Err(e) = sync_account(&pool, &account, cli.folder.as_deref(), cli.force).await {
-            error!("Failed to sync {}: {}", account.email_address, e);
+        if !bypass_backoff && !account_is_due(&backoff, &account.email_address).await {
+            debug!(
+                "Backing off {} after recent failures",
+                account.email_address
+            );
+            continue;
         }
+        let result = sync_account(&pool, &account, cli.folder.as_deref(), cli.force).await;
+        record_sync_outcome(&backoff, &account.email_address, result).await;
     }
 
     info!("Sync complete, exiting");
     Ok(())
+}
+
+/// A backoff read failure must not stop mail from syncing, so the account is treated as due.
+async fn account_is_due(backoff: &SyncBackoffStore, email_address: &str) -> bool {
+    backoff
+        .is_due(email_address, Utc::now().timestamp())
+        .await
+        .unwrap_or_else(|e| {
+            warn!("Could not read sync backoff for {}: {}", email_address, e);
+            true
+        })
+}
+
+/// Log the result of syncing an account and update its backoff state.
+async fn record_sync_outcome(
+    backoff: &SyncBackoffStore,
+    email_address: &str,
+    result: Result<(), Box<dyn std::error::Error>>,
+) {
+    let recorded = match result {
+        Ok(()) => backoff.record_success(email_address).await,
+        Err(e) => match backoff
+            .record_failure(email_address, Utc::now().timestamp())
+            .await
+        {
+            Ok(delay) => {
+                error!(
+                    "Failed to sync {} (next attempt in {}s): {}",
+                    email_address, delay, e
+                );
+                Ok(())
+            }
+            Err(backoff_error) => {
+                error!("Failed to sync {}: {}", email_address, e);
+                Err(backoff_error)
+            }
+        },
+    };
+    if let Err(e) = recorded {
+        warn!("Could not update sync backoff for {}: {}", email_address, e);
+    }
 }
 
 /// Decrypt an account's IMAP password and OAuth access token read from the

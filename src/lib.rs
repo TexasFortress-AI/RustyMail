@@ -12,6 +12,7 @@
 
 // --- Modules ---
 pub mod api;
+pub mod backoff;
 pub mod batch_synopsis;
 pub mod config;
 pub mod connection_pool;
