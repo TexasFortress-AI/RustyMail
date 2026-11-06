@@ -237,12 +237,24 @@
         "priority": "medium",
         "subtasks": [],
         "updatedAt": "2026-03-03T17:42:48.311Z"
+      },
+      {
+        "id": "112",
+        "title": "Email triage phase 1: propose-only classifier",
+        "description": "Classify new INBOX mail on chris@opentransactions.org, chris@chrisodompersonal.com and chris@texasfortress.ai into Spam/Noise/Receipts/Alerts/Needs Reply/Keep. Record proposals only; move nothing.",
+        "details": "Binary rustymail-triage. Cheap header rules first (List-Unsubscribe/Precedence bulk -> Noise, SPF/DKIM fail -> Spam), then local model via model_serve (TRIAGE_MODEL_URL, loopback only; ms/qwen3-4.0b-q8_0, escalate to a larger local model on low confidence). Per-account UID watermark (first run starts at UIDNEXT; --since-days backfill). Proposals in triage_proposals (migration 017) with nullable applied_at/correction for later phases. --report prints proposals with dashboard deep links. Out of scope: folder creation, moves, OTP expiry, learning from corrections, UI.",
+        "testStrategy": "",
+        "status": "in-progress",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [],
+        "updatedAt": "2026-11-06T14:13:51.588Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2026-03-03T17:42:48.312Z",
-      "taskCount": 16,
+      "lastModified": "2026-11-06T14:13:51.588Z",
+      "taskCount": 17,
       "completedCount": 14,
       "tags": [
         "master"
