@@ -7,6 +7,8 @@
 //! Cheap header rules run first; only messages they cannot decide go to a
 //! local model. Proposals are recorded in `triage_proposals`. Nothing is moved.
 
+pub mod message;
+pub mod rules;
 pub mod store;
 
 use std::fmt;
