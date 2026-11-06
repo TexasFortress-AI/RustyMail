@@ -15,7 +15,7 @@ use serde_json::json;
 use sqlx::SqlitePool;
 use std::io::Write;
 use std::path::PathBuf;
-use zip::write::FileOptions;
+use zip::write::SimpleFileOptions;
 use zip::ZipWriter;
 
 /// Default directory for forensic archives when env var is not set.
@@ -72,7 +72,7 @@ pub async fn create_forensic_archive(
     // Create ZIP file
     let file = std::fs::File::create(&archive_path)?;
     let mut zip = ZipWriter::new(file);
-    let options = FileOptions::default()
+    let options = SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
         .unix_permissions(0o644);
 
