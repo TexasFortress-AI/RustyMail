@@ -8,6 +8,7 @@
 //! local model. Proposals are recorded in `triage_proposals`. Nothing is moved.
 
 pub mod message;
+pub mod model;
 pub mod rules;
 pub mod store;
 
