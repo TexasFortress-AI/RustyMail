@@ -196,12 +196,13 @@ impl AtomicImapOperations {
         // Process rollback in reverse order
         for op in log.iter().rev() {
             match op {
-                TransactionOp::Copy { uid, from: _, to } => {
-                    // Rollback: Delete the copied message from destination
-                    warn!("Rollback: Removing copied message UID {} from {}", uid, to);
-                    if let Err(e) = self.rollback_copy(*uid, to).await {
-                        error!("Failed to rollback copy: {:?}", e);
-                    }
+                TransactionOp::Copy { uid, from, to } => {
+                    // A copy gets a new UID in the destination, and this UID may belong to an
+                    // unrelated message there, so a duplicate is left rather than risking data.
+                    error!(
+                        "Cannot rollback copy of UID {} from {}: a duplicate may remain in {}",
+                        uid, from, to
+                    );
                 }
                 TransactionOp::StoreFlags {
                     uid,
@@ -233,49 +234,6 @@ impl AtomicImapOperations {
                     );
                 }
             }
-        }
-    }
-
-    /// Rollback a copy operation by deleting from destination
-    async fn rollback_copy(&self, uid: u32, folder: &str) -> Result<(), ImapError> {
-        self.session.ensure_folder_selected(folder).await?;
-        self.session
-            .store_flags(&[uid], FlagOperation::Add, &[String::from("\\Deleted")])
-            .await?;
-        self.session.expunge().await?;
-        Ok(())
-    }
-
-    /// Perform atomic batch move of multiple messages
-    pub async fn atomic_batch_move(
-        &self,
-        uids: &[u32],
-        from_folder: &str,
-        to_folder: &str,
-    ) -> Result<(), ImapError> {
-        info!(
-            "Starting atomic batch move of {} messages from {} to {}",
-            uids.len(),
-            from_folder,
-            to_folder
-        );
-
-        let mut failed_uids = Vec::new();
-
-        for &uid in uids {
-            if let Err(e) = self.atomic_move(uid, from_folder, to_folder).await {
-                error!("Failed to move UID {}: {:?}", uid, e);
-                failed_uids.push(uid);
-            }
-        }
-
-        if !failed_uids.is_empty() {
-            Err(ImapError::Other(format!(
-                "Failed to move UIDs: {:?}",
-                failed_uids
-            )))
-        } else {
-            Ok(())
         }
     }
 }

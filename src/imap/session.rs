@@ -58,6 +58,10 @@ pub trait AsyncImapOps: Send + Sync + Debug {
     async fn fetch_emails(&self, uids: &[u32]) -> Result<Vec<Email>, ImapError>;
     /// Fetch only FLAGS for the given UIDs (lightweight, no body download).
     async fn fetch_flags(&self, uids: &[u32]) -> Result<Vec<(u32, Vec<String>)>, ImapError>;
+    /// Fetch only the Message-ID for a UID (lightweight, no body download).
+    async fn fetch_message_id(&self, _uid: u32) -> Result<Option<String>, ImapError> {
+        Ok(None)
+    }
     async fn move_email(
         &self,
         uid: u32,
@@ -569,6 +573,20 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
             }
         }
         Ok(results)
+    }
+
+    async fn fetch_message_id(&self, uid: u32) -> Result<Option<String>, ImapError> {
+        let mut session_guard = self.session.lock().await;
+        // BODY[HEADER], not ENVELOPE: the ENVELOPE parser rejects some real-world messages.
+        let fetch_stream = session_guard
+            .uid_fetch(uid.to_string(), "(UID BODY.PEEK[HEADER])")
+            .await
+            .map_err(ImapError::from)?;
+        let fetches: Vec<_> = fetch_stream.try_collect().await.map_err(ImapError::from)?;
+        Ok(fetches.iter().find_map(|fetch| {
+            let headers = mail_parser::Message::parse(fetch.header()?)?;
+            headers.message_id().map(str::to_string)
+        }))
     }
 
     async fn move_email(

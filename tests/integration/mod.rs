@@ -14,8 +14,10 @@ pub mod chatbot_integration; // Email Assistant chatbot MCP client integration t
 pub mod connection_pool; // Connection pool integration tests
 pub mod dashboard; // Dashboard API endpoints integration tests
 pub mod dashboard_smtp_attachments; // Dashboard SMTP and attachment endpoints integration tests
+pub mod fake_imap_server; // TLS fake IMAP server shared by account-routing tests
 pub mod mcp_http; // MCP HTTP endpoint integration tests
 pub mod mcp_stdio; // MCP stdio proxy integration tests
 pub mod multi_account_sync;
-pub mod security_tests; // Security-focused tests for CORS, origin, auth, path traversal, rate limiting
-                        // pub mod test_uid_search_fix; // TODO: Fix ImapSession import
+pub mod security_tests;
+pub mod write_tools_account_routing; // Write tools hit the named account's IMAP server; moves are verified // Security-focused tests for CORS, origin, auth, path traversal, rate limiting
+                                     // pub mod test_uid_search_fix; // TODO: Fix ImapSession import

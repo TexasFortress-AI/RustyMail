@@ -2178,38 +2178,58 @@ pub async fn execute_mcp_tool_inner(
                     })
                 }
             };
-            let from_folder = match params.get("from_folder").and_then(|v| v.as_str()) {
+            let from_folder = match params
+                .get("source_folder")
+                .or_else(|| params.get("from_folder"))
+                .and_then(|v| v.as_str())
+            {
                 Some(f) => f,
                 None => {
                     return serde_json::json!({
                         "success": false,
-                        "error": "Missing 'from_folder' parameter",
+                        "error": "Missing 'source_folder' parameter",
                         "tool": tool_name
                     })
                 }
             };
-            let to_folder = match params.get("to_folder").and_then(|v| v.as_str()) {
+            let to_folder = match params
+                .get("target_folder")
+                .or_else(|| params.get("to_folder"))
+                .and_then(|v| v.as_str())
+            {
                 Some(t) => t,
                 None => {
                     return serde_json::json!({
                         "success": false,
-                        "error": "Missing 'to_folder' parameter",
+                        "error": "Missing 'target_folder' parameter",
+                        "tool": tool_name
+                    })
+                }
+            };
+
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
                         "tool": tool_name
                     })
                 }
             };
 
             match email_service
-                .atomic_move_message(uid, from_folder, to_folder)
+                .atomic_move_message_for_account(uid, from_folder, to_folder, &account_id)
                 .await
             {
-                Ok(_) => {
+                Ok(destination_verified) => {
                     serde_json::json!({
                         "success": true,
                         "data": {
                             "uid": uid,
                             "from_folder": from_folder,
-                            "to_folder": to_folder
+                            "to_folder": to_folder,
+                            "destination_verified": destination_verified
                         },
                         "tool": tool_name
                     })
@@ -2238,22 +2258,30 @@ pub async fn execute_mcp_tool_inner(
                     })
                 }
             };
-            let from_folder = match params.get("from_folder").and_then(|v| v.as_str()) {
+            let from_folder = match params
+                .get("source_folder")
+                .or_else(|| params.get("from_folder"))
+                .and_then(|v| v.as_str())
+            {
                 Some(f) => f,
                 None => {
                     return serde_json::json!({
                         "success": false,
-                        "error": "Missing 'from_folder' parameter",
+                        "error": "Missing 'source_folder' parameter",
                         "tool": tool_name
                     })
                 }
             };
-            let to_folder = match params.get("to_folder").and_then(|v| v.as_str()) {
+            let to_folder = match params
+                .get("target_folder")
+                .or_else(|| params.get("to_folder"))
+                .and_then(|v| v.as_str())
+            {
                 Some(t) => t,
                 None => {
                     return serde_json::json!({
                         "success": false,
-                        "error": "Missing 'to_folder' parameter",
+                        "error": "Missing 'target_folder' parameter",
                         "tool": tool_name
                     })
                 }
@@ -2267,18 +2295,30 @@ pub async fn execute_mcp_tool_inner(
                 });
             }
 
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            };
+
             match email_service
-                .atomic_batch_move(&uids, from_folder, to_folder)
+                .atomic_batch_move_for_account(&uids, from_folder, to_folder, &account_id)
                 .await
             {
-                Ok(_) => {
+                Ok(destination_unverified_uids) => {
                     serde_json::json!({
                         "success": true,
                         "data": {
                             "uids": uids,
                             "from_folder": from_folder,
                             "to_folder": to_folder,
-                            "count": uids.len()
+                            "count": uids.len(),
+                            "destination_unverified_uids": destination_unverified_uids
                         },
                         "tool": tool_name
                     })
@@ -2326,7 +2366,21 @@ pub async fn execute_mcp_tool_inner(
                 });
             }
 
-            match email_service.mark_as_read(folder, &uids).await {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            };
+
+            match email_service
+                .mark_as_read_for_account(folder, &uids, &account_id)
+                .await
+            {
                 Ok(_) => {
                     serde_json::json!({
                         "success": true,
@@ -2381,7 +2435,21 @@ pub async fn execute_mcp_tool_inner(
                 });
             }
 
-            match email_service.mark_as_unread(folder, &uids).await {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            };
+
+            match email_service
+                .mark_as_unread_for_account(folder, &uids, &account_id)
+                .await
+            {
                 Ok(_) => {
                     serde_json::json!({
                         "success": true,
@@ -2436,7 +2504,21 @@ pub async fn execute_mcp_tool_inner(
                 });
             }
 
-            match email_service.mark_as_deleted(folder, &uids).await {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            };
+
+            match email_service
+                .mark_as_deleted_for_account(folder, &uids, &account_id)
+                .await
+            {
                 Ok(_) => {
                     serde_json::json!({
                         "success": true,
@@ -2491,7 +2573,21 @@ pub async fn execute_mcp_tool_inner(
                 });
             }
 
-            match email_service.delete_messages(folder, &uids).await {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            };
+
+            match email_service
+                .delete_messages_for_account(folder, &uids, &account_id)
+                .await
+            {
                 Ok(_) => {
                     serde_json::json!({
                         "success": true,
@@ -2546,7 +2642,21 @@ pub async fn execute_mcp_tool_inner(
                 });
             }
 
-            match email_service.undelete_messages(folder, &uids).await {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            };
+
+            match email_service
+                .undelete_messages_for_account(folder, &uids, &account_id)
+                .await
+            {
                 Ok(_) => {
                     serde_json::json!({
                         "success": true,
@@ -2579,7 +2689,18 @@ pub async fn execute_mcp_tool_inner(
                 }
             };
 
-            match email_service.expunge(folder).await {
+            let account_id = match get_account_id_to_use(&params, &state_data).await {
+                Ok(id) => id,
+                Err(e) => {
+                    return serde_json::json!({
+                        "success": false,
+                        "error": format!("Failed to determine account: {}", e),
+                        "tool": tool_name
+                    })
+                }
+            };
+
+            match email_service.expunge_for_account(folder, &account_id).await {
                 Ok(_) => {
                     serde_json::json!({
                         "success": true,

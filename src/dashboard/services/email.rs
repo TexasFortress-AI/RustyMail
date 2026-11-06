@@ -9,6 +9,8 @@ use crate::dashboard::services::attachment_storage::{self, AttachmentError, Atta
 use crate::dashboard::services::cache::{CacheService, CachedEmail};
 use crate::imap::error::ImapError;
 use crate::imap::types::Email;
+use crate::imap::types::FlagOperation;
+use crate::imap::verified_move::MoveVerifier;
 use crate::prelude::CloneableImapSessionFactory;
 use log::{debug, info, warn};
 use std::sync::Arc;
@@ -32,6 +34,10 @@ pub enum EmailServiceError {
     #[error("Cache service not available")]
     CacheServiceNotAvailable,
 }
+
+/// IMAP client bound to one account's credentials
+type AccountImapClient =
+    crate::imap::client::ImapClient<crate::imap::session::AsyncImapSessionWrapper>;
 
 #[allow(dead_code)]
 pub struct EmailService {
@@ -504,174 +510,200 @@ impl EmailService {
         }
     }
 
-    /// Atomically move a single email from one folder to another
-    pub async fn atomic_move_message(
+    /// Open a session for the account with `folder` selected
+    async fn open_folder_for_account(
+        &self,
+        folder: &str,
+        account_id: &str,
+        operation: &str,
+    ) -> Result<AccountImapClient, EmailServiceError> {
+        let account = self.get_account(account_id).await?;
+        let client = self
+            .create_session_with_status(&account, account_id, operation)
+            .await?;
+        if let Err(e) = client.select_folder(folder).await {
+            Self::logout_session(&client).await;
+            return Err(e.into());
+        }
+        Ok(client)
+    }
+
+    /// Log out so the server closes the IMAP session cleanly
+    async fn logout_session(client: &AccountImapClient) {
+        if let Err(e) = client.logout().await {
+            warn!("Failed to logout IMAP session: {}", e);
+        }
+    }
+
+    /// Move one message and confirm it left the source and arrived in the destination.
+    /// Returns whether the destination copy was positively identified.
+    async fn verified_move(
+        client: &AccountImapClient,
+        uid: u32,
+        from_folder: &str,
+        to_folder: &str,
+    ) -> Result<bool, ImapError> {
+        let session = client.session_arc();
+        let verifier = MoveVerifier::new(session.clone());
+        let pending = verifier.prepare(uid, from_folder, to_folder).await?;
+        crate::imap::atomic::AtomicImapOperations::new((*session).clone())
+            .atomic_move(uid, from_folder, to_folder)
+            .await?;
+        verifier.confirm(&pending, from_folder, to_folder).await
+    }
+
+    /// Atomically move a single email between folders of the given account.
+    /// Returns whether the destination copy was positively identified.
+    pub async fn atomic_move_message_for_account(
         &self,
         uid: u32,
         from_folder: &str,
         to_folder: &str,
-    ) -> Result<(), EmailServiceError> {
+        account_id: &str,
+    ) -> Result<bool, EmailServiceError> {
         debug!(
-            "Atomically moving email {} from {} to {}",
-            uid, from_folder, to_folder
+            "Atomically moving email {} from {} to {} for account {}",
+            uid, from_folder, to_folder, account_id
         );
 
-        let client = self.imap_factory.create_session().await.map_err(|e| {
-            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
-        })?;
-
-        // Use atomic operations - extract the session from the client
-        let session = client.session_arc();
-        let atomic_ops = crate::imap::atomic::AtomicImapOperations::new((*session).clone());
-        atomic_ops.atomic_move(uid, from_folder, to_folder).await?;
-
-        // Log out so the server closes the IMAP session cleanly
-        if let Err(e) = client.logout().await {
-            warn!("Failed to logout IMAP session: {}", e);
-        }
+        let account = self.get_account(account_id).await?;
+        let client = self
+            .create_session_with_status(&account, account_id, "move")
+            .await?;
+        let result = Self::verified_move(&client, uid, from_folder, to_folder).await;
+        Self::logout_session(&client).await;
+        let destination_verified = result?;
 
         // Note: Cache will be invalidated naturally on next access
         info!(
-            "Successfully moved email {} from {} to {}",
-            uid, from_folder, to_folder
+            "Successfully moved email {} from {} to {} for account {}",
+            uid, from_folder, to_folder, account_id
         );
-        Ok(())
+        Ok(destination_verified)
     }
 
-    /// Atomically move multiple emails from one folder to another
-    pub async fn atomic_batch_move(
+    /// Move multiple emails between folders of the given account. Returns the UIDs whose
+    /// destination copy could not be positively identified; fails if any UID failed to move.
+    pub async fn atomic_batch_move_for_account(
         &self,
         uids: &[u32],
         from_folder: &str,
         to_folder: &str,
-    ) -> Result<(), EmailServiceError> {
+        account_id: &str,
+    ) -> Result<Vec<u32>, EmailServiceError> {
         debug!(
-            "Atomically moving {} emails from {} to {}",
+            "Atomically moving {} emails from {} to {} for account {}",
             uids.len(),
             from_folder,
-            to_folder
+            to_folder,
+            account_id
         );
 
-        let client = self.imap_factory.create_session().await.map_err(|e| {
-            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
-        })?;
-
-        // Use atomic operations - extract the session from the client
-        let session = client.session_arc();
-        let atomic_ops = crate::imap::atomic::AtomicImapOperations::new((*session).clone());
-        atomic_ops
-            .atomic_batch_move(uids, from_folder, to_folder)
+        let account = self.get_account(account_id).await?;
+        let client = self
+            .create_session_with_status(&account, account_id, "batch move")
             .await?;
 
-        // Log out so the server closes the IMAP session cleanly
-        if let Err(e) = client.logout().await {
-            warn!("Failed to logout IMAP session: {}", e);
+        let mut moved = Vec::new();
+        let mut unverified = Vec::new();
+        let mut failures = Vec::new();
+        for &uid in uids {
+            match Self::verified_move(&client, uid, from_folder, to_folder).await {
+                Ok(destination_verified) => {
+                    moved.push(uid);
+                    if !destination_verified {
+                        unverified.push(uid);
+                    }
+                }
+                Err(e) => failures.push(format!("{}: {}", uid, e)),
+            }
+        }
+        Self::logout_session(&client).await;
+
+        if !failures.is_empty() {
+            return Err(ImapError::Other(format!(
+                "Moved UIDs {:?}; failed UIDs: {}",
+                moved,
+                failures.join("; ")
+            ))
+            .into());
         }
 
         // Note: Cache will be invalidated naturally on next access
         info!(
-            "Successfully moved {} emails from {} to {}",
+            "Successfully moved {} emails from {} to {} for account {}",
             uids.len(),
             from_folder,
-            to_folder
+            to_folder,
+            account_id
         );
-        Ok(())
+        Ok(unverified)
     }
 
-    /// Mark email(s) as read (adds \Seen flag)
-    pub async fn mark_as_read(&self, folder: &str, uids: &[u32]) -> Result<(), EmailServiceError> {
+    /// Mark email(s) as read (adds \\Seen flag) for the given account
+    pub async fn mark_as_read_for_account(
+        &self,
+        folder: &str,
+        uids: &[u32],
+        account_id: &str,
+    ) -> Result<(), EmailServiceError> {
         debug!("Marking {} emails as read in {}", uids.len(), folder);
 
-        let client = self.imap_factory.create_session().await.map_err(|e| {
-            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
-        })?;
-
-        client.select_folder(folder).await?;
-
-        use crate::imap::types::FlagOperation;
-        client
-            .store_flags(uids, FlagOperation::Add, &["\\Seen".to_string()])
+        let client = self
+            .open_folder_for_account(folder, account_id, "mark as read")
             .await?;
-
-        // Log out so the server closes the IMAP session cleanly
-        if let Err(e) = client.logout().await {
-            warn!("Failed to logout IMAP session: {}", e);
-        }
+        let result = client
+            .store_flags(uids, FlagOperation::Add, &["\\Seen".to_string()])
+            .await;
+        Self::logout_session(&client).await;
+        result?;
 
         // Note: Cache will be invalidated naturally on next access
         info!("Successfully marked {} emails as read", uids.len());
         Ok(())
     }
 
-    /// Mark email(s) as unread (removes \Seen flag)
-    pub async fn mark_as_unread(
+    /// Mark email(s) as unread (removes \\Seen flag) for the given account
+    pub async fn mark_as_unread_for_account(
         &self,
         folder: &str,
         uids: &[u32],
+        account_id: &str,
     ) -> Result<(), EmailServiceError> {
         debug!("Marking {} emails as unread in {}", uids.len(), folder);
 
-        let client = self.imap_factory.create_session().await.map_err(|e| {
-            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
-        })?;
-
-        client.select_folder(folder).await?;
-
-        use crate::imap::types::FlagOperation;
-        client
-            .store_flags(uids, FlagOperation::Remove, &["\\Seen".to_string()])
+        let client = self
+            .open_folder_for_account(folder, account_id, "mark as unread")
             .await?;
-
-        // Log out so the server closes the IMAP session cleanly
-        if let Err(e) = client.logout().await {
-            warn!("Failed to logout IMAP session: {}", e);
-        }
+        let result = client
+            .store_flags(uids, FlagOperation::Remove, &["\\Seen".to_string()])
+            .await;
+        Self::logout_session(&client).await;
+        result?;
 
         // Note: Cache will be invalidated naturally on next access
         info!("Successfully marked {} emails as unread", uids.len());
         Ok(())
     }
 
-    /// Mark email(s) as deleted (sets \Deleted flag)
-    pub async fn mark_as_deleted(
+    /// Mark email(s) as deleted (sets \\Deleted flag) for the given account
+    pub async fn mark_as_deleted_for_account(
         &self,
         folder: &str,
         uids: &[u32],
+        account_id: &str,
     ) -> Result<(), EmailServiceError> {
         debug!("Marking {} emails as deleted in {}", uids.len(), folder);
 
-        let client = self.imap_factory.create_session().await.map_err(|e| {
-            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
-        })?;
-
-        client.select_folder(folder).await?;
-        client.mark_as_deleted(uids).await?;
-
-        // Log out so the server closes the IMAP session cleanly
-        if let Err(e) = client.logout().await {
-            warn!("Failed to logout IMAP session: {}", e);
-        }
+        let client = self
+            .open_folder_for_account(folder, account_id, "mark as deleted")
+            .await?;
+        let result = client.mark_as_deleted(uids).await;
+        Self::logout_session(&client).await;
+        result?;
 
         // Note: Cache will be invalidated naturally on next access
         info!("Successfully marked {} emails as deleted", uids.len());
-        Ok(())
-    }
-
-    /// Permanently delete messages (mark as deleted and expunge)
-    pub async fn delete_messages(
-        &self,
-        folder: &str,
-        uids: &[u32],
-    ) -> Result<(), EmailServiceError> {
-        debug!("Deleting {} messages in {}", uids.len(), folder);
-
-        // First mark as deleted
-        self.mark_as_deleted(folder, uids).await?;
-
-        // Then expunge
-        self.expunge(folder).await?;
-
-        info!("Successfully deleted {} messages", uids.len());
         Ok(())
     }
 
@@ -763,45 +795,40 @@ impl EmailService {
         Ok(())
     }
 
-    /// Remove \Deleted flag from messages
-    pub async fn undelete_messages(
+    /// Remove the \\Deleted flag from email(s) for the given account
+    pub async fn undelete_messages_for_account(
         &self,
         folder: &str,
         uids: &[u32],
+        account_id: &str,
     ) -> Result<(), EmailServiceError> {
         debug!("Undeleting {} messages in {}", uids.len(), folder);
 
-        let client = self.imap_factory.create_session().await.map_err(|e| {
-            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
-        })?;
-
-        client.select_folder(folder).await?;
-        client.undelete_messages(uids).await?;
-
-        // Log out so the server closes the IMAP session cleanly
-        if let Err(e) = client.logout().await {
-            warn!("Failed to logout IMAP session: {}", e);
-        }
+        let client = self
+            .open_folder_for_account(folder, account_id, "undelete")
+            .await?;
+        let result = client.undelete_messages(uids).await;
+        Self::logout_session(&client).await;
+        result?;
 
         info!("Successfully undeleted {} messages", uids.len());
         Ok(())
     }
 
-    /// Expunge deleted messages from a folder
-    pub async fn expunge(&self, folder: &str) -> Result<(), EmailServiceError> {
+    /// Expunge deleted messages from a folder of the given account
+    pub async fn expunge_for_account(
+        &self,
+        folder: &str,
+        account_id: &str,
+    ) -> Result<(), EmailServiceError> {
         debug!("Expunging deleted messages from {}", folder);
 
-        let client = self.imap_factory.create_session().await.map_err(|e| {
-            EmailServiceError::ConnectionError(format!("Failed to create session: {}", e))
-        })?;
-
-        client.select_folder(folder).await?;
-        client.expunge().await?;
-
-        // Log out so the server closes the IMAP session cleanly
-        if let Err(e) = client.logout().await {
-            warn!("Failed to logout IMAP session: {}", e);
-        }
+        let client = self
+            .open_folder_for_account(folder, account_id, "expunge")
+            .await?;
+        let result = client.expunge().await;
+        Self::logout_session(&client).await;
+        result?;
 
         info!("Successfully expunged messages from {}", folder);
         Ok(())
