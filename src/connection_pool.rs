@@ -16,6 +16,7 @@ use tokio::sync::{Mutex as TokioMutex, Semaphore};
 use tokio::time::sleep;
 use uuid::Uuid;
 
+use crate::backoff::{BackoffPolicy, FailureBackoff};
 use crate::imap::{AsyncImapSessionWrapper, ImapClient, ImapError};
 
 /// Errors that can occur during pool operations
@@ -532,6 +533,7 @@ impl ConnectionPool {
 
     /// Maintain minimum pool size and clean up expired sessions
     async fn maintain_pool(self: Arc<Self>) {
+        let mut creation_backoff = FailureBackoff::new(BackoffPolicy::from_env());
         loop {
             if *self.is_shutting_down.lock().await {
                 break;
@@ -540,13 +542,20 @@ impl ConnectionPool {
             let total_connections = self.connections.len();
             let _active = self.current_active.load(Ordering::SeqCst);
 
-            if total_connections < self.config.min_connections {
+            if total_connections < self.config.min_connections
+                && creation_backoff.is_due(Instant::now())
+            {
                 let needed = self.config.min_connections - total_connections;
                 debug!("Pool below minimum, creating {} connections", needed);
 
                 for _ in 0..needed {
-                    if let Err(e) = self.create_connection().await {
-                        warn!("Failed to maintain minimum pool size: {}", e);
+                    match self.create_connection().await {
+                        Ok(_) => creation_backoff.record_success(),
+                        Err(e) => {
+                            warn!("Failed to maintain minimum pool size: {}", e);
+                            creation_backoff.record_failure(Instant::now());
+                            break;
+                        }
                     }
                 }
             }

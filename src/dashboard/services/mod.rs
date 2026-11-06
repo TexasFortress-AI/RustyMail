@@ -46,6 +46,7 @@ pub mod outbox_worker;
 pub mod smtp;
 pub mod smtp_auth;
 pub mod sync;
+pub mod sync_backoff;
 pub mod token_refresh_worker;
 
 // Define or import error types if they exist

@@ -21,6 +21,7 @@ pub mod dashboard_config;
 pub mod account_service_tests;
 pub mod ai_service_tests;
 pub mod attachment_tests;
+pub mod backoff_tests;
 pub mod cache_service_tests;
 pub mod hardcoded_detection;
 pub mod imap_keepalive_tests;
