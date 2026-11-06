@@ -37,3 +37,4 @@ pub mod new_tools_tests;
 pub mod oauth_tests;
 pub mod rmcp_sdk_tests;
 pub mod smtp_service_tests;
+pub mod triage_store_tests;
