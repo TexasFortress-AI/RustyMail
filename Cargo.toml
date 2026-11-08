@@ -96,10 +96,6 @@ sha2 = "0.10"
 # System calls (used for safe process checking in sync binary)
 libc = "0.2"
 
-# OpenAPI documentation
-utoipa = { version = "5", features = ["actix_extras", "chrono", "uuid"] }
-utoipa-swagger-ui = { version = "8", features = ["actix-web"] }
-
 # MIME parsing
 mail-parser = "0.8"
 
@@ -111,7 +107,7 @@ sqlx = { version = "0.7", features = ["runtime-tokio", "sqlite", "chrono", "uuid
 lru = "0.12" # For in-memory LRU cache
 
 # ZIP archive support for attachments
-zip = { version = "0.6", features = ["deflate"], default-features = false }
+zip = { version = "9", features = ["deflate"], default-features = false }
 
 # Directory utilities for attachment downloads
 dirs = "5.0"
@@ -127,7 +123,6 @@ quick-xml = { version = "0.41", features = ["serialize"] } # Mozilla Autoconfig 
 lazy_static = "1.4"
 rand = "0.8" # For random number generation in example metrics
 reqwest = { version = "0.12", features = ["json"] }
-oauth2 = { version = "4.4", features = ["reqwest", "rustls-tls"] }
 url = "2.5"
 # MCP SDK - official Rust SDK from modelcontextprotocol org (Anthropic/AAIF)
 rmcp = { version = "0.15", features = ["server"] }
