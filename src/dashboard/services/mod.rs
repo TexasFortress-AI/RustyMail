@@ -27,6 +27,7 @@ pub mod account_store;
 pub mod ai;
 pub mod attachment_storage;
 pub mod autodiscovery;
+pub mod cache_prune;
 pub mod cache;
 pub mod clients;
 pub mod config;
