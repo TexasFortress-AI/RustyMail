@@ -488,9 +488,14 @@ async fn test_create_zip_archive() {
     assert!(result.is_ok());
     assert!(zip_path.exists());
 
-    // Verify ZIP file is not empty
-    let metadata = fs::metadata(&zip_path).unwrap();
-    assert!(metadata.len() > 0);
+    // Read the archive back: both attachments present with original content
+    let mut archive = zip::ZipArchive::new(fs::File::open(&zip_path).unwrap()).unwrap();
+    assert_eq!(archive.len(), 2);
+    for (name, expected) in [("file1.pdf", b"PDF1"), ("file2.txt", b"TXT2")] {
+        let mut content = Vec::new();
+        std::io::Read::read_to_end(&mut archive.by_name(name).unwrap(), &mut content).unwrap();
+        assert_eq!(content, expected, "content mismatch for {}", name);
+    }
 
     cleanup_test_db(test_name);
 }
