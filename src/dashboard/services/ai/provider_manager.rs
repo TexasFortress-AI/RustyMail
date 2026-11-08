@@ -6,6 +6,7 @@
 // src/dashboard/services/ai/provider_manager.rs
 // Unified AI Provider Management with dynamic selection and failover
 
+use super::local_only;
 use super::model_config::{get_model_config, set_model_config, ModelConfiguration};
 use super::provider::{
     AiChatMessage, AiProvider, AnthropicAdapter, AzureOpenAIAdapter, DeepSeekAdapter,
@@ -484,6 +485,8 @@ impl ProviderManager {
 
     // Add a provider with configuration
     pub async fn add_provider(&mut self, config: ProviderConfig) -> Result<(), RestApiError> {
+        local_only::ensure_local_type(&config.provider_type)
+            .map_err(|message| RestApiError::UnprocessableEntity { message })?;
         let provider: Arc<dyn AiProvider> = match config.provider_type {
             ProviderType::OpenAI => {
                 let api_key =
@@ -809,6 +812,7 @@ impl ProviderManager {
                 .get_current_provider_name()
                 .await
                 .unwrap_or_else(|| "unknown".to_string());
+            self.ensure_provider_is_local(&current_name).await?;
             info!(
                 "Using provider: {} with model: {}",
                 current_name,
@@ -854,6 +858,7 @@ impl ProviderManager {
 
         // If provider override specified, use that provider
         if let Some(provider_name) = provider_name {
+            self.ensure_provider_is_local(&provider_name).await?;
             let providers = self.providers.read().await;
             if let Some(provider) = providers.get(&provider_name) {
                 // If model override specified, create a new provider instance with that model
@@ -911,6 +916,19 @@ impl ProviderManager {
         self.generate_response(messages).await
     }
 
+    /// Refuse to send a prompt (which carries email content) to a provider
+    /// that is not local, however it was registered.
+    async fn ensure_provider_is_local(&self, name: &str) -> Result<(), RestApiError> {
+        let configs = self.configs.read().await;
+        let config = configs.iter().find(|c| c.name == name).ok_or_else(|| {
+            RestApiError::UnprocessableEntity {
+                message: format!("AI provider '{}' is not registered", name),
+            }
+        })?;
+        local_only::ensure_local_type(&config.provider_type)
+            .map_err(|message| RestApiError::UnprocessableEntity { message })
+    }
+
     // List available providers
     pub async fn list_providers(&self) -> Vec<ProviderConfig> {
         self.configs.read().await.clone()
@@ -941,6 +959,8 @@ impl ProviderManager {
         name: &str,
         config: ProviderConfig,
     ) -> Result<(), RestApiError> {
+        local_only::ensure_local_type(&config.provider_type)
+            .map_err(|message| RestApiError::UnprocessableEntity { message })?;
         // Remove old provider
         self.providers.write().await.remove(name);
 

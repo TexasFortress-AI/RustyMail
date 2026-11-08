@@ -2,6 +2,7 @@
 // AI Model Configuration Management
 // Handles database storage and retrieval of AI model settings
 
+use super::local_only;
 use crate::api::errors::ApiError;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
@@ -91,6 +92,9 @@ pub async fn get_model_config(
 
     match row {
         Some((role, provider, model_name, base_url, api_key, additional_config)) => {
+            // A cloud config saved before the local-only rule must not be used.
+            local_only::ensure_local(&provider, base_url.as_deref())
+                .map_err(|message| ApiError::BadRequest { message })?;
             Ok(ModelConfiguration {
                 role,
                 provider,
@@ -112,6 +116,8 @@ pub async fn set_model_config(
     config: &ModelConfiguration,
 ) -> Result<(), ApiError> {
     debug!("Setting model configuration for role: {}", config.role);
+    local_only::ensure_local(&config.provider, config.base_url.as_deref())
+        .map_err(|message| ApiError::BadRequest { message })?;
 
     sqlx::query(
         "INSERT INTO ai_model_configurations (role, provider, model_name, base_url, api_key, additional_config)

@@ -265,21 +265,10 @@ pub async fn init(
     ));
 
     // Initialize AI Service with environment variables
-    let openai_api_key = std::env::var("OPENAI_API_KEY").ok();
-    let openrouter_api_key = std::env::var("OPENROUTER_API_KEY").ok();
-    let morpheus_api_key = std::env::var("MORPHEUS_API_KEY").ok();
     let ollama_base_url = std::env::var("OLLAMA_BASE_URL").ok();
     let api_key = std::env::var("RUSTYMAIL_API_KEY").ok();
 
-    let ai_service = match AiService::new(
-        openai_api_key,
-        openrouter_api_key,
-        morpheus_api_key,
-        ollama_base_url,
-        api_key,
-    )
-    .await
-    {
+    let ai_service = match AiService::new(ollama_base_url, api_key).await {
         Ok(mut service) => {
             // Set the email service so AI can fetch real emails
             service.set_email_service(email_service.clone());
