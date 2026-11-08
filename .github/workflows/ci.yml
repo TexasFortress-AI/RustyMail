@@ -209,8 +209,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@master
         with:
-          # Align with Cargo.toml rust-version (deps like hickory 0.26 / time require >=1.88).
-          toolchain: 1.88.0
+          # Align with Cargo.toml rust-version (actix-web 4.18 / actix-http 3.20 require >=1.89).
+          toolchain: 1.89.0
 
       - name: Check MSRV
         run: cargo check --all-features
