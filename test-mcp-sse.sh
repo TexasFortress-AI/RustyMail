@@ -11,7 +11,7 @@ echo "================================"
 
 # Configuration
 SERVER_URL="http://localhost:9437"
-API_KEY="test-rustymail-key-2024"
+API_KEY="${RUSTYMAIL_API_KEY:?set RUSTYMAIL_API_KEY}"
 
 echo ""
 echo "1. Testing basic endpoints..."
