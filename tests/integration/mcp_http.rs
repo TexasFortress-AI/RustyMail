@@ -1515,7 +1515,8 @@ fn write_tool_calls() -> Vec<(&'static str, serde_json::Value)> {
 #[serial]
 async fn test_write_tools_require_account_id() {
     setup_test_env();
-    let dashboard_state = create_test_dashboard_state("write_tools_require_account").await;
+    let test_name = "write_tools_require_account";
+    let dashboard_state = create_test_dashboard_state(test_name).await;
     for (tool, params) in write_tool_calls() {
         let result = rustymail::dashboard::api::handlers::execute_mcp_tool_inner(
             &dashboard_state,
@@ -1527,13 +1528,15 @@ async fn test_write_tools_require_account_id() {
         let error = result["error"].as_str().unwrap();
         assert!(error.contains("account_id"), "{}: {}", tool, error);
     }
+    cleanup_test_db(test_name);
 }
 
 #[tokio::test]
 #[serial]
 async fn test_write_tools_reject_unknown_account() {
     setup_test_env();
-    let dashboard_state = create_test_dashboard_state("write_tools_unknown_account").await;
+    let test_name = "write_tools_unknown_account";
+    let dashboard_state = create_test_dashboard_state(test_name).await;
     for (tool, mut params) in write_tool_calls() {
         params["account_id"] = json!("nobody@example.test");
         let result = rustymail::dashboard::api::handlers::execute_mcp_tool_inner(
@@ -1551,4 +1554,5 @@ async fn test_write_tools_reject_unknown_account() {
             error
         );
     }
+    cleanup_test_db(test_name);
 }
