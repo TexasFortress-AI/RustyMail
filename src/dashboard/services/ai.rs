@@ -5,6 +5,7 @@
 
 pub mod agent_executor;
 pub mod email_drafter;
+pub mod local_only;
 pub mod model_config;
 pub mod nlp_processor;
 pub mod provider;
@@ -109,67 +110,14 @@ impl AiService {
     }
 
     pub async fn new(
-        openai_api_key: Option<String>,
-        openrouter_api_key: Option<String>,
-        morpheus_api_key: Option<String>,
         ollama_base_url: Option<String>,
         api_key: Option<String>,
     ) -> Result<Self, String> {
         let mut provider_manager = ProviderManager::new();
         let mut has_real_provider = false;
 
-        // Configure providers
-        if let Some(key) = openai_api_key {
-            provider_manager
-                .add_provider(provider_manager::ProviderConfig {
-                    name: "openai".to_string(),
-                    provider_type: provider_manager::ProviderType::OpenAI,
-                    api_key: Some(key),
-                    model: "gpt-3.5-turbo".to_string(),
-                    max_tokens: Some(2000),
-                    temperature: Some(0.7),
-                    priority: 1,
-                    enabled: true,
-                })
-                .await
-                .ok();
-            has_real_provider = true;
-        }
-
-        if let Some(key) = openrouter_api_key {
-            provider_manager
-                .add_provider(provider_manager::ProviderConfig {
-                    name: "openrouter".to_string(),
-                    provider_type: provider_manager::ProviderType::OpenRouter,
-                    api_key: Some(key),
-                    model: "meta-llama/llama-2-70b-chat".to_string(),
-                    max_tokens: Some(2000),
-                    temperature: Some(0.7),
-                    priority: 2,
-                    enabled: true,
-                })
-                .await
-                .ok();
-            has_real_provider = true;
-        }
-
-        if let Some(key) = morpheus_api_key {
-            provider_manager
-                .add_provider(provider_manager::ProviderConfig {
-                    name: "morpheus".to_string(),
-                    provider_type: provider_manager::ProviderType::Morpheus,
-                    api_key: Some(key),
-                    model: "llama-3.2-90b-vision-instruct".to_string(), // Will be updated from API
-                    max_tokens: Some(2000),
-                    temperature: Some(0.7),
-                    priority: 3,
-                    enabled: true,
-                })
-                .await
-                .ok();
-            has_real_provider = true;
-        }
-
+        // Only local providers are registered: email content never goes to a
+        // cloud model (see ai::local_only).
         if let Some(_base_url) = ollama_base_url {
             // Model MUST come from OLLAMA_MODEL env var - no hardcoded default
             let ollama_model = std::env::var("OLLAMA_MODEL")

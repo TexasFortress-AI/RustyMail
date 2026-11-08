@@ -19,6 +19,7 @@ pub mod dashboard_config;
 // pub mod dashboard_api_handlers; // Disabled
 // pub mod dashboard_sse_streaming; // Disabled
 pub mod account_service_tests;
+pub mod ai_local_only_tests;
 pub mod ai_service_tests;
 pub mod attachment_tests;
 pub mod backoff_tests;
