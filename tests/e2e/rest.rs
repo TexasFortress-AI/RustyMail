@@ -354,7 +354,11 @@ async fn run_rest_e2e_steps(
 
 /// Teardown-only folder removal: never panics, ignores folders that are already gone.
 async fn delete_folder_if_present(client: &Client, folder_name: &str) {
-    let inbox_url = format!("{}/folders/{}/select", BASE_URL, urlencoding::encode("INBOX"));
+    let inbox_url = format!(
+        "{}/folders/{}/select",
+        BASE_URL,
+        urlencoding::encode("INBOX")
+    );
     let _ = client.post(&inbox_url).send().await;
     let delete_url = format!("{}/folders/{}", BASE_URL, urlencoding::encode(folder_name));
     match client.delete(&delete_url).send().await {
