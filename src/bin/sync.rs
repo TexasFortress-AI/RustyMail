@@ -25,6 +25,7 @@ use chrono::Utc;
 use clap::Parser;
 use log::{debug, error, info, warn};
 use rustymail::backoff::BackoffPolicy;
+use rustymail::dashboard::services::cache_prune::prune_missing_folders;
 use rustymail::dashboard::services::encryption::{CredentialEncryption, EncryptionError};
 use rustymail::dashboard::services::sync_backoff::SyncBackoffStore;
 use sqlx::{Row, SqlitePool};
@@ -392,6 +393,19 @@ async fn sync_account(
             folders.len(),
             account.email_address
         );
+        match prune_missing_folders(pool, &account.email_address, &folders).await {
+            Ok(removed) if !removed.is_empty() => info!(
+                "Removed {} folder(s) no longer on the server from the cache for {}: {:?}",
+                removed.len(),
+                account.email_address,
+                removed
+            ),
+            Ok(_) => {}
+            Err(e) => warn!(
+                "Could not prune deleted folders from the cache for {}: {}",
+                account.email_address, e
+            ),
+        }
         folders
     };
 
