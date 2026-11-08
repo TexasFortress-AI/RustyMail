@@ -3,7 +3,11 @@
 const readline = require('readline');
 const http = require('http');
 
-const API_KEY = process.env.RUSTYMAIL_API_KEY || 'test-rustymail-key-2024';
+const API_KEY = process.env.RUSTYMAIL_API_KEY;
+if (!API_KEY) {
+  console.error('RUSTYMAIL_API_KEY must be set');
+  process.exit(1);
+}
 const API_URL = process.env.RUSTYMAIL_API_URL || 'http://localhost:9437';
 
 const rl = readline.createInterface({
