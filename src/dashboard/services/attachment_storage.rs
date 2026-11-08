@@ -475,7 +475,7 @@ pub async fn create_zip_archive(
     message_id: &str,
     output_path: &Path,
 ) -> Result<PathBuf, AttachmentError> {
-    use zip::write::FileOptions;
+    use zip::write::SimpleFileOptions;
     use zip::ZipWriter;
 
     let storage_root = get_storage_root();
@@ -494,7 +494,7 @@ pub async fn create_zip_archive(
 
     let file = fs::File::create(output_path)?;
     let mut zip = ZipWriter::new(file);
-    let options = FileOptions::default()
+    let options = SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Deflated)
         .unix_permissions(0o644);
 
