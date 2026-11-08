@@ -260,8 +260,38 @@ async fn run_rest_e2e_tests() {
     let test_run_id = unique_id("testrun");
     let folder_a = format!("{}{}", TEST_FOLDER_A_BASE, test_run_id);
     let folder_b = format!("{}{}", TEST_FOLDER_B_BASE, test_run_id);
+    let renamed_folder_a = format!("{}{}_Renamed", TEST_FOLDER_A_BASE, test_run_id);
     println!("Using folder A: {}, folder B: {}", folder_a, folder_b);
 
+    // Run the steps in a task so a failed assertion cannot skip folder cleanup.
+    let outcome = tokio::spawn(run_rest_e2e_steps(
+        client.clone(),
+        folder_a.clone(),
+        folder_b.clone(),
+        renamed_folder_a.clone(),
+    ))
+    .await;
+
+    // Always remove this run's folders. After a successful run step 13 already
+    // deleted them, so "not found" responses here are expected.
+    for folder in [&folder_a, &renamed_folder_a, &folder_b] {
+        delete_folder_if_present(&client, folder).await;
+    }
+
+    // --- Shutdown Server ---
+    server.shutdown().await;
+    if let Err(join_error) = outcome {
+        std::panic::resume_unwind(join_error.into_panic());
+    }
+    println!("--- REST E2E Test Suite Finished ---");
+}
+
+async fn run_rest_e2e_steps(
+    client: Client,
+    folder_a: String,
+    folder_b: String,
+    renamed_folder_a: String,
+) {
     // --- Execute Test Steps Sequentially ---
     println!("Step 1: Listing initial folders...");
     test_e2e_list_folders(&client).await;
@@ -306,7 +336,6 @@ async fn run_rest_e2e_tests() {
     test_e2e_verify_email_presence(&client, &folder_b, uid1, &subject1).await;
 
     println!("Step 10: Renaming folder A (now empty) to something else...");
-    let renamed_folder_a = format!("{}{}_Renamed", TEST_FOLDER_A_BASE, test_run_id);
     test_e2e_rename_folder(&client, &folder_a, &renamed_folder_a).await;
 
     println!("Step 11: Selecting folder B...");
@@ -321,10 +350,21 @@ async fn run_rest_e2e_tests() {
     println!("Step 13: Cleaning up folders...");
     test_e2e_delete_folder(&client, &renamed_folder_a).await;
     test_e2e_delete_folder(&client, &folder_b).await;
+}
 
-    // --- Shutdown Server ---
-    server.shutdown().await;
-    println!("--- REST E2E Test Suite Finished ---");
+/// Teardown-only folder removal: never panics, ignores folders that are already gone.
+async fn delete_folder_if_present(client: &Client, folder_name: &str) {
+    let inbox_url = format!(
+        "{}/folders/{}/select",
+        BASE_URL,
+        urlencoding::encode("INBOX")
+    );
+    let _ = client.post(&inbox_url).send().await;
+    let delete_url = format!("{}/folders/{}", BASE_URL, urlencoding::encode(folder_name));
+    match client.delete(&delete_url).send().await {
+        Ok(resp) => println!("Teardown delete '{}': {}", folder_name, resp.status()),
+        Err(e) => println!("Teardown delete '{}' failed: {}", folder_name, e),
+    }
 }
 
 async fn test_e2e_list_folders(client: &Client) {
