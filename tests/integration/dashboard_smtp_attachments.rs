@@ -27,6 +27,9 @@ use rustymail::dashboard::services::{
 use rustymail::imap::{AsyncImapSessionWrapper, ImapClient, ImapError};
 use rustymail::prelude::CloneableImapSessionFactory;
 
+/// The key `setup_test_env` configures; every dashboard request must send it.
+const TEST_API_KEY: &str = "test-rustymail-key-2024";
+
 /// Initialize test environment with required environment variables
 fn setup_test_env() {
     std::env::set_var("REST_HOST", "127.0.0.1");
@@ -34,7 +37,7 @@ fn setup_test_env() {
     std::env::set_var("SSE_HOST", "127.0.0.1");
     std::env::set_var("SSE_PORT", "9438");
     std::env::set_var("DASHBOARD_PORT", "9439");
-    std::env::set_var("RUSTYMAIL_API_KEY", "test-rustymail-key-2024");
+    std::env::set_var("RUSTYMAIL_API_KEY", TEST_API_KEY);
     std::env::set_var("IMAP_HOST", "localhost");
     std::env::set_var("IMAP_PORT", "143");
 }
@@ -224,6 +227,7 @@ async fn test_send_email_rest_endpoint() {
 
     // Send request
     let req = test::TestRequest::post()
+        .insert_header(("X-API-Key", TEST_API_KEY))
         .uri("/api/dashboard/emails/send")
         .set_json(&send_email_request)
         .to_request();
@@ -265,6 +269,7 @@ async fn test_send_email_with_account_param() {
 
     // Send request with account_email query parameter
     let req = test::TestRequest::post()
+        .insert_header(("X-API-Key", TEST_API_KEY))
         .uri("/api/dashboard/emails/send?account_email=test@example.com")
         .set_json(&send_email_request)
         .to_request();
@@ -303,6 +308,7 @@ async fn test_send_email_validation() {
 
     // Send invalid request
     let req = test::TestRequest::post()
+        .insert_header(("X-API-Key", TEST_API_KEY))
         .uri("/api/dashboard/emails/send")
         .set_json(&invalid_request)
         .to_request();
@@ -345,6 +351,7 @@ async fn test_send_email_with_html_body() {
 
     // Send request
     let req = test::TestRequest::post()
+        .insert_header(("X-API-Key", TEST_API_KEY))
         .uri("/api/dashboard/emails/send")
         .set_json(&send_email_request)
         .to_request();
@@ -385,6 +392,7 @@ async fn test_send_email_with_cc_bcc() {
 
     // Send request
     let req = test::TestRequest::post()
+        .insert_header(("X-API-Key", TEST_API_KEY))
         .uri("/api/dashboard/emails/send")
         .set_json(&send_email_request)
         .to_request();
@@ -421,6 +429,7 @@ async fn test_list_attachments_endpoint() {
 
     // Test with message_id parameter
     let req = test::TestRequest::get()
+        .insert_header(("X-API-Key", TEST_API_KEY))
         .uri("/api/dashboard/attachments/list?message_id=test-msg-123&account_id=test@example.com")
         .to_request();
 
@@ -432,6 +441,7 @@ async fn test_list_attachments_endpoint() {
 
     // Test with folder+uid parameters
     let req2 = test::TestRequest::get()
+        .insert_header(("X-API-Key", TEST_API_KEY))
         .uri("/api/dashboard/attachments/list?folder=INBOX&uid=123&account_id=test@example.com")
         .to_request();
 
@@ -462,6 +472,7 @@ async fn test_download_attachment_endpoint() {
 
     // Send request
     let req = test::TestRequest::get()
+        .insert_header(("X-API-Key", TEST_API_KEY))
         .uri("/api/dashboard/attachments/test-msg-123/document.pdf?account_id=test@example.com")
         .to_request();
 
@@ -496,6 +507,7 @@ async fn test_download_attachments_zip() {
 
     // Send request
     let req = test::TestRequest::get()
+        .insert_header(("X-API-Key", TEST_API_KEY))
         .uri("/api/dashboard/attachments/test-msg-123/zip?account_id=test@example.com")
         .to_request();
 
@@ -528,6 +540,7 @@ async fn test_attachment_not_found_error() {
 
     // Request non-existent attachment
     let req = test::TestRequest::get()
+        .insert_header(("X-API-Key", TEST_API_KEY))
         .uri("/api/dashboard/attachments/nonexistent-msg/missing.pdf?account_id=test@example.com")
         .to_request();
 
@@ -566,6 +579,7 @@ async fn test_smtp_connection_error_response() {
 
     // Send request (will fail without real SMTP server)
     let req = test::TestRequest::post()
+        .insert_header(("X-API-Key", TEST_API_KEY))
         .uri("/api/dashboard/emails/send?account_email=nonexistent@example.com")
         .set_json(&send_email_request)
         .to_request();
@@ -613,6 +627,7 @@ async fn test_concurrent_email_sends() {
         });
 
         let req = test::TestRequest::post()
+            .insert_header(("X-API-Key", TEST_API_KEY))
             .uri("/api/dashboard/emails/send")
             .set_json(&send_request)
             .to_request();

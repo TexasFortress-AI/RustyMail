@@ -93,6 +93,9 @@ hex = "0.4"
 # SHA-256 for OAuth2 PKCE code challenge
 sha2 = "0.10"
 
+# Constant-time API key comparison
+subtle = "2.6"
+
 # System calls (used for safe process checking in sync binary)
 libc = "0.2"
 

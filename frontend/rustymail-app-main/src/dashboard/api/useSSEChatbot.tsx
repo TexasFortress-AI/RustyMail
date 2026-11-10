@@ -6,6 +6,7 @@
 import { useState, useCallback, useRef } from 'react';
 import { ChatbotResponse } from './types';
 import { toast } from '@/hooks/use-toast';
+import { authFetch } from './authFetch';
 
 interface StreamChatbotOptions {
   onStart?: (conversationId: string) => void;
@@ -30,7 +31,7 @@ export function useSSEChatbot(options: StreamChatbotOptions = {}) {
 
     try {
       // Send the query via POST with SSE response
-      const response = await fetch('/api/dashboard/chatbot/stream', {
+      const response = await authFetch('/api/dashboard/chatbot/stream', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

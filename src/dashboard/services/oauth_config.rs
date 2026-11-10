@@ -51,8 +51,10 @@ impl OAuthProviderConfig {
     /// Build the full redirect URI for the Microsoft OAuth callback.
     pub fn microsoft_redirect_uri(&self) -> String {
         format!(
-            "{}/api/dashboard/oauth/callback/microsoft",
-            self.redirect_base_url.trim_end_matches('/')
+            "{}{}{}",
+            self.redirect_base_url.trim_end_matches('/'),
+            crate::dashboard::api::routes::DASHBOARD_SCOPE,
+            crate::dashboard::api::routes::MICROSOFT_CALLBACK_PATH
         )
     }
 }

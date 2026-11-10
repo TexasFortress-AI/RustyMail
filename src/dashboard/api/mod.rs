@@ -10,6 +10,7 @@
 
 pub mod accounts;
 pub mod attachments;
+pub mod auth_middleware;
 pub mod config;
 pub mod errors;
 pub mod handlers;

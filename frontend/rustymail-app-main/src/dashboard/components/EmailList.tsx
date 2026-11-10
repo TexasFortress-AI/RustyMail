@@ -28,6 +28,7 @@ import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
 import { SyncStatusPanel } from './SyncStatusPanel';
 import { accountsApi } from '../api/accounts';
 import { sanitizeEmailHtml } from '../utils/sanitizeEmailHtml';
+import { downloadWithAuth } from '../api/authFetch';
 import './EmailBody.css';
 
 interface Email {
@@ -483,7 +484,7 @@ const EmailList: React.FC<EmailListProps> = ({
 
     try {
       const url = `${API_BASE_URL}/dashboard/attachments/${encodeURIComponent(messageId)}/${encodeURIComponent(filename)}?account_id=${encodeURIComponent(currentAccount.id)}`;
-      window.open(url, '_blank');
+      await downloadWithAuth(url, filename);
     } catch (error) {
       console.error('Error downloading attachment:', error);
       toast({

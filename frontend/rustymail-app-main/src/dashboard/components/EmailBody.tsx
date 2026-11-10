@@ -3,7 +3,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { API_BASE_URL } from '../../config/api';
 import { config } from '../config';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
@@ -16,6 +16,8 @@ import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
 import { EmailContext } from './EmailList';
 import './EmailBody.css';
 import { sanitizeEmailHtml } from '../utils/sanitizeEmailHtml';
+import { downloadWithAuth } from '../api/authFetch';
+import { useAuthenticatedImages } from '../hooks/useAuthenticatedImages';
 import { SendMailDialog } from './SendMailDialog';
 
 interface Email {
@@ -177,7 +179,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
 
     try {
       const url = `${API_BASE_URL}/dashboard/attachments/${encodeURIComponent(messageId)}/${encodeURIComponent(filename)}?account_id=${encodeURIComponent(currentAccount.id)}`;
-      window.open(url, '_blank');
+      await downloadWithAuth(url, filename);
     } catch (error) {
       console.error('Error downloading attachment:', error);
       toast({
@@ -193,7 +195,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
 
     try {
       const url = `${API_BASE_URL}/dashboard/attachments/${encodeURIComponent(currentMessageId)}/zip?account_id=${encodeURIComponent(currentAccount.id)}`;
-      window.open(url, '_blank');
+      await downloadWithAuth(url, 'attachments.zip');
 
       toast({
         title: "Download Started",
@@ -226,6 +228,20 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
       return dateToUse;
     }
   };
+
+  const htmlBodyRef = useRef<HTMLDivElement>(null);
+  const sanitizedHtml = useMemo(
+    () =>
+      email?.body_html
+        ? sanitizeEmailHtml(email.body_html, {
+            showImages,
+            messageId: email.message_id || undefined,
+            accountId: currentAccount?.id,
+          })
+        : '',
+    [email, showImages, currentAccount?.id]
+  );
+  useAuthenticatedImages(htmlBodyRef, viewMode === 'html' ? sanitizedHtml : '');
 
   if (!currentAccount) {
     return (
@@ -375,14 +391,9 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
           {/* Email Body Content */}
           {viewMode === 'html' && email.body_html ? (
             <div
+              ref={htmlBodyRef}
               className="email-html-content"
-              dangerouslySetInnerHTML={{
-                __html: sanitizeEmailHtml(email.body_html, {
-                  showImages,
-                  messageId: email.message_id || undefined,
-                  accountId: currentAccount?.id
-                })
-              }}
+              dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
             />
           ) : (
             <div className="whitespace-pre-wrap text-foreground">

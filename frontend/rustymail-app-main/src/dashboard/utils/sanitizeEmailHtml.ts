@@ -110,6 +110,9 @@ function neutralizeContrastAttrs(node: Element): void {
   }
 }
 
+/** Holds an inline image URL that must be fetched with the API key. */
+export const AUTH_SRC_ATTRIBUTE = 'data-auth-src';
+
 /**
  * Sanitize HTML email for safe inline rendering on a forced light canvas.
  * Rewrites cid: images when showImages is true; otherwise replaces with placeholders.
@@ -137,7 +140,10 @@ export function sanitizeEmailHtml(html: string, options: SanitizeEmailOptions): 
           const contentId = src.substring(4);
           if (messageId && accountId) {
             const inlineUrl = `${API_BASE_URL}/dashboard/attachments/${encodeURIComponent(messageId)}/inline/${encodeURIComponent(contentId)}?account_id=${encodeURIComponent(accountId)}`;
-            node.setAttribute('src', inlineUrl);
+            // The URL needs the API key, which <img src> cannot send;
+            // useAuthenticatedImages loads it from this attribute.
+            node.removeAttribute('src');
+            node.setAttribute(AUTH_SRC_ATTRIBUTE, inlineUrl);
           } else {
             const placeholder = document.createElement('span');
             placeholder.className =
