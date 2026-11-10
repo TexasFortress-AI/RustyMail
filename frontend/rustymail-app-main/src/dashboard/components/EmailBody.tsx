@@ -3,7 +3,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { API_BASE_URL } from '../../config/api';
 import { config } from '../config';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
@@ -229,7 +229,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
     }
   };
 
-  const htmlBodyRef = useRef<HTMLDivElement>(null);
+  const [htmlBodyElement, setHtmlBodyElement] = useState<HTMLDivElement | null>(null);
   const sanitizedHtml = useMemo(
     () =>
       email?.body_html
@@ -241,7 +241,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
         : '',
     [email, showImages, currentAccount?.id]
   );
-  useAuthenticatedImages(htmlBodyRef, viewMode === 'html' ? sanitizedHtml : '');
+  useAuthenticatedImages(htmlBodyElement, viewMode === 'html' ? sanitizedHtml : '');
 
   if (!currentAccount) {
     return (
@@ -391,7 +391,7 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
           {/* Email Body Content */}
           {viewMode === 'html' && email.body_html ? (
             <div
-              ref={htmlBodyRef}
+              ref={setHtmlBodyElement}
               className="email-html-content"
               dangerouslySetInnerHTML={{ __html: sanitizedHtml }}
             />

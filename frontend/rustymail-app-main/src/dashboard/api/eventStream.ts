@@ -7,14 +7,17 @@
 // The browser's EventSource cannot send custom headers, and the dashboard API
 // requires X-API-Key on every request. This class keeps EventSource's
 // interface (addEventListener, close, readyState) but reads the stream with
-// fetch. Like EventSource it sends Last-Event-ID when reconnecting, honours
-// the server's `retry:` delay, and gives up on an HTTP error response such as
-// 401, retrying only when the connection drops.
+// fetch. Like EventSource it sends Last-Event-ID when reconnecting and
+// honours the server's `retry:` delay. It gives up only when the key is
+// refused (401/403); dropped connections and other errors, such as the dev
+// proxy's 5xx while the backend restarts, are retried.
 
 import { authHeaders } from './authFetch';
 
 // EventSource's reconnection delay when the server sends no `retry:` field.
 const DEFAULT_RETRY_MS = 3000;
+// Responses that retrying cannot fix: the API key was refused.
+const AUTH_FAILURE_STATUSES = [401, 403];
 
 export interface StreamEvent {
   type: string;
@@ -64,10 +67,12 @@ export class AuthenticatedEventStream {
     } catch {
       return this.scheduleReconnect();
     }
-    if (!response.ok || !response.body) {
-      // An HTTP error (for example 401) will not fix itself: stop, as EventSource does.
+    if (AUTH_FAILURE_STATUSES.includes(response.status)) {
       this.close();
       return this.emit('error');
+    }
+    if (!response.ok || !response.body) {
+      return this.scheduleReconnect();
     }
     this.readyState = AuthenticatedEventStream.OPEN;
     this.emit('open');

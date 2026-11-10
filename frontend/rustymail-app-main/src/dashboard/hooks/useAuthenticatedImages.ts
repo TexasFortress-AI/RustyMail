@@ -7,14 +7,17 @@
 // instead; this hook fetches each one with the key and shows it from an
 // object URL.
 
-import { useEffect, type RefObject } from 'react';
+import { useEffect } from 'react';
 import { fetchObjectUrl } from '../api/authFetch';
 import { AUTH_SRC_ATTRIBUTE } from '../utils/sanitizeEmailHtml';
 
-/** Re-runs whenever `renderedHtml` changes; pass '' when nothing is rendered. */
-export function useAuthenticatedImages(containerRef: RefObject<HTMLElement>, renderedHtml: string) {
+/**
+ * Re-runs when the container element or `renderedHtml` changes. Pass the
+ * element itself (from a callback ref), not a ref object, so a remount with
+ * the same HTML still loads the new <img> nodes.
+ */
+export function useAuthenticatedImages(container: HTMLElement | null, renderedHtml: string) {
   useEffect(() => {
-    const container = containerRef.current;
     if (!container || !renderedHtml) return;
     const objectUrls: string[] = [];
     let cancelled = false;
@@ -32,5 +35,5 @@ export function useAuthenticatedImages(containerRef: RefObject<HTMLElement>, ren
       cancelled = true;
       objectUrls.forEach((objectUrl) => URL.revokeObjectURL(objectUrl));
     };
-  }, [containerRef, renderedHtml]);
+  }, [container, renderedHtml]);
 }
