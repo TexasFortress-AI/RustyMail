@@ -153,7 +153,9 @@ pm2 status
 
 # Verify backend is responding (uses DASHBOARD_PORT from .env)
 echo "Checking backend health..."
-curl -s http://localhost:9437/api/dashboard/stats | jq . || echo "Backend not responding yet..."
+# Dashboard routes require the API key from .env (prints the HTTP status only)
+RUSTYMAIL_API_KEY="$(grep '^RUSTYMAIL_API_KEY=' .env | cut -d= -f2-)"
+curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: $RUSTYMAIL_API_KEY" http://localhost:9437/api/dashboard/stats || echo "Backend not responding yet..."
 
 # Verify frontend is serving (uses DASHBOARD_PORT from .env)
 echo "Checking frontend..."
@@ -249,7 +251,7 @@ pm2 resurrect
 - **Docker conflicts**: Check if Docker containers are using these ports with `docker ps`
 
 ### Database Issues
-- **Empty after rebuild**: Database is preserved, trigger sync: `curl -X POST 'http://localhost:9437/api/dashboard/sync/trigger?account_id=<account_id>'`
+- **Empty after rebuild**: Database is preserved, trigger sync: `curl -X POST -H "X-API-Key: $RUSTYMAIL_API_KEY" 'http://localhost:9437/api/dashboard/sync/trigger?account_id=<account_id>'`
 - **Cache not initialized**: Check that `data/email_cache.db` exists and backend has write permissions
 - **Wrong working directory**: Ensure PM2 `cwd` matches project root
 

@@ -8,8 +8,10 @@
 // Provides HTTP endpoints for health monitoring, including liveness, readiness,
 // and detailed health reports.
 
+use super::auth_middleware::require_api_key;
 use crate::dashboard::services::DashboardState;
 use actix_web::{web, HttpResponse, Result};
+use actix_web_lab::middleware::from_fn as mw_from_fn;
 use log::{debug, info};
 use serde::{Deserialize, Serialize};
 
@@ -28,8 +30,18 @@ pub fn configure_health_routes(cfg: &mut web::ServiceConfig) {
         web::scope("/health")
             .route("/live", web::get().to(liveness))
             .route("/ready", web::get().to(readiness))
-            .route("/report", web::get().to(health_report))
-            .route("/metrics", web::get().to(health_metrics)),
+            // Liveness and readiness stay open for probes; the detailed
+            // report and resource metrics require the API key.
+            .service(
+                web::resource("/report")
+                    .wrap(mw_from_fn(require_api_key))
+                    .route(web::get().to(health_report)),
+            )
+            .service(
+                web::resource("/metrics")
+                    .wrap(mw_from_fn(require_api_key))
+                    .route(web::get().to(health_metrics)),
+            ),
     )
     // Legacy endpoints for compatibility
     .route("/healthz", web::get().to(liveness))

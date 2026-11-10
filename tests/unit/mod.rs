@@ -7,6 +7,7 @@
 // This module organizes all unit tests
 
 pub mod api;
+pub mod api_key_tests;
 pub mod config;
 pub mod imap;
 pub mod session_manager;

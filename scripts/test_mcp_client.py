@@ -47,6 +47,11 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+def dashboard_headers() -> dict[str, str]:
+    """Headers for /api/dashboard requests, which require the API key."""
+    return {"X-API-Key": os.environ.get("RUSTYMAIL_API_KEY", "")}
+
+
 # Expected MCP tools in RustyMail
 EXPECTED_TOOLS = [
     "list_folders",
@@ -365,7 +370,7 @@ class EmailAssistantChatbotTester:
         """Test that chatbot endpoint accepts requests."""
         logging.info("\n=== Testing Chatbot Endpoint Basic ===")
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(headers=dashboard_headers()) as session:
                 async with session.post(
                     f"{self.backend_url}/api/dashboard/chatbot/query",
                     json={
@@ -394,7 +399,7 @@ class EmailAssistantChatbotTester:
         """Test that account_id parameter is properly handled."""
         logging.info("\n=== Testing Chatbot Account ID Handling ===")
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(headers=dashboard_headers()) as session:
                 # Test with account_id
                 async with session.post(
                     f"{self.backend_url}/api/dashboard/chatbot/query",
@@ -427,7 +432,7 @@ class EmailAssistantChatbotTester:
         """Test that chatbot email count matches direct MCP tool calls."""
         logging.info("\n=== Testing Email Count Accuracy ===")
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(headers=dashboard_headers()) as session:
                 # Get count via chatbot
                 async with session.post(
                     f"{self.backend_url}/api/dashboard/chatbot/query",
@@ -506,7 +511,7 @@ class EmailAssistantChatbotTester:
         all_passed = True
 
         try:
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(headers=dashboard_headers()) as session:
                 for folder in folders_to_test:
                     async with session.post(
                         f"{self.backend_url}/api/dashboard/chatbot/query",
@@ -544,7 +549,7 @@ class EmailAssistantChatbotTester:
         logging.info("\n=== Testing Account Isolation ===")
         try:
             # First, get list of accounts
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(headers=dashboard_headers()) as session:
                 async with session.post(
                     f"{self.backend_url}/api/dashboard/mcp/execute",
                     json={

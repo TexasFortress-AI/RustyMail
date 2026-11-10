@@ -6,6 +6,7 @@
 //! REST API implementation using Actix Web.
 
 // pub mod mcp;
+pub mod api_key; // Shared RUSTYMAIL_API_KEY check
 pub mod auth;
 pub mod errors; // New comprehensive error module
 pub mod openapi_docs; // OpenAPI documentation

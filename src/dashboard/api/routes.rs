@@ -5,16 +5,27 @@
 
 use super::accounts;
 use super::attachments;
+use super::auth_middleware::require_api_key;
 use super::config;
 use super::handlers;
 use super::health;
 use super::oauth;
 use super::sse;
-use actix_web::{web, Scope};
+use actix_web::dev::HttpServiceFactory;
+use actix_web::web;
+use actix_web_lab::middleware::from_fn as mw_from_fn;
 use log::info;
 
-pub fn configure_routes() -> Scope {
-    web::scope("/api/dashboard")
+/// Path prefix of every dashboard API route.
+pub const DASHBOARD_SCOPE: &str = "/api/dashboard";
+/// Where Microsoft redirects the browser after sign-in (relative to the scope).
+pub const MICROSOFT_CALLBACK_PATH: &str = "/oauth/callback/microsoft";
+
+/// The dashboard API scope. Every route in it requires the API key
+/// (see `auth_middleware`).
+pub fn configure_routes() -> impl HttpServiceFactory {
+    web::scope(DASHBOARD_SCOPE)
+        .wrap(mw_from_fn(require_api_key))
         .route("/stats", web::get().to(handlers::get_dashboard_stats))
         .route("/clients", web::get().to(handlers::get_connected_clients))
         .route("/config", web::get().to(config::get_config))
@@ -185,7 +196,7 @@ pub fn configure_routes() -> Scope {
             web::get().to(oauth::microsoft_authorize),
         )
         .route(
-            "/oauth/callback/microsoft",
+            MICROSOFT_CALLBACK_PATH,
             web::get().to(oauth::microsoft_callback),
         )
 }

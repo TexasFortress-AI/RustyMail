@@ -11,6 +11,8 @@ import {
   ChatbotQuery,
   ChatbotResponse
 } from '@/types';
+import { authFetch } from './authFetch';
+import { AuthenticatedEventStream } from './eventStream';
 
 // Base API URL - in production this would come from environment variables
 const API_BASE = '/api/dashboard';
@@ -70,14 +72,12 @@ export interface PresetCategory {
 }
 
 // Utility function to handle API requests
-const apiRequest = async <T>(url: string, options?: RequestInit): Promise<T> => {
-  const response = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
-    ...options,
-  });
+const apiRequest = async <T>(url: string, options: RequestInit = {}): Promise<T> => {
+  const headers = new Headers(options.headers);
+  if (!headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+  const response = await authFetch(url, { ...options, headers });
 
   if (!response.ok) {
     throw new Error(`API request failed: ${response.status} ${response.statusText}`);
@@ -434,9 +434,10 @@ export const initEventSource = (
   onSystemAlert: (data: any) => void,
   onReconnected?: () => void
 ) => {
-  // Connect to the real SSE endpoint
-  // EventSource will automatically reconnect and send Last-Event-ID header
-  const eventSource = new EventSource(`${API_BASE}/events`);
+  // Connect to the real SSE endpoint. EventSource cannot send the API key,
+  // so this uses AuthenticatedEventStream, which reconnects and sends
+  // Last-Event-ID the same way.
+  const eventSource = new AuthenticatedEventStream(`${API_BASE}/events`);
 
   let isReconnection = false;
   let connectionAttempts = 0;
@@ -515,16 +516,16 @@ export const initEventSource = (
 
   eventSource.addEventListener('error', (event) => {
     connectionAttempts++;
-    if (eventSource.readyState === EventSource.CONNECTING) {
+    if (eventSource.readyState === AuthenticatedEventStream.CONNECTING) {
       console.log(`SSE reconnecting... (attempt ${connectionAttempts})`);
-    } else if (eventSource.readyState === EventSource.CLOSED) {
+    } else if (eventSource.readyState === AuthenticatedEventStream.CLOSED) {
       console.error('SSE connection closed permanently');
     } else {
       console.error('SSE error:', event);
     }
   });
 
-  // EventSource connection states for reference:
+  // AuthenticatedEventStream connection states (same as EventSource):
   // - CONNECTING (0): Connecting or reconnecting
   // - OPEN (1): Connected
   // - CLOSED (2): Connection closed and won't retry
