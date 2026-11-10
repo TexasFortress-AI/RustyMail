@@ -6,6 +6,11 @@
 # - RUSTSEC-2026-0258: h2 0.3 pinned by actix-http; h2 0.4 path already upgraded
 # - RUSTSEC-2024-0421: idna 0.5 via oauth2/reqwest 0.11
 # - RUSTSEC-2026-0104/0098/0099: rustls-webpki 0.101 only on oauth2/rustls 0.21 path
+# - RUSTSEC-2026-0459: bundled SQLite < 3.54 (libsqlite3-sys < 0.39). No sqlx release
+#   accepts 0.39 yet (0.9.0 caps it below 0.38). Local-only: needs crafted db + -wal
+#   files in data/. Remove when sqlx supports libsqlite3-sys 0.39.
+# - RUSTSEC-2026-0462: rmcp Streamable HTTP *client* buffering. RustyMail enables only
+#   rmcp's server features, so the vulnerable client code is not compiled.
 
 [advisories]
 ignore = [
@@ -17,4 +22,6 @@ ignore = [
     "RUSTSEC-2026-0104",
     "RUSTSEC-2026-0098",
     "RUSTSEC-2026-0099",
+    "RUSTSEC-2026-0459",
+    "RUSTSEC-2026-0462",
 ]
