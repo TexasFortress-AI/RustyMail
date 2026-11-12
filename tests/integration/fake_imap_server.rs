@@ -5,7 +5,7 @@
 
 //! Minimal TLS fake IMAP server: one per test account, so routing is exercised over real TCP.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
@@ -20,6 +20,8 @@ pub enum MoveBehavior {
     IgnoreMove,
     LoseMessage,
     RefuseCopyAndMove,
+    /// The server has no MOVE extension, so clients fall back to COPY + EXPUNGE.
+    NoMoveCommand,
 }
 
 #[derive(Clone)]
@@ -34,6 +36,10 @@ pub struct FakeMailbox {
     pub connections: usize,
     pub next_uid: u32,
     pub move_behavior: MoveBehavior,
+    /// (folder, uid) pairs carrying the \Deleted flag.
+    pub deleted: HashSet<(String, u32)>,
+    /// Whether CAPABILITY advertises UIDPLUS (UID EXPUNGE).
+    pub uidplus: bool,
 }
 
 impl FakeMailbox {
@@ -54,14 +60,51 @@ impl FakeMailbox {
         if upper.starts_with("UID FETCH ") {
             return self.fetch_headers(selected, tag, command);
         }
+        if upper.starts_with("UID MOVE ") && self.move_behavior == MoveBehavior::NoMoveCommand {
+            return format!("{} BAD unknown command\r\n", tag);
+        }
         if upper.starts_with("UID MOVE ") {
             return self.move_message(selected, tag, command);
+        }
+        if upper.starts_with("UID COPY ") {
+            return self.copy_messages(selected, tag, command);
+        }
+        if upper.starts_with("UID STORE ")
+            && upper.contains("+FLAGS")
+            && upper.contains("\\DELETED")
+        {
+            let uids = uid_list(command.split_whitespace().nth(2).unwrap());
+            self.deleted
+                .extend(uids.into_iter().map(|uid| (selected.clone(), uid)));
+            return format!("{} OK done\r\n", tag);
+        }
+        if upper.starts_with("UID SEARCH DELETED") {
+            let hits: String = self
+                .deleted
+                .iter()
+                .filter(|(folder, _)| folder == selected)
+                .map(|(_, uid)| format!(" {}", uid))
+                .collect();
+            return format!("* SEARCH{}\r\n{} OK done\r\n", hits, tag);
+        }
+        if upper.starts_with("UID EXPUNGE ") {
+            let only = uid_list(command.split_whitespace().nth(2).unwrap());
+            self.expunge(selected, Some(&only));
+            return format!("{} OK done\r\n", tag);
+        }
+        if upper.starts_with("EXPUNGE") {
+            self.expunge(selected, None);
+            return format!("{} OK done\r\n", tag);
         }
         if upper.starts_with("LOGOUT") {
             return format!("* BYE bye\r\n{} OK done\r\n", tag);
         }
         if upper.starts_with("CAPABILITY") {
-            return format!("* CAPABILITY IMAP4rev1 MOVE\r\n{} OK done\r\n", tag);
+            let uidplus = if self.uidplus { " UIDPLUS" } else { "" };
+            return format!(
+                "* CAPABILITY IMAP4rev1 MOVE{}\r\n{} OK done\r\n",
+                uidplus, tag
+            );
         }
         format!("{} OK done\r\n", tag)
     }
@@ -144,6 +187,46 @@ impl FakeMailbox {
     }
 }
 
+impl FakeMailbox {
+    fn copy_messages(&mut self, selected: &str, tag: &str, command: &str) -> String {
+        let mut parts = command.split_whitespace();
+        let uids = uid_list(parts.nth(2).unwrap());
+        let destination = parts.next().unwrap().trim_matches('"').to_string();
+        let copies: Vec<FakeMessage> = self.folders[selected]
+            .iter()
+            .filter(|m| uids.contains(&m.uid))
+            .cloned()
+            .collect();
+        for mut message in copies {
+            message.uid = self.next_uid;
+            self.next_uid += 1;
+            self.folders.get_mut(&destination).unwrap().push(message);
+        }
+        format!("{} OK done\r\n", tag)
+    }
+
+    /// Removes \Deleted messages from `selected`; with `only`, just those UIDs.
+    fn expunge(&mut self, selected: &str, only: Option<&[u32]>) {
+        let deleted = &mut self.deleted;
+        self.folders.get_mut(selected).unwrap().retain(|m| {
+            let flagged = deleted.contains(&(selected.to_string(), m.uid));
+            let targeted = only.is_none_or(|uids| uids.contains(&m.uid));
+            if flagged && targeted {
+                deleted.remove(&(selected.to_string(), m.uid));
+                return false;
+            }
+            true
+        });
+    }
+}
+
+/// Parses a comma-separated UID set such as `1,4,7`.
+fn uid_list(set: &str) -> Vec<u32> {
+    set.split(',')
+        .map(|uid| uid.trim().parse().unwrap())
+        .collect()
+}
+
 pub type SharedMailbox = Arc<Mutex<FakeMailbox>>;
 
 /// The client refuses plaintext IMAP, so the fake server terminates real TLS.
@@ -175,6 +258,8 @@ pub async fn spawn_fake_imap(messages: Vec<(u32, &str)>) -> (u16, SharedMailbox)
         connections: 0,
         next_uid: 9000,
         move_behavior: MoveBehavior::Normal,
+        deleted: HashSet::new(),
+        uidplus: true,
     }));
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

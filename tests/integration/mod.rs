@@ -20,5 +20,6 @@ pub mod mcp_http; // MCP HTTP endpoint integration tests
 pub mod mcp_stdio; // MCP stdio proxy integration tests
 pub mod multi_account_sync;
 pub mod security_tests;
+pub mod targeted_expunge; // Moves and deletes never purge other \Deleted messages
 pub mod write_tools_account_routing; // Write tools hit the named account's IMAP server; moves are verified // Security-focused tests for CORS, origin, auth, path traversal, rate limiting
                                      // pub mod test_uid_search_fix; // TODO: Fix ImapSession import

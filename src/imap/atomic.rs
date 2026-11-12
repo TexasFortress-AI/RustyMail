@@ -169,8 +169,8 @@ impl AtomicImapOperations {
             .store_flags(&[uid], FlagOperation::Add, &[String::from("\\Deleted")])
             .await?;
 
-        // Step 5: Expunge to complete the move
-        self.session.expunge().await?;
+        // Step 5: Expunge only this message to complete the move
+        self.session.expunge_uids(&[uid]).await?;
 
         // Clear transaction log on success
         {

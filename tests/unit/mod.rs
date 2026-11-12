@@ -11,6 +11,7 @@ pub mod api_key_tests;
 pub mod config;
 pub mod imap;
 pub mod session_manager;
+pub mod targeted_expunge_tests;
 pub mod transport;
 // pub mod dashboard_client_management; // Disabled
 pub mod dashboard_config;

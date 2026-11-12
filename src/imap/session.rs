@@ -20,6 +20,7 @@ use async_imap::{
 // Local types
 use crate::imap::{
     error::ImapError,
+    targeted_expunge,
     types::{Email, FlagOperation, MailboxInfo, SearchCriteria},
 };
 
@@ -78,6 +79,9 @@ pub trait AsyncImapOps: Send + Sync + Debug {
         -> Result<(), ImapError>;
     async fn fetch_raw_message(&self, uid: u32) -> Result<Vec<u8>, ImapError>;
     async fn expunge(&self) -> Result<(), ImapError>;
+    /// Permanently removes only these UIDs (already marked `\Deleted`) from
+    /// the selected folder, never other messages marked `\Deleted`.
+    async fn expunge_uids(&self, uids: &[u32]) -> Result<(), ImapError>;
     async fn copy_messages(&self, uids: &[u32], to_folder: &str) -> Result<(), ImapError>;
     async fn move_messages(
         &self,
@@ -626,14 +630,7 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
             .await
             .map_err(|e| ImapError::Other(format!("Failed to process store results: {}", e)))?;
 
-        let expunge_stream = session_guard
-            .expunge()
-            .await
-            .map_err(|e| ImapError::Other(format!("Failed to expunge: {}", e)))?;
-        expunge_stream
-            .try_collect::<Vec<_>>()
-            .await
-            .map_err(|e| ImapError::Other(format!("Failed to process expunge results: {}", e)))?;
+        targeted_expunge::expunge_only(&mut session_guard, &[uid]).await?;
 
         Ok(())
     }
@@ -749,6 +746,13 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
             .map_err(ImapError::from)
     }
 
+    async fn expunge_uids(&self, uids: &[u32]) -> Result<(), ImapError> {
+        let mut session_guard = self.session.lock().await;
+        targeted_expunge::expunge_only(&mut session_guard, uids)
+            .await
+            .map(|_| ())
+    }
+
     async fn copy_messages(&self, uids: &[u32], to_folder: &str) -> Result<(), ImapError> {
         let mut session_guard = self.session.lock().await;
         let sequence = uids
@@ -802,9 +806,8 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
             .await
             .map_err(|e| ImapError::Other(format!("Failed to process store results: {}", e)))?;
 
+        targeted_expunge::expunge_only(&mut session_guard, uids).await?;
         drop(session_guard);
-
-        self.expunge().await?;
 
         info!(
             "Successfully moved {} messages from {} to {} using COPY+DELETE+EXPUNGE",
@@ -835,7 +838,7 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
             uids.len()
         );
         self.mark_as_deleted(uids).await?;
-        self.expunge().await?;
+        self.expunge_uids(uids).await?;
         info!("Successfully deleted {} messages permanently", uids.len());
         Ok(())
     }
