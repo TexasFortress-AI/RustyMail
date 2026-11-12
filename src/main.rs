@@ -25,6 +25,7 @@ use rustymail::api::openapi_docs;
 use rustymail::dashboard;
 use rustymail::dashboard::api::SseManager;
 use rustymail::dashboard::services::account_store::AccountStore;
+use rustymail::dashboard::services::dashboard_sessions::DashboardSessions;
 // --- Add imports for factory ---
 use rustymail::imap::client::ImapClient; // Needed for the factory closure
                                          // --- End imports for factory ---
@@ -238,6 +239,9 @@ async fn main() -> std::io::Result<()> {
     };
     info!("Application state initialized.");
     let rest_v1_enabled = rest_api_v1_enabled();
+    // One session store for the whole server: actix runs the app factory
+    // once per worker, so it must be created here and shared.
+    let dashboard_sessions = web::Data::new(DashboardSessions::from_env());
     if rest_v1_enabled {
         info!("Legacy REST API /api/v1 enabled (REST_API_V1_ENABLED)");
     } else {
@@ -385,6 +389,7 @@ async fn main() -> std::io::Result<()> {
             .app_data(config.clone()) // Dashboard config
             .app_data(dashboard_state.clone()) // Dashboard state
             .app_data(web::Data::new(sse_manager.clone())) // Dashboard SSE Manager
+            .app_data(dashboard_sessions.clone()) // Dashboard browser sessions
             .wrap(RateLimitMiddleware::new(rate_limit_config.clone()))
             .wrap(cors)
             .wrap(actix_web::middleware::Logger::default())

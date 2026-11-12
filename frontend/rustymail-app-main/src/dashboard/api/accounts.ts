@@ -5,19 +5,18 @@
 
 import { Account, AutoConfigResult, AccountFormData } from '../../types';
 import config from '../config';
+import { authFetch } from './authFetch';
 
 const API_BASE = `${config.api.baseUrl}/dashboard`;
-const API_KEY = config.api.apiKey;
 
 const headers = {
   'Content-Type': 'application/json',
-  'X-API-Key': API_KEY,
 };
 
 export const accountsApi = {
   // Auto-configure account settings from email address
   async autoConfig(emailAddress: string, password?: string): Promise<AutoConfigResult> {
-    const response = await fetch(`${API_BASE}/accounts/auto-config`, {
+    const response = await authFetch(`${API_BASE}/accounts/auto-config`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -37,7 +36,7 @@ export const accountsApi = {
 
   // List all accounts
   async listAccounts(): Promise<Account[]> {
-    const response = await fetch(`${API_BASE}/accounts`, {
+    const response = await authFetch(`${API_BASE}/accounts`, {
       method: 'GET',
       headers,
     });
@@ -52,7 +51,7 @@ export const accountsApi = {
 
   // Get default account
   async getDefaultAccount(): Promise<Account | null> {
-    const response = await fetch(`${API_BASE}/accounts/default`, {
+    const response = await authFetch(`${API_BASE}/accounts/default`, {
       method: 'GET',
       headers,
     });
@@ -69,7 +68,7 @@ export const accountsApi = {
 
   // Get account by ID
   async getAccount(id: string): Promise<Account> {
-    const response = await fetch(`${API_BASE}/accounts/${id}`, {
+    const response = await authFetch(`${API_BASE}/accounts/${id}`, {
       method: 'GET',
       headers,
     });
@@ -83,7 +82,7 @@ export const accountsApi = {
 
   // Create new account
   async createAccount(data: AccountFormData): Promise<{ id: string }> {
-    const response = await fetch(`${API_BASE}/accounts`, {
+    const response = await authFetch(`${API_BASE}/accounts`, {
       method: 'POST',
       headers,
       body: JSON.stringify(data),
@@ -99,7 +98,7 @@ export const accountsApi = {
 
   // Update account
   async updateAccount(id: string, data: Partial<AccountFormData>): Promise<void> {
-    const response = await fetch(`${API_BASE}/accounts/${id}`, {
+    const response = await authFetch(`${API_BASE}/accounts/${id}`, {
       method: 'PUT',
       headers,
       body: JSON.stringify(data),
@@ -113,7 +112,7 @@ export const accountsApi = {
 
   // Delete account
   async deleteAccount(id: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/accounts/${id}`, {
+    const response = await authFetch(`${API_BASE}/accounts/${id}`, {
       method: 'DELETE',
       headers,
     });
@@ -125,7 +124,7 @@ export const accountsApi = {
 
   // Set as default account
   async setDefaultAccount(id: string): Promise<void> {
-    const response = await fetch(`${API_BASE}/accounts/${id}/default`, {
+    const response = await authFetch(`${API_BASE}/accounts/${id}/default`, {
       method: 'POST',
       headers,
     });
@@ -137,7 +136,7 @@ export const accountsApi = {
 
   // Get OAuth provider status (which providers are configured)
   async getOAuthStatus(): Promise<{ microsoft: boolean }> {
-    const response = await fetch(`${API_BASE}/oauth/status`, {
+    const response = await authFetch(`${API_BASE}/oauth/status`, {
       method: 'GET',
       headers,
     });
@@ -151,7 +150,7 @@ export const accountsApi = {
 
   // Get Microsoft OAuth authorization URL
   async getMicrosoftAuthUrl(): Promise<{ authorization_url: string; state: string }> {
-    const response = await fetch(`${API_BASE}/oauth/microsoft/authorize`, {
+    const response = await authFetch(`${API_BASE}/oauth/microsoft/authorize`, {
       method: 'GET',
       headers,
     });
@@ -166,7 +165,7 @@ export const accountsApi = {
 
   // Validate connection
   async validateConnection(id: string): Promise<{ success: boolean; message?: string }> {
-    const response = await fetch(`${API_BASE}/accounts/${id}/validate`, {
+    const response = await authFetch(`${API_BASE}/accounts/${id}/validate`, {
       method: 'POST',
       headers,
     });

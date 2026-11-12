@@ -6,9 +6,9 @@
 // Email API client for SMTP operations
 
 import { config } from '../config';
+import { authFetch } from './authFetch';
 
 const API_BASE = `${config.api.baseUrl}/dashboard`;
-const API_KEY = config.api.apiKey;
 
 export interface SendEmailRequest {
   to: string[];
@@ -65,11 +65,10 @@ Subject: ${request.subject}
 Body preview: ${request.body_preview.substring(0, 500)}`;
 
     try {
-      const response = await fetch(url, {
+      const response = await authFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': API_KEY,
         },
         body: JSON.stringify({
           query: prompt,
@@ -95,11 +94,10 @@ Body preview: ${request.body_preview.substring(0, 500)}`;
   draftReply: async (request: DraftReplyRequest): Promise<DraftReplyResponse> => {
     const url = `${API_BASE}/mcp/execute?variant=high-level`;
 
-    const response = await fetch(url, {
+    const response = await authFetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': API_KEY,
       },
       body: JSON.stringify({
         tool: 'draft_reply',
@@ -136,11 +134,10 @@ Body preview: ${request.body_preview.substring(0, 500)}`;
     const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout
 
     try {
-      const response = await fetch(url, {
+      const response = await authFetch(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': API_KEY,
         },
         body: JSON.stringify(request),
         signal: controller.signal,

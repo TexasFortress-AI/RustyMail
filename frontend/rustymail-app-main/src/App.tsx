@@ -12,6 +12,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { AccountProvider } from "@/contexts/AccountContext";
 import Dashboard from "@/dashboard/components/Dashboard";
+import LoginGate from "@/dashboard/components/LoginGate";
 import NotFound from "./pages/NotFound";
 
 // Create a new query client instance
@@ -27,18 +28,20 @@ const queryClient = new QueryClient({
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <ThemeProvider>
-      <AccountProvider>
-        <TooltipProvider>
-          <Toaster />
-          <Sonner />
-          <BrowserRouter>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-          </BrowserRouter>
-        </TooltipProvider>
-      </AccountProvider>
+      <LoginGate>
+        <AccountProvider>
+          <TooltipProvider>
+            <Toaster />
+            <Sonner />
+            <BrowserRouter>
+              <Routes>
+                <Route path="/" element={<Dashboard />} />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </BrowserRouter>
+          </TooltipProvider>
+        </AccountProvider>
+      </LoginGate>
     </ThemeProvider>
   </QueryClientProvider>
 );

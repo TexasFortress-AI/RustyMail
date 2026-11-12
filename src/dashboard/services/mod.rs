@@ -33,6 +33,7 @@ pub mod clients;
 pub mod config;
 pub mod connection_status;
 pub mod connection_status_store;
+pub mod dashboard_sessions;
 pub mod email;
 pub mod encryption;
 pub mod event_integration;

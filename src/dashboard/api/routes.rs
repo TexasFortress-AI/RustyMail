@@ -10,6 +10,7 @@ use super::config;
 use super::handlers;
 use super::health;
 use super::oauth;
+use super::session::{self, SESSION_PATH};
 use super::sse;
 use actix_web::dev::HttpServiceFactory;
 use actix_web::web;
@@ -26,6 +27,10 @@ pub const MICROSOFT_CALLBACK_PATH: &str = "/oauth/callback/microsoft";
 pub fn configure_routes() -> impl HttpServiceFactory {
     web::scope(DASHBOARD_SCOPE)
         .wrap(mw_from_fn(require_api_key))
+        // Browser login (exempt from the key check), status and logout
+        .route(SESSION_PATH, web::post().to(session::login))
+        .route(SESSION_PATH, web::get().to(session::status))
+        .route(SESSION_PATH, web::delete().to(session::logout))
         .route("/stats", web::get().to(handlers::get_dashboard_stats))
         .route("/clients", web::get().to(handlers::get_connected_clients))
         .route("/config", web::get().to(config::get_config))

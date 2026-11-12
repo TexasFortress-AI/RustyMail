@@ -8,8 +8,8 @@ export const config = {
   // API configuration
   api: {
     baseUrl: import.meta.env.VITE_API_URL || '',
-    // API key must be set via VITE_RUSTYMAIL_API_KEY environment variable
-    apiKey: import.meta.env.VITE_RUSTYMAIL_API_KEY || '',
+    // No API key here: the browser logs in once and is authenticated by an
+    // HttpOnly session cookie (see api/authFetch.ts).
   },
 
   // Dashboard specific settings

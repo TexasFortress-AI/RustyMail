@@ -2,21 +2,21 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-// A Server-Sent Events client that sends the API key.
+// A Server-Sent Events client for the dashboard's live updates.
 //
-// The browser's EventSource cannot send custom headers, and the dashboard API
-// requires X-API-Key on every request. This class keeps EventSource's
-// interface (addEventListener, close, readyState) but reads the stream with
-// fetch. Like EventSource it sends Last-Event-ID when reconnecting and
-// honours the server's `retry:` delay. It gives up only when the key is
-// refused (401/403); dropped connections and other errors, such as the dev
-// proxy's 5xx while the backend restarts, are retried.
+// It keeps EventSource's interface (addEventListener, close, readyState) but
+// reads the stream with fetch, so a lost session (401) is announced to the
+// login screen instead of failing silently. Like EventSource it sends
+// Last-Event-ID when reconnecting and honours the server's `retry:` delay.
+// It gives up only when the session is refused (401/403); dropped
+// connections and other errors, such as the dev proxy's 5xx while the
+// backend restarts, are retried.
 
-import { authHeaders } from './authFetch';
+import { announceUnauthorized } from './authFetch';
 
 // EventSource's reconnection delay when the server sends no `retry:` field.
 const DEFAULT_RETRY_MS = 3000;
-// Responses that retrying cannot fix: the API key was refused.
+// Responses that retrying cannot fix: the session is missing or expired.
 const AUTH_FAILURE_STATUSES = [401, 403];
 
 export interface StreamEvent {
@@ -59,16 +59,22 @@ export class AuthenticatedEventStream {
   }
 
   private async connect(): Promise<void> {
-    const headers = authHeaders({ Accept: 'text/event-stream' });
+    const headers = new Headers({ Accept: 'text/event-stream' });
     if (this.lastEventId) headers.set('Last-Event-ID', this.lastEventId);
     let response: Response;
     try {
-      response = await fetch(this.url, { headers, cache: 'no-store', signal: this.controller.signal });
+      response = await fetch(this.url, {
+        headers,
+        cache: 'no-store',
+        credentials: 'same-origin',
+        signal: this.controller.signal,
+      });
     } catch {
       return this.scheduleReconnect();
     }
     if (AUTH_FAILURE_STATUSES.includes(response.status)) {
       this.close();
+      announceUnauthorized();
       return this.emit('error');
     }
     if (!response.ok || !response.body) {

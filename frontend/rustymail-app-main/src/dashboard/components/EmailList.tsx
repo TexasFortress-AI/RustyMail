@@ -6,7 +6,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { API_BASE_URL } from '../../config/api';
-import { config } from '../config';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { useAccount } from '../../contexts/AccountContext';
 import { Button } from '../../components/ui/button';
@@ -28,7 +27,7 @@ import { ConnectionStatusIndicator } from './ConnectionStatusIndicator';
 import { SyncStatusPanel } from './SyncStatusPanel';
 import { accountsApi } from '../api/accounts';
 import { sanitizeEmailHtml } from '../utils/sanitizeEmailHtml';
-import { downloadWithAuth } from '../api/authFetch';
+import { authFetch, downloadWithAuth } from '../api/authFetch';
 import './EmailBody.css';
 
 interface Email {
@@ -205,13 +204,8 @@ const EmailList: React.FC<EmailListProps> = ({
         throw new Error('No account selected');
       }
       const offset = (currentPage - 1) * pageSize;
-      const response = await fetch(
-        `${API_BASE_URL}/dashboard/emails?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&limit=${pageSize}&offset=${offset}`,
-        {
-          headers: {
-            'X-API-Key': config.api.apiKey
-          }
-        }
+      const response = await authFetch(
+        `${API_BASE_URL}/dashboard/emails?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&limit=${pageSize}&offset=${offset}`
       );
       if (!response.ok) {
         throw new Error('Failed to fetch emails');
@@ -231,13 +225,8 @@ const EmailList: React.FC<EmailListProps> = ({
         throw new Error('No account selected');
       }
 
-      const response = await fetch(
-        `${API_BASE_URL}/dashboard/cached-folders?account_id=${encodeURIComponent(currentAccount.id)}`,
-        {
-          headers: {
-            'X-API-Key': config.api.apiKey
-          },
-        }
+      const response = await authFetch(
+        `${API_BASE_URL}/dashboard/cached-folders?account_id=${encodeURIComponent(currentAccount.id)}`
       );
 
       if (!response.ok) {
@@ -283,11 +272,10 @@ const EmailList: React.FC<EmailListProps> = ({
 
       // Not on this page — fetch the specific email, then try to jump to its page.
       try {
-        const response = await fetch(`${API_BASE_URL}/dashboard/mcp/execute`, {
+        const response = await authFetch(`${API_BASE_URL}/dashboard/mcp/execute`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-API-Key': config.api.apiKey,
           },
           body: JSON.stringify({
             tool: 'get_email_by_uid',
@@ -331,9 +319,8 @@ const EmailList: React.FC<EmailListProps> = ({
           while (lo <= hi) {
             const mid = Math.floor((lo + hi) / 2);
             const midOffset = (mid - 1) * pageSize;
-            const pageResp = await fetch(
-              `${API_BASE_URL}/dashboard/emails?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&limit=${pageSize}&offset=${midOffset}`,
-              { headers: { 'X-API-Key': config.api.apiKey } }
+            const pageResp = await authFetch(
+              `${API_BASE_URL}/dashboard/emails?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&limit=${pageSize}&offset=${midOffset}`
             );
             if (!pageResp.ok) break;
             const pageData = (await pageResp.json()) as EmailListResponse;
@@ -416,11 +403,8 @@ const EmailList: React.FC<EmailListProps> = ({
         description: `Starting sync for ${currentAccount.email_address}`,
       });
 
-      const response = await fetch(`${API_BASE_URL}/dashboard/sync/trigger?account_id=${encodeURIComponent(currentAccount.id)}`, {
+      const response = await authFetch(`${API_BASE_URL}/dashboard/sync/trigger?account_id=${encodeURIComponent(currentAccount.id)}`, {
         method: 'POST',
-        headers: {
-          'X-API-Key': config.api.apiKey
-        }
       });
 
       if (response.ok) {
@@ -453,13 +437,8 @@ const EmailList: React.FC<EmailListProps> = ({
 
     setLoadingAttachments(true);
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/dashboard/attachments/list?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&uid=${email.uid}`,
-        {
-          headers: {
-            'X-API-Key': config.api.apiKey
-          }
-        }
+      const response = await authFetch(
+        `${API_BASE_URL}/dashboard/attachments/list?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&uid=${email.uid}`
       );
 
       if (response.ok) {
@@ -506,11 +485,10 @@ const EmailList: React.FC<EmailListProps> = ({
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/dashboard/emails/delete`, {
+      const response = await authFetch(`${API_BASE_URL}/dashboard/emails/delete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': config.api.apiKey
         },
         body: JSON.stringify({
           folder: currentFolder,
@@ -580,11 +558,10 @@ const EmailList: React.FC<EmailListProps> = ({
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/dashboard/emails/move`, {
+      const response = await authFetch(`${API_BASE_URL}/dashboard/emails/move`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': config.api.apiKey
         },
         body: JSON.stringify({
           account_id: currentAccount.id,

@@ -15,7 +15,8 @@ import {
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useConfig, useSetActiveAdapter, useAiProviders, useSetAiProvider, useAiModels, useSetAiModel } from '@/dashboard/api/hooks';
-import { Loader2, Bot, Search, Sun, Moon, Monitor, X } from 'lucide-react';
+import { Loader2, Bot, Search, Sun, Moon, Monitor, X, LogOut } from 'lucide-react';
+import { logOut } from '@/dashboard/api/session';
 import { useTheme } from '@/contexts/ThemeContext';
 import {
   DropdownMenu,
@@ -317,6 +318,19 @@ const TopBar: React.FC = () => {
             </div>
           )}
 
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            title="Sign out"
+            onClick={async () => {
+              await logOut();
+              window.location.reload();
+            }}
+          >
+            <LogOut className="h-4 w-4" />
+            <span className="sr-only">Sign out</span>
+          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="h-8 w-8">

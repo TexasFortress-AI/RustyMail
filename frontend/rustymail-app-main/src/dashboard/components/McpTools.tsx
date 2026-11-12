@@ -10,6 +10,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import config from '../config';
 import { useAccount } from '../../contexts/AccountContext';
 import type { EmailContext } from './EmailList';
+import { authFetch } from '../api/authFetch';
 
 interface McpTool {
   name: string;
@@ -104,12 +105,8 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
     try {
       // Fetch both low-level and high-level tools
       const [lowLevelResponse, highLevelResponse] = await Promise.all([
-        fetch(`${config.api.baseUrl}/dashboard/mcp/tools?variant=low-level`, {
-          headers: { 'X-API-Key': config.api.apiKey }
-        }),
-        fetch(`${config.api.baseUrl}/dashboard/mcp/tools?variant=high-level`, {
-          headers: { 'X-API-Key': config.api.apiKey }
-        })
+        authFetch(`${config.api.baseUrl}/dashboard/mcp/tools?variant=low-level`),
+        authFetch(`${config.api.baseUrl}/dashboard/mcp/tools?variant=high-level`)
       ]);
 
       if (!lowLevelResponse.ok || !highLevelResponse.ok) {
@@ -150,11 +147,10 @@ const McpTools: React.FC<McpToolsProps> = ({ currentFolder, selectedEmailContext
       };
 
       const variant = activeTab === 'high-level' ? 'high-level' : 'standard';
-      const response = await fetch(`${config.api.baseUrl}/dashboard/mcp/execute?variant=${variant}`, {
+      const response = await authFetch(`${config.api.baseUrl}/dashboard/mcp/execute?variant=${variant}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-API-Key': config.api.apiKey
         },
         body: JSON.stringify({
           tool: toolName,

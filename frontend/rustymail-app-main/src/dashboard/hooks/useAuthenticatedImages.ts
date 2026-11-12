@@ -2,10 +2,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-// Loads images whose URL needs the API key. An <img src> request cannot send
-// X-API-Key, so sanitizeEmailHtml puts protected URLs in AUTH_SRC_ATTRIBUTE
-// instead; this hook fetches each one with the key and shows it from an
-// object URL.
+// Loads inline email images (cid:) through authFetch. sanitizeEmailHtml puts
+// their URLs in AUTH_SRC_ATTRIBUTE instead of src, so they are fetched on
+// the same path as every other dashboard request and shown from an object
+// URL.
 
 import { useEffect } from 'react';
 import { fetchObjectUrl } from '../api/authFetch';
