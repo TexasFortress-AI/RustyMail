@@ -7,6 +7,7 @@
 
 // pub mod mcp;
 pub mod api_key; // Shared RUSTYMAIL_API_KEY check
+pub mod api_key_source; // Environment, else macOS Keychain
 pub mod auth;
 pub mod errors; // New comprehensive error module
 pub mod openapi_docs; // OpenAPI documentation

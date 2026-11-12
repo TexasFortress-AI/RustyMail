@@ -153,8 +153,9 @@ pm2 status
 
 # Verify backend is responding (uses DASHBOARD_PORT from .env)
 echo "Checking backend health..."
-# Dashboard routes require the API key from .env (prints the HTTP status only)
-RUSTYMAIL_API_KEY="$(grep '^RUSTYMAIL_API_KEY=' .env | cut -d= -f2-)"
+# Dashboard routes require the API key: from the environment, else the macOS
+# Keychain item apikey:RUSTYMAIL_API_KEY (prints the HTTP status only)
+RUSTYMAIL_API_KEY="${RUSTYMAIL_API_KEY:-$(security find-generic-password -a "$USER" -s apikey:RUSTYMAIL_API_KEY -w)}"
 curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: $RUSTYMAIL_API_KEY" http://localhost:9437/api/dashboard/stats || echo "Backend not responding yet..."
 
 # Verify frontend is serving (uses DASHBOARD_PORT from .env)
