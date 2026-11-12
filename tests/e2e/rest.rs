@@ -137,6 +137,9 @@ impl TestServer {
             }
         }
 
+        // /api/v1 is off by default; this suite exercises it.
+        command.env(rustymail::api::rest::REST_API_V1_ENABLED_ENV, "true");
+
         let mut child = command.spawn().expect("Failed to spawn server process");
         let pid = child.id().expect("Server process should have a PID");
         println!("Server process started (PID: {})", pid);

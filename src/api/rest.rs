@@ -66,6 +66,17 @@ impl From<String> for ApiError {
 
 // --- Route Configuration ---
 
+/// Environment variable that turns the legacy `/api/v1` REST API on.
+pub const REST_API_V1_ENABLED_ENV: &str = "REST_API_V1_ENABLED";
+
+/// `/api/v1` is off unless `REST_API_V1_ENABLED` is `true` or `1`. Nothing in
+/// RustyMail uses it, and every enabled API is another way into the mailboxes.
+pub fn rest_api_v1_enabled() -> bool {
+    std::env::var(REST_API_V1_ENABLED_ENV)
+        .map(|value| value.eq_ignore_ascii_case("true") || value == "1")
+        .unwrap_or(false)
+}
+
 pub fn configure_rest_service(cfg: &mut web::ServiceConfig) {
     // Scope for authenticated IMAP operations
     cfg.service(
