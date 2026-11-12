@@ -74,6 +74,10 @@ async fn main() -> std::io::Result<()> {
     env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
     info!("Starting RustyMail server...");
 
+    // RUSTYMAIL_API_KEY: the environment, else the macOS Keychain. Must run
+    // before anything reads the environment or spawns threads.
+    rustymail::api::api_key_source::load_api_key_into_environment();
+
     // Log allocator info
     #[cfg(all(not(target_env = "msvc"), not(feature = "dhat-heap")))]
     info!("Using jemalloc allocator for better memory management");
