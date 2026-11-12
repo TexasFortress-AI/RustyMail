@@ -308,7 +308,7 @@ Respond with the MCP method and parameters in JSON:
         query: &str,
         context: Option<&ConversationContext>,
     ) -> Result<NlpResult, RestApiError> {
-        info!("Processing NLP query: {}", query);
+        info!("Processing NLP query ({} chars)", query.len());
 
         // First, try pattern matching for quick intent detection
         let preliminary_intent = self.detect_intent_by_pattern(query);

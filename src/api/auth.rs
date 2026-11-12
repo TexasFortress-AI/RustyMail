@@ -219,10 +219,12 @@ impl ApiKeyStore {
             scopes,
         };
 
+        let key_name = key_data.name.clone();
         let mut keys = self.keys.write().await;
         keys.insert(api_key.clone(), key_data);
 
-        info!("Created new API key: {}", api_key);
+        // Never log key values: logs are kept on disk and copied around.
+        info!("Created new API key: {}", key_name);
         api_key
     }
 
@@ -235,14 +237,14 @@ impl ApiKeyStore {
                 debug!("Valid API key found for: {}", api_key.name);
                 Ok(api_key.clone())
             }
-            Some(_) => {
-                warn!("Inactive API key used: {}", key);
+            Some(api_key) => {
+                warn!("Inactive API key used: {}", api_key.name);
                 Err(ApiError::InvalidApiKey {
                     reason: "API key is inactive".to_string(),
                 })
             }
             None => {
-                warn!("Unknown API key: {}", key);
+                warn!("Unknown API key presented");
                 Err(ApiError::InvalidApiKey {
                     reason: "Invalid API key".to_string(),
                 })
@@ -350,7 +352,7 @@ impl ApiKeyStore {
         match keys.get_mut(key) {
             Some(api_key) => {
                 api_key.is_active = false;
-                info!("Revoked API key: {}", key);
+                info!("Revoked API key: {}", api_key.name);
                 Ok(())
             }
             None => Err(ApiError::NotFound {
