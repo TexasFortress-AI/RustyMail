@@ -20,6 +20,7 @@ pub mod middleware;
 pub mod models;
 pub mod oauth;
 pub mod routes;
+pub mod session;
 pub mod sse;
 
 // Re-export main types needed elsewhere

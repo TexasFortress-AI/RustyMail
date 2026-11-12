@@ -5,7 +5,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { API_BASE_URL } from '../../config/api';
-import { config } from '../config';
 import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { useAccount } from '../../contexts/AccountContext';
@@ -16,7 +15,7 @@ import type { AttachmentInfo, ListAttachmentsResponse } from '../../types';
 import { EmailContext } from './EmailList';
 import './EmailBody.css';
 import { sanitizeEmailHtml } from '../utils/sanitizeEmailHtml';
-import { downloadWithAuth } from '../api/authFetch';
+import { authFetch, downloadWithAuth } from '../api/authFetch';
 import { useAuthenticatedImages } from '../hooks/useAuthenticatedImages';
 import { SendMailDialog } from './SendMailDialog';
 
@@ -80,11 +79,10 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
       setLoading(true);
       try {
         // Prefer UID lookup so deep links and list pagination stay correct
-        const response = await fetch(`${API_BASE_URL}/dashboard/mcp/execute`, {
+        const response = await authFetch(`${API_BASE_URL}/dashboard/mcp/execute`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-API-Key': config.api.apiKey,
           },
           body: JSON.stringify({
             tool: 'get_email_by_uid',
@@ -103,9 +101,8 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
             setEmail(fetched as Email);
           } else {
             // Fallback: legacy index-based list fetch
-            const listResp = await fetch(
-              `${API_BASE_URL}/dashboard/emails?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&limit=1&offset=${selectedEmailContext.index}`,
-              { headers: { 'X-API-Key': config.api.apiKey } }
+            const listResp = await authFetch(
+              `${API_BASE_URL}/dashboard/emails?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&limit=1&offset=${selectedEmailContext.index}`
             );
             if (listResp.ok) {
               const data = await listResp.json();
@@ -140,13 +137,8 @@ const EmailBody: React.FC<EmailBodyProps> = ({ currentFolder, selectedEmailConte
 
       setLoadingAttachments(true);
       try {
-        const response = await fetch(
-          `${API_BASE_URL}/dashboard/attachments/list?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&uid=${email.uid}`,
-          {
-            headers: {
-              'X-API-Key': config.api.apiKey
-            }
-          }
+        const response = await authFetch(
+          `${API_BASE_URL}/dashboard/attachments/list?account_id=${encodeURIComponent(currentAccount.id)}&folder=${encodeURIComponent(currentFolder)}&uid=${email.uid}`
         );
 
         if (response.ok) {

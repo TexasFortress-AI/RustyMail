@@ -7,7 +7,6 @@ import React, { useState } from 'react';
 import { Button } from '../../components/ui/button';
 import { Progress } from '../../components/ui/progress';
 import { API_BASE_URL } from '../../config/api';
-import { config } from '../config';
 import { useToast } from '../../hooks/use-toast';
 import { useSyncStatus } from '../hooks/useSyncStatus';
 import { RefreshCw, AlertTriangle, ChevronDown, FolderSync } from 'lucide-react';
@@ -29,6 +28,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../../components/ui/alert-dialog';
+import { authFetch } from '../api/authFetch';
 
 interface SyncStatusPanelProps {
   accountId: string | undefined;
@@ -60,9 +60,8 @@ export function SyncStatusPanel({ accountId, folder, folderLastSync, onSyncCompl
         params.set('force', 'true');
       }
 
-      const response = await fetch(`${API_BASE_URL}/dashboard/sync/trigger?${params}`, {
+      const response = await authFetch(`${API_BASE_URL}/dashboard/sync/trigger?${params}`, {
         method: 'POST',
-        headers: { 'X-API-Key': config.api.apiKey },
       });
 
       if (response.ok) {

@@ -2,26 +2,28 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-// Every /api/dashboard request must carry the API key. These helpers add it,
-// including for downloads and images, which the browser would otherwise
-// request without custom headers.
+// Every /api/dashboard request is authenticated by the session cookie set at
+// login (HttpOnly, so page scripts never see a credential). These helpers
+// make sure the cookie is sent, and announce a 401 so the login screen can
+// appear. Downloads and inline images are fetched here too, so they go
+// through the same path.
 
-import { config } from '../config';
-
-export const API_KEY_HEADER = 'X-API-Key';
+/** Fired on window when the dashboard API answers 401 (no or expired session). */
+export const UNAUTHORIZED_EVENT = 'rustymail:unauthorized';
 // How long a download's object URL stays alive after the click starts it.
 const DOWNLOAD_URL_LIFETIME_MS = 60_000;
+const HTTP_UNAUTHORIZED = 401;
 
-/** The given headers plus the API key. */
-export function authHeaders(headers?: HeadersInit): Headers {
-  const merged = new Headers(headers);
-  merged.set(API_KEY_HEADER, config.api.apiKey);
-  return merged;
+/** Tells the login screen that the session is missing or has expired. */
+export function announceUnauthorized(): void {
+  window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
 }
 
-/** `fetch` with the API key added to the request headers. */
-export function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
-  return fetch(input, { ...init, headers: authHeaders(init.headers) });
+/** `fetch` for the dashboard API: sends the session cookie, announces 401s. */
+export async function authFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const response = await fetch(input, { ...init, credentials: 'same-origin' });
+  if (response.status === HTTP_UNAUTHORIZED) announceUnauthorized();
+  return response;
 }
 
 /** Fetches a protected file and returns an object URL for it (caller revokes it). */

@@ -5,7 +5,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { API_BASE_URL } from '../../config/api';
-import { config } from '../config';
+import { authFetch } from '../api/authFetch';
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -44,9 +44,8 @@ export function useSyncStatus(accountId: string | undefined, folder: string) {
     if (!accountId) return;
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/dashboard/sync/status?account_id=${accountId}&folder=${encodeURIComponent(folder)}`,
-        { headers: { 'X-API-Key': config.api.apiKey } }
+      const response = await authFetch(
+        `${API_BASE_URL}/dashboard/sync/status?account_id=${accountId}&folder=${encodeURIComponent(folder)}`
       );
 
       if (!response.ok) return;

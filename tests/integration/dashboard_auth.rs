@@ -15,9 +15,11 @@ use serial_test::serial;
 const TEST_KEY: &str = "dashboard-auth-test-key";
 const WRONG_KEY: &str = "dashboard-auth-wrong-key";
 
-/// Every route registered in `src/dashboard/api/routes.rs`, except the
-/// OAuth callback, which is tested separately.
+/// Every route registered in `src/dashboard/api/routes.rs`, except the two
+/// exempt ones (OAuth callback, `POST /session` login), tested separately.
 const DASHBOARD_ROUTES: &[(&str, &str)] = &[
+    ("GET", "/session"),
+    ("DELETE", "/session"),
     ("GET", "/stats"),
     ("GET", "/clients"),
     ("GET", "/config"),
@@ -183,7 +185,7 @@ async fn no_configured_key_refuses_every_request() {
 /// `state` protects it instead. Only GET is exempt.
 #[actix_web::test]
 #[serial]
-async fn only_the_oauth_callback_get_is_exempt() {
+async fn only_the_oauth_callback_and_login_are_exempt() {
     std::env::set_var("RUSTYMAIL_API_KEY", TEST_KEY);
     let callback = "/api/dashboard/oauth/callback/microsoft";
     assert_ne!(
@@ -196,6 +198,12 @@ async fn only_the_oauth_callback_get_is_exempt() {
     );
     assert_eq!(
         status_for("GET", &format!("{}/extra", callback), Credential::None).await,
+        StatusCode::UNAUTHORIZED
+    );
+    // The login checks the key in its body; only POST is exempt.
+    let login = "/api/dashboard/session";
+    assert_ne!(
+        status_for("POST", login, Credential::None).await,
         StatusCode::UNAUTHORIZED
     );
 }
