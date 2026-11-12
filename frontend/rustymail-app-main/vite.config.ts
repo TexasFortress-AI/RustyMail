@@ -23,7 +23,8 @@ export default defineConfig(({ mode }) => {
   return {
     envDir: path.resolve(__dirname, '../../'),
     server: {
-      host: process.env.DASHBOARD_HOST || "0.0.0.0",
+      // Loopback unless DASHBOARD_HOST says otherwise: the dev server hands out the API key.
+      host: process.env.DASHBOARD_HOST || "127.0.0.1",
       port: parseInt(dashboardPort),
       strictPort: true,
       proxy: {

@@ -82,12 +82,11 @@ pub async fn query_chatbot(
     state: web::Data<DashboardState>,
     req: web::Json<ChatbotQuery>,
 ) -> Result<impl Responder, ApiError> {
+    // The query text can quote email, so only its length is logged.
     info!(
-        "Handling POST /api/dashboard/chatbot/query with body: {:?}",
-        req
+        "Handling POST /api/dashboard/chatbot/query ({} chars)",
+        req.query.len()
     );
-    info!("Chatbot query field breakdown:");
-    info!("  - query: {}", req.query);
     info!("  - conversation_id: {:?}", req.conversation_id);
     info!("  - provider_override: {:?}", req.provider_override);
     info!("  - model_override: {:?}", req.model_override);
@@ -4511,9 +4510,10 @@ pub async fn stream_chatbot(
     state: web::Data<DashboardState>,
     req: web::Json<ChatbotQuery>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<sse::Event, Infallible>>>, ApiError> {
+    // The query text can quote email, so only its length is logged.
     debug!(
-        "Handling POST /api/dashboard/chatbot/stream with body: {:?}",
-        req
+        "Handling POST /api/dashboard/chatbot/stream ({} chars)",
+        req.query.len()
     );
 
     let (tx, rx) = mpsc::channel(100);
