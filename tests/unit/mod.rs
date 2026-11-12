@@ -10,6 +10,7 @@ pub mod api;
 pub mod api_key_tests;
 pub mod config;
 pub mod imap;
+pub mod rest_v1_flag_tests;
 pub mod session_manager;
 pub mod targeted_expunge_tests;
 pub mod transport;

@@ -12,7 +12,7 @@ use dotenvy::dotenv;
 use log::{error, info, warn};
 use rustymail::api::auth::ApiKeyStore;
 use rustymail::api::rate_limit::{RateLimitConfig, RateLimitMiddleware};
-use rustymail::api::rest::{configure_rest_service, AppState};
+use rustymail::api::rest::{configure_rest_service, rest_api_v1_enabled, AppState};
 use std::sync::Arc;
 use std::time::Duration;
 // Remove tool registry creation
@@ -237,6 +237,12 @@ async fn main() -> std::io::Result<()> {
         api_key_store: api_key_store.clone(),
     };
     info!("Application state initialized.");
+    let rest_v1_enabled = rest_api_v1_enabled();
+    if rest_v1_enabled {
+        info!("Legacy REST API /api/v1 enabled (REST_API_V1_ENABLED)");
+    } else {
+        info!("Legacy REST API /api/v1 disabled; set REST_API_V1_ENABLED=true to enable");
+    }
 
     // --- Dashboard Setup (remains largely the same, but might need factory later) ---
     let config = web::Data::new(settings.clone());
@@ -384,7 +390,12 @@ async fn main() -> std::io::Result<()> {
             .wrap(actix_web::middleware::Logger::default())
             .wrap(dashboard::api::middleware::Metrics)
             // Configure routes
-            .configure(configure_rest_service) // RustyMail REST API
+            .configure(|cfg| {
+                // Legacy RustyMail REST API, off unless REST_API_V1_ENABLED
+                if rest_v1_enabled {
+                    configure_rest_service(cfg);
+                }
+            })
             .configure(openapi_docs::configure_openapi) // OpenAPI/Swagger documentation
             // .configure(configure_sse_service)              // SSE not implemented yet
             .configure(dashboard::api::init_routes) // Dashboard API routes
