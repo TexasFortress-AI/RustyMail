@@ -15,6 +15,7 @@
 // Re-export key dashboard components
 pub mod api;
 pub mod services;
+pub mod static_site;
 pub mod testing; // Integration tests module
 
 // pub use api::models::{DashboardStats, ClientInfo, PaginatedClients}; // Unused

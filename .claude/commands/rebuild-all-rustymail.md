@@ -17,7 +17,7 @@ No hardcoded ports anywhere in scripts or configs.
 These ports are automatically read by the applications:
 - `REST_PORT=9437` - Backend REST API
 - `SSE_PORT=9438` - Backend SSE endpoint
-- `DASHBOARD_PORT=9439` - Frontend dashboard
+- `DASHBOARD_PORT=9439` - Vite dev server only (`npm run dev`); the backend serves the built dashboard on `REST_PORT`
 
 **Important**: The frontend `vite.config.ts` has `strictPort: true` set to prevent Vite from auto-incrementing to 9440/9441 if port 9439 is busy. This ensures rebuild scripts fail fast rather than silently starting on wrong ports.
 
@@ -158,14 +158,13 @@ echo "Checking backend health..."
 RUSTYMAIL_API_KEY="${RUSTYMAIL_API_KEY:-$(security find-generic-password -a "$USER" -s apikey:RUSTYMAIL_API_KEY -w)}"
 curl -s -o /dev/null -w '%{http_code}\n' -H "X-API-Key: $RUSTYMAIL_API_KEY" http://localhost:9437/api/dashboard/stats || echo "Backend not responding yet..."
 
-# Verify frontend is serving (uses DASHBOARD_PORT from .env)
-echo "Checking frontend..."
-curl -s -I http://localhost:9439 | head -5 || echo "Frontend not responding yet..."
+# Verify the backend serves the built dashboard (DASHBOARD_PATH)
+echo "Checking dashboard..."
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:9437/ || echo "Dashboard not responding yet..."
 
 echo ""
 echo "✅ REBUILD COMPLETE!"
-echo "Backend: http://localhost:9437"
-echo "Frontend: http://localhost:9439"
+echo "Dashboard + API: http://127.0.0.1:9437/"
 ```
 
 ## PM2 Commands Reference
@@ -179,11 +178,9 @@ pm2 logs
 
 # View logs (specific service)
 pm2 logs rustymail-backend
-pm2 logs rustymail-frontend
 
 # Restart a specific service
 pm2 restart rustymail-backend
-pm2 restart rustymail-frontend
 
 # Restart all services
 pm2 restart all
@@ -215,9 +212,10 @@ pm2 resurrect
 
 ### Frontend (TypeScript/Vite)
 - **Build Dir**: `frontend/rustymail-app-main/dist`
-- **Dev Server**: `npm run dev` (uses `dotenv-cli`)
+- **Served by**: the backend, from `DASHBOARD_PATH`, at `http://127.0.0.1:9437/`
+- **Dev Server**: `npm run dev` (uses `dotenv-cli`), for UI development only
 - **Config**: Loads `../../.env` via `dotenv -e ../../.env -- vite`
-- **Port**: `DASHBOARD_PORT` from `.env`
+- **Dev server port**: `DASHBOARD_PORT` from `.env`
 - **API URL**: Proxies to backend via `VITE_API_URL`
 
 ### MCP Stdio Adapters
@@ -235,7 +233,7 @@ pm2 resurrect
 ### PM2 Configuration
 - **File**: `frontend/rustymail-app-main/ecosystem.config.cjs`
 - **No hardcoded ports**: Relies on apps reading from `.env`
-- **Logs**: `logs/backend-*.log`, `logs/frontend-*.log`
+- **Logs**: `logs/backend-*.log`
 - **Auto-restart**: Up to 10 restarts, minimum 10s uptime
 
 ## Troubleshooting
