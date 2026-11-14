@@ -26,6 +26,7 @@ use rustymail::dashboard;
 use rustymail::dashboard::api::SseManager;
 use rustymail::dashboard::services::account_store::AccountStore;
 use rustymail::dashboard::services::dashboard_sessions::DashboardSessions;
+use rustymail::dashboard::static_site::{configure_dashboard_site, dashboard_site_dir};
 // --- Add imports for factory ---
 use rustymail::imap::client::ImapClient; // Needed for the factory closure
                                          // --- End imports for factory ---
@@ -330,6 +331,20 @@ async fn main() -> std::io::Result<()> {
     let (host, port) = (rest_config.host.clone(), rest_config.port);
     let listen_addr = format!("{}:{}", host, port);
     info!("Starting HTTP server (REST & MCP SSE) on {}", listen_addr);
+    let dashboard_site = match dashboard_site_dir(settings.dashboard.as_ref()) {
+        Ok(dir) => {
+            info!(
+                "Dashboard served at http://{}/ from {}",
+                listen_addr,
+                dir.display()
+            );
+            Some(dir)
+        }
+        Err(reason) => {
+            warn!("Dashboard UI not served by the backend: {:?}", reason);
+            None
+        }
+    };
 
     // Clone state needed for the broadcast task
     let sse_manager_clone_for_task = Arc::clone(&sse_manager);
@@ -384,7 +399,7 @@ async fn main() -> std::io::Result<()> {
             cors = cors.allowed_origin(origin);
         }
 
-        let app = App::new()
+        App::new()
             // --- Register updated state ---
             .app_data(web::Data::new(app_state.clone())) // Core AppState (handler, factory)
             .app_data(web::Data::new(imap_session_factory.clone())) // Pass factory directly for REST handlers
@@ -408,12 +423,13 @@ async fn main() -> std::io::Result<()> {
             .configure(openapi_docs::configure_openapi) // OpenAPI/Swagger documentation
             // .configure(configure_sse_service)              // SSE not implemented yet
             .configure(dashboard::api::init_routes) // Dashboard API routes
-            .configure(rustymail::api::mcp_http::configure_mcp_routes); // MCP Streamable HTTP transport
-
-        // Dashboard static files are served by Vite dev server (port 9439) in development
-        // For production, use a reverse proxy (nginx) or CDN to serve static files
-        // The REST API server (this server) only handles API requests on port 9437
-        app // Return the configured app
+            .configure(rustymail::api::mcp_http::configure_mcp_routes) // MCP Streamable HTTP transport
+            // Built dashboard last: it only gets paths no route above matched
+            .configure(|cfg| {
+                if let Some(dir) = &dashboard_site {
+                    configure_dashboard_site(cfg, dir);
+                }
+            })
     })
     .bind(&listen_addr)
     .map_err(|e| {

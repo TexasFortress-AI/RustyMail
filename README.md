@@ -66,8 +66,8 @@ cd ../..
 PM2 provides reliable process management with auto-restart on crashes:
 
 ```bash
-# Start all services (backend + frontend)
-pm2 start ecosystem.config.js
+# Start the backend (it also serves the built dashboard)
+pm2 start frontend/rustymail-app-main/ecosystem.config.cjs
 
 # Save process list (survives reboots)
 pm2 save
@@ -87,15 +87,9 @@ pm2 stop all
 
 ### Running Manually
 
-- **Backend Server** (REST API + MCP HTTP, port 9437):
+- **Backend Server** (REST API + MCP HTTP + built dashboard, port 9437):
   ```bash
   ./target/release/rustymail-server
-  ```
-
-- **Frontend Dashboard** (port 9439):
-  ```bash
-  cd frontend/rustymail-app-main
-  npm run dev
   ```
 
 - **MCP Stdio Adapter** (for Claude Desktop integration):
@@ -610,10 +604,12 @@ RustyMail includes a modern React-based dashboard for managing emails and monito
 
 2. Open your browser to:
    ```
-   http://localhost:9439
+   http://127.0.0.1:9437/
    ```
 
-3. The dashboard will automatically connect to the backend at port 9437
+3. Sign in with the API key. The backend serves the built dashboard from
+   `DASHBOARD_PATH` on the same port as the API, so there is no proxy.
+   Run `npm run build` after changing the frontend; a reload picks it up.
 
 ### Dashboard Development
 
@@ -625,7 +621,7 @@ cd frontend/rustymail-app-main
 # Install dependencies
 npm install
 
-# Start development server with hot-reload
+# Start the development server with hot-reload (port 9439, proxies /api)
 npm run dev
 
 # Build for production
@@ -636,7 +632,7 @@ npm run build
 
 ### Dashboard Architecture
 
-- **Frontend**: React + TypeScript + Vite (port 9439)
+- **Frontend**: React + TypeScript, built by Vite and served by the backend (port 9437)
 - **Backend API**: Rust + Actix-web (port 9437)
 - **Real-time Updates**: Streamable HTTP + WebSocket connections
 - **State Management**: React Context API
@@ -651,7 +647,7 @@ npm run build
 ```
 ┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
 │  Web Dashboard  │◄────►│  Backend Server  │◄────►│  IMAP Servers   │
-│   (Port 9439)   │      │   (Port 9437)    │      │  (Gmail, etc.)  │
+│   (Port 9437)   │      │   (Port 9437)    │      │  (Gmail, etc.)  │
 └─────────────────┘      └──────────────────┘      └─────────────────┘
                                   │
                                   ▼
