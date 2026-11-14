@@ -40,6 +40,11 @@ pub struct FakeMailbox {
     pub deleted: HashSet<(String, u32)>,
     /// Whether CAPABILITY advertises UIDPLUS (UID EXPUNGE).
     pub uidplus: bool,
+    /// Full raw messages by Message-ID, for `BODY.PEEK[]` fetches; a message
+    /// without one is served as just its Message-ID header.
+    pub raw_bodies: HashMap<String, String>,
+    /// INTERNALDATE by Message-ID, in IMAP date-time form.
+    pub internal_dates: HashMap<String, String>,
 }
 
 impl FakeMailbox {
@@ -57,8 +62,19 @@ impl FakeMailbox {
         if upper.starts_with("UID SEARCH UID ") {
             return self.search_uid(selected, tag, &command[15..]);
         }
+        if upper.starts_with("UID FETCH ") && upper.contains("BODY.PEEK[]") {
+            return self.fetch_bodies(selected, tag, command);
+        }
         if upper.starts_with("UID FETCH ") {
             return self.fetch_headers(selected, tag, command);
+        }
+        if upper.starts_with("LIST ") {
+            return self.list(tag);
+        }
+        if upper.starts_with("CREATE ") {
+            let name = command[7..].trim().trim_matches('"').to_string();
+            self.folders.entry(name).or_default();
+            return format!("{} OK done\r\n", tag);
         }
         if upper.starts_with("UID MOVE ") && self.move_behavior == MoveBehavior::NoMoveCommand {
             return format!("{} BAD unknown command\r\n", tag);
@@ -188,6 +204,47 @@ impl FakeMailbox {
 }
 
 impl FakeMailbox {
+    fn list(&self, tag: &str) -> String {
+        let mut names: Vec<&String> = self.folders.keys().collect();
+        names.sort();
+        let lines: String = names
+            .iter()
+            .map(|name| format!("* LIST (\\HasNoChildren) \".\" \"{}\"\r\n", name))
+            .collect();
+        format!("{}{} OK done\r\n", lines, tag)
+    }
+
+    /// `UID FETCH <set> (UID INTERNALDATE BODY.PEEK[])` for each UID present.
+    fn fetch_bodies(&self, selected: &str, tag: &str, command: &str) -> String {
+        let uids = uid_list(command.split_whitespace().nth(2).unwrap());
+        let mut out = String::new();
+        for (seq, message) in self.folders[selected]
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| uids.contains(&m.uid))
+        {
+            let raw = self
+                .raw_bodies
+                .get(&message.message_id)
+                .cloned()
+                .unwrap_or_else(|| format!("Message-ID: {}\r\n\r\n", message.message_id));
+            let date = self
+                .internal_dates
+                .get(&message.message_id)
+                .map(String::as_str)
+                .unwrap_or("01-Jan-2026 00:00:00 +0000");
+            out.push_str(&format!(
+                "* {} FETCH (UID {} INTERNALDATE \"{}\" BODY[] {{{}}}\r\n{})\r\n",
+                seq + 1,
+                message.uid,
+                date,
+                raw.len(),
+                raw
+            ));
+        }
+        format!("{}{} OK done\r\n", out, tag)
+    }
+
     fn copy_messages(&mut self, selected: &str, tag: &str, command: &str) -> String {
         let mut parts = command.split_whitespace();
         let uids = uid_list(parts.nth(2).unwrap());
@@ -260,6 +317,8 @@ pub async fn spawn_fake_imap(messages: Vec<(u32, &str)>) -> (u16, SharedMailbox)
         move_behavior: MoveBehavior::Normal,
         deleted: HashSet::new(),
         uidplus: true,
+        raw_bodies: HashMap::new(),
+        internal_dates: HashMap::new(),
     }));
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

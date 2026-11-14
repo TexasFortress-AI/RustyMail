@@ -4,11 +4,15 @@
 
 //! Cheap rules that decide a bucket from headers alone, before any model call.
 //!
-//! Order: Chris's known senders, then authentication failures (Spam), then
-//! bulk-mail headers (Noise). Anything else goes to the model.
+//! Order: authentication failures (Spam), expiring codes and resets (Trash,
+//! once expired), Chris's known senders, then bulk-mail headers (Noise).
+//! Anything else goes to the model. Authentication comes first because a
+//! sender that fails it is not who its From header claims.
 
+use super::codes::expiring_code;
 use super::message::TriageMessage;
 use super::{Bucket, Proposal};
+use chrono::Duration;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
@@ -76,10 +80,15 @@ fn parse_entries(entries: HashMap<String, String>) -> Result<HashMap<String, Buc
 }
 
 /// The bucket the rules decide for this message, or None to ask the model.
-pub fn apply_rules(message: &TriageMessage, senders: &SenderRules) -> Option<Proposal> {
-    senders
-        .lookup(message)
-        .or_else(|| authentication_failure(message))
+/// `code_window` is how long a code or reset stays useful when it says nothing.
+pub fn apply_rules(
+    message: &TriageMessage,
+    senders: &SenderRules,
+    code_window: Duration,
+) -> Option<Proposal> {
+    authentication_failure(message)
+        .or_else(|| expiring_code(message, code_window))
+        .or_else(|| senders.lookup(message))
         .or_else(|| bulk_mail(message))
 }
 

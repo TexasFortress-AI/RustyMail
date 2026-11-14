@@ -2,26 +2,33 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-//! rustymail-triage: propose a bucket for new INBOX mail (phase 1, propose-only).
+//! rustymail-triage: sort INBOX mail into Spam, Noise, Receipts, Alerts,
+//! Needs Reply and (expired codes only) Trash.
 //!
-//! Nothing is moved. Proposals go to the triage_proposals table; review them
-//! with `rustymail-triage --report`.
+//!   rustymail-triage                 propose buckets for new mail, then print the report
+//!   rustymail-triage --report        print the report only
+//!   rustymail-triage --apply         move stored proposals, verifying every move
+//!
+//! Proposing reads the mailbox without changing it. Only `--apply` moves mail,
+//! and it never deletes or expunges anything but the moved messages.
 
 use clap::Parser;
-use log::{error, info};
-use rustymail::imap::account_connect::load_active_accounts;
+use log::error;
+use rustymail::imap::account_connect::{load_active_accounts, ImapAccount};
+use rustymail::triage::apply::{apply_account, ApplyOptions};
 use rustymail::triage::config::TriageConfig;
+use rustymail::triage::folders::FolderMap;
 use rustymail::triage::model::{EscalatingClassifier, LocalModelServer};
-use rustymail::triage::report::format_report;
+use rustymail::triage::report::{format_apply_summary, format_report};
 use rustymail::triage::rules::SenderRules;
-use rustymail::triage::runner::{RunOptions, TriageRunner};
+use rustymail::triage::runner::{AccountSummary, RunOptions, TriageRunner};
 use rustymail::triage::store::TriageStore;
 use sqlx::SqlitePool;
 
 #[derive(Parser)]
 #[command(
     name = "rustymail-triage",
-    about = "Propose triage buckets for new mail (moves nothing)"
+    about = "Propose triage buckets for mail; --apply moves them"
 )]
 struct Cli {
     #[arg(
@@ -31,27 +38,36 @@ struct Cli {
     )]
     database_url: String,
 
-    /// Account(s) to triage or report on; defaults to TRIAGE_ACCOUNTS.
+    /// Account(s) to work on; defaults to TRIAGE_ACCOUNTS.
     #[arg(long)]
     account: Vec<String>,
 
-    /// Also triage messages received in the last N days (backfill).
+    /// Triage messages received in the last N days, below the watermark too.
     #[arg(long)]
     since_days: Option<u32>,
 
-    /// Triage at most N messages per account (oldest first).
+    /// At most N messages per account (proposing: oldest first; applying: moves).
     #[arg(long)]
     limit: Option<usize>,
 
     /// Classify and log only: write no proposals, leave watermarks alone.
-    #[arg(long)]
+    #[arg(long, conflicts_with_all = ["apply", "report"])]
     dry_run: bool,
 
-    /// Print pending proposals with dashboard links instead of triaging.
-    #[arg(long)]
+    /// Print the report only.
+    #[arg(long, conflicts_with = "apply")]
     report: bool,
 
-    /// Maximum proposals in the report.
+    /// Move stored proposals to their folders, verifying each move.
+    #[arg(long)]
+    apply: bool,
+
+    /// With --apply: model proposals below this confidence stay in the INBOX
+    /// (default TRIAGE_MIN_CONFIDENCE). Rule proposals always qualify.
+    #[arg(long, requires = "apply")]
+    min_confidence: Option<f64>,
+
+    /// Maximum proposal rows in the report (counts are always complete).
     #[arg(long, default_value_t = 500)]
     report_limit: u32,
 }
@@ -75,17 +91,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map(|a| a.trim().to_ascii_lowercase())
             .collect()
     };
+    let report_filter = (accounts.len() == 1).then(|| accounts[0].as_str());
 
     if cli.report {
-        let filter = (accounts.len() == 1).then(|| accounts[0].as_str());
-        let proposals = store.pending_proposals(filter, cli.report_limit).await?;
-        print!("{}", format_report(&proposals, &config.dashboard_url));
+        print_report(&store, report_filter, cli.report_limit, &config).await?;
         return Ok(());
     }
-
     if accounts.is_empty() {
         return Err("no accounts: pass --account or set TRIAGE_ACCOUNTS".into());
     }
+
+    let failed = if cli.apply {
+        apply_all(&pool, &store, &accounts, &cli, &config).await?
+    } else {
+        let failed = propose_all(&pool, store, &accounts, &cli, &config).await?;
+        if !cli.dry_run {
+            let store = TriageStore::new(pool.clone());
+            print_report(&store, report_filter, cli.report_limit, &config).await?;
+        }
+        failed
+    };
+    if failed {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+async fn print_report(
+    store: &TriageStore,
+    account: Option<&str>,
+    limit: u32,
+    config: &TriageConfig,
+) -> Result<(), sqlx::Error> {
+    let counts = store.bucket_counts(account).await?;
+    let proposals = store.pending_proposals(account, limit).await?;
+    print!(
+        "{}",
+        format_report(&counts, &proposals, &config.dashboard_url)
+    );
+    Ok(())
+}
+
+async fn active_account(pool: &SqlitePool, email: &str) -> Option<ImapAccount> {
+    match load_active_accounts(pool, Some(email)).await {
+        Ok(accounts) => accounts.into_iter().next(),
+        Err(e) => {
+            error!("{}: cannot load account: {}", email, e);
+            None
+        }
+    }
+}
+
+/// Returns whether any account failed or stopped early.
+async fn propose_all(
+    pool: &SqlitePool,
+    store: TriageStore,
+    accounts: &[String],
+    cli: &Cli,
+    config: &TriageConfig,
+) -> Result<bool, Box<dyn std::error::Error>> {
     let (model_url, small_model) = config.model_settings()?;
     let backend = LocalModelServer::new(model_url, config.model_timeout)?;
     let senders = match &config.sender_rules_file {
@@ -101,6 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             config.escalate_below,
         ),
         senders,
+        code_window: config.code_window,
         folder: config.folder.clone(),
         fetch_batch: config.fetch_batch,
         excerpt_chars: config.excerpt_chars,
@@ -110,38 +175,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         limit: cli.limit,
         dry_run: cli.dry_run,
     };
-
     let mut failed = false;
-    for email in &accounts {
-        let Some(account) = load_active_accounts(&pool, Some(email))
-            .await?
-            .into_iter()
-            .next()
-        else {
+    for email in accounts {
+        let Some(account) = active_account(pool, email).await else {
             error!("{}: not an active account", email);
             failed = true;
             continue;
         };
         match runner.run_account(&account, options).await {
-            Ok(s) => {
-                info!(
-                    "{}: examined {}, rule {}, model {}, unparseable {}{}{}",
-                    s.account,
-                    s.examined,
-                    s.by_rule,
-                    s.by_model,
-                    s.unparseable,
-                    if s.initialized {
-                        ", watermark initialized"
-                    } else {
-                        ""
-                    },
-                    s.stopped_early
-                        .as_deref()
-                        .map(|e| format!(", stopped early: {}", e))
-                        .unwrap_or_default()
-                );
-                failed |= s.stopped_early.is_some();
+            Ok(summary) => {
+                eprintln!("{}", describe_run(&summary));
+                failed |= summary.stopped_early.is_some();
             }
             Err(e) => {
                 error!("{}: triage failed: {}", email, e);
@@ -149,8 +193,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    if failed {
-        std::process::exit(1);
+    Ok(failed)
+}
+
+fn describe_run(s: &AccountSummary) -> String {
+    format!(
+        "{}: examined {}, by rule {}, by model {}, unparseable {}, watermark {}{}",
+        s.account,
+        s.examined,
+        s.by_rule,
+        s.by_model,
+        s.unparseable,
+        s.watermark
+            .map_or_else(|| "none".to_string(), |uid| format!("UID {}", uid)),
+        s.stopped_early
+            .as_deref()
+            .map(|e| format!(", stopped early: {}", e))
+            .unwrap_or_default()
+    )
+}
+
+/// Returns whether any account had failures.
+async fn apply_all(
+    pool: &SqlitePool,
+    store: &TriageStore,
+    accounts: &[String],
+    cli: &Cli,
+    config: &TriageConfig,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let folders = match &config.folder_map_file {
+        Some(path) => FolderMap::load(path)?,
+        None => FolderMap::default(),
+    };
+    let options = ApplyOptions {
+        min_confidence: cli.min_confidence.unwrap_or(config.min_confidence),
+        buckets: config.apply_buckets.clone(),
+        limit: cli.limit,
+    };
+    let mut failed = false;
+    for email in accounts {
+        let Some(account) = active_account(pool, email).await else {
+            error!("{}: not an active account", email);
+            failed = true;
+            continue;
+        };
+        let client = account.connect().await?;
+        let result = apply_account(store, &client, email, &config.folder, &folders, &options).await;
+        if let Err(e) = client.logout().await {
+            error!("{}: logout failed: {}", email, e);
+        }
+        match result {
+            Ok(summary) => {
+                print!("{}", format_apply_summary(&summary));
+                failed |= !summary.failures.is_empty();
+            }
+            Err(e) => {
+                error!("{}: apply failed: {}", email, e);
+                failed = true;
+            }
+        }
     }
-    Ok(())
+    Ok(failed)
 }

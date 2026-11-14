@@ -97,6 +97,7 @@ async fn proposal_is_recorded_once_and_listed_per_account() {
         source: ProposalSource::Model,
         model_id: Some("local-model".to_string()),
         reason: "direct question".to_string(),
+        not_before: None,
     };
     assert!(store
         .insert_proposal(&message("b@example.test", 2), &model)
@@ -114,4 +115,59 @@ async fn proposal_is_recorded_once_and_listed_per_account() {
     assert_eq!(only_b[0].confidence, Some(0.8));
     assert_eq!(only_b[0].source, "model");
     assert_eq!(only_b[0].model_id.as_deref(), Some("local-model"));
+}
+
+#[tokio::test]
+async fn apply_bookkeeping_and_complete_counts() {
+    let store = store().await;
+    let due = chrono::DateTime::parse_from_rfc3339("2026-11-14T10:00:00Z")
+        .unwrap()
+        .with_timezone(&chrono::Utc);
+    let mut code = Proposal::from_rule(Bucket::Trash, "one-time code");
+    code.not_before = Some(due);
+    for uid in 1..=3 {
+        let p = if uid == 1 {
+            code.clone()
+        } else {
+            Proposal::from_rule(Bucket::Noise, "List-Unsubscribe header")
+        };
+        store
+            .insert_proposal(&message("a@example.test", uid), &p)
+            .await
+            .unwrap();
+    }
+
+    let to_apply = store
+        .proposals_to_apply("a@example.test", "INBOX")
+        .await
+        .unwrap();
+    assert_eq!(
+        to_apply.iter().map(|p| p.uid).collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+    assert_eq!(to_apply[0].not_before, Some(due));
+    assert_eq!(to_apply[0].uidvalidity, 7);
+
+    store
+        .mark_applied(to_apply[1].id, "INBOX.Noise")
+        .await
+        .unwrap();
+    store
+        .mark_failed(to_apply[2].id, "still in INBOX")
+        .await
+        .unwrap();
+    let left = store
+        .proposals_to_apply("a@example.test", "INBOX")
+        .await
+        .unwrap();
+    assert_eq!(left.len(), 2);
+    assert_eq!(left[1].apply_error.as_deref(), Some("still in INBOX"));
+
+    // Counts come from SQL, so a one-row report limit does not shrink them.
+    assert_eq!(store.pending_proposals(None, 1).await.unwrap().len(), 1);
+    let counts = store.bucket_counts(Some("a@example.test")).await.unwrap();
+    let noise = counts.iter().find(|c| c.bucket == "Noise").unwrap();
+    assert_eq!((noise.pending, noise.applied), (1, 1));
+    let trash = counts.iter().find(|c| c.bucket == "Trash").unwrap();
+    assert_eq!((trash.pending, trash.applied), (1, 0));
 }

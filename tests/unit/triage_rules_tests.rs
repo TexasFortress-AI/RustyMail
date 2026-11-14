@@ -8,6 +8,11 @@ use rustymail::triage::message::TriageMessage;
 use rustymail::triage::rules::{apply_rules, SenderRules};
 use rustymail::triage::{Bucket, ProposalSource};
 
+/// How long a code or reset stays useful when it states no expiry.
+fn code_window() -> chrono::Duration {
+    chrono::Duration::hours(24)
+}
+
 fn raw(extra_headers: &str, from: &str, body: &str) -> Vec<u8> {
     format!(
         "{extra_headers}From: {from}\r\nTo: chris@example.test\r\nSubject: Hello there\r\n\
@@ -21,7 +26,7 @@ fn parse(extra_headers: &str, from: &str) -> TriageMessage {
 }
 
 fn bucket(message: &TriageMessage) -> Option<Bucket> {
-    apply_rules(message, &SenderRules::default()).map(|p| p.bucket)
+    apply_rules(message, &SenderRules::default(), code_window()).map(|p| p.bucket)
 }
 
 #[test]
@@ -58,6 +63,7 @@ fn list_unsubscribe_and_bulk_precedence_are_noise() {
             "news@example.test",
         ),
         &SenderRules::default(),
+        code_window(),
     )
     .unwrap();
     assert_eq!(noise.bucket, Bucket::Noise);
@@ -120,15 +126,17 @@ fn known_senders_win_over_header_rules() {
         "List-Unsubscribe: <mailto:u@shop.example>\r\n",
         "orders@shop.example",
     );
-    let proposal = apply_rules(&receipt, &rules).unwrap();
+    let proposal = apply_rules(&receipt, &rules, code_window()).unwrap();
     assert_eq!(proposal.bucket, Bucket::Receipts);
     assert_eq!(proposal.reason, "known sender orders@shop.example");
     let subdomain = parse("", "noreply@notifications.github.com");
     assert_eq!(
-        apply_rules(&subdomain, &rules).unwrap().bucket,
+        apply_rules(&subdomain, &rules, code_window())
+            .unwrap()
+            .bucket,
         Bucket::Alerts
     );
-    assert!(apply_rules(&parse("", "someone@example.test"), &rules).is_none());
+    assert!(apply_rules(&parse("", "someone@example.test"), &rules, code_window()).is_none());
 }
 
 #[test]

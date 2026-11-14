@@ -135,6 +135,7 @@ pub fn parse_verdict(content: &str) -> Result<ModelVerdict, String> {
     let raw: RawVerdict = serde_json::from_str(&visible[start..=end])
         .map_err(|e| format!("model reply is not a verdict: {}", e))?;
     let bucket = Bucket::parse(&raw.bucket)
+        .filter(|bucket| *bucket != Bucket::Trash)
         .ok_or_else(|| format!("model chose unknown bucket '{}'", raw.bucket))?;
     Ok(ModelVerdict {
         bucket,
@@ -216,5 +217,6 @@ fn to_proposal(verdict: ModelVerdict, model: &str) -> Proposal {
         source: ProposalSource::Model,
         model_id: Some(model.to_string()),
         reason: verdict.reason,
+        not_before: None,
     }
 }

@@ -4,6 +4,7 @@
 
 //! The parts of a message that triage looks at, parsed from its raw bytes.
 
+use chrono::{DateTime, Utc};
 use mail_parser::{HeaderValue, Message};
 
 #[derive(Debug, Clone)]
@@ -18,6 +19,9 @@ pub struct TriageMessage {
     headers: Vec<(String, String)>,
     /// Plain-text body with whitespace collapsed, cut to the configured length.
     pub body_excerpt: String,
+    /// When the message arrived: the Date header after parsing; the runner
+    /// replaces it with the server's INTERNALDATE when there is one.
+    pub received_at: Option<DateTime<Utc>>,
 }
 
 impl TriageMessage {
@@ -38,6 +42,9 @@ impl TriageMessage {
             subject: message.subject().unwrap_or_default().to_string(),
             headers,
             body_excerpt: excerpt(&body, excerpt_chars),
+            received_at: message
+                .date()
+                .and_then(|date| DateTime::from_timestamp(date.to_timestamp(), 0)),
         })
     }
 

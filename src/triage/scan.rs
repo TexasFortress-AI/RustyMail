@@ -8,36 +8,37 @@ use super::store::Watermark;
 use chrono::{Duration, NaiveDate};
 use std::collections::HashSet;
 
+/// UID SEARCH criteria for a run, and the UID results must be above.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ScanPlan {
-    /// No usable watermark and no backfill: start at the current end of the
-    /// folder so only mail arriving from now on is triaged.
-    Initialize,
-    /// UID SEARCH with these criteria, keeping only UIDs above `above`.
-    Search { criteria: String, above: u32 },
+pub struct ScanPlan {
+    pub criteria: String,
+    pub above: u32,
 }
 
-/// A stored watermark only counts while UIDVALIDITY is unchanged.
+/// Without a usable watermark the whole folder is the backlog, oldest first,
+/// worked through in chunks across runs. A stored watermark only counts while
+/// UIDVALIDITY is unchanged. `since_days` limits a run to recent mail.
 pub fn plan_scan(
     stored: Option<Watermark>,
     uidvalidity: u32,
     since_days: Option<u32>,
     today: NaiveDate,
 ) -> ScanPlan {
-    let current = stored.filter(|w| w.uidvalidity == uidvalidity);
-    match (since_days, current) {
-        (Some(days), _) => ScanPlan::Search {
+    if let Some(days) = since_days {
+        return ScanPlan {
             criteria: format!(
                 "SINCE {}",
                 (today - Duration::days(i64::from(days))).format("%d-%b-%Y")
             ),
             above: 0,
-        },
-        (None, Some(w)) => ScanPlan::Search {
-            criteria: format!("UID {}:*", w.last_uid.saturating_add(1)),
-            above: w.last_uid,
-        },
-        (None, None) => ScanPlan::Initialize,
+        };
+    }
+    let above = stored
+        .filter(|w| w.uidvalidity == uidvalidity)
+        .map_or(0, |w| w.last_uid);
+    ScanPlan {
+        criteria: format!("UID {}:*", above.saturating_add(1)),
+        above,
     }
 }
 

@@ -5,6 +5,8 @@
 //! Persistence for triage watermarks and proposals (migration 017).
 
 use super::Proposal;
+use chrono::{DateTime, Utc};
+use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, SqlitePool};
 use std::collections::HashSet;
 
@@ -26,12 +28,15 @@ pub struct MessageRef<'a> {
     pub subject: &'a str,
 }
 
-/// A proposal as stored, for reporting.
+/// A proposal as stored, for reporting and applying.
 #[derive(Debug, Clone)]
 pub struct StoredProposal {
+    pub id: i64,
     pub account_id: String,
     pub folder: String,
+    pub uidvalidity: u32,
     pub uid: u32,
+    pub message_id: Option<String>,
     pub from_address: String,
     pub subject: String,
     pub bucket: String,
@@ -39,8 +44,22 @@ pub struct StoredProposal {
     pub source: String,
     pub model_id: Option<String>,
     pub reason: String,
+    pub not_before: Option<DateTime<Utc>>,
+    pub apply_error: Option<String>,
     pub created_at: String,
 }
+
+/// Proposals per account and bucket, pending and applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BucketCount {
+    pub account_id: String,
+    pub bucket: String,
+    pub pending: u64,
+    pub applied: u64,
+}
+
+const PROPOSAL_COLUMNS: &str = "id, account_id, folder, uidvalidity, uid, message_id, from_address,
+     subject, bucket, confidence, source, model_id, reason, not_before, apply_error, created_at";
 
 pub struct TriageStore {
     pool: SqlitePool,
@@ -100,8 +119,8 @@ impl TriageStore {
         let result = sqlx::query(
             "INSERT OR IGNORE INTO triage_proposals
                  (account_id, folder, uidvalidity, uid, message_id, from_address, subject,
-                  bucket, confidence, source, model_id, reason)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                  bucket, confidence, source, model_id, reason, not_before)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(message.account_id)
         .bind(message.folder)
@@ -115,6 +134,7 @@ impl TriageStore {
         .bind(proposal.source.as_str())
         .bind(proposal.model_id.as_deref())
         .bind(&proposal.reason)
+        .bind(proposal.not_before.map(|t| t.to_rfc3339()))
         .execute(&self.pool)
         .await?;
         Ok(result.rows_affected() == 1)
@@ -144,33 +164,114 @@ impl TriageStore {
         account_id: Option<&str>,
         limit: u32,
     ) -> Result<Vec<StoredProposal>, sqlx::Error> {
-        let rows = sqlx::query(
-            "SELECT account_id, folder, uid, from_address, subject, bucket, confidence, source,
-                    model_id, reason, created_at
-             FROM triage_proposals
+        let sql = format!(
+            "SELECT {} FROM triage_proposals
              WHERE applied_at IS NULL AND (?1 IS NULL OR account_id = ?1)
              ORDER BY created_at DESC, uid DESC
              LIMIT ?2",
+            PROPOSAL_COLUMNS
+        );
+        let rows = sqlx::query(&sql)
+            .bind(account_id)
+            .bind(limit as i64)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.iter().map(stored_proposal).collect())
+    }
+
+    /// Unapplied proposals for one account and folder, oldest UID first.
+    pub async fn proposals_to_apply(
+        &self,
+        account_id: &str,
+        folder: &str,
+    ) -> Result<Vec<StoredProposal>, sqlx::Error> {
+        let sql = format!(
+            "SELECT {} FROM triage_proposals
+             WHERE applied_at IS NULL AND account_id = ? AND folder = ?
+             ORDER BY uid",
+            PROPOSAL_COLUMNS
+        );
+        let rows = sqlx::query(&sql)
+            .bind(account_id)
+            .bind(folder)
+            .fetch_all(&self.pool)
+            .await?;
+        Ok(rows.iter().map(stored_proposal).collect())
+    }
+
+    /// Counted in SQL, so the totals are not limited by a report's row cap.
+    pub async fn bucket_counts(
+        &self,
+        account_id: Option<&str>,
+    ) -> Result<Vec<BucketCount>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT account_id, bucket,
+                    SUM(applied_at IS NULL) AS pending,
+                    SUM(applied_at IS NOT NULL) AS applied
+             FROM triage_proposals
+             WHERE ?1 IS NULL OR account_id = ?1
+             GROUP BY account_id, bucket
+             ORDER BY account_id, bucket",
         )
         .bind(account_id)
-        .bind(limit as i64)
         .fetch_all(&self.pool)
         .await?;
         Ok(rows
             .iter()
-            .map(|r| StoredProposal {
+            .map(|r| BucketCount {
                 account_id: r.get("account_id"),
-                folder: r.get("folder"),
-                uid: r.get::<i64, _>("uid") as u32,
-                from_address: r.get("from_address"),
-                subject: r.get("subject"),
                 bucket: r.get("bucket"),
-                confidence: r.get("confidence"),
-                source: r.get("source"),
-                model_id: r.get("model_id"),
-                reason: r.get("reason"),
-                created_at: r.get::<String, _>("created_at"),
+                pending: r.get::<i64, _>("pending") as u64,
+                applied: r.get::<i64, _>("applied") as u64,
             })
             .collect())
+    }
+
+    /// Record a verified move.
+    pub async fn mark_applied(&self, id: i64, destination: &str) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "UPDATE triage_proposals
+             SET applied_at = CURRENT_TIMESTAMP, applied_folder = ?, apply_error = NULL
+             WHERE id = ?",
+        )
+        .bind(destination)
+        .bind(id)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Record why a move failed; the proposal stays pending.
+    pub async fn mark_failed(&self, id: i64, error: &str) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE triage_proposals SET apply_error = ? WHERE id = ?")
+            .bind(error)
+            .bind(id)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+}
+
+fn stored_proposal(r: &SqliteRow) -> StoredProposal {
+    StoredProposal {
+        id: r.get("id"),
+        account_id: r.get("account_id"),
+        folder: r.get("folder"),
+        uidvalidity: r.get::<i64, _>("uidvalidity") as u32,
+        uid: r.get::<i64, _>("uid") as u32,
+        message_id: r.get("message_id"),
+        from_address: r.get("from_address"),
+        subject: r.get("subject"),
+        bucket: r.get("bucket"),
+        confidence: r.get("confidence"),
+        source: r.get("source"),
+        model_id: r.get("model_id"),
+        reason: r.get("reason"),
+        not_before: r
+            .get::<Option<String>, _>("not_before")
+            .and_then(|t| DateTime::parse_from_rfc3339(&t).ok())
+            .map(|t| t.with_timezone(&Utc)),
+        apply_error: r.get("apply_error"),
+        created_at: r.get::<String, _>("created_at"),
     }
 }

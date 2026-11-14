@@ -1,4 +1,5 @@
--- Email triage, phase 1 (propose-only): what the classifier would do. Nothing is moved.
+-- Email triage: what the classifier proposes for each message, and whether
+-- `rustymail-triage --apply` has moved it.
 
 -- Highest UID already triaged per account/folder. UIDs are only meaningful
 -- together with UIDVALIDITY, so a UIDVALIDITY change restarts the watermark.
@@ -20,13 +21,16 @@ CREATE TABLE IF NOT EXISTS triage_proposals (
     message_id TEXT,
     from_address TEXT NOT NULL,
     subject TEXT NOT NULL,
-    bucket TEXT NOT NULL,          -- Spam | Noise | Receipts | Alerts | Needs Reply | Keep
+    bucket TEXT NOT NULL,          -- Spam | Noise | Receipts | Alerts | Needs Reply | Trash | Keep
     confidence REAL,               -- model-reported; NULL for rule matches
     source TEXT NOT NULL,          -- 'rule' | 'model'
     model_id TEXT,                 -- model that produced the bucket, if any
     reason TEXT NOT NULL,
+    not_before TIMESTAMP,          -- not to be applied earlier (unexpired code), RFC 3339 UTC
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    applied_at TIMESTAMP,          -- reserved: set when a later phase moves the message
+    applied_at TIMESTAMP,          -- set once the move is verified
+    applied_folder TEXT,           -- where apply moved it
+    apply_error TEXT,              -- last apply failure, cleared on success
     correction TEXT,               -- reserved: bucket chosen by Chris when the proposal was wrong
     UNIQUE (account_id, folder, uidvalidity, uid)
 );

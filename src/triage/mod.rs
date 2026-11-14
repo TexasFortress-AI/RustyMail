@@ -2,12 +2,17 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-//! Email triage, phase 1: propose a bucket for each new INBOX message.
+//! Email triage: propose a bucket for each INBOX message, and on request
+//! apply the proposals by moving messages (never deleting them).
 //!
 //! Cheap header rules run first; only messages they cannot decide go to a
-//! local model. Proposals are recorded in `triage_proposals`. Nothing is moved.
+//! local model. Proposals are recorded in `triage_proposals`; nothing moves
+//! until `rustymail-triage --apply`, which verifies every move.
 
+pub mod apply;
+pub mod codes;
 pub mod config;
+pub mod folders;
 pub mod message;
 pub mod model;
 pub mod report;
@@ -16,9 +21,11 @@ pub mod runner;
 pub mod scan;
 pub mod store;
 
+use chrono::{DateTime, Utc};
 use std::fmt;
 
-/// Where a message should go. `Keep` means it stays in the INBOX.
+/// Where a message should go. `Keep` means it stays in the INBOX; `Trash`
+/// is only for verification codes and password resets past their window.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Bucket {
     Spam,
@@ -26,16 +33,18 @@ pub enum Bucket {
     Receipts,
     Alerts,
     NeedsReply,
+    Trash,
     Keep,
 }
 
 impl Bucket {
-    pub const ALL: [Bucket; 6] = [
+    pub const ALL: [Bucket; 7] = [
         Bucket::Spam,
         Bucket::Noise,
         Bucket::Receipts,
         Bucket::Alerts,
         Bucket::NeedsReply,
+        Bucket::Trash,
         Bucket::Keep,
     ];
 
@@ -46,6 +55,7 @@ impl Bucket {
             Bucket::Receipts => "Receipts",
             Bucket::Alerts => "Alerts",
             Bucket::NeedsReply => "Needs Reply",
+            Bucket::Trash => "Trash",
             Bucket::Keep => "Keep",
         }
     }
@@ -99,6 +109,8 @@ pub struct Proposal {
     pub source: ProposalSource,
     pub model_id: Option<String>,
     pub reason: String,
+    /// Not to be applied before this time (an unexpired verification code).
+    pub not_before: Option<DateTime<Utc>>,
 }
 
 impl Proposal {
@@ -109,6 +121,7 @@ impl Proposal {
             source: ProposalSource::Rule,
             model_id: None,
             reason: reason.into(),
+            not_before: None,
         }
     }
 }

@@ -6,11 +6,15 @@
 //!
 //! Read-only on the mailbox: SELECT, UID SEARCH and BODY.PEEK[] fetches, which
 //! do not set \Seen. Nothing is moved, flagged or deleted.
+//!
+//! The first run works through the whole folder, oldest first; the watermark
+//! is saved after every batch, so an interrupted run resumes where it stopped
+//! and later runs only see UIDs above it.
 
 use super::message::TriageMessage;
 use super::model::{EscalatingClassifier, ModelBackend};
 use super::rules::{apply_rules, SenderRules};
-use super::scan::{advance, plan_scan, select_uids, ScanPlan};
+use super::scan::{advance, plan_scan, select_uids};
 use super::store::{MessageRef, TriageStore, Watermark};
 use super::{Proposal, ProposalSource};
 use crate::imap::account_connect::ImapAccount;
@@ -18,7 +22,7 @@ use crate::imap::client::ImapClient;
 use crate::imap::session::AsyncImapSessionWrapper;
 use log::{info, warn};
 
-type Client = ImapClient<AsyncImapSessionWrapper>;
+pub type Client = ImapClient<AsyncImapSessionWrapper>;
 type RunError = Box<dyn std::error::Error>;
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -32,12 +36,12 @@ pub struct RunOptions {
 #[derive(Debug, Default)]
 pub struct AccountSummary {
     pub account: String,
-    /// The watermark was just set to the end of the folder; nothing triaged.
-    pub initialized: bool,
     pub examined: usize,
     pub by_rule: usize,
     pub by_model: usize,
     pub unparseable: usize,
+    /// Highest UID triaged so far in this folder.
+    pub watermark: Option<u32>,
     /// Why the run stopped before the end (model unavailable, etc.).
     pub stopped_early: Option<String>,
 }
@@ -46,6 +50,7 @@ pub struct TriageRunner<B: ModelBackend> {
     pub store: TriageStore,
     pub classifier: EscalatingClassifier<B>,
     pub senders: SenderRules,
+    pub code_window: chrono::Duration,
     pub folder: String,
     pub fetch_batch: usize,
     pub excerpt_chars: usize,
@@ -67,7 +72,8 @@ impl<B: ModelBackend> TriageRunner<B> {
         result
     }
 
-    async fn triage_folder(
+    /// Triage one folder over an open connection; the entry point for tests.
+    pub async fn triage_folder(
         &self,
         client: &Client,
         account_id: &str,
@@ -82,116 +88,129 @@ impl<B: ModelBackend> TriageRunner<B> {
             .uid_validity
             .ok_or("server did not report UIDVALIDITY")?;
         let stored = self.store.watermark(account_id, &self.folder).await?;
+        let mut watermark = stored
+            .filter(|w| w.uidvalidity == uidvalidity)
+            .map(|w| w.last_uid);
+        summary.watermark = watermark;
         let today = chrono::Utc::now().date_naive();
+        let plan = plan_scan(stored, uidvalidity, options.since_days, today);
 
-        let (criteria, above) = match plan_scan(stored, uidvalidity, options.since_days, today) {
-            ScanPlan::Search { criteria, above } => (criteria, above),
-            ScanPlan::Initialize => {
-                let uid_next = mailbox.uid_next.ok_or("server did not report UIDNEXT")?;
-                let start = Watermark {
-                    uidvalidity,
-                    last_uid: uid_next.saturating_sub(1),
-                };
-                if !options.dry_run {
-                    self.store
-                        .set_watermark(account_id, &self.folder, start)
-                        .await?;
-                }
-                info!(
-                    "{}: watermark set at UID {}; mail after it will be triaged",
-                    account_id, start.last_uid
-                );
-                summary.initialized = true;
-                return Ok(summary);
-            }
-        };
-
-        let found = client.search_emails(&criteria).await?;
+        let found = client.search_emails(&plan.criteria).await?;
         let proposed = self
             .store
             .proposed_uids(account_id, &self.folder, uidvalidity)
             .await?;
-        let uids = select_uids(&found, above, &proposed, options.limit);
+        let uids = select_uids(&found, plan.above, &proposed, options.limit);
         info!(
             "{}: {} message(s) to triage ({})",
             account_id,
             uids.len(),
-            criteria
+            plan.criteria
         );
 
-        let mut last_done = None;
-        'batches: for batch in uids.chunks(self.fetch_batch) {
-            let mut emails = client.fetch_emails(batch).await?;
-            emails.sort_by_key(|e| e.uid);
-            for email in emails {
-                summary.examined += 1;
-                let parsed = email
-                    .body
-                    .as_deref()
-                    .and_then(|raw| TriageMessage::from_raw(email.uid, raw, self.excerpt_chars));
-                let Some(message) = parsed else {
-                    warn!(
-                        "{}: uid {} could not be parsed; skipped",
-                        account_id, email.uid
-                    );
-                    summary.unparseable += 1;
-                    last_done = Some(email.uid);
-                    continue;
-                };
-                let proposal = match self.propose(&message).await {
-                    Ok(p) => p,
-                    Err(e) => {
-                        summary.stopped_early = Some(e);
-                        break 'batches;
-                    }
-                };
-                match proposal.source {
-                    ProposalSource::Rule => summary.by_rule += 1,
-                    ProposalSource::Model => summary.by_model += 1,
-                }
-                info!(
-                    "{} uid {} -> {} ({}{}) {} | {}",
+        for batch in uids.chunks(self.fetch_batch) {
+            let last_done = self
+                .triage_batch(
+                    client,
                     account_id,
-                    message.uid,
-                    proposal.bucket,
-                    proposal.source.as_str(),
-                    proposal
-                        .confidence
-                        .map(|c| format!(" {:.2}", c))
-                        .unwrap_or_default(),
-                    message.from_address,
-                    proposal.reason
-                );
-                if !options.dry_run {
-                    self.record(account_id, uidvalidity, &message, &proposal)
-                        .await?;
+                    uidvalidity,
+                    batch,
+                    options,
+                    &mut summary,
+                )
+                .await?;
+            // A since-days backfill reaches below the watermark; it never moves it back.
+            if options.dry_run || options.since_days.is_some() {
+                if summary.stopped_early.is_some() {
+                    break;
                 }
-                last_done = Some(message.uid);
+                continue;
+            }
+            if let Some(last_uid) = advance(watermark, last_done) {
+                if Some(last_uid) != watermark {
+                    let saved = Watermark {
+                        uidvalidity,
+                        last_uid,
+                    };
+                    self.store
+                        .set_watermark(account_id, &self.folder, saved)
+                        .await?;
+                    watermark = Some(last_uid);
+                }
+            }
+            if summary.stopped_early.is_some() {
+                break;
             }
         }
-
-        if !options.dry_run {
-            let current = stored
-                .filter(|w| w.uidvalidity == uidvalidity)
-                .map(|w| w.last_uid);
-            if let Some(last_uid) = advance(current, last_done) {
-                self.store
-                    .set_watermark(
-                        account_id,
-                        &self.folder,
-                        Watermark {
-                            uidvalidity,
-                            last_uid,
-                        },
-                    )
-                    .await?;
-            }
-        }
+        summary.watermark = watermark;
         Ok(summary)
     }
 
+    /// Classify one batch; returns the highest UID finished in order.
+    async fn triage_batch(
+        &self,
+        client: &Client,
+        account_id: &str,
+        uidvalidity: u32,
+        batch: &[u32],
+        options: RunOptions,
+        summary: &mut AccountSummary,
+    ) -> Result<Option<u32>, RunError> {
+        let mut emails = client.fetch_emails(batch).await?;
+        emails.sort_by_key(|e| e.uid);
+        let mut last_done = None;
+        for email in emails {
+            summary.examined += 1;
+            let parsed = email
+                .body
+                .as_deref()
+                .and_then(|raw| TriageMessage::from_raw(email.uid, raw, self.excerpt_chars));
+            let Some(mut message) = parsed else {
+                warn!(
+                    "{}: uid {} could not be parsed; skipped",
+                    account_id, email.uid
+                );
+                summary.unparseable += 1;
+                last_done = Some(email.uid);
+                continue;
+            };
+            if email.internal_date.is_some() {
+                message.received_at = email.internal_date;
+            }
+            let proposal = match self.propose(&message).await {
+                Ok(p) => p,
+                Err(e) => {
+                    summary.stopped_early = Some(e);
+                    return Ok(last_done);
+                }
+            };
+            match proposal.source {
+                ProposalSource::Rule => summary.by_rule += 1,
+                ProposalSource::Model => summary.by_model += 1,
+            }
+            // No sender, subject or model reason in logs (#70); the report has them.
+            info!(
+                "{} uid {} -> {} ({}{})",
+                account_id,
+                message.uid,
+                proposal.bucket,
+                proposal.source.as_str(),
+                proposal
+                    .confidence
+                    .map(|c| format!(" {:.2}", c))
+                    .unwrap_or_default()
+            );
+            if !options.dry_run {
+                self.record(account_id, uidvalidity, &message, &proposal)
+                    .await?;
+            }
+            last_done = Some(message.uid);
+        }
+        Ok(last_done)
+    }
+
     async fn propose(&self, message: &TriageMessage) -> Result<Proposal, String> {
-        match apply_rules(message, &self.senders) {
+        match apply_rules(message, &self.senders, self.code_window) {
             Some(rule) => Ok(rule),
             None => self.classifier.classify(message).await,
         }
