@@ -48,7 +48,7 @@ cd rustymail
 
 # Copy and configure environment variables
 cp .env.example .env
-# Edit .env with your configuration (ports, API keys, etc.)
+# Edit .env with your configuration (ports, etc.); for the API key see "API Key" below
 
 # Build all components
 cargo build --release --bin rustymail-server
@@ -60,6 +60,53 @@ npm install
 npm run build
 cd ../..
 ```
+
+### API Key
+
+Every MCP client and the dashboard must present one shared API key. The
+server refuses to start without one.
+
+1. **Generate a key** (64 random hex characters):
+   ```bash
+   openssl rand -hex 32
+   ```
+
+2. **Store it.**
+   - **macOS (recommended): in the Keychain**, so it's in no file at all. Leave
+     `RUSTYMAIL_API_KEY` out of `.env`; when it's unset, the server reads the
+     Keychain item `apikey:RUSTYMAIL_API_KEY` at startup. Paste the key at the
+     hidden prompt:
+     ```bash
+     read -rs "?Paste key: " K; echo   # zsh; in bash: read -rsp "Paste key: " K; echo
+     security add-generic-password -U -a "$USER" -s apikey:RUSTYMAIL_API_KEY \
+       -l apikey:RUSTYMAIL_API_KEY -T /usr/bin/security -w "$K"
+     echo "stored ${#K} chars"; unset K
+     ```
+     Don't use the bare `security add-generic-password ... -w` prompt: it
+     silently cuts input off at 128 characters. Set
+     `RUSTYMAIL_API_KEY_KEYCHAIN_SERVICE` to use a different item name.
+   - **Other systems:** set `RUSTYMAIL_API_KEY=<key>` in `.env`. Keep `.env`
+     out of git (it already is) and readable only by you (`chmod 600 .env`).
+
+3. **Sign in to the dashboard.** Open http://127.0.0.1:9437/ and paste the
+   key. The browser gets an HttpOnly session cookie and never stores the key.
+   You sign in again after `DASHBOARD_SESSION_TTL_HOURS` (default 12), after
+   a backend restart, or after signing out. To copy the key on macOS:
+   ```bash
+   security find-generic-password -a "$USER" -s apikey:RUSTYMAIL_API_KEY -w | pbcopy
+   ```
+   You can also find it in Keychain Access by searching for
+   `apikey:RUSTYMAIL_API_KEY`.
+
+4. **Give it to MCP clients** (Claude Desktop and others). On macOS, have the
+   client read it from the Keychain when it starts the adapter (see
+   [Claude Desktop Integration](#claude-desktop-integration)), so the key
+   isn't written into the client's config file. Elsewhere, set
+   `RUSTYMAIL_API_KEY` in the client's `env` block.
+
+5. **Rotate it:** generate a new key, store it as in step 2 (`-U` updates the
+   existing item), run `pm2 restart rustymail-backend`, sign in to the
+   dashboard again, and restart your MCP clients.
 
 ### Running with PM2 (Recommended)
 
@@ -327,18 +374,25 @@ Best for **direct control** over email operations when you need fine-grained acc
    {
      "mcpServers": {
        "rustymail": {
-         "command": "/absolute/path/to/RustyMail/target/release/rustymail-mcp-stdio",
+         "command": "/bin/sh",
+         "args": [
+           "-c",
+           "RUSTYMAIL_API_KEY=\"$(/usr/bin/security find-generic-password -a \"$(id -un)\" -s apikey:RUSTYMAIL_API_KEY -w)\" exec /absolute/path/to/RustyMail/target/release/rustymail-mcp-stdio"
+         ],
          "env": {
-           "MCP_BACKEND_URL": "http://localhost:9437/mcp",
-           "MCP_TIMEOUT": "30",
-           "RUSTYMAIL_API_KEY": "your-api-key-from-.env"
+           "MCP_BACKEND_URL": "http://127.0.0.1:9437/mcp",
+           "MCP_TIMEOUT": "30"
          }
        }
      }
    }
    ```
 
-   **Note**: The `RUSTYMAIL_API_KEY` must match the value in your `.env` file.
+   **Note**: This reads the key from the macOS Keychain each time Claude
+   Desktop starts the adapter (see [API Key](#api-key)), so the config file
+   holds no secret. On other systems, use
+   `"command": "/absolute/path/to/RustyMail/target/release/rustymail-mcp-stdio"`
+   with no `args`, and add `"RUSTYMAIL_API_KEY": "<your key>"` to `env`.
 
 ### High-Level MCP Variant (Recommended for AI Agents)
 
@@ -374,11 +428,14 @@ Best for **AI-powered workflows** with natural language email management and red
    {
      "mcpServers": {
        "rustymail-high-level": {
-         "command": "/absolute/path/to/RustyMail/target/release/rustymail-mcp-stdio-high-level",
+         "command": "/bin/sh",
+         "args": [
+           "-c",
+           "RUSTYMAIL_API_KEY=\"$(/usr/bin/security find-generic-password -a \"$(id -un)\" -s apikey:RUSTYMAIL_API_KEY -w)\" exec /absolute/path/to/RustyMail/target/release/rustymail-mcp-stdio-high-level"
+         ],
          "env": {
-           "MCP_BACKEND_URL": "http://localhost:9437/mcp",
-           "MCP_TIMEOUT": "120",
-           "RUSTYMAIL_API_KEY": "your-api-key-from-.env"
+           "MCP_BACKEND_URL": "http://127.0.0.1:9437/mcp",
+           "MCP_TIMEOUT": "120"
          }
        }
      }
@@ -387,7 +444,8 @@ Best for **AI-powered workflows** with natural language email management and red
 
    **Notes**:
    - Higher timeout (120s) recommended for AI generation tasks
-   - The `RUSTYMAIL_API_KEY` must match the value in your `.env` file
+   - The key comes from the Keychain as in the standard variant; on other
+     systems, run the binary directly and put `RUSTYMAIL_API_KEY` in `env`
 
 ### High-Level Tools Reference
 
@@ -451,19 +509,25 @@ You can configure **both variants** in Claude Desktop to access different tool s
 {
   "mcpServers": {
     "rustymail": {
-      "command": "/path/to/rustymail-mcp-stdio",
+      "command": "/bin/sh",
+      "args": [
+        "-c",
+        "RUSTYMAIL_API_KEY=\"$(/usr/bin/security find-generic-password -a \"$(id -un)\" -s apikey:RUSTYMAIL_API_KEY -w)\" exec /absolute/path/to/RustyMail/target/release/rustymail-mcp-stdio"
+      ],
       "env": {
-        "MCP_BACKEND_URL": "http://localhost:9437/mcp",
-        "MCP_TIMEOUT": "30",
-        "RUSTYMAIL_API_KEY": "your-api-key-from-.env"
+        "MCP_BACKEND_URL": "http://127.0.0.1:9437/mcp",
+        "MCP_TIMEOUT": "30"
       }
     },
     "rustymail-high-level": {
-      "command": "/path/to/rustymail-mcp-stdio-high-level",
+      "command": "/bin/sh",
+      "args": [
+        "-c",
+        "RUSTYMAIL_API_KEY=\"$(/usr/bin/security find-generic-password -a \"$(id -un)\" -s apikey:RUSTYMAIL_API_KEY -w)\" exec /absolute/path/to/RustyMail/target/release/rustymail-mcp-stdio-high-level"
+      ],
       "env": {
-        "MCP_BACKEND_URL": "http://localhost:9437/mcp",
-        "MCP_TIMEOUT": "120",
-        "RUSTYMAIL_API_KEY": "your-api-key-from-.env"
+        "MCP_BACKEND_URL": "http://127.0.0.1:9437/mcp",
+        "MCP_TIMEOUT": "120"
       }
     }
   }
@@ -529,7 +593,7 @@ DASHBOARD_PORT=9439    # Frontend dashboard
 # Database
 CACHE_DATABASE_URL=sqlite:data/email_cache.db
 
-# Authentication
+# Authentication (on macOS, leave this out and use the Keychain; see "API Key")
 RUSTYMAIL_API_KEY=your-api-key-here
 
 # Logging
