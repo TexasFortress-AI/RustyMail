@@ -6,6 +6,7 @@
 
 use super::Proposal;
 use sqlx::{Row, SqlitePool};
+use std::collections::HashSet;
 
 /// Highest UID already triaged in a folder, valid only for `uidvalidity`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -117,6 +118,24 @@ impl TriageStore {
         .execute(&self.pool)
         .await?;
         Ok(result.rows_affected() == 1)
+    }
+
+    /// UIDs in this folder (and UIDVALIDITY) that already have a proposal.
+    pub async fn proposed_uids(
+        &self,
+        account_id: &str,
+        folder: &str,
+        uidvalidity: u32,
+    ) -> Result<HashSet<u32>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT uid FROM triage_proposals WHERE account_id = ? AND folder = ? AND uidvalidity = ?",
+        )
+        .bind(account_id)
+        .bind(folder)
+        .bind(uidvalidity as i64)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows.iter().map(|r| r.get::<i64, _>("uid") as u32).collect())
     }
 
     /// Proposals not yet applied, newest first, optionally for one account.
