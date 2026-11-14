@@ -237,7 +237,14 @@ async fn apply_all(
             failed = true;
             continue;
         };
-        let client = account.connect().await?;
+        let client = match account.connect().await {
+            Ok(client) => client,
+            Err(e) => {
+                error!("{}: cannot connect: {}", email, e);
+                failed = true;
+                continue;
+            }
+        };
         let result = apply_account(store, &client, email, &config.folder, &folders, &options).await;
         if let Err(e) = client.logout().await {
             error!("{}: logout failed: {}", email, e);

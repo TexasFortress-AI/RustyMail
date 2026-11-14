@@ -13,11 +13,14 @@ use chrono::{DateTime, Duration, Utc};
 use regex::Regex;
 use std::sync::LazyLock;
 
-/// Phrases that mark a one-time code, link or reset. Security notices such as
-/// "new sign-in to your account" are deliberately absent: those are Alerts.
+/// Phrases that mark a one-time code, link or reset. Deliberately absent:
+/// security notices ("new sign-in to your account", "your password was
+/// reset") are Alerts, and bare "passcode", "confirmation code" and
+/// "access code" also name meeting passcodes, booking references and dial-in
+/// codes, which must never be binned.
 static CODE_PHRASES: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?i)\b(verification code|verify your (email|e-mail|account|identity)|confirm your (email|e-mail) address|one[- ]time (code|passcode|password|pin|link)|\botp\b|security code|log[- ]?in code|sign[- ]?in code|sign[- ]?in link|magic link|passcode|password reset|reset your password|two[- ]factor (code|authentication code)|2fa code|authentication code|confirmation code|access code)",
+        r"(?i)\b(verification code|verify your (email|e-mail|account|identity)|confirm your (email|e-mail) address|one[- ]time (code|passcode|password|pin|link)|\botp\b|security code|log[- ]?in code|sign[- ]?in code|sign[- ]?in link|magic link|password reset (request|link|code)|reset your password|two[- ]factor (code|authentication code)|2fa code|authentication code)",
     )
     .expect("valid code phrase pattern")
 });

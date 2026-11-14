@@ -148,3 +148,49 @@ fn the_model_may_not_choose_trash() {
         parse_verdict(r#"{"bucket": "Trash", "confidence": 0.99, "reason": "old"}"#).unwrap_err();
     assert!(err.contains("Trash"), "{}", err);
 }
+
+#[test]
+fn reference_numbers_and_meeting_details_are_not_codes() {
+    for (subject, body) in [
+        (
+            "Your booking confirmation code: K7XQ2P",
+            "Flight 1234 departs at 10:00.",
+        ),
+        (
+            "Team sync",
+            "Join Zoom Meeting. Meeting ID: 812 3344 5566 Passcode: 123456",
+        ),
+        (
+            "Your conference access code",
+            "Use access code 4471 to dial in.",
+        ),
+        (
+            "Your password was reset",
+            "If this was not you, call us at 5551234.",
+        ),
+        (
+            "Password reset successful",
+            "Your password was changed at 10:04.",
+        ),
+    ] {
+        let m = message("", "a@x.test", subject, body);
+        assert!(expiring_code(&m, window()).is_none(), "{}", subject);
+    }
+}
+
+#[test]
+fn reset_requests_are_codes() {
+    for subject in [
+        "Password reset request",
+        "Your password reset link",
+        "Reset your password",
+    ] {
+        let m = message("", "a@x.test", subject, "Click the link within 1 hour.");
+        assert_eq!(
+            expiring_code(&m, window()).map(|p| p.not_before),
+            Some(Some(arrival() + Duration::hours(1))),
+            "{}",
+            subject
+        );
+    }
+}
