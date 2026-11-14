@@ -108,9 +108,17 @@ async fn nothing_outside_the_build_or_hidden_is_served() {
     let fixture = build_fixture();
     let app = app!(&fixture.path().join("dist"));
 
-    for uri in ["/../secret.txt", "/%2e%2e/secret.txt", "/assets/..%2f..%2fsecret.txt", "/.env"] {
+    for uri in [
+        "/../secret.txt",
+        "/%2e%2e/secret.txt",
+        "/assets/..%2f..%2fsecret.txt",
+        "/.env",
+    ] {
         let (status, _, body) = get(&app, uri).await;
         assert_ne!(status, StatusCode::OK, "{uri}");
-        assert!(!body.contains("outside") && !body.contains("SECRET"), "{uri}");
+        assert!(
+            !body.contains("outside") && !body.contains("SECRET"),
+            "{uri}"
+        );
     }
 }

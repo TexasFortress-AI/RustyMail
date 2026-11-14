@@ -11,7 +11,11 @@ use rustymail::dashboard::static_site::{
 };
 
 fn dashboard(enabled: bool, path: Option<&str>) -> DashboardConfig {
-    DashboardConfig { enabled, port: 0, path: path.map(str::to_string) }
+    DashboardConfig {
+        enabled,
+        port: 0,
+        path: path.map(str::to_string),
+    }
 }
 
 #[test]
@@ -20,7 +24,10 @@ fn not_served_without_dashboard_config_or_when_disabled() {
     std::fs::write(built.path().join(DASHBOARD_INDEX_FILE), "<html>").unwrap();
     let path = built.path().to_str().unwrap();
 
-    assert_eq!(dashboard_site_dir(None), Err(DashboardSiteUnavailable::Disabled));
+    assert_eq!(
+        dashboard_site_dir(None),
+        Err(DashboardSiteUnavailable::Disabled)
+    );
     assert_eq!(
         dashboard_site_dir(Some(&dashboard(false, Some(path)))),
         Err(DashboardSiteUnavailable::Disabled)
@@ -43,7 +50,9 @@ fn not_served_until_built() {
     let path = empty.path().to_str().unwrap();
     assert_eq!(
         dashboard_site_dir(Some(&dashboard(true, Some(path)))),
-        Err(DashboardSiteUnavailable::NotBuilt(empty.path().to_path_buf()))
+        Err(DashboardSiteUnavailable::NotBuilt(
+            empty.path().to_path_buf()
+        ))
     );
 }
 

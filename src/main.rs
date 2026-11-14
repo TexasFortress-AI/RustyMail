@@ -333,7 +333,11 @@ async fn main() -> std::io::Result<()> {
     info!("Starting HTTP server (REST & MCP SSE) on {}", listen_addr);
     let dashboard_site = match dashboard_site_dir(settings.dashboard.as_ref()) {
         Ok(dir) => {
-            info!("Dashboard served at http://{}/ from {}", listen_addr, dir.display());
+            info!(
+                "Dashboard served at http://{}/ from {}",
+                listen_addr,
+                dir.display()
+            );
             Some(dir)
         }
         Err(reason) => {

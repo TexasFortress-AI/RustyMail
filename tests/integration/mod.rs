@@ -15,8 +15,8 @@ pub mod connection_pool; // Connection pool integration tests
 pub mod dashboard; // Dashboard API endpoints integration tests
 pub mod dashboard_auth; // Every /api/dashboard route requires the API key
 pub mod dashboard_session; // Browser login: HttpOnly session cookie, same-origin only
-pub mod dashboard_static_site; // Backend serves the built dashboard at /
 pub mod dashboard_smtp_attachments; // Dashboard SMTP and attachment endpoints integration tests
+pub mod dashboard_static_site; // Backend serves the built dashboard at /
 pub mod fake_imap_server; // TLS fake IMAP server shared by account-routing tests
 pub mod mcp_http; // MCP HTTP endpoint integration tests
 pub mod mcp_stdio; // MCP stdio proxy integration tests
