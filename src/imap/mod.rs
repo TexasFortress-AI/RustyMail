@@ -7,6 +7,7 @@
 
 // Public Interface for the IMAP module
 
+pub mod account_connect;
 pub mod atomic;
 pub mod client;
 pub mod error;

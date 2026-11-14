@@ -799,10 +799,8 @@ impl Email {
             })
             .or_else(|| parsed_message.as_ref().map(Self::envelope_from_message));
 
-        let internal_date = fetch
-            .internal_date()
-            .and_then(|d| DateTime::parse_from_rfc2822(&d.to_string()).ok())
-            .map(|dt| dt.with_timezone(&Utc));
+        // async-imap already parses INTERNALDATE; its Display form is not RFC 2822.
+        let internal_date = fetch.internal_date().map(|dt| dt.with_timezone(&Utc));
 
         // Parse MIME content if body is available
         let (mime_parts, text_body, html_body, attachments) = if let Some(body_bytes) = &body {

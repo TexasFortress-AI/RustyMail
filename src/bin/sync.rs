@@ -26,9 +26,9 @@ use clap::Parser;
 use log::{debug, error, info, warn};
 use rustymail::backoff::BackoffPolicy;
 use rustymail::dashboard::services::cache_prune::prune_missing_folders;
-use rustymail::dashboard::services::encryption::{CredentialEncryption, EncryptionError};
 use rustymail::dashboard::services::sync_backoff::SyncBackoffStore;
-use sqlx::{Row, SqlitePool};
+use rustymail::imap::account_connect::{load_active_accounts, ImapAccount};
+use sqlx::SqlitePool;
 use std::fs::File;
 use std::io::Write as IoWrite;
 
@@ -65,18 +65,6 @@ struct Cli {
 }
 
 /// Account row from database
-struct AccountRow {
-    email_address: String,
-    imap_host: String,
-    imap_port: i64,
-    imap_user: String,
-    imap_pass: String,
-    imap_use_tls: bool,
-    imap_use_starttls: bool,
-    oauth_provider: Option<String>,
-    oauth_access_token: Option<String>,
-}
-
 /// Check if a process with the given PID is still running.
 ///
 /// Uses `kill(pid, 0)` which sends no signal but checks if the process exists.
@@ -195,70 +183,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = SqlitePool::connect(&cli.database_url).await?;
     info!("Connected to database: {}", cli.database_url);
 
-    // Build query based on whether we're filtering by account
-    let rows = if let Some(ref account_filter) = cli.account {
-        sqlx::query(
-            r#"
-            SELECT email_address, imap_host, imap_port, imap_user, imap_pass, imap_use_tls, imap_use_starttls,
-                   oauth_provider, oauth_access_token
-            FROM accounts WHERE is_active = 1 AND email_address = ?
-            "#
-        )
-        .bind(account_filter)
-        .fetch_all(&pool)
-        .await?
-    } else {
-        sqlx::query(
-            r#"
-            SELECT email_address, imap_host, imap_port, imap_user, imap_pass, imap_use_tls, imap_use_starttls,
-                   oauth_provider, oauth_access_token
-            FROM accounts WHERE is_active = 1
-            "#
-        )
-        .fetch_all(&pool)
-        .await?
-    };
+    let accounts = load_active_accounts(&pool, cli.account.as_deref()).await?;
 
-    if rows.is_empty() {
+    if accounts.is_empty() {
         if cli.account.is_some() {
             error!("Account not found or not active: {:?}", cli.account);
             std::process::exit(1);
         }
         info!("No active accounts found, exiting");
         return Ok(());
-    }
-
-    // Credentials are stored encrypted (ENC:v1:) in the database; decrypt them
-    // in memory using ENCRYPTION_MASTER_KEY (loaded from .env above).
-    let encryption = CredentialEncryption::new();
-
-    let mut accounts: Vec<AccountRow> = Vec::with_capacity(rows.len());
-    for row in rows.iter() {
-        let email_address: String = row.get("email_address");
-        let raw_pass: String = row.get("imap_pass");
-        let raw_token: Option<String> = row.get("oauth_access_token");
-        let (imap_pass, oauth_access_token) = match decrypt_account_secrets(
-            &encryption,
-            &raw_pass,
-            raw_token.as_deref(),
-        ) {
-            Ok(v) => v,
-            Err(e) => {
-                error!("Cannot decrypt credentials for {} (is ENCRYPTION_MASTER_KEY set correctly?): {}", email_address, e);
-                continue;
-            }
-        };
-        accounts.push(AccountRow {
-            email_address,
-            imap_host: row.get("imap_host"),
-            imap_port: row.get("imap_port"),
-            imap_user: row.get("imap_user"),
-            imap_pass,
-            imap_use_tls: row.get("imap_use_tls"),
-            imap_use_starttls: row.get("imap_use_starttls"),
-            oauth_provider: row.get("oauth_provider"),
-            oauth_access_token,
-        });
     }
 
     info!("Found {} account(s) to sync", accounts.len());
@@ -325,22 +258,11 @@ async fn record_sync_outcome(
 
 /// Decrypt an account's IMAP password and OAuth access token read from the
 /// database. Plaintext values (from older versions) pass through unchanged.
-fn decrypt_account_secrets(
-    encryption: &CredentialEncryption,
-    imap_pass: &str,
-    oauth_access_token: Option<&str>,
-) -> Result<(String, Option<String>), EncryptionError> {
-    Ok((
-        encryption.decrypt(imap_pass)?,
-        encryption.decrypt_opt(oauth_access_token)?,
-    ))
-}
-
 /// Sync folders for a single account
 /// If folder_filter is Some, only sync that specific folder
 async fn sync_account(
     pool: &SqlitePool,
-    account: &AccountRow,
+    account: &ImapAccount,
     folder_filter: Option<&str>,
     force: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -350,36 +272,7 @@ async fn sync_account(
     };
     info!("Syncing account: {} ({})", account.email_address, mode);
 
-    // Create IMAP session (XOAUTH2 for OAuth accounts, password for others)
-    let client = if account.oauth_provider.is_some() {
-        let token = account
-            .oauth_access_token
-            .as_deref()
-            .ok_or("OAuth account has no access token — complete OAuth flow first")?;
-        info!("Using XOAUTH2 authentication for {}", account.email_address);
-        rustymail::imap::client::ImapClient::<rustymail::imap::session::AsyncImapSessionWrapper>::connect_with_xoauth2_and_security(
-            &account.imap_host,
-            account.imap_port as u16,
-            &account.imap_user,
-            token,
-            account.imap_use_tls,
-            account.imap_use_starttls,
-        ).await?
-    } else {
-        rustymail::imap::client::ImapClient::<rustymail::imap::session::AsyncImapSessionWrapper>::connect_with_security(
-            &account.imap_host,
-            account.imap_port as u16,
-            &account.imap_user,
-            &account.imap_pass,
-            account.imap_use_tls,
-            account.imap_use_starttls,
-        ).await?
-    };
-
-    info!(
-        "Connected to IMAP server {} for {}",
-        account.imap_host, account.email_address
-    );
+    let client = account.connect().await?;
 
     // Determine which folders to sync
     let folders_to_sync: Vec<String> = if let Some(folder) = folder_filter {
@@ -917,31 +810,4 @@ async fn get_or_create_folder_id(
         .await?;
 
     Ok(id)
-}
-
-#[cfg(test)]
-mod credential_tests {
-    use super::*;
-
-    #[test]
-    fn decrypts_encrypted_and_passes_plaintext() {
-        let enc = CredentialEncryption::from_key_hex(&"ab".repeat(32)).unwrap();
-        let ct = enc.encrypt("pw").unwrap();
-        let tok = enc.encrypt("tok").unwrap();
-        let (p, t) = decrypt_account_secrets(&enc, &ct, Some(&tok)).unwrap();
-        assert_eq!(p, "pw");
-        assert_eq!(t.as_deref(), Some("tok"));
-
-        let (p, t) = decrypt_account_secrets(&enc, "legacy", None).unwrap();
-        assert_eq!(p, "legacy");
-        assert!(t.is_none());
-    }
-
-    #[test]
-    fn wrong_key_is_an_error() {
-        let a = CredentialEncryption::from_key_hex(&"ab".repeat(32)).unwrap();
-        let b = CredentialEncryption::from_key_hex(&"cd".repeat(32)).unwrap();
-        let ct = a.encrypt("pw").unwrap();
-        assert!(decrypt_account_secrets(&b, &ct, None).is_err());
-    }
 }

@@ -29,6 +29,7 @@ pub mod mcp_port;
 pub mod metadata_export;
 pub mod session_manager;
 pub mod transport;
+pub mod triage;
 pub mod utils;
 
 // Test modules

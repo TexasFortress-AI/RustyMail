@@ -353,11 +353,9 @@ fn test_stdio_proxy_empty_lines_ignored() {
         stdin.flush().expect("Failed to flush stdin");
     }
 
-    // Give it time to process
-    std::thread::sleep(std::time::Duration::from_millis(100));
-
-    // Terminate the child process
-    child.kill().expect("Failed to kill child process");
+    // Close stdin so the proxy handles every line, then exits on EOF; killing
+    // it after a fixed sleep could end it before the lines were read.
+    drop(child.stdin.take());
     let output = child.wait_with_output().expect("Failed to wait for child");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -452,12 +450,10 @@ fn test_stdio_proxy_command_line_args_override_env() {
         .spawn()
         .expect("Failed to spawn binary");
 
-    // Give it time to start and print config to stderr
-    std::thread::sleep(std::time::Duration::from_millis(500));
-
-    // Kill and get output
+    // Close stdin: the proxy prints its config, reads EOF and exits, so the
+    // config lines are complete however slowly the binary starts.
     let mut child = output;
-    child.kill().expect("Failed to kill child");
+    drop(child.stdin.take());
     let output = child.wait_with_output().expect("Failed to wait for child");
 
     let stderr = String::from_utf8_lossy(&output.stderr);

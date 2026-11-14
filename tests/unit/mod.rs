@@ -23,6 +23,7 @@ pub mod dashboard_config;
 // pub mod nlp_processor_tests; // Disabled
 // pub mod dashboard_api_handlers; // Disabled
 // pub mod dashboard_sse_streaming; // Disabled
+pub mod account_connect_tests;
 pub mod account_service_tests;
 pub mod ai_local_only_tests;
 pub mod ai_service_tests;
@@ -36,3 +37,8 @@ pub mod new_tools_tests;
 pub mod oauth_tests;
 pub mod rmcp_sdk_tests;
 pub mod smtp_service_tests;
+pub mod triage_codes_tests;
+pub mod triage_model_tests;
+pub mod triage_plan_tests;
+pub mod triage_rules_tests;
+pub mod triage_store_tests;
