@@ -17,20 +17,28 @@ use std::sync::LazyLock;
 /// security notices ("new sign-in to your account", "your password was
 /// reset") are Alerts, and bare "passcode", "confirmation code" and
 /// "access code" also name meeting passcodes, booking references and dial-in
-/// codes, which must never be binned. "Reset your password" is in
-/// `SUBJECT_ONLY_PHRASES`.
+/// codes, which must never be binned. "Reset your password" and "security
+/// code" are in `SUBJECT_ONLY_PHRASES`.
 static CODE_PHRASES: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?i)\b(verification code|verify your (email|e-mail|account|identity)|confirm your (email|e-mail) address|one[- ]time (code|passcode|password|pin|link)|\botp\b|security code|log[- ]?in code|sign[- ]?in code|sign[- ]?in link|magic link|password reset (request|link|code)|two[- ]factor (code|authentication code)|2fa code|authentication code)",
+        r"(?i)\b(verification code|verify your (email|e-mail|account|identity)|confirm your (email|e-mail) address|one[- ]time (code|passcode|password|pin|link)|\botp\b|log[- ]?in code|sign[- ]?in code|sign[- ]?in link|magic link|password reset (request|link|code)|two[- ]factor (code|authentication code)|2fa code|authentication code)",
     )
     .expect("valid code phrase pattern")
 });
 
 /// Phrases that mark a code or reset only in the subject. In a body, "reset
 /// your password" is mostly the advice in a security notice ("if this wasn't
-/// you, please reset your password").
+/// you, please reset your password"), and "security code" is often a card's
+/// CSC in a payment notice.
 static SUBJECT_ONLY_PHRASES: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\breset your password\b").expect("valid subject-only phrase pattern")
+    Regex::new(r"(?i)\b(reset your password|security code)\b")
+        .expect("valid subject-only phrase pattern")
+});
+
+/// A helpdesk ticket or case number in the subject marks a support
+/// conversation, which may be about a code but never is one.
+static SUPPORT_TICKET: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\b(ticket|case|request)\s*#\s*\d+").expect("valid support ticket pattern")
 });
 
 /// A 4-8 digit code on its own, as these messages carry.
@@ -67,8 +75,12 @@ pub fn expiring_code(message: &TriageMessage, default_window: Duration) -> Optio
     Some(proposal)
 }
 
-/// A code phrase in the subject, or in the body next to a numeric code.
+/// A code phrase in the subject, or in the body next to a numeric code, but
+/// not in a support conversation.
 fn is_code_message(message: &TriageMessage) -> bool {
+    if SUPPORT_TICKET.is_match(&message.subject) {
+        return false;
+    }
     CODE_PHRASES.is_match(&message.subject)
         || SUBJECT_ONLY_PHRASES.is_match(&message.subject)
         || (CODE_PHRASES.is_match(&message.body_excerpt)

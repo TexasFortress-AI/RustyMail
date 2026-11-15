@@ -141,6 +141,30 @@ fn passing_or_soft_authentication_is_not_spam() {
 }
 
 #[test]
+fn dmarc_fail_counts_only_under_an_enforced_policy() {
+    for policy in [
+        "policy.dmarc=quarantine",
+        "policy.dmarc=reject",
+        "(p=REJECT sp=NONE dis=REJECT)",
+    ] {
+        let headers = format!(
+            "Authentication-Results: mx.example.test; spf=pass; dmarc=fail {policy} header.from=a.test\r\n"
+        );
+        assert_eq!(
+            bucket(&parse(&headers, "a@a.test")),
+            Some(Bucket::Spam),
+            "{policy}"
+        );
+    }
+    for policy in ["policy.dmarc=none", "(p=NONE sp=NONE dis=NONE)"] {
+        let headers = format!(
+            "Authentication-Results: mx.example.test; spf=pass; dmarc=fail (policy not aligned) {policy} header.from=a.test\r\n"
+        );
+        assert_eq!(bucket(&parse(&headers, "a@a.test")), None, "{policy}");
+    }
+}
+
+#[test]
 fn only_the_topmost_authentication_results_counts() {
     // A sender can add a fake lower header; our server's header is on top.
     let headers = "Authentication-Results: mx.example.test; spf=pass; dkim=pass; dmarc=pass\r\n\

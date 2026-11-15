@@ -203,3 +203,33 @@ fn reset_requests_are_codes() {
         );
     }
 }
+
+#[test]
+fn security_code_counts_only_in_the_subject() {
+    let code = message("", "a@x.test", "Your account security code", "Code: 482913");
+    assert!(expiring_code(&code, window()).is_some());
+    let card_notice = message(
+        "",
+        "service@pay.test",
+        "Update your expired card information",
+        "Please update your card's expiration date and card security code (CSC). 12/2026",
+    );
+    assert!(expiring_code(&card_notice, window()).is_none());
+}
+
+#[test]
+fn support_tickets_about_codes_are_not_codes() {
+    for subject in [
+        "[Response Required] Ticket #11975216: I'm not getting a verification code",
+        "Re: Case #0517 one-time code never arrived",
+        "[Request #4471] Sign-in code problem",
+    ] {
+        let m = message(
+            "",
+            "support@x.test",
+            subject,
+            "Your verification code 123456 failed?",
+        );
+        assert!(expiring_code(&m, window()).is_none(), "{}", subject);
+    }
+}
