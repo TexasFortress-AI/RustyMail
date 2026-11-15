@@ -17,9 +17,18 @@ use super::codes::expiring_code;
 use super::message::TriageMessage;
 use super::{Bucket, Proposal};
 use chrono::Duration;
+use regex::Regex;
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::LazyLock;
+
+/// A DMARC result whose From domain publishes policy `none`: the owner asks
+/// receivers not to act on failures, and its own mail sent through third
+/// parties often fails alignment. Written `policy.dmarc=none` or `(p=NONE ...)`.
+static DMARC_POLICY_NONE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\b(?:policy\.dmarc|p)=none\b").expect("valid DMARC policy pattern")
+});
 
 /// Known senders mapped to buckets, loaded from a JSON file:
 /// `{"addresses": {"orders@shop.example": "Receipts"}, "domains": {"github.com": "Alerts"}}`.
@@ -109,7 +118,7 @@ fn authentication_failure(message: &TriageMessage) -> Option<Proposal> {
     let results = message
         .header("authentication-results")?
         .to_ascii_lowercase();
-    let reason = if results.contains("dmarc=fail") {
+    let reason = if results.contains("dmarc=fail") && !DMARC_POLICY_NONE.is_match(&results) {
         "DMARC fail in Authentication-Results"
     } else if results.contains("spf=fail") && !results.contains("dkim=pass") {
         "SPF fail without a DKIM pass in Authentication-Results"
