@@ -716,8 +716,8 @@ impl Email {
         // Check if this looks like MIME encoded text
         if raw.contains("=?") && raw.contains("?=") {
             // Parse as a simple header to decode MIME encoded words
-            if let Some(message) =
-                mail_parser::Message::parse(format!("Subject: {}\r\n\r\n", raw).as_bytes())
+            if let Some(message) = mail_parser::MessageParser::default()
+                .parse(format!("Subject: {}\r\n\r\n", raw).as_bytes())
             {
                 if let Some(subject) = message.subject() {
                     return subject.to_string();
@@ -740,7 +740,7 @@ impl Email {
         let body = fetch.body().map(|b| b.to_vec());
         let parsed_message = body
             .as_ref()
-            .and_then(|body_bytes| mail_parser::Message::parse(body_bytes));
+            .and_then(|body_bytes| mail_parser::MessageParser::default().parse(body_bytes));
         let envelope = fetch
             .envelope()
             .map(|env| Envelope {
@@ -851,35 +851,23 @@ impl Email {
             reply_to: Self::convert_header_addresses(message.reply_to()),
             in_reply_to: message
                 .in_reply_to()
-                .as_text_ref()
+                .as_text()
                 .map(|value| value.to_string()),
             message_id: message.message_id().map(|value| value.to_string()),
         }
     }
 
     fn convert_header_addresses(
-        value: &mail_parser::HeaderValue<'_>,
+        value: Option<&mail_parser::Address<'_>>,
     ) -> Vec<crate::imap::types::Address> {
-        match value {
-            mail_parser::HeaderValue::Address(addr) => {
-                vec![Self::convert_mail_parser_address(addr)]
-            }
-            mail_parser::HeaderValue::AddressList(addresses) => addresses
-                .iter()
-                .map(Self::convert_mail_parser_address)
-                .collect(),
-            mail_parser::HeaderValue::Group(group) => group
-                .addresses
-                .iter()
-                .map(Self::convert_mail_parser_address)
-                .collect(),
-            mail_parser::HeaderValue::GroupList(groups) => groups
-                .iter()
-                .flat_map(|group| group.addresses.iter())
-                .map(Self::convert_mail_parser_address)
-                .collect(),
-            _ => Vec::new(),
-        }
+        value
+            .map(|addresses| {
+                addresses
+                    .iter()
+                    .map(Self::convert_mail_parser_address)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn convert_mail_parser_address(addr: &mail_parser::Addr<'_>) -> crate::imap::types::Address {
@@ -906,10 +894,11 @@ impl Email {
     fn parse_mime_content(
         body_bytes: &[u8],
     ) -> Result<(Vec<MimePart>, Option<String>, Option<String>, Vec<MimePart>), ImapError> {
-        use mail_parser::Message;
+        use mail_parser::MessageParser;
 
         // Parse the email message
-        let message = Message::parse(body_bytes)
+        let message = MessageParser::default()
+            .parse(body_bytes)
             .ok_or_else(|| ImapError::Parse("Failed to parse email message".to_string()))?;
 
         let mut mime_parts = Vec::new();

@@ -734,7 +734,7 @@ async fn cache_email(
     // Extract thread headers (matches cache.rs logic)
     let in_reply_to = email.envelope.as_ref().and_then(|e| e.in_reply_to.clone());
     let references_header = email.body.as_ref().and_then(|body| {
-        mail_parser::Message::parse(body)
+        mail_parser::MessageParser::default().parse(body)
             .and_then(|msg| msg.header_raw("References").map(|v| v.to_string()))
     });
 

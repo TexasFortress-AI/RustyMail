@@ -597,7 +597,7 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
             .map_err(ImapError::from)?;
         let fetches: Vec<_> = fetch_stream.try_collect().await.map_err(ImapError::from)?;
         Ok(fetches.iter().find_map(|fetch| {
-            let headers = mail_parser::Message::parse(fetch.header()?)?;
+            let headers = mail_parser::MessageParser::default().parse(fetch.header()?)?;
             headers.message_id().map(str::to_string)
         }))
     }
