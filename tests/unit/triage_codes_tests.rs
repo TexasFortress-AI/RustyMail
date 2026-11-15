@@ -98,6 +98,15 @@ fn security_alerts_and_ordinary_mail_are_not_codes() {
             "New sign-in to your account",
             "We noticed a new sign-in from Chrome.",
         ),
+        (
+            "New sign-in detected",
+            "Time: 05/22/2025 05:37 PM. If this wasn't you, please reset your password. \
+             55 Main St, San Jose, CA 95113",
+        ),
+        (
+            "Your sign-in phone number has been added",
+            "You can now use this number to sign in and reset your password. Date 07/26/2025",
+        ),
         ("Lunch on Friday?", "Are you free at noon?"),
         ("Your order has shipped", "Tracking number 123456789012."),
     ] {
