@@ -6,6 +6,7 @@
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer};
 use rustymail::config::Settings;
+use rustymail::dashboard::services::child_reaper::reap_in_background;
 // Remove direct ImapClient import if only used for connect check, keep if factory needs it explicitly
 // use rustymail::imap::ImapClient;
 use dotenvy::dotenv;
@@ -481,6 +482,7 @@ fn start_sync_process_spawner() {
             match std::process::Command::new(sync_binary).spawn() {
                 Ok(child) => {
                     info!("Spawned sync process (pid: {:?})", child.id());
+                    reap_in_background(child, "Sync");
                 }
                 Err(e) => {
                     error!("Failed to spawn sync process '{}': {}", sync_binary, e);

@@ -17,6 +17,7 @@ use super::folders::{Destination, FolderMap};
 use super::runner::Client;
 use super::store::{StoredProposal, TriageStore};
 use super::{Bucket, ProposalSource};
+use crate::dashboard::services::cache_prune::remove_cached_message;
 use crate::imap::atomic::AtomicImapOperations;
 use crate::imap::error::ImapError;
 use crate::imap::session::AsyncImapOps;
@@ -158,6 +159,15 @@ pub async fn apply_account(
         match outcome {
             Ok((target, confirmed)) => {
                 store.mark_applied(proposal.id, &target).await?;
+                // The cache would otherwise show it in the INBOX until a sync prunes it.
+                if let Err(e) =
+                    remove_cached_message(store.pool(), account_id, folder, proposal.uid).await
+                {
+                    warn!(
+                        "{} uid {}: moved, but not removed from the cache: {}",
+                        account_id, proposal.uid, e
+                    );
+                }
                 if confirmed {
                     summary.moved += 1;
                 } else {

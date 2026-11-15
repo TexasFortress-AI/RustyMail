@@ -7,6 +7,7 @@ use crate::dashboard::api::errors::ApiError;
 use crate::dashboard::api::models::{ChatbotQuery, ServerConfig};
 use crate::dashboard::api::sse::EventType;
 use crate::dashboard::services::ai::provider_manager::ProviderConfig;
+use crate::dashboard::services::child_reaper::reap_in_background;
 use crate::dashboard::services::DashboardState;
 use actix_web::web::Data;
 use actix_web::{web, HttpResponse, Responder};
@@ -5469,6 +5470,7 @@ pub async fn trigger_email_sync(
                 }
                 Ok(None) => {
                     // Still running - this is the normal case
+                    reap_in_background(child, "Sync");
                     Ok(HttpResponse::Ok().json(serde_json::json!({
                         "message": format!("Email sync started for {}", mode_desc),
                         "status": "syncing",
@@ -5478,6 +5480,7 @@ pub async fn trigger_email_sync(
                 Err(e) => {
                     error!("Failed to check sync process status: {}", e);
                     // Assume it's running
+                    reap_in_background(child, "Sync");
                     Ok(HttpResponse::Ok().json(serde_json::json!({
                         "message": format!("Email sync started for {}", mode_desc),
                         "status": "syncing",
