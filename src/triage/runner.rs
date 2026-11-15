@@ -11,8 +11,10 @@
 //! is saved after every batch, so an interrupted run resumes where it stopped
 //! and later runs only see UIDs above it.
 
+use super::classifier::Classifier;
+use super::guards::ModelGuards;
 use super::message::TriageMessage;
-use super::model::{EscalatingClassifier, ModelBackend};
+use super::people::KnownPeople;
 use super::rules::{apply_rules, SenderRules};
 use super::scan::{advance, plan_scan, select_uids};
 use super::store::{MessageRef, TriageStore, Watermark};
@@ -46,9 +48,10 @@ pub struct AccountSummary {
     pub stopped_early: Option<String>,
 }
 
-pub struct TriageRunner<B: ModelBackend> {
+pub struct TriageRunner<C: Classifier> {
     pub store: TriageStore,
-    pub classifier: EscalatingClassifier<B>,
+    pub classifier: C,
+    pub guards: ModelGuards,
     pub senders: SenderRules,
     pub code_window: chrono::Duration,
     pub folder: String,
@@ -56,7 +59,7 @@ pub struct TriageRunner<B: ModelBackend> {
     pub excerpt_chars: usize,
 }
 
-impl<B: ModelBackend> TriageRunner<B> {
+impl<C: Classifier> TriageRunner<C> {
     pub async fn run_account(
         &self,
         account: &ImapAccount,
@@ -101,6 +104,7 @@ impl<B: ModelBackend> TriageRunner<B> {
             .proposed_uids(account_id, &self.folder, uidvalidity)
             .await?;
         let uids = select_uids(&found, plan.above, &proposed, options.limit);
+        let known = KnownPeople::load(self.store.pool(), account_id).await?;
         info!(
             "{}: {} message(s) to triage ({})",
             account_id,
@@ -115,6 +119,7 @@ impl<B: ModelBackend> TriageRunner<B> {
                     account_id,
                     uidvalidity,
                     batch,
+                    &known,
                     options,
                     &mut summary,
                 )
@@ -153,6 +158,7 @@ impl<B: ModelBackend> TriageRunner<B> {
         account_id: &str,
         uidvalidity: u32,
         batch: &[u32],
+        known: &KnownPeople,
         options: RunOptions,
         summary: &mut AccountSummary,
     ) -> Result<Option<u32>, RunError> {
@@ -177,7 +183,7 @@ impl<B: ModelBackend> TriageRunner<B> {
             if email.internal_date.is_some() {
                 message.received_at = email.internal_date;
             }
-            let proposal = match self.propose(&message).await {
+            let proposal = match self.propose(&message, known).await {
                 Ok(p) => p,
                 Err(e) => {
                     summary.stopped_early = Some(e);
@@ -209,11 +215,18 @@ impl<B: ModelBackend> TriageRunner<B> {
         Ok(last_done)
     }
 
-    async fn propose(&self, message: &TriageMessage) -> Result<Proposal, String> {
-        match apply_rules(message, &self.senders, self.code_window) {
-            Some(rule) => Ok(rule),
-            None => self.classifier.classify(message).await,
+    async fn propose(
+        &self,
+        message: &TriageMessage,
+        known: &KnownPeople,
+    ) -> Result<Proposal, String> {
+        if let Some(rule) = apply_rules(message, &self.senders, self.code_window) {
+            return Ok(rule);
         }
+        let proposal = self.classifier.classify(message).await?;
+        Ok(self
+            .guards
+            .check(proposal, message, known, chrono::Utc::now()))
     }
 
     async fn record(

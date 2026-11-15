@@ -10,11 +10,15 @@
 //! until `rustymail-triage --apply`, which verifies every move.
 
 pub mod apply;
+pub mod classifier;
 pub mod codes;
 pub mod config;
+pub mod decision;
 pub mod folders;
+pub mod guards;
 pub mod message;
 pub mod model;
+pub mod people;
 pub mod report;
 pub mod rules;
 pub mod runner;

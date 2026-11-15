@@ -16,6 +16,7 @@ use log::{LevelFilter, Log, Metadata, Record};
 use rustymail::api::auth::{ApiKeyStore, ApiScope, ImapCredentials};
 use rustymail::imap::client::ImapClient;
 use rustymail::imap::session::AsyncImapSessionWrapper;
+use rustymail::triage::guards::ModelGuards;
 use rustymail::triage::model::{EscalatingClassifier, ModelBackend};
 use rustymail::triage::rules::SenderRules;
 use rustymail::triage::runner::{RunOptions, TriageRunner};
@@ -137,6 +138,10 @@ async fn triage_never_logs_senders_subjects_or_model_reasons() {
     let runner = TriageRunner {
         store: TriageStore::new(pool),
         classifier: EscalatingClassifier::new(ReasoningModel, "m".into(), None, 0.7),
+        // Fixtures have fixed dates; the age limit is unit-tested with a fixed clock.
+        guards: ModelGuards {
+            needs_reply_max_age: chrono::Duration::MAX,
+        },
         senders: SenderRules::default(),
         code_window: chrono::Duration::hours(24),
         folder: "INBOX".into(),

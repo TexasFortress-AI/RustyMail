@@ -200,6 +200,11 @@ fn config_defaults_keep_real_people_in_the_inbox() {
     assert!(config.apply_buckets.contains(&Bucket::Trash));
     assert_eq!(config.code_window, Duration::hours(24));
     assert_eq!(config.min_confidence, 0.8);
+    assert_eq!(config.needs_reply_max_age, Duration::days(30));
+    assert!(
+        config.decision_settings().is_none(),
+        "chat model unless set"
+    );
 }
 
 #[test]
@@ -210,6 +215,9 @@ fn config_reads_triage_settings() {
         ("TRIAGE_APPLY_BUCKETS", "Spam, needs reply"),
         ("TRIAGE_CODE_WINDOW_HOURS", "6"),
         ("TRIAGE_MIN_CONFIDENCE", "0.9"),
+        ("TRIAGE_NEEDS_REPLY_DAYS", "7"),
+        ("TRIAGE_DECISION_URL", "http://127.0.0.1:11434"),
+        ("TRIAGE_DECISION_MODEL", "autotrust-jev:9b"),
     ]))
     .unwrap();
     assert_eq!(config.dashboard_url, "http://127.0.0.1:9437");
@@ -217,6 +225,11 @@ fn config_reads_triage_settings() {
     assert_eq!(config.apply_buckets, vec![Bucket::Spam, Bucket::NeedsReply]);
     assert_eq!(config.code_window, Duration::hours(6));
     assert_eq!(config.min_confidence, 0.9);
+    assert_eq!(config.needs_reply_max_age, Duration::days(7));
+    assert_eq!(
+        config.decision_settings(),
+        Some(("http://127.0.0.1:11434", "autotrust-jev:9b"))
+    );
     let keep = TriageConfig::from_lookup(lookup(&[
         ("TRIAGE_DASHBOARD_URL", "http://h"),
         ("TRIAGE_APPLY_BUCKETS", "Keep"),

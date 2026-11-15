@@ -8,6 +8,7 @@
 use super::fake_imap_server::{spawn_fake_imap, SharedMailbox};
 use rustymail::imap::client::ImapClient;
 use rustymail::imap::session::AsyncImapSessionWrapper;
+use rustymail::triage::guards::ModelGuards;
 use rustymail::triage::model::{EscalatingClassifier, ModelBackend};
 use rustymail::triage::rules::SenderRules;
 use rustymail::triage::runner::{RunOptions, TriageRunner};
@@ -130,10 +131,17 @@ pub(super) async fn store() -> TriageStore {
     TriageStore::new(pool)
 }
 
-pub(super) fn runner(store: TriageStore, down: Arc<AtomicBool>) -> TriageRunner<StubModel> {
+pub(super) fn runner(
+    store: TriageStore,
+    down: Arc<AtomicBool>,
+) -> TriageRunner<EscalatingClassifier<StubModel>> {
     TriageRunner {
         store,
         classifier: EscalatingClassifier::new(StubModel { down }, SMALL_MODEL.into(), None, 0.7),
+        // Fixtures have fixed dates; the age limit is unit-tested with a fixed clock.
+        guards: ModelGuards {
+            needs_reply_max_age: chrono::Duration::MAX,
+        },
         senders: SenderRules::default(),
         code_window: chrono::Duration::hours(24),
         folder: "INBOX".into(),
