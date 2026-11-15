@@ -17,12 +17,20 @@ use std::sync::LazyLock;
 /// security notices ("new sign-in to your account", "your password was
 /// reset") are Alerts, and bare "passcode", "confirmation code" and
 /// "access code" also name meeting passcodes, booking references and dial-in
-/// codes, which must never be binned.
+/// codes, which must never be binned. "Reset your password" is in
+/// `SUBJECT_ONLY_PHRASES`.
 static CODE_PHRASES: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(
-        r"(?i)\b(verification code|verify your (email|e-mail|account|identity)|confirm your (email|e-mail) address|one[- ]time (code|passcode|password|pin|link)|\botp\b|security code|log[- ]?in code|sign[- ]?in code|sign[- ]?in link|magic link|password reset (request|link|code)|reset your password|two[- ]factor (code|authentication code)|2fa code|authentication code)",
+        r"(?i)\b(verification code|verify your (email|e-mail|account|identity)|confirm your (email|e-mail) address|one[- ]time (code|passcode|password|pin|link)|\botp\b|security code|log[- ]?in code|sign[- ]?in code|sign[- ]?in link|magic link|password reset (request|link|code)|two[- ]factor (code|authentication code)|2fa code|authentication code)",
     )
     .expect("valid code phrase pattern")
+});
+
+/// Phrases that mark a code or reset only in the subject. In a body, "reset
+/// your password" is mostly the advice in a security notice ("if this wasn't
+/// you, please reset your password").
+static SUBJECT_ONLY_PHRASES: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\breset your password\b").expect("valid subject-only phrase pattern")
 });
 
 /// A 4-8 digit code on its own, as these messages carry.
@@ -62,6 +70,7 @@ pub fn expiring_code(message: &TriageMessage, default_window: Duration) -> Optio
 /// A code phrase in the subject, or in the body next to a numeric code.
 fn is_code_message(message: &TriageMessage) -> bool {
     CODE_PHRASES.is_match(&message.subject)
+        || SUBJECT_ONLY_PHRASES.is_match(&message.subject)
         || (CODE_PHRASES.is_match(&message.body_excerpt)
             && CODE_DIGITS.is_match(&message.body_excerpt))
 }
