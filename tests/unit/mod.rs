@@ -38,6 +38,8 @@ pub mod oauth_tests;
 pub mod rmcp_sdk_tests;
 pub mod smtp_service_tests;
 pub mod triage_codes_tests;
+pub mod triage_decision_tests;
+pub mod triage_guards_tests;
 pub mod triage_model_tests;
 pub mod triage_plan_tests;
 pub mod triage_rules_tests;

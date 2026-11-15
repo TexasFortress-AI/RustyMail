@@ -16,8 +16,11 @@ use clap::Parser;
 use log::error;
 use rustymail::imap::account_connect::{load_active_accounts, ImapAccount};
 use rustymail::triage::apply::{apply_account, ApplyOptions};
+use rustymail::triage::classifier::ConfiguredClassifier;
 use rustymail::triage::config::TriageConfig;
+use rustymail::triage::decision::{DecisionClassifier, LocalDecisionServer};
 use rustymail::triage::folders::FolderMap;
+use rustymail::triage::guards::ModelGuards;
 use rustymail::triage::model::{EscalatingClassifier, LocalModelServer};
 use rustymail::triage::report::{format_apply_summary, format_report};
 use rustymail::triage::rules::SenderRules;
@@ -150,20 +153,17 @@ async fn propose_all(
     cli: &Cli,
     config: &TriageConfig,
 ) -> Result<bool, Box<dyn std::error::Error>> {
-    let (model_url, small_model) = config.model_settings()?;
-    let backend = LocalModelServer::new(model_url, config.model_timeout)?;
+    let classifier = build_classifier(config)?;
     let senders = match &config.sender_rules_file {
         Some(path) => SenderRules::load(path)?,
         None => SenderRules::default(),
     };
     let runner = TriageRunner {
         store,
-        classifier: EscalatingClassifier::new(
-            backend,
-            small_model.to_string(),
-            config.large_model.clone(),
-            config.escalate_below,
-        ),
+        classifier,
+        guards: ModelGuards {
+            needs_reply_max_age: config.needs_reply_max_age,
+        },
         senders,
         code_window: config.code_window,
         folder: config.folder.clone(),
@@ -194,6 +194,25 @@ async fn propose_all(
         }
     }
     Ok(failed)
+}
+
+/// The decision model when TRIAGE_DECISION_URL and _MODEL are set, else the chat model.
+fn build_classifier(config: &TriageConfig) -> Result<ConfiguredClassifier, String> {
+    if let Some((url, model)) = config.decision_settings() {
+        let backend = LocalDecisionServer::new(url, config.model_timeout)?;
+        return Ok(ConfiguredClassifier::Decision(DecisionClassifier::new(
+            backend,
+            model.to_string(),
+        )));
+    }
+    let (model_url, small_model) = config.model_settings()?;
+    let backend = LocalModelServer::new(model_url, config.model_timeout)?;
+    Ok(ConfiguredClassifier::Chat(EscalatingClassifier::new(
+        backend,
+        small_model.to_string(),
+        config.large_model.clone(),
+        config.escalate_below,
+    )))
 }
 
 fn describe_run(s: &AccountSummary) -> String {

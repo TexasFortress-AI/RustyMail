@@ -70,6 +70,10 @@ impl TriageStore {
         Self { pool }
     }
 
+    pub fn pool(&self) -> &SqlitePool {
+        &self.pool
+    }
+
     pub async fn watermark(
         &self,
         account_id: &str,

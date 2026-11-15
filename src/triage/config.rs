@@ -18,6 +18,8 @@ const DEFAULT_BODY_EXCERPT_CHARS: usize = 500;
 const DEFAULT_CODE_WINDOW_HOURS: i64 = 24;
 /// Model proposals below this confidence stay in the INBOX on apply.
 const DEFAULT_MIN_CONFIDENCE: f64 = 0.8;
+/// Model Needs Reply proposals only for mail newer than this; older stays put.
+const DEFAULT_NEEDS_REPLY_DAYS: i64 = 30;
 /// Buckets apply moves by default. Needs Reply is mail from real people, which
 /// stays in the INBOX unless TRIAGE_APPLY_BUCKETS says otherwise.
 const DEFAULT_APPLY_BUCKETS: [Bucket; 5] = [
@@ -38,6 +40,10 @@ pub struct TriageConfig {
     pub small_model: Option<String>,
     pub large_model: Option<String>,
     pub escalate_below: f64,
+    /// Decision-model server root (Ollama); with `decision_model` it replaces the chat model.
+    pub decision_url: Option<String>,
+    pub decision_model: Option<String>,
+    pub needs_reply_max_age: chrono::Duration,
     pub model_timeout: Duration,
     pub fetch_batch: usize,
     pub excerpt_chars: usize,
@@ -93,6 +99,13 @@ impl TriageConfig {
                 "TRIAGE_ESCALATE_BELOW",
                 DEFAULT_ESCALATE_BELOW,
             )?,
+            decision_url: value("TRIAGE_DECISION_URL"),
+            decision_model: value("TRIAGE_DECISION_MODEL"),
+            needs_reply_max_age: chrono::Duration::days(parse_or(
+                value("TRIAGE_NEEDS_REPLY_DAYS"),
+                "TRIAGE_NEEDS_REPLY_DAYS",
+                DEFAULT_NEEDS_REPLY_DAYS,
+            )?),
             model_timeout: Duration::from_secs(parse_or(
                 value("TRIAGE_MODEL_TIMEOUT_SECONDS"),
                 "TRIAGE_MODEL_TIMEOUT_SECONDS",
@@ -127,6 +140,14 @@ impl TriageConfig {
             },
             dashboard_url: dashboard_url.trim_end_matches('/').to_string(),
         })
+    }
+
+    /// Decision-model URL and name, when both are set.
+    pub fn decision_settings(&self) -> Option<(&str, &str)> {
+        match (&self.decision_url, &self.decision_model) {
+            (Some(url), Some(model)) => Some((url, model)),
+            _ => None,
+        }
     }
 
     /// Model URL and small model name; required to classify, not to report.
