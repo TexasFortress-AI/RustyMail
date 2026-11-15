@@ -15,7 +15,7 @@ use super::classifier::Classifier;
 use super::guards::ModelGuards;
 use super::message::TriageMessage;
 use super::people::KnownPeople;
-use super::rules::{apply_rules, SenderRules};
+use super::rules::{apply_rules, bulk_mail_default, SenderRules};
 use super::scan::{advance, plan_scan, select_uids};
 use super::store::{MessageRef, TriageStore, Watermark};
 use super::{Proposal, ProposalSource};
@@ -224,9 +224,10 @@ impl<C: Classifier> TriageRunner<C> {
             return Ok(rule);
         }
         let proposal = self.classifier.classify(message).await?;
-        Ok(self
+        let checked = self
             .guards
-            .check(proposal, message, known, chrono::Utc::now()))
+            .check(proposal, message, known, chrono::Utc::now());
+        Ok(bulk_mail_default(message, checked))
     }
 
     async fn record(
