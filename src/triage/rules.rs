@@ -5,9 +5,13 @@
 //! Cheap rules that decide a bucket from headers alone, before any model call.
 //!
 //! Order: authentication failures (Spam), expiring codes and resets (Trash,
-//! once expired), Chris's known senders, then bulk-mail headers (Noise).
-//! Anything else goes to the model. Authentication comes first because a
-//! sender that fails it is not who its From header claims.
+//! once expired), then Chris's known senders. Anything else goes to the
+//! model. Authentication comes first because a sender that fails it is not
+//! who its From header claims.
+//!
+//! Bulk-mail headers are not decisive: newsletters carry them, but so do
+//! signature requests, statements and chat notifications. They only decide
+//! after the model has answered; see `bulk_mail_default`.
 
 use super::codes::expiring_code;
 use super::message::TriageMessage;
@@ -89,7 +93,14 @@ pub fn apply_rules(
     authentication_failure(message)
         .or_else(|| expiring_code(message, code_window))
         .or_else(|| senders.lookup(message))
-        .or_else(|| bulk_mail(message))
+}
+
+/// Bulk mail is Noise unless the model says it is a receipt or an alert.
+pub fn bulk_mail_default(message: &TriageMessage, model: Proposal) -> Proposal {
+    match bulk_mail(message) {
+        Some(noise) if !matches!(model.bucket, Bucket::Receipts | Bucket::Alerts) => noise,
+        _ => model,
+    }
 }
 
 /// Uses only the topmost Authentication-Results header: the one added by our

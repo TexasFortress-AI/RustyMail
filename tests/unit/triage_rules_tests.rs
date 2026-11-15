@@ -5,8 +5,8 @@
 //! TriageMessage parsing and the cheap header rules.
 
 use rustymail::triage::message::TriageMessage;
-use rustymail::triage::rules::{apply_rules, SenderRules};
-use rustymail::triage::{Bucket, ProposalSource};
+use rustymail::triage::rules::{apply_rules, bulk_mail_default, SenderRules};
+use rustymail::triage::{Bucket, Proposal, ProposalSource};
 
 /// How long a code or reset stays useful when it states no expiry.
 fn code_window() -> chrono::Duration {
@@ -55,28 +55,60 @@ fn folded_header_is_unfolded_and_lookup_is_case_insensitive() {
     );
 }
 
+fn model(bucket: Bucket) -> Proposal {
+    Proposal {
+        bucket,
+        confidence: Some(0.9),
+        source: ProposalSource::Model,
+        model_id: Some("m".into()),
+        reason: "model".into(),
+        not_before: None,
+    }
+}
+
+const UNSUBSCRIBE: &str = "List-Unsubscribe: <mailto:u@example.test>\r\n";
+
 #[test]
-fn list_unsubscribe_and_bulk_precedence_are_noise() {
-    let noise = apply_rules(
-        &parse(
-            "List-Unsubscribe: <mailto:u@example.test>\r\n",
-            "news@example.test",
-        ),
-        &SenderRules::default(),
-        code_window(),
-    )
-    .unwrap();
-    assert_eq!(noise.bucket, Bucket::Noise);
-    assert_eq!(noise.source, ProposalSource::Rule);
-    assert_eq!(noise.confidence, None);
+fn bulk_headers_alone_are_left_to_the_model() {
+    assert_eq!(bucket(&parse(UNSUBSCRIBE, "news@example.test")), None);
     assert_eq!(
         bucket(&parse("Precedence: bulk\r\n", "a@example.test")),
-        Some(Bucket::Noise)
-    );
-    assert_eq!(
-        bucket(&parse("Precedence: first-class\r\n", "a@example.test")),
         None
     );
+}
+
+#[test]
+fn bulk_mail_is_noise_unless_the_model_says_receipt_or_alert() {
+    let news = parse(UNSUBSCRIBE, "news@example.test");
+    for bucket in [
+        Bucket::Keep,
+        Bucket::NeedsReply,
+        Bucket::Spam,
+        Bucket::Noise,
+    ] {
+        let p = bulk_mail_default(&news, model(bucket));
+        assert_eq!(p.bucket, Bucket::Noise, "{bucket}");
+        assert_eq!(p.source, ProposalSource::Rule, "{bucket}");
+        assert_eq!(p.reason, "List-Unsubscribe header");
+        assert_eq!(p.confidence, None);
+    }
+    for bucket in [Bucket::Receipts, Bucket::Alerts] {
+        let p = bulk_mail_default(&news, model(bucket));
+        assert_eq!((p.bucket, p.source), (bucket, ProposalSource::Model));
+    }
+    let bulk = parse("Precedence: bulk\r\n", "a@example.test");
+    assert_eq!(
+        bulk_mail_default(&bulk, model(Bucket::Keep)).bucket,
+        Bucket::Noise
+    );
+}
+
+#[test]
+fn without_bulk_headers_the_model_decides() {
+    for extra in ["", "Precedence: first-class\r\n"] {
+        let p = bulk_mail_default(&parse(extra, "a@example.test"), model(Bucket::Keep));
+        assert_eq!((p.bucket, p.source), (Bucket::Keep, ProposalSource::Model));
+    }
 }
 
 #[test]
