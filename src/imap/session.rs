@@ -415,9 +415,18 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
         Ok(hierarchy)
     }
 
+    /// Create and subscribe: mail clients such as Thunderbird only show
+    /// subscribed folders. A failed SUBSCRIBE leaves the folder created.
     async fn create_folder(&self, name: &str) -> Result<(), ImapError> {
         let mut session_guard = self.session.lock().await;
-        session_guard.create(name).await.map_err(ImapError::from)
+        session_guard.create(name).await.map_err(ImapError::from)?;
+        if let Err(e) = session_guard.subscribe(name).await {
+            warn!(
+                "Created folder {} but could not subscribe to it: {}",
+                name, e
+            );
+        }
+        Ok(())
     }
 
     async fn delete_folder(&self, name: &str) -> Result<(), ImapError> {

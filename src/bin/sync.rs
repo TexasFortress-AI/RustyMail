@@ -25,7 +25,7 @@ use chrono::Utc;
 use clap::Parser;
 use log::{debug, error, info, warn};
 use rustymail::backoff::BackoffPolicy;
-use rustymail::dashboard::services::cache_prune::prune_missing_folders;
+use rustymail::dashboard::services::cache_prune::{prune_missing_folders, prune_missing_messages};
 use rustymail::dashboard::services::sync_backoff::SyncBackoffStore;
 use rustymail::imap::account_connect::{load_active_accounts, ImapAccount};
 use sqlx::SqlitePool;
@@ -361,14 +361,30 @@ async fn sync_folder(
         get_last_uid(pool, folder_name, account_email).await?
     };
 
-    // Search for new emails (force mode fetches ALL)
-    let search_criteria = if last_uid_synced > 0 {
-        format!("UID {}:*", last_uid_synced + 1)
-    } else {
-        "ALL".to_string()
-    };
-
-    let uids = client.search_emails(&search_criteria).await?;
+    // Every UID on the server: drops cached mail that was moved or deleted
+    // elsewhere, and gives the new UIDs (all of them in force mode).
+    let server_uids = client.search_emails("ALL").await?;
+    match prune_missing_messages(
+        pool,
+        account_email,
+        folder_name,
+        &server_uids,
+        mailbox_info.exists,
+    )
+    .await
+    {
+        Ok(0) => {}
+        Ok(removed) => info!(
+            "Removed {} message(s) no longer on the server from the cache of {}",
+            removed, folder_name
+        ),
+        Err(e) => warn!("Failed to prune the cache of {}: {}", folder_name, e),
+    }
+    let mut uids: Vec<u32> = server_uids
+        .into_iter()
+        .filter(|&uid| uid > last_uid_synced)
+        .collect();
+    uids.sort_unstable();
 
     if uids.is_empty() {
         debug!("No new emails in folder {}", folder_name);

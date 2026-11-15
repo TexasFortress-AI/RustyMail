@@ -46,10 +46,43 @@ async fn proposed_inbox() -> (
     (client, mailbox, runner.store)
 }
 
+/// Cache rows for INBOX UIDs, as a sync would have written them.
+async fn cache_inbox(store: &TriageStore, uids: &[u32]) {
+    let pool = store.pool();
+    sqlx::query(
+        "INSERT INTO accounts (email_address, display_name, imap_host, imap_user, imap_pass)
+         VALUES (?1, ?1, 'imap.example.test', ?1, 'pw')",
+    )
+    .bind(ACCOUNT)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO folders (account_id, name) VALUES (?, 'INBOX')")
+        .bind(ACCOUNT)
+        .execute(pool)
+        .await
+        .unwrap();
+    for uid in uids {
+        sqlx::query("INSERT INTO emails (folder_id, uid) SELECT id, ? FROM folders")
+            .bind(i64::from(*uid))
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+}
+
+async fn cached_inbox(store: &TriageStore) -> Vec<i64> {
+    sqlx::query_scalar("SELECT uid FROM emails ORDER BY uid")
+        .fetch_all(store.pool())
+        .await
+        .unwrap()
+}
+
 #[tokio::test]
 #[serial]
 async fn apply_moves_verified_and_leaves_real_people_in_the_inbox() {
     let (client, mailbox, store) = proposed_inbox().await;
+    cache_inbox(&store, &[1, 2, 3, 4]).await;
     let summary = apply_account(
         &store,
         &client,
@@ -74,9 +107,20 @@ async fn apply_moves_verified_and_leaves_real_people_in_the_inbox() {
     assert_eq!(ids_in(&mailbox, "Trash"), ["<code@x.test>"]);
     let commands = mailbox.lock().unwrap().commands.join("\n").to_uppercase();
     assert!(!commands.contains("\nEXPUNGE"), "no folder-wide expunge");
+    for folder in ["NOISE", "SPAM"] {
+        assert!(
+            commands.contains(&format!("SUBSCRIBE \"{}\"", folder)),
+            "created folders are subscribed so mail clients show them"
+        );
+    }
 
     let left = store.proposals_to_apply(ACCOUNT, "INBOX").await.unwrap();
     assert_eq!(left.iter().map(|p| p.uid).collect::<Vec<_>>(), [2]);
+    assert_eq!(
+        cached_inbox(&store).await,
+        [2],
+        "moved mail leaves the cache"
+    );
     // A second apply has nothing left to move.
     let again = apply_account(
         &store,

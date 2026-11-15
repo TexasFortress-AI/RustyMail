@@ -31,6 +31,7 @@ pub mod attachment_tests;
 pub mod backoff_tests;
 pub mod cache_prune_tests;
 pub mod cache_service_tests;
+pub mod child_reaper_tests;
 pub mod hardcoded_detection;
 pub mod imap_keepalive_tests;
 pub mod new_tools_tests;

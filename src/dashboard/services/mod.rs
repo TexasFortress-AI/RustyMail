@@ -29,6 +29,7 @@ pub mod attachment_storage;
 pub mod autodiscovery;
 pub mod cache;
 pub mod cache_prune;
+pub mod child_reaper;
 pub mod clients;
 pub mod config;
 pub mod connection_status;

@@ -2,9 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-//! Folders deleted on the server are dropped from the cache, with their messages.
+//! Folders and messages that are gone from the server are dropped from the cache.
 
-use rustymail::dashboard::services::cache_prune::prune_missing_folders;
+use rustymail::dashboard::services::cache_prune::{
+    prune_missing_folders, prune_missing_messages, remove_cached_message,
+};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::SqlitePool;
 
@@ -84,4 +86,79 @@ async fn empty_server_listing_removes_nothing() {
         .unwrap();
     assert!(removed.is_empty());
     assert_eq!(count(&pool, "SELECT COUNT(*) FROM folders").await, 3);
+}
+
+/// a@'s INBOX caches UIDs 1, 2 and 3; the other folders cache UID 1.
+async fn pool_with_inbox() -> SqlitePool {
+    let pool = pool_with_folders().await;
+    for uid in [2, 3] {
+        sqlx::query(
+            "INSERT INTO emails (folder_id, uid, subject) SELECT id, ?, 'cached' FROM folders
+             WHERE account_id = 'a@example.test' AND name = 'INBOX'",
+        )
+        .bind(uid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    pool
+}
+
+async fn inbox_uids(pool: &SqlitePool) -> Vec<i64> {
+    sqlx::query_scalar(
+        "SELECT e.uid FROM emails e JOIN folders f ON f.id = e.folder_id
+         WHERE f.account_id = 'a@example.test' AND f.name = 'INBOX' ORDER BY e.uid",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn removes_messages_no_longer_in_the_folder() {
+    let pool = pool_with_inbox().await;
+    // UID 2 was moved away; UID 9 is new and not cached yet.
+    let removed = prune_missing_messages(&pool, "a@example.test", "INBOX", &[1, 3, 9], 3)
+        .await
+        .unwrap();
+    assert_eq!(removed, 1);
+    assert_eq!(inbox_uids(&pool).await, vec![1, 3]);
+    // Other folders and accounts keep their one cached message each.
+    assert_eq!(count(&pool, "SELECT COUNT(*) FROM emails").await, 4);
+}
+
+#[tokio::test]
+async fn a_search_that_disagrees_with_exists_removes_nothing() {
+    let pool = pool_with_inbox().await;
+    let removed = prune_missing_messages(&pool, "a@example.test", "INBOX", &[1], 3)
+        .await
+        .unwrap();
+    assert_eq!(removed, 0);
+    assert_eq!(inbox_uids(&pool).await, vec![1, 2, 3]);
+}
+
+#[tokio::test]
+async fn an_emptied_folder_empties_its_cache() {
+    let pool = pool_with_inbox().await;
+    let removed = prune_missing_messages(&pool, "a@example.test", "INBOX", &[], 0)
+        .await
+        .unwrap();
+    assert_eq!(removed, 3);
+    assert!(inbox_uids(&pool).await.is_empty());
+}
+
+#[tokio::test]
+async fn remove_cached_message_removes_only_that_message() {
+    let pool = pool_with_inbox().await;
+    let removed = remove_cached_message(&pool, "a@example.test", "INBOX", 2)
+        .await
+        .unwrap();
+    assert_eq!(removed, 1);
+    assert_eq!(inbox_uids(&pool).await, vec![1, 3]);
+    // Same UID in another folder or account stays.
+    let other = remove_cached_message(&pool, "a@example.test", "INBOX", 2)
+        .await
+        .unwrap();
+    assert_eq!(other, 0);
+    assert_eq!(count(&pool, "SELECT COUNT(*) FROM emails").await, 4);
 }
