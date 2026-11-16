@@ -4,12 +4,16 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::dashboard::services::{AccountService, CacheService, OutboxQueueService, SmtpService};
+use crate::imap::special_folders::{FolderTarget, SpecialUse};
 use crate::prelude::CloneableImapSessionFactory;
 use log::{error, info, warn};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::time::sleep;
+
+const OUTBOX: FolderTarget<'static> = FolderTarget::Named("INBOX.Outbox");
+const SENT: FolderTarget<'static> = FolderTarget::Special(SpecialUse::Sent);
 
 /// Background worker that processes the outbox queue
 pub struct OutboxWorker {
@@ -101,7 +105,7 @@ impl OutboxWorker {
         // Step 1: Save to IMAP Outbox folder FIRST (so user can see it in their email client)
         let mut saved_to_outbox = item.outbox_saved;
         if !item.outbox_saved {
-            match self.save_to_folder(&item, "INBOX.Outbox").await {
+            match self.save_to_folder(&item, OUTBOX).await {
                 Ok(_) => {
                     info!(
                         "Email saved to Outbox folder - user can now see it in their email client"
@@ -150,8 +154,8 @@ impl OutboxWorker {
 
         // Step 3: Save to Sent folder and remove from Outbox (completing the "move" operation)
         if !item.sent_folder_saved {
-            match self.save_to_folder(&item, "INBOX.Sent").await {
-                Ok(_) => {
+            match self.save_to_folder(&item, SENT).await {
+                Ok(sent_folder) => {
                     info!("Email saved to Sent folder");
                     if let Err(e) = self.queue_service.mark_sent_folder_saved(id).await {
                         warn!("Failed to mark sent folder saved for item {}: {}", id, e);
@@ -173,7 +177,7 @@ impl OutboxWorker {
                     // Invalidate both Sent and Outbox caches so UI reflects the move
                     if let Err(e) = self
                         .cache_service
-                        .clear_folder_cache("INBOX.Sent", &item.account_email)
+                        .clear_folder_cache(&sent_folder, &item.account_email)
                         .await
                     {
                         warn!(
@@ -233,13 +237,12 @@ impl OutboxWorker {
         Ok(())
     }
 
-    /// Save email to IMAP folder (Outbox or Sent)
+    /// Save email to the Outbox or the server's Sent folder; returns the folder used.
     async fn save_to_folder(
         &self,
         item: &crate::dashboard::services::OutboxQueueItem,
-        folder: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        // Get the account for this email
+        target: FolderTarget<'_>,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let account_service = self.account_service.lock().await;
         let account = account_service
             .get_account(&item.account_email)
@@ -247,19 +250,16 @@ impl OutboxWorker {
             .map_err(|e| format!("Failed to get account {}: {}", item.account_email, e))?;
         drop(account_service);
 
-        // Create IMAP session for this specific account
         let session = self
             .imap_factory
             .create_session_for_account(&account)
             .await?;
 
-        // Select folder
-        session.select_folder(folder).await?;
+        let folder = session.target_folder(target).await?;
+        session.select_folder(&folder).await?;
 
-        // APPEND email with \Seen flag
-        let flags = vec!["\\Seen".to_string()];
         session
-            .append(folder, &item.raw_email_bytes, &flags)
+            .append(&folder, &item.raw_email_bytes, &["\\Seen".to_string()])
             .await?;
 
         // Log out so the server closes the IMAP session cleanly
@@ -271,7 +271,7 @@ impl OutboxWorker {
             "Saved email to {} folder for account {}",
             folder, item.account_email
         );
-        Ok(())
+        Ok(folder)
     }
 
     /// Remove email from Outbox folder after successful send
