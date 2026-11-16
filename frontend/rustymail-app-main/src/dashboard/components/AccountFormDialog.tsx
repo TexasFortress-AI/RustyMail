@@ -224,7 +224,7 @@ export function AccountFormDialog({
       console.error('Auto-config failed:', error);
       toast({
         title: 'Auto-Configuration Failed',
-        description: error.message || 'Could not auto-discover email settings. Please configure manually.',
+        description: `${error.message || 'Could not auto-discover email settings.'} Enter the IMAP and SMTP server names in their tabs, then save again.`,
         variant: 'destructive',
       });
     } finally {
