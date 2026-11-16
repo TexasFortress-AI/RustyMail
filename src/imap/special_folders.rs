@@ -25,6 +25,8 @@ const INBOX_NAMESPACE: &str = "INBOX.";
 pub enum SpecialUse {
     Sent,
     Drafts,
+    Trash,
+    Junk,
 }
 
 impl SpecialUse {
@@ -34,6 +36,8 @@ impl SpecialUse {
         match self {
             SpecialUse::Sent => "Sent",
             SpecialUse::Drafts => "Drafts",
+            SpecialUse::Trash => "Trash",
+            SpecialUse::Junk => "Junk",
         }
     }
 
@@ -42,6 +46,8 @@ impl SpecialUse {
         match self {
             SpecialUse::Sent => &["Sent Items", "Sent", "INBOX.Sent", "Sent Messages"],
             SpecialUse::Drafts => &["Drafts", "INBOX.Drafts"],
+            SpecialUse::Trash => &["Trash", "Deleted Items", "Deleted Messages", "INBOX.Trash"],
+            SpecialUse::Junk => &["Junk", "Junk Mail", "Spam", "INBOX.Junk", "INBOX.spam"],
         }
     }
 
@@ -73,17 +79,23 @@ pub enum FolderTarget<'a> {
     Special(SpecialUse),
 }
 
-/// Pick the folder for `kind` from the server's folder tree.
-pub fn find_special_folder(folders: &[Folder], kind: SpecialUse) -> SpecialFolder {
+/// The selectable folder the server marks with `kind`'s attribute, if any.
+pub fn marked_folder(folders: &[Folder], kind: SpecialUse) -> Option<String> {
     let mut selectable = Vec::new();
     flatten(folders, &mut selectable);
-
-    if let Some(folder) = selectable
+    selectable
         .iter()
         .find(|f| f.attributes.iter().any(|a| a == kind.attribute()))
-    {
-        return SpecialFolder::Existing(folder.full_path.clone());
+        .map(|f| f.full_path.clone())
+}
+
+/// Pick the folder for `kind` from the server's folder tree.
+pub fn find_special_folder(folders: &[Folder], kind: SpecialUse) -> SpecialFolder {
+    if let Some(name) = marked_folder(folders, kind) {
+        return SpecialFolder::Existing(name);
     }
+    let mut selectable = Vec::new();
+    flatten(folders, &mut selectable);
     let found = |name: &&str| {
         selectable
             .iter()
