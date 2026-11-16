@@ -272,3 +272,42 @@ fn overrides_win_over_the_servers_marked_folder() {
         Destination::Existing("INBOX.Review".into())
     );
 }
+
+#[test]
+fn receipts_is_the_legacy_name_for_accounting() {
+    assert_eq!(Bucket::parse("Receipts"), Some(Bucket::Accounting));
+    assert_eq!(Bucket::parse("accounting"), Some(Bucket::Accounting));
+    assert_eq!(Bucket::parse("Legal"), Some(Bucket::Legal));
+    assert_eq!(Bucket::parse("credit"), Some(Bucket::Credit));
+    assert_eq!(Bucket::Accounting.as_str(), "Accounting");
+    assert_eq!(Bucket::parse("Invoices"), None);
+
+    // A proposal stored before the rename applies as Accounting.
+    let o = ApplyOptions {
+        buckets: vec![Bucket::Accounting],
+        ..options()
+    };
+    let now = Utc.with_ymd_and_hms(2026, 11, 14, 12, 0, 0).unwrap();
+    assert_eq!(
+        decide(&proposal("Receipts", "model", Some(0.9)), 5, now, &o),
+        Ok(Bucket::Accounting)
+    );
+}
+
+#[test]
+fn accounting_and_legal_folders_follow_the_account_namespace() {
+    let map = FolderMap::default();
+    let nested = names(&["INBOX", "INBOX.Accounting"]);
+    assert_eq!(
+        map.resolve("a@x.test", Bucket::Accounting, &nested, None),
+        Destination::Existing("INBOX.Accounting".into())
+    );
+    assert_eq!(
+        map.resolve("a@x.test", Bucket::Legal, &nested, None),
+        Destination::Create("INBOX.Legal".into())
+    );
+    assert_eq!(
+        map.resolve("a@x.test", Bucket::Credit, &nested, None),
+        Destination::Create("INBOX.Credit".into())
+    );
+}

@@ -31,7 +31,7 @@ static DMARC_POLICY_NONE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// Known senders mapped to buckets, loaded from a JSON file:
-/// `{"addresses": {"orders@shop.example": "Receipts"}, "domains": {"github.com": "Alerts"}}`.
+/// `{"addresses": {"orders@shop.example": "Accounting"}, "domains": {"github.com": "Alerts"}}`.
 /// A domain entry also matches its subdomains.
 #[derive(Debug, Default)]
 pub struct SenderRules {
@@ -104,10 +104,18 @@ pub fn apply_rules(
         .or_else(|| senders.lookup(message))
 }
 
-/// Bulk mail is Noise unless the model says it is a receipt or an alert.
+/// Bulk mail is Noise unless the model says it is accounting, legal, credit or
+/// an alert.
 pub fn bulk_mail_default(message: &TriageMessage, model: Proposal) -> Proposal {
     match bulk_mail(message) {
-        Some(noise) if !matches!(model.bucket, Bucket::Receipts | Bucket::Alerts) => noise,
+        Some(noise)
+            if !matches!(
+                model.bucket,
+                Bucket::Accounting | Bucket::Legal | Bucket::Credit | Bucket::Alerts
+            ) =>
+        {
+            noise
+        }
         _ => model,
     }
 }

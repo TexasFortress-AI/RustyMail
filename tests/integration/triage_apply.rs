@@ -24,7 +24,9 @@ fn default_options() -> ApplyOptions {
         buckets: vec![
             Bucket::Spam,
             Bucket::Noise,
-            Bucket::Receipts,
+            Bucket::Accounting,
+            Bucket::Legal,
+            Bucket::Credit,
             Bucket::Alerts,
             Bucket::Trash,
         ],

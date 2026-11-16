@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-//! rustymail-triage: sort INBOX mail into Spam, Noise, Receipts, Alerts,
+//! rustymail-triage: sort INBOX mail into Spam, Noise, Accounting, Legal, Credit, Alerts,
 //! Needs Reply and (expired codes only) Trash.
 //!
 //!   rustymail-triage                 propose buckets for new mail, then print the report

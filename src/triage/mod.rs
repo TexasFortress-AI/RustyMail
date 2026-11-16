@@ -30,22 +30,33 @@ use std::fmt;
 
 /// Where a message should go. `Keep` means it stays in the INBOX; `Trash`
 /// is only for verification codes and password resets past their window.
+/// `Accounting` (money records), `Legal` (agreements and terms) and `Credit`
+/// (credit reports and monitoring) are the boxes later processed by the
+/// accounting, legal and credit agents.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Bucket {
     Spam,
     Noise,
-    Receipts,
+    Accounting,
+    Legal,
+    Credit,
     Alerts,
     NeedsReply,
     Trash,
     Keep,
 }
 
+/// Bucket names from before Receipts became Accounting; stored proposals and
+/// settings may still use them.
+const LEGACY_NAMES: [(&str, Bucket); 1] = [("receipts", Bucket::Accounting)];
+
 impl Bucket {
-    pub const ALL: [Bucket; 7] = [
+    pub const ALL: [Bucket; 9] = [
         Bucket::Spam,
         Bucket::Noise,
-        Bucket::Receipts,
+        Bucket::Accounting,
+        Bucket::Legal,
+        Bucket::Credit,
         Bucket::Alerts,
         Bucket::NeedsReply,
         Bucket::Trash,
@@ -56,7 +67,9 @@ impl Bucket {
         match self {
             Bucket::Spam => "Spam",
             Bucket::Noise => "Noise",
-            Bucket::Receipts => "Receipts",
+            Bucket::Accounting => "Accounting",
+            Bucket::Legal => "Legal",
+            Bucket::Credit => "Credit",
             Bucket::Alerts => "Alerts",
             Bucket::NeedsReply => "Needs Reply",
             Bucket::Trash => "Trash",
@@ -64,20 +77,27 @@ impl Bucket {
         }
     }
 
-    /// Case-insensitive; accepts "Needs Reply", "needs_reply" and "needsreply".
+    /// Case-insensitive; accepts "Needs Reply", "needs_reply" and "needsreply",
+    /// and the legacy "Receipts" for Accounting.
     pub fn parse(value: &str) -> Option<Bucket> {
         let normalized: String = value
             .chars()
             .filter(|c| c.is_ascii_alphanumeric())
             .collect::<String>()
             .to_ascii_lowercase();
-        Bucket::ALL.into_iter().find(|bucket| {
+        let current = Bucket::ALL.into_iter().find(|bucket| {
             bucket
                 .as_str()
                 .chars()
                 .filter(|c| c.is_ascii_alphanumeric())
                 .collect::<String>()
                 .eq_ignore_ascii_case(&normalized)
+        });
+        current.or_else(|| {
+            LEGACY_NAMES
+                .iter()
+                .find(|(name, _)| *name == normalized)
+                .map(|(_, bucket)| *bucket)
         })
     }
 }

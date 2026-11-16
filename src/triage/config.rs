@@ -22,10 +22,12 @@ const DEFAULT_MIN_CONFIDENCE: f64 = 0.8;
 const DEFAULT_NEEDS_REPLY_DAYS: i64 = 30;
 /// Buckets apply moves by default. Needs Reply is mail from real people, which
 /// stays in the INBOX unless TRIAGE_APPLY_BUCKETS says otherwise.
-const DEFAULT_APPLY_BUCKETS: [Bucket; 5] = [
+const DEFAULT_APPLY_BUCKETS: [Bucket; 7] = [
     Bucket::Spam,
     Bucket::Noise,
-    Bucket::Receipts,
+    Bucket::Accounting,
+    Bucket::Legal,
+    Bucket::Credit,
     Bucket::Alerts,
     Bucket::Trash,
 ];

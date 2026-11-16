@@ -55,9 +55,9 @@ fn parses_plain_fenced_and_thinking_replies() {
     assert_eq!(plain.confidence, 0.9);
     assert_eq!(plain.reason, "direct question");
 
-    let fenced = "```json\n{\"bucket\": \"Receipts\", \"confidence\": 1.7}\n```";
+    let fenced = "```json\n{\"bucket\": \"Accounting\", \"confidence\": 1.7}\n```";
     let verdict = parse_verdict(fenced).unwrap();
-    assert_eq!(verdict.bucket, Bucket::Receipts);
+    assert_eq!(verdict.bucket, Bucket::Accounting);
     assert_eq!(verdict.confidence, 1.0, "confidence is clamped");
 
     let thinking = "<think>Is it {spam}?</think>{\"bucket\": \"Spam\", \"confidence\": 0.8}";
