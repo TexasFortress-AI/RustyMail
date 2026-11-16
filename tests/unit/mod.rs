@@ -47,3 +47,4 @@ pub mod triage_model_tests;
 pub mod triage_plan_tests;
 pub mod triage_rules_tests;
 pub mod triage_store_tests;
+pub mod triage_subject_rules_tests;

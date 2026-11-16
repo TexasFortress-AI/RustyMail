@@ -1,0 +1,8 @@
+{
+  "addresses": {"orders@shop.example": "Accounting"},
+  "domains": {"github.com": "Alerts"},
+  "subjects": [
+    {"domain": "card.example", "subject": "^Transaction notification$", "bucket": "Accounting"},
+    {"domain": "bank.example", "subject": "^You (sent|received) money with Zelle", "bucket": "Accounting"}
+  ]
+}
