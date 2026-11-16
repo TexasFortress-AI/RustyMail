@@ -309,10 +309,15 @@ export function AccountFormDialog({
 
     // Check basic required fields
     // Password is only required when creating a new account, not when editing
-    if (!formData.account_name || !formData.email_address || (!formData.imap_pass && !account)) {
+    const missing = [
+      !formData.account_name && 'Account Name',
+      !formData.email_address && 'Email Address',
+      !formData.imap_pass && !account && 'Password',
+    ].filter(Boolean);
+    if (missing.length > 0) {
       toast({
         title: 'Required Fields Missing',
-        description: 'Please fill in all required fields',
+        description: `Please fill in on the Basic tab: ${missing.join(', ')}`,
         variant: 'destructive',
       });
       return;
