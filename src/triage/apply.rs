@@ -13,7 +13,7 @@
 //! expunged folder-wide; Trash is only a move into an existing trash folder.
 
 use super::codes::is_due;
-use super::folders::{Destination, FolderMap};
+use super::folders::{special_use, Destination, FolderMap};
 use super::runner::Client;
 use super::store::{StoredProposal, TriageStore};
 use super::{Bucket, ProposalSource};
@@ -21,6 +21,8 @@ use crate::dashboard::services::cache_prune::remove_cached_message;
 use crate::imap::atomic::AtomicImapOperations;
 use crate::imap::error::ImapError;
 use crate::imap::session::AsyncImapOps;
+use crate::imap::special_folders::marked_folder;
+use crate::imap::types::Folder;
 use crate::imap::verified_move::MoveVerifier;
 use chrono::{DateTime, Utc};
 use log::{info, warn};
@@ -133,6 +135,7 @@ pub async fn apply_account(
     }
 
     let mut existing = client.list_folders().await?;
+    let tree = client.session().list_folders_hierarchical().await?;
     let mut destinations: HashMap<Bucket, Result<String, String>> = HashMap::new();
     for (proposal, bucket) in due {
         let resolved = match destinations.entry(bucket) {
@@ -144,6 +147,7 @@ pub async fn apply_account(
                     bucket,
                     folders,
                     &mut existing,
+                    &tree,
                     &mut summary,
                 )
                 .await,
@@ -205,9 +209,11 @@ async fn destination(
     bucket: Bucket,
     folders: &FolderMap,
     existing: &mut Vec<String>,
+    tree: &[Folder],
     summary: &mut ApplySummary,
 ) -> Result<String, String> {
-    match folders.resolve(account_id, bucket, existing) {
+    let marked = special_use(bucket).and_then(|kind| marked_folder(tree, kind));
+    match folders.resolve(account_id, bucket, existing, marked.as_deref()) {
         Destination::Existing(name) => Ok(name),
         Destination::Unavailable(reason) => Err(reason),
         Destination::Create(name) => {

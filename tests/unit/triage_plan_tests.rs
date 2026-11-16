@@ -6,9 +6,10 @@
 //! proposals apply moves, and the TRIAGE_* settings.
 
 use chrono::{Duration, NaiveDate, TimeZone, Utc};
+use rustymail::imap::special_folders::SpecialUse;
 use rustymail::triage::apply::{decide, ApplyOptions, Skip};
 use rustymail::triage::config::TriageConfig;
-use rustymail::triage::folders::{Destination, FolderMap};
+use rustymail::triage::folders::{special_use, Destination, FolderMap};
 use rustymail::triage::scan::{advance, plan_scan, select_uids};
 use rustymail::triage::store::{StoredProposal, Watermark};
 use rustymail::triage::Bucket;
@@ -65,24 +66,24 @@ fn bucket_folders_follow_the_account_namespace() {
     let map = FolderMap::default();
     let nested = names(&["INBOX", "INBOX.Sent", "INBOX.Trash", "INBOX.Noise"]);
     assert_eq!(
-        map.resolve("a@x.test", Bucket::Noise, &nested),
+        map.resolve("a@x.test", Bucket::Noise, &nested, None),
         Destination::Existing("INBOX.Noise".into())
     );
     assert_eq!(
-        map.resolve("a@x.test", Bucket::NeedsReply, &nested),
+        map.resolve("a@x.test", Bucket::NeedsReply, &nested, None),
         Destination::Create("INBOX.Needs Reply".into())
     );
     assert_eq!(
-        map.resolve("a@x.test", Bucket::Trash, &nested),
+        map.resolve("a@x.test", Bucket::Trash, &nested, None),
         Destination::Existing("INBOX.Trash".into())
     );
     let flat = names(&["INBOX", "Sent", "Deleted Items"]);
     assert_eq!(
-        map.resolve("a@x.test", Bucket::Spam, &flat),
+        map.resolve("a@x.test", Bucket::Spam, &flat, None),
         Destination::Create("Spam".into())
     );
     assert_eq!(
-        map.resolve("a@x.test", Bucket::Trash, &flat),
+        map.resolve("a@x.test", Bucket::Trash, &flat, None),
         Destination::Existing("Deleted Items".into())
     );
 }
@@ -91,12 +92,12 @@ fn bucket_folders_follow_the_account_namespace() {
 fn trash_is_never_created() {
     let map = FolderMap::default();
     assert!(matches!(
-        map.resolve("a@x.test", Bucket::Trash, &names(&["INBOX"])),
+        map.resolve("a@x.test", Bucket::Trash, &names(&["INBOX"]), None),
         Destination::Unavailable(_)
     ));
     let pinned = FolderMap::from_json(r#"{"a@x.test": {"Trash": "Bin"}}"#).unwrap();
     assert!(matches!(
-        pinned.resolve("a@x.test", Bucket::Trash, &names(&["INBOX"])),
+        pinned.resolve("a@x.test", Bucket::Trash, &names(&["INBOX"]), None),
         Destination::Unavailable(_)
     ));
 }
@@ -108,11 +109,11 @@ fn per_account_overrides_win() {
             .unwrap();
     let existing = names(&["INBOX", "INBOX.Trash", "Deleted Items", "Junk Mail"]);
     assert_eq!(
-        map.resolve("a@x.test", Bucket::Spam, &existing),
+        map.resolve("a@x.test", Bucket::Spam, &existing, None),
         Destination::Existing("Junk Mail".into())
     );
     assert_eq!(
-        map.resolve("a@x.test", Bucket::Trash, &existing),
+        map.resolve("a@x.test", Bucket::Trash, &existing, None),
         Destination::Existing("Deleted Items".into())
     );
     assert!(FolderMap::from_json(r#"{"a@x.test": {"Keep": "INBOX"}}"#).is_err());
@@ -235,4 +236,39 @@ fn config_reads_triage_settings() {
         ("TRIAGE_APPLY_BUCKETS", "Keep"),
     ]));
     assert!(keep.is_err());
+}
+
+#[test]
+fn the_servers_marked_trash_and_junk_win_over_old_folder_names() {
+    // An account that kept an old server's INBOX.Trash next to the current
+    // server's Deleted Items (\Trash) and Junk Mail (\Junk).
+    let map = FolderMap::default();
+    let existing = names(&[
+        "INBOX",
+        "INBOX.Trash",
+        "INBOX.Noise",
+        "Deleted Items",
+        "Junk Mail",
+    ]);
+    assert_eq!(
+        map.resolve("a@x.test", Bucket::Trash, &existing, Some("Deleted Items")),
+        Destination::Existing("Deleted Items".into())
+    );
+    assert_eq!(
+        map.resolve("a@x.test", Bucket::Spam, &existing, Some("Junk Mail")),
+        Destination::Existing("Junk Mail".into())
+    );
+    assert_eq!(special_use(Bucket::Trash), Some(SpecialUse::Trash));
+    assert_eq!(special_use(Bucket::Spam), Some(SpecialUse::Junk));
+    assert_eq!(special_use(Bucket::Noise), None);
+}
+
+#[test]
+fn overrides_win_over_the_servers_marked_folder() {
+    let map = FolderMap::from_json(r#"{"a@x.test": {"Spam": "INBOX.Review"}}"#).unwrap();
+    let existing = names(&["INBOX", "INBOX.Review", "Junk Mail"]);
+    assert_eq!(
+        map.resolve("a@x.test", Bucket::Spam, &existing, Some("Junk Mail")),
+        Destination::Existing("INBOX.Review".into())
+    );
 }

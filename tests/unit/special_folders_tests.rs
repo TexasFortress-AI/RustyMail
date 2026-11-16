@@ -7,7 +7,9 @@
 //! `list_folders_hierarchical` records them.
 
 use async_imap::types::NameAttribute;
-use rustymail::imap::special_folders::{find_special_folder, SpecialFolder, SpecialUse};
+use rustymail::imap::special_folders::{
+    find_special_folder, marked_folder, SpecialFolder, SpecialUse,
+};
 use rustymail::imap::types::Folder;
 
 fn tree(listing: &[(&str, &[&str])]) -> Vec<Folder> {
@@ -141,5 +143,22 @@ fn attribute_strings_match_what_the_imap_library_produces() {
     // to name matching.
     assert_eq!(format!("{:?}", NameAttribute::Sent), "Sent");
     assert_eq!(format!("{:?}", NameAttribute::Drafts), "Drafts");
+    assert_eq!(format!("{:?}", NameAttribute::Trash), "Trash");
+    assert_eq!(format!("{:?}", NameAttribute::Junk), "Junk");
     assert_eq!(format!("{:?}", NameAttribute::NoSelect), "NoSelect");
+}
+
+#[test]
+fn marked_folder_is_only_the_folder_carrying_the_attribute() {
+    let folders = top_level_server();
+    assert_eq!(
+        marked_folder(&folders, SpecialUse::Trash).as_deref(),
+        Some("Deleted Items")
+    );
+    assert_eq!(
+        marked_folder(&folders, SpecialUse::Junk).as_deref(),
+        Some("Junk Mail")
+    );
+    let unmarked = tree(&[("INBOX", &[]), ("INBOX.Trash", &[]), ("Trash", &[])]);
+    assert_eq!(marked_folder(&unmarked, SpecialUse::Trash), None);
 }

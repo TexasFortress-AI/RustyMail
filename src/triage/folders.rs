@@ -6,11 +6,14 @@
 //! Which IMAP folder each bucket moves to, per account.
 //!
 //! Servers differ: some keep folders under `INBOX.`, some at the top level,
-//! and the trash may be `Trash`, `INBOX.Trash` or `Deleted Items`. Per-account
-//! overrides come from a JSON file (TRIAGE_FOLDER_MAP_FILE):
+//! and the trash may be `Trash`, `INBOX.Trash` or `Deleted Items`. The folder
+//! the server marks `\Trash` or `\Junk` wins over names, which matters on
+//! accounts that kept an old server's folders. Per-account overrides, which
+//! win over both, come from a JSON file (TRIAGE_FOLDER_MAP_FILE):
 //! `{"chris@example.test": {"Spam": "Junk Mail", "Trash": "Deleted Items"}}`.
 
 use super::Bucket;
+use crate::imap::special_folders::SpecialUse;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -59,10 +62,17 @@ impl FolderMap {
         Self::from_json(&text)
     }
 
-    /// Destination for `bucket` given the folders the server lists. A trash
-    /// folder is never created: deleting is not triage's job, so without an
-    /// existing trash the move is refused.
-    pub fn resolve(&self, account_id: &str, bucket: Bucket, existing: &[String]) -> Destination {
+    /// Destination for `bucket` given the folders the server lists and the
+    /// folder it marks for this bucket's special use (see `special_use`). A
+    /// trash folder is never created: deleting is not triage's job, so
+    /// without an existing trash the move is refused.
+    pub fn resolve(
+        &self,
+        account_id: &str,
+        bucket: Bucket,
+        existing: &[String],
+        marked: Option<&str>,
+    ) -> Destination {
         let found = |name: &str| {
             existing
                 .iter()
@@ -82,6 +92,9 @@ impl FolderMap {
                 None => Destination::Create(name.clone()),
             };
         }
+        if let Some(name) = marked {
+            return Destination::Existing(name.to_string());
+        }
         let prefix = namespace(existing);
         if bucket == Bucket::Trash {
             let own = format!("{}Trash", prefix);
@@ -100,6 +113,15 @@ impl FolderMap {
             Some(folder) => Destination::Existing(folder),
             None => Destination::Create(name),
         }
+    }
+}
+
+/// The special use a bucket's folder has on servers that mark one.
+pub fn special_use(bucket: Bucket) -> Option<SpecialUse> {
+    match bucket {
+        Bucket::Trash => Some(SpecialUse::Trash),
+        Bucket::Spam => Some(SpecialUse::Junk),
+        _ => None,
     }
 }
 
