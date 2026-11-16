@@ -21,11 +21,11 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::time::timeout;
 
 use super::account::AccountService;
+use crate::imap::special_folders::{FolderTarget, SpecialUse};
 use crate::prelude::CloneableImapSessionFactory;
 
 // Folder name constants (can be configured via environment or config file in the future)
 const OUTBOX_FOLDER: &str = "INBOX.Outbox";
-const SENT_FOLDER: &str = "INBOX.Sent";
 
 fn smtp_transport_builder(
     host: &str,
@@ -220,7 +220,11 @@ impl SmtpService {
             OUTBOX_FOLDER
         );
         match self
-            .ensure_folder_exists_and_append(&account.email_address, &email_bytes, OUTBOX_FOLDER)
+            .ensure_folder_exists_and_append(
+                &account.email_address,
+                &email_bytes,
+                FolderTarget::Named(OUTBOX_FOLDER),
+            )
             .await
         {
             Ok(_) => {
@@ -248,7 +252,7 @@ impl SmtpService {
                     .ensure_folder_exists_and_append(
                         &account.email_address,
                         &email_bytes,
-                        SENT_FOLDER,
+                        FolderTarget::Special(SpecialUse::Sent),
                     )
                     .await
                 {
@@ -297,15 +301,15 @@ impl SmtpService {
         &self,
         account_email: &str,
         email_bytes: &[u8],
-        folder_name: &str,
+        target: FolderTarget<'_>,
     ) -> Result<(), SmtpError> {
         // Hard timeout for the entire operation (session creation + append)
         // This prevents indefinite hangs with slow IMAP servers
         let operation_timeout = Duration::from_secs(40); // 5 seconds more than IMAP APPEND timeout
 
         log::info!(
-            "Starting IMAP APPEND to '{}' with {}s timeout",
-            folder_name,
+            "Starting IMAP APPEND to {:?} with {}s timeout",
+            target,
             operation_timeout.as_secs()
         );
 
@@ -325,6 +329,11 @@ impl SmtpService {
                 .create_session_for_account(&account)
                 .await
                 .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
+            let resolved = session
+                .target_folder(target)
+                .await
+                .map_err(|e| SmtpError::ConfigError(format!("Failed to find folder {:?}: {}", target, e)))?;
+            let folder_name = resolved.as_str();
 
             // Try to append to the folder (folder should already exist from account validation)
             log::info!("Attempting IMAP APPEND to folder '{}'", folder_name);
@@ -403,8 +412,8 @@ impl SmtpService {
             Err(_elapsed) => {
                 log::error!("IMAP APPEND operation timed out after {}s. Abandoning session to prevent indefinite hang.", operation_timeout.as_secs());
                 Err(SmtpError::ConfigError(format!(
-                    "IMAP APPEND to folder '{}' timed out after {}s. Server may be performing security scanning. The operation has been cancelled.",
-                    folder_name, operation_timeout.as_secs()
+                    "IMAP APPEND to folder {:?} timed out after {}s. Server may be performing security scanning. The operation has been cancelled.",
+                    target, operation_timeout.as_secs()
                 )))
             }
         }
@@ -853,7 +862,13 @@ impl SmtpService {
                     SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e))
                 })?;
 
-            let drafts_folder = "INBOX.Drafts";
+            let drafts = session
+                .special_folder(SpecialUse::Drafts)
+                .await
+                .map_err(|e| {
+                    SmtpError::ConfigError(format!("Failed to find Drafts folder: {}", e))
+                })?;
+            let drafts_folder = drafts.as_str();
             let flags = vec!["\\Draft".to_string()];
 
             let result = match session.append(drafts_folder, email_bytes, &flags).await {

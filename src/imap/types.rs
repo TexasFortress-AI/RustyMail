@@ -153,7 +153,9 @@ impl Folder {
                 full_path: full_path.clone(),
                 parent,
                 children: Vec::new(),
-                selectable: !attributes.contains(&"\\Noselect".to_string()),
+                // Attributes are the Debug form of imap_proto::NameAttribute
+                // (see list_folders_hierarchical), so \Noselect is "NoSelect".
+                selectable: !attributes.iter().any(|a| a == "NoSelect"),
                 attributes,
             };
             folder_map.insert(full_path, folder);

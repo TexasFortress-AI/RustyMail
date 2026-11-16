@@ -7,6 +7,7 @@ use super::account_store::{AccountStore, AccountStoreError, StoredAccount};
 use super::connection_status::AccountConnectionStatus;
 use super::connection_status_store::{ConnectionStatusStore, ConnectionStatusStoreError};
 use super::encryption::{CredentialEncryption, EncryptionError};
+use crate::imap::special_folders::SpecialUse;
 use chrono::Utc;
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -1049,14 +1050,14 @@ impl AccountService {
         }
     }
 
-    /// Ensure essential IMAP folders exist (Outbox, Sent, Drafts)
+    /// Ensure the folders sending needs exist: RustyMail's Outbox, and the
+    /// server's own Sent and Drafts (created only if the server has none).
     /// This prevents timeout issues during first email send operations
     async fn ensure_essential_folders_exist(
         &self,
         client: &crate::imap::client::ImapClient<crate::imap::session::AsyncImapSessionWrapper>,
     ) -> Result<(), AccountError> {
-        // List of essential folders to pre-create
-        let essential_folders = vec!["INBOX.Outbox", "INBOX.Sent", "INBOX.Drafts"];
+        let essential_folders = vec!["INBOX.Outbox"];
 
         for folder_name in essential_folders {
             match client.create_folder(folder_name).await {
@@ -1073,6 +1074,11 @@ impl AccountService {
                         // Continue trying to create other folders even if one fails
                     }
                 }
+            }
+        }
+        for kind in [SpecialUse::Sent, SpecialUse::Drafts] {
+            if let Err(e) = client.special_folder(kind).await {
+                warn!("Failed to find or create the {:?} folder: {}", kind, e);
             }
         }
 
