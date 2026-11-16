@@ -54,7 +54,9 @@ fn a_person_only_informing_stays_in_the_inbox() {
 #[test]
 fn automated_mail_takes_the_bucket_of_its_kind() {
     for (kind, bucket) in [
-        ("receipt", Bucket::Receipts),
+        ("accounting", Bucket::Accounting),
+        ("legal", Bucket::Legal),
+        ("credit", Bucket::Credit),
         ("alert", Bucket::Alerts),
         ("newsletter", Bucket::Noise),
         ("spam", Bucket::Spam),

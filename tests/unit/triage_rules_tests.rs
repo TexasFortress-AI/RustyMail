@@ -92,7 +92,12 @@ fn bulk_mail_is_noise_unless_the_model_says_receipt_or_alert() {
         assert_eq!(p.reason, "List-Unsubscribe header");
         assert_eq!(p.confidence, None);
     }
-    for bucket in [Bucket::Receipts, Bucket::Alerts] {
+    for bucket in [
+        Bucket::Accounting,
+        Bucket::Legal,
+        Bucket::Credit,
+        Bucket::Alerts,
+    ] {
         let p = bulk_mail_default(&news, model(bucket));
         assert_eq!((p.bucket, p.source), (bucket, ProposalSource::Model));
     }
@@ -175,7 +180,7 @@ fn only_the_topmost_authentication_results_counts() {
 #[test]
 fn known_senders_win_over_header_rules() {
     let rules = SenderRules::from_json(
-        r#"{"addresses": {"Orders@Shop.example": "Receipts"}, "domains": {"github.com": "alerts"}}"#,
+        r#"{"addresses": {"Orders@Shop.example": "Accounting"}, "domains": {"github.com": "alerts"}}"#,
     )
     .unwrap();
     let receipt = parse(
@@ -183,7 +188,7 @@ fn known_senders_win_over_header_rules() {
         "orders@shop.example",
     );
     let proposal = apply_rules(&receipt, &rules, code_window()).unwrap();
-    assert_eq!(proposal.bucket, Bucket::Receipts);
+    assert_eq!(proposal.bucket, Bucket::Accounting);
     assert_eq!(proposal.reason, "known sender orders@shop.example");
     let subdomain = parse("", "noreply@notifications.github.com");
     assert_eq!(

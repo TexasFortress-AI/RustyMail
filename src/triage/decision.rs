@@ -27,22 +27,41 @@ const ASKS: &str = "asks";
 const KIND: &str = "kind";
 
 /// Automated-mail kinds and the bucket each one maps to.
-const KINDS: [(&str, Bucket, &str); 4] = [
+const KINDS: [(&str, Bucket, &str); 6] = [
     (
-        "receipt",
-        Bucket::Receipts,
-        "A receipt, invoice, bill, payment confirmation, order or shipping update.",
+        "accounting",
+        Bucket::Accounting,
+        "A record of money that moved or is owed: a receipt, invoice, bill, account \
+         statement, payment or transfer sent or received, card or bank transaction \
+         notice, purchase or order confirmation, or a crypto or brokerage deposit.",
+    ),
+    (
+        "legal",
+        Bucket::Legal,
+        "Terms the recipient is party to: updated terms of service or privacy policy, \
+         a contract or agreement, a warranty, insurance or coverage document, or a \
+         legal notice.",
+    ),
+    (
+        "credit",
+        Bucket::Credit,
+        "About the recipient's credit itself: a new credit report or score, a credit \
+         monitoring or identity alert, a new inquiry or account on their credit file, or \
+         a dispute with a credit bureau.",
     ),
     (
         "alert",
         Bucket::Alerts,
-        "An automated notice about the recipient's own account or documents: security or \
-         sign-in notices, invitations, shared files, signature requests, delivery failures.",
+        "Something about the recipient's own account that needs attention or is \
+         time-sensitive: a declined or failed payment, a due date or final reminder, an \
+         upcoming renewal, a delivery or shipping status, a security or sign-in notice, \
+         an invitation, chat or connection request, a shared file or a signature request.",
     ),
     (
         "newsletter",
         Bucket::Noise,
-        "A newsletter, marketing, promotion, digest or social-media notification.",
+        "A newsletter, marketing or promotion (including offers from banks, cards and \
+         payment apps), a digest, or a social-media notification.",
     ),
     (
         "spam",

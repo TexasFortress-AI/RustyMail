@@ -66,7 +66,13 @@ fn a_known_sender_is_never_spam_or_noise() {
 #[test]
 fn other_buckets_from_a_known_sender_are_kept() {
     let known = KnownPeople::new(["colleague@example.test"]);
-    for bucket in [Bucket::Receipts, Bucket::Alerts, Bucket::NeedsReply] {
+    for bucket in [
+        Bucket::Accounting,
+        Bucket::Legal,
+        Bucket::Credit,
+        Bucket::Alerts,
+        Bucket::NeedsReply,
+    ] {
         let p = checked(model(bucket), "colleague@example.test", Some(1), &known);
         assert_eq!(p.bucket, bucket);
     }
