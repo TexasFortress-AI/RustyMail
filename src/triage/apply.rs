@@ -13,7 +13,7 @@
 //! expunged folder-wide; Trash is only a move into an existing trash folder.
 
 use super::codes::is_due;
-use super::folders::{special_use, Destination, FolderMap};
+use super::folders::{bucket_namespace, special_use, Destination, FolderMap};
 use super::runner::Client;
 use super::store::{StoredProposal, TriageStore};
 use super::{Bucket, ProposalSource};
@@ -21,7 +21,7 @@ use crate::dashboard::services::cache_prune::remove_cached_message;
 use crate::imap::atomic::AtomicImapOperations;
 use crate::imap::error::ImapError;
 use crate::imap::session::AsyncImapOps;
-use crate::imap::special_folders::marked_folder;
+use crate::imap::special_folders::{inbox_namespace, marked_folder};
 use crate::imap::types::Folder;
 use crate::imap::verified_move::MoveVerifier;
 use chrono::{DateTime, Utc};
@@ -213,7 +213,8 @@ async fn destination(
     summary: &mut ApplySummary,
 ) -> Result<String, String> {
     let marked = special_use(bucket).and_then(|kind| marked_folder(tree, kind));
-    match folders.resolve(account_id, bucket, existing, marked.as_deref()) {
+    let namespace = bucket_namespace(existing, &inbox_namespace(tree));
+    match folders.resolve(account_id, bucket, existing, marked.as_deref(), &namespace) {
         Destination::Existing(name) => Ok(name),
         Destination::Unavailable(reason) => Err(reason),
         Destination::Create(name) => {

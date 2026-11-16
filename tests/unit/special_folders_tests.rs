@@ -8,7 +8,7 @@
 
 use async_imap::types::NameAttribute;
 use rustymail::imap::special_folders::{
-    find_special_folder, marked_folder, SpecialFolder, SpecialUse,
+    find_special_folder, inbox_namespace, marked_folder, SpecialFolder, SpecialUse,
 };
 use rustymail::imap::types::Folder;
 
@@ -161,4 +161,59 @@ fn marked_folder_is_only_the_folder_carrying_the_attribute() {
     );
     let unmarked = tree(&[("INBOX", &[]), ("INBOX.Trash", &[]), ("Trash", &[])]);
     assert_eq!(marked_folder(&unmarked, SpecialUse::Trash), None);
+}
+
+/// Gmail's real LIST: `/` delimiter, a stray top-level label named
+/// "INBOX.Outbox", and its special folders under [Gmail].
+fn gmail(extra: &[&str]) -> Vec<Folder> {
+    let mut listing: Vec<(String, Option<String>, Vec<String>)> = [
+        ("INBOX", vec![]),
+        ("INBOX.Outbox", vec![]),
+        ("[Gmail]", vec!["NoSelect"]),
+        ("[Gmail]/Sent Mail", vec!["Sent"]),
+        ("[Gmail]/Trash", vec!["Trash"]),
+    ]
+    .into_iter()
+    .map(|(path, attributes)| {
+        (
+            path.to_string(),
+            Some("/".to_string()),
+            attributes.into_iter().map(String::from).collect(),
+        )
+    })
+    .collect();
+    listing.extend(
+        extra
+            .iter()
+            .map(|path| (path.to_string(), Some("/".to_string()), Vec::new())),
+    );
+    Folder::build_hierarchy(listing)
+}
+
+#[test]
+fn the_namespace_comes_from_real_children_of_the_inbox() {
+    assert_eq!(inbox_namespace(&inbox_namespace_server()), "INBOX.");
+    assert_eq!(inbox_namespace(&top_level_server()), "INBOX.");
+    assert_eq!(
+        inbox_namespace(&gmail(&[])),
+        "",
+        "a label named INBOX.Outbox is not inside the INBOX on Gmail"
+    );
+    assert_eq!(inbox_namespace(&gmail(&["INBOX/Projects"])), "INBOX/");
+    assert_eq!(
+        inbox_namespace(&tree(&[("INBOX", &[]), ("Archive", &[])])),
+        ""
+    );
+}
+
+#[test]
+fn a_missing_folder_on_gmail_is_created_at_the_top_level() {
+    assert_eq!(
+        find_special_folder(&gmail(&[]), SpecialUse::Drafts),
+        SpecialFolder::Create("Drafts".to_string())
+    );
+    assert_eq!(
+        find_special_folder(&gmail(&[]), SpecialUse::Sent),
+        SpecialFolder::Existing("[Gmail]/Sent Mail".to_string())
+    );
 }

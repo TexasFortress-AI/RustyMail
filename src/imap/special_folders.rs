@@ -17,8 +17,8 @@ use super::types::Folder;
 use log::info;
 use std::fmt::Debug;
 
-/// Namespace used when the server keeps user folders under the INBOX.
-const INBOX_NAMESPACE: &str = "INBOX.";
+/// The mailbox whose children, if any, form the account's folder namespace.
+const INBOX: &str = "INBOX";
 
 /// A special-use folder that RustyMail writes to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -105,7 +105,11 @@ pub fn find_special_folder(folders: &[Folder], kind: SpecialUse) -> SpecialFolde
     if let Some(name) = kind.usual_names().iter().find_map(found) {
         return SpecialFolder::Existing(name);
     }
-    SpecialFolder::Create(format!("{}{}", namespace(&selectable), kind.default_leaf()))
+    SpecialFolder::Create(format!(
+        "{}{}",
+        inbox_namespace(folders),
+        kind.default_leaf()
+    ))
 }
 
 /// Selectable folders of the tree, depth first.
@@ -118,16 +122,23 @@ fn flatten<'a>(folders: &'a [Folder], into: &mut Vec<&'a Folder>) {
     }
 }
 
-/// `INBOX.` when the server keeps user folders under the INBOX.
-fn namespace(folders: &[&Folder]) -> &'static str {
-    if folders
-        .iter()
-        .any(|f| f.full_path.starts_with(INBOX_NAMESPACE))
-    {
-        INBOX_NAMESPACE
-    } else {
-        ""
+/// `INBOX` and the server's delimiter (`INBOX.` or `INBOX/`) when it keeps
+/// user folders under the INBOX, else empty. Decided by real children of the
+/// INBOX in the folder tree, not by names: on Gmail, whose delimiter is `/`,
+/// a label named `INBOX.Outbox` is a top-level folder.
+pub fn inbox_namespace(folders: &[Folder]) -> String {
+    for folder in folders {
+        if let (Some(delimiter), Some(parent)) = (&folder.delimiter, &folder.parent) {
+            if parent.eq_ignore_ascii_case(INBOX) {
+                return format!("{}{}", INBOX, delimiter);
+            }
+        }
+        let nested = inbox_namespace(&folder.children);
+        if !nested.is_empty() {
+            return nested;
+        }
     }
+    String::new()
 }
 
 impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
