@@ -31,12 +31,23 @@ static DMARC_POLICY_NONE: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// Known senders mapped to buckets, loaded from a JSON file:
-/// `{"addresses": {"orders@shop.example": "Accounting"}, "domains": {"github.com": "Alerts"}}`.
-/// A domain entry also matches its subdomains.
+/// `{"addresses": {"orders@shop.example": "Accounting"}, "domains": {"github.com": "Alerts"},
+///   "subjects": [{"domain": "bank.example", "subject": "^Your statement", "bucket": "Accounting"}]}`.
+/// A domain also matches its subdomains. Subject rules, for senders whose mail
+/// splits between buckets, are case-insensitive patterns and are tried first.
 #[derive(Debug, Default)]
 pub struct SenderRules {
     addresses: HashMap<String, Bucket>,
     domains: HashMap<String, Bucket>,
+    subjects: Vec<SubjectRule>,
+}
+
+/// One sender domain's mail whose subject matches `subject`.
+#[derive(Debug)]
+struct SubjectRule {
+    domain: String,
+    subject: Regex,
+    bucket: Bucket,
 }
 
 #[derive(Deserialize)]
@@ -45,6 +56,15 @@ struct SenderRulesFile {
     addresses: HashMap<String, String>,
     #[serde(default)]
     domains: HashMap<String, String>,
+    #[serde(default)]
+    subjects: Vec<SubjectRuleEntry>,
+}
+
+#[derive(Deserialize)]
+struct SubjectRuleEntry {
+    domain: String,
+    subject: String,
+    bucket: String,
 }
 
 impl SenderRules {
@@ -54,6 +74,11 @@ impl SenderRules {
         Ok(Self {
             addresses: parse_entries(file.addresses)?,
             domains: parse_entries(file.domains)?,
+            subjects: file
+                .subjects
+                .into_iter()
+                .map(SubjectRule::parse)
+                .collect::<Result<_, _>>()?,
         })
     }
 
@@ -64,6 +89,10 @@ impl SenderRules {
     }
 
     fn lookup(&self, message: &TriageMessage) -> Option<Proposal> {
+        if let Some(rule) = self.subjects.iter().find(|rule| rule.matches(message)) {
+            let reason = format!("known subject from {}", rule.domain);
+            return Some(Proposal::from_rule(rule.bucket, reason));
+        }
         if let Some(bucket) = self.addresses.get(&message.from_address) {
             let reason = format!("known sender {}", message.from_address);
             return Some(Proposal::from_rule(*bucket, reason));
@@ -78,6 +107,29 @@ impl SenderRules {
             }
             domain = domain.split_once('.')?.1;
         }
+    }
+}
+
+impl SubjectRule {
+    fn parse(entry: SubjectRuleEntry) -> Result<Self, String> {
+        let bucket = Bucket::parse(&entry.bucket)
+            .ok_or_else(|| format!("unknown bucket '{}' for '{}'", entry.bucket, entry.domain))?;
+        let subject = Regex::new(&format!("(?i){}", entry.subject))
+            .map_err(|e| format!("invalid subject pattern '{}': {}", entry.subject, e))?;
+        Ok(Self {
+            domain: entry.domain.trim().to_ascii_lowercase(),
+            subject,
+            bucket,
+        })
+    }
+
+    /// The sender's domain is `domain` or a subdomain of it, and the subject matches.
+    fn matches(&self, message: &TriageMessage) -> bool {
+        let Some(sender) = message.from_domain() else {
+            return false;
+        };
+        let in_domain = sender == self.domain || sender.ends_with(&format!(".{}", self.domain));
+        in_domain && self.subject.is_match(&message.subject)
     }
 }
 
