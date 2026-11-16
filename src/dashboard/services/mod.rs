@@ -41,6 +41,7 @@ pub mod event_integration;
 pub mod events;
 pub mod health;
 pub mod jobs;
+pub mod mail_provider;
 pub mod metrics;
 pub mod oauth_config;
 pub mod oauth_service;

@@ -3,12 +3,16 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use super::mail_provider::{preferred_mail_host, provider_domains};
 use hickory_resolver::proto::rr::{rdata::SRV, RData};
 use hickory_resolver::TokioResolver;
 use log::{debug, info, warn};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+/// Mozilla's ISPDB, the provider database Thunderbird uses; append a domain.
+const ISPDB_URL: &str = "https://autoconfig.thunderbird.net/v1.1/";
 
 #[derive(Error, Debug)]
 pub enum AutodiscoveryError {
@@ -77,6 +81,12 @@ impl AutodiscoveryService {
         // Try Mozilla Autoconfig
         if let Ok(config) = self.try_mozilla_autoconfig(email, &domain).await {
             info!("Found configuration via Mozilla Autoconfig for {}", domain);
+            return Ok(config);
+        }
+
+        // Try the provider that hosts the domain's mail (MX record)
+        if let Ok(config) = self.try_mail_provider(&domain).await {
+            info!("Found configuration via the mail provider of {}", domain);
             return Ok(config);
         }
 
@@ -228,7 +238,7 @@ impl AutodiscoveryService {
                 domain, email
             ),
             // 3. Mozilla ISPDB (centralized database that Thunderbird uses)
-            format!("https://autoconfig.thunderbird.net/v1.1/{}", domain),
+            format!("{}{}", ISPDB_URL, domain),
             // 4. Fallback to HTTP if HTTPS fails (less secure but some providers only support HTTP)
             format!(
                 "http://autoconfig.{}/mail/config-v1.1.xml?emailaddress={}",
@@ -236,6 +246,33 @@ impl AutodiscoveryService {
             ),
         ];
 
+        self.fetch_autoconfig(urls, domain).await
+    }
+
+    /// Look up the ISPDB entry of the provider hosting `domain`'s mail. Only
+    /// the provider's domain is sent, never the email address.
+    async fn try_mail_provider(&self, domain: &str) -> Result<EmailConfig, AutodiscoveryError> {
+        let lookup = self
+            .resolver
+            .mx_lookup(domain)
+            .await
+            .map_err(|e| AutodiscoveryError::DnsError(e.to_string()))?;
+        let host = preferred_mail_host(&lookup)
+            .ok_or_else(|| AutodiscoveryError::NoConfigFound(domain.to_string()))?;
+        debug!("Mail for {} is hosted by {}", domain, host);
+        let urls = provider_domains(&host, domain)
+            .into_iter()
+            .map(|provider| format!("{}{}", ISPDB_URL, provider))
+            .collect();
+        self.fetch_autoconfig(urls, domain).await
+    }
+
+    /// The first autoconfig document among `urls` that parses.
+    async fn fetch_autoconfig(
+        &self,
+        urls: Vec<String>,
+        domain: &str,
+    ) -> Result<EmailConfig, AutodiscoveryError> {
         for url in urls {
             debug!("Trying Mozilla Autoconfig URL: {}", url);
 
