@@ -5,7 +5,7 @@
 //! The parts of a message that triage looks at, parsed from its raw bytes.
 
 use chrono::{DateTime, Utc};
-use mail_parser::{HeaderValue, Message};
+use mail_parser::{Address, MessageParser};
 
 #[derive(Debug, Clone)]
 pub struct TriageMessage {
@@ -27,7 +27,7 @@ pub struct TriageMessage {
 impl TriageMessage {
     /// Parse a raw RFC 822 message. Returns None if it cannot be parsed.
     pub fn from_raw(uid: u32, raw: &[u8], excerpt_chars: usize) -> Option<Self> {
-        let message = Message::parse(raw)?;
+        let message = MessageParser::default().parse(raw)?;
         let (from_address, from_name) = first_sender(message.from());
         let headers = message
             .headers_raw()
@@ -67,15 +67,8 @@ impl TriageMessage {
     }
 }
 
-fn first_sender(value: &HeaderValue<'_>) -> (String, Option<String>) {
-    let addr = match value {
-        HeaderValue::Address(addr) => Some(addr),
-        HeaderValue::AddressList(list) => list.first(),
-        HeaderValue::Group(group) => group.addresses.first(),
-        HeaderValue::GroupList(groups) => groups.iter().flat_map(|g| g.addresses.iter()).next(),
-        _ => None,
-    };
-    match addr {
+fn first_sender(value: Option<&Address<'_>>) -> (String, Option<String>) {
+    match value.and_then(Address::first) {
         Some(addr) => (
             addr.address
                 .as_deref()

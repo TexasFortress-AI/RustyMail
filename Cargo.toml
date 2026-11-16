@@ -100,7 +100,7 @@ subtle = "2.6"
 libc = "0.2"
 
 # MIME parsing
-mail-parser = "0.8"
+mail-parser = "0.11"
 
 # SMTP sending
 lettre = { version = "0.11.22", default-features = false, features = ["tokio1", "tokio1-rustls-tls", "builder", "hostname", "smtp-transport"] }

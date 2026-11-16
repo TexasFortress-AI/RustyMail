@@ -428,7 +428,7 @@ impl CacheService {
         let parsed_message = email
             .body
             .as_ref()
-            .and_then(|body| mail_parser::Message::parse(body));
+            .and_then(|body| mail_parser::MessageParser::default().parse(body));
 
         // Override subject with body-parsed version when available: this catches
         // MIME-encoded proper nouns that the envelope-based decoder may miss.

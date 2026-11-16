@@ -14,7 +14,7 @@
 //! deterministic Drop/parse checks.
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use mail_parser::Message;
+use mail_parser::MessageParser;
 
 #[cfg(test)]
 mod tests {
@@ -51,7 +51,9 @@ mod tests {
     #[test]
     fn test_mail_parser_parses_and_drops_large_attachment() {
         let raw = large_multipart_email(2 * 1024 * 1024); // 2 MB
-        let message = Message::parse(raw.as_bytes()).expect("parse multipart email");
+        let message = MessageParser::default()
+            .parse(raw.as_bytes())
+            .expect("parse multipart email");
         // Touch decoded content so parsing work actually happens, then drop.
         assert!(message.body_text(0).map(|c| !c.is_empty()).unwrap_or(true));
         let _ = message.attachment(0).map(|a| a.len());
