@@ -17,8 +17,11 @@ use crate::imap::special_folders::SpecialUse;
 use std::collections::HashMap;
 use std::path::Path;
 
-/// Namespace used when the server keeps user folders under the INBOX.
-const INBOX_NAMESPACE: &str = "INBOX.";
+/// Prefix of bucket folders made on `/`-delimited servers before the
+/// namespace came from the folder tree.
+const LEGACY_PREFIX: &str = "INBOX.";
+/// The Accounting bucket's name before Receipts became Accounting.
+const LEGACY_RECEIPTS: &str = "Receipts";
 /// Trash folder names tried, in order, after the account's own namespace.
 const TRASH_CANDIDATES: [&str; 4] = ["Trash", "Deleted Items", "Deleted Messages", "INBOX.Trash"];
 
@@ -62,16 +65,18 @@ impl FolderMap {
         Self::from_json(&text)
     }
 
-    /// Destination for `bucket` given the folders the server lists and the
-    /// folder it marks for this bucket's special use (see `special_use`). A
-    /// trash folder is never created: deleting is not triage's job, so
-    /// without an existing trash the move is refused.
+    /// Destination for `bucket` given the folders the server lists, the
+    /// folder it marks for this bucket's special use (see `special_use`) and
+    /// the account's namespace (see `inbox_namespace`). A trash folder is
+    /// never created: deleting is not triage's job, so without an existing
+    /// trash the move is refused.
     pub fn resolve(
         &self,
         account_id: &str,
         bucket: Bucket,
         existing: &[String],
         marked: Option<&str>,
+        namespace: &str,
     ) -> Destination {
         let found = |name: &str| {
             existing
@@ -95,9 +100,8 @@ impl FolderMap {
         if let Some(name) = marked {
             return Destination::Existing(name.to_string());
         }
-        let prefix = namespace(existing);
         if bucket == Bucket::Trash {
-            let own = format!("{}Trash", prefix);
+            let own = format!("{}Trash", namespace);
             return std::iter::once(own.as_str())
                 .chain(TRASH_CANDIDATES)
                 .find_map(found)
@@ -108,11 +112,37 @@ impl FolderMap {
                     )
                 });
         }
-        let name = format!("{}{}", prefix, bucket.as_str());
+        let name = format!("{}{}", namespace, bucket.as_str());
         match found(&name) {
             Some(folder) => Destination::Existing(folder),
             None => Destination::Create(name),
         }
+    }
+}
+
+/// Prefix for bucket folders. The server's INBOX namespace (`INBOX.`,
+/// `INBOX/`) when it keeps folders under the INBOX; otherwise `INBOX.` when
+/// this account's bucket folders already carry it (servers with a `/`
+/// delimiter list them as top-level folders named "INBOX.Noise"), so new
+/// ones sit beside them; otherwise none. Only bucket folders count: a stray
+/// "INBOX.Outbox" label on Gmail does not.
+pub fn bucket_namespace(existing: &[String], inbox_namespace: &str) -> String {
+    if !inbox_namespace.is_empty() {
+        return inbox_namespace.to_string();
+    }
+    let prefixed = |name: &str| {
+        let folder = format!("{}{}", LEGACY_PREFIX, name);
+        existing.iter().any(|f| f.eq_ignore_ascii_case(&folder))
+    };
+    let made_by_triage = Bucket::ALL
+        .iter()
+        .filter(|b| !matches!(b, Bucket::Trash | Bucket::Keep))
+        .any(|b| prefixed(b.as_str()))
+        || prefixed(LEGACY_RECEIPTS);
+    if made_by_triage {
+        LEGACY_PREFIX.to_string()
+    } else {
+        String::new()
     }
 }
 
@@ -122,14 +152,5 @@ pub fn special_use(bucket: Bucket) -> Option<SpecialUse> {
         Bucket::Trash => Some(SpecialUse::Trash),
         Bucket::Spam => Some(SpecialUse::Junk),
         _ => None,
-    }
-}
-
-/// `INBOX.` when the server keeps user folders under the INBOX.
-pub fn namespace(existing: &[String]) -> &'static str {
-    if existing.iter().any(|f| f.starts_with(INBOX_NAMESPACE)) {
-        INBOX_NAMESPACE
-    } else {
-        ""
     }
 }
