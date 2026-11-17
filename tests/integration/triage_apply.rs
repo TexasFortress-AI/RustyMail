@@ -167,6 +167,34 @@ async fn a_move_the_server_only_claims_is_reported_and_stays_pending() {
 
 #[tokio::test]
 #[serial]
+async fn a_lost_connection_stops_the_run_and_leaves_the_rest_pending() {
+    let (client, mailbox, store) = proposed_inbox().await;
+    mailbox.lock().unwrap().move_behavior = MoveBehavior::DropConnection;
+    let summary = apply_account(
+        &store,
+        &client,
+        ACCOUNT,
+        "INBOX",
+        &FolderMap::default(),
+        &default_options(),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(summary.moved, 0);
+    assert_eq!(summary.failures.len(), 1, "only the move in flight failed");
+    assert!(summary.connection_lost.is_some());
+    let pending = store.proposals_to_apply(ACCOUNT, "INBOX").await.unwrap();
+    assert_eq!(pending.len(), 4);
+    assert_eq!(
+        pending.iter().filter(|p| p.apply_error.is_some()).count(),
+        1,
+        "moves never attempted carry no error"
+    );
+}
+
+#[tokio::test]
+#[serial]
 async fn a_message_lost_in_transit_is_reported() {
     let (client, mailbox, store) = proposed_inbox().await;
     mailbox.lock().unwrap().move_behavior = MoveBehavior::LoseMessage;

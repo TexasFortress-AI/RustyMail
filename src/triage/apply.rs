@@ -99,6 +99,9 @@ pub struct ApplySummary {
     pub failures: Vec<ApplyFailure>,
     pub skipped: HashMap<Skip, usize>,
     pub created_folders: Vec<String>,
+    /// Set when the server connection was lost and the run stopped early;
+    /// the moves not yet attempted stay pending for the next run.
+    pub connection_lost: Option<String>,
 }
 
 /// Apply one account's pending proposals for `folder`.
@@ -153,11 +156,15 @@ pub async fn apply_account(
                 .await,
             ),
         };
+        let mut lost_connection = false;
         let outcome = match resolved {
-            Ok(target) => verified_move(client, proposal.uid, folder, target)
-                .await
-                .map(|confirmed| (target.clone(), confirmed))
-                .map_err(|e| e.to_string()),
+            Ok(target) => match verified_move(client, proposal.uid, folder, target).await {
+                Ok(confirmed) => Ok((target.clone(), confirmed)),
+                Err(e) => {
+                    lost_connection = matches!(e, ImapError::Connection(_));
+                    Err(e.to_string())
+                }
+            },
             Err(reason) => Err(reason.clone()),
         };
         match outcome {
@@ -184,11 +191,18 @@ pub async fn apply_account(
                     account_id, proposal.uid, bucket
                 );
                 store.mark_failed(proposal.id, &error).await?;
+                if lost_connection {
+                    warn!("{}: connection lost, stopping: {}", account_id, error);
+                    summary.connection_lost = Some(error.clone());
+                }
                 summary.failures.push(ApplyFailure {
                     uid: proposal.uid,
                     bucket: bucket.to_string(),
                     error,
                 });
+                if lost_connection {
+                    break;
+                }
             }
         }
     }

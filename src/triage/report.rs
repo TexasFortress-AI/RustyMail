@@ -139,6 +139,13 @@ pub fn format_apply_summary(summary: &ApplySummary) -> String {
             failure.uid, failure.bucket, failure.error
         );
     }
+    if let Some(error) = &summary.connection_lost {
+        let _ = writeln!(
+            out,
+            "  STOPPED: connection lost ({}); run --apply again to continue",
+            error
+        );
+    }
     out
 }
 
