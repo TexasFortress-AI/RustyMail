@@ -98,6 +98,7 @@ async fn proposal_is_recorded_once_and_listed_per_account() {
         model_id: Some("local-model".to_string()),
         reason: "direct question".to_string(),
         not_before: None,
+        list_name: None,
     };
     assert!(store
         .insert_proposal(&message("b@example.test", 2), &model)
@@ -170,4 +171,18 @@ async fn apply_bookkeeping_and_complete_counts() {
     assert_eq!((noise.pending, noise.applied), (1, 1));
     let trash = counts.iter().find(|c| c.bucket == "Trash").unwrap();
     assert_eq!((trash.pending, trash.applied), (1, 0));
+}
+
+#[tokio::test]
+async fn the_list_name_is_stored_with_the_proposal() {
+    let store = store().await;
+    let mut post = Proposal::from_rule(Bucket::Lists, "mailing list post");
+    post.list_name = Some("zeromq-dev".to_string());
+    store
+        .insert_proposal(&message("a@example.test", 1), &post)
+        .await
+        .unwrap();
+    let stored = store.pending_proposals(None, 10).await.unwrap();
+    assert_eq!(stored[0].bucket, "Lists");
+    assert_eq!(stored[0].list_name.as_deref(), Some("zeromq-dev"));
 }

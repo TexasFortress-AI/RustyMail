@@ -13,6 +13,7 @@
 
 use super::classifier::Classifier;
 use super::guards::ModelGuards;
+use super::lists::ListRules;
 use super::message::TriageMessage;
 use super::people::KnownPeople;
 use super::rules::{apply_rules, bulk_mail_default, SenderRules};
@@ -53,6 +54,7 @@ pub struct TriageRunner<C: Classifier> {
     pub classifier: C,
     pub guards: ModelGuards,
     pub senders: SenderRules,
+    pub lists: ListRules,
     pub code_window: chrono::Duration,
     pub folder: String,
     pub fetch_batch: usize,
@@ -220,7 +222,9 @@ impl<C: Classifier> TriageRunner<C> {
         message: &TriageMessage,
         known: &KnownPeople,
     ) -> Result<Proposal, String> {
-        if let Some(rule) = apply_rules(message, &self.senders, self.code_window) {
+        let rule = apply_rules(message, &self.senders, self.code_window)
+            .or_else(|| self.lists.proposal(message));
+        if let Some(rule) = rule {
             return Ok(rule);
         }
         let proposal = self.classifier.classify(message).await?;

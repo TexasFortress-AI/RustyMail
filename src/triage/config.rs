@@ -20,6 +20,8 @@ const DEFAULT_CODE_WINDOW_HOURS: i64 = 24;
 const DEFAULT_MIN_CONFIDENCE: f64 = 0.8;
 /// Model Needs Reply proposals only for mail newer than this; older stays put.
 const DEFAULT_NEEDS_REPLY_DAYS: i64 = 30;
+/// Code hosts whose `List-Id`s name repositories (TRIAGE_REPO_LIST_DOMAINS).
+const DEFAULT_REPO_LIST_DOMAINS: &str = "github.com";
 /// Buckets apply moves by default. Needs Reply is mail from real people, which
 /// stays in the INBOX unless TRIAGE_APPLY_BUCKETS says otherwise.
 const DEFAULT_APPLY_BUCKETS: [Bucket; 7] = [
@@ -50,6 +52,8 @@ pub struct TriageConfig {
     pub fetch_batch: usize,
     pub excerpt_chars: usize,
     pub sender_rules_file: Option<PathBuf>,
+    /// Domains whose `List-Id`s mark code-repository notifications.
+    pub repo_list_domains: Vec<String>,
     /// Per-account bucket-to-folder overrides.
     pub folder_map_file: Option<PathBuf>,
     pub code_window: chrono::Duration,
@@ -125,6 +129,12 @@ impl TriageConfig {
                 DEFAULT_BODY_EXCERPT_CHARS,
             )?,
             sender_rules_file: value("TRIAGE_SENDER_RULES_FILE").map(PathBuf::from),
+            repo_list_domains: value("TRIAGE_REPO_LIST_DOMAINS")
+                .unwrap_or_else(|| DEFAULT_REPO_LIST_DOMAINS.to_string())
+                .split(',')
+                .map(|domain| domain.trim().to_string())
+                .filter(|domain| !domain.is_empty())
+                .collect(),
             folder_map_file: value("TRIAGE_FOLDER_MAP_FILE").map(PathBuf::from),
             code_window: chrono::Duration::hours(parse_or(
                 value("TRIAGE_CODE_WINDOW_HOURS"),

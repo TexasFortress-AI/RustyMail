@@ -16,6 +16,7 @@ pub mod config;
 pub mod decision;
 pub mod folders;
 pub mod guards;
+pub mod lists;
 pub mod message;
 pub mod model;
 pub mod people;
@@ -32,7 +33,8 @@ use std::fmt;
 /// is only for verification codes and password resets past their window.
 /// `Accounting` (money records), `Legal` (agreements and terms) and `Credit`
 /// (credit reports and monitoring) are the boxes later processed by the
-/// accounting, legal and credit agents.
+/// accounting, legal and credit agents. `Lists` (mailing-list posts) and
+/// `Repos` (code-repository notifications) get a folder per list or repo.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Bucket {
     Spam,
@@ -41,6 +43,8 @@ pub enum Bucket {
     Legal,
     Credit,
     Alerts,
+    Lists,
+    Repos,
     NeedsReply,
     Trash,
     Keep,
@@ -51,13 +55,15 @@ pub enum Bucket {
 const LEGACY_NAMES: [(&str, Bucket); 1] = [("receipts", Bucket::Accounting)];
 
 impl Bucket {
-    pub const ALL: [Bucket; 9] = [
+    pub const ALL: [Bucket; 11] = [
         Bucket::Spam,
         Bucket::Noise,
         Bucket::Accounting,
         Bucket::Legal,
         Bucket::Credit,
         Bucket::Alerts,
+        Bucket::Lists,
+        Bucket::Repos,
         Bucket::NeedsReply,
         Bucket::Trash,
         Bucket::Keep,
@@ -71,10 +77,18 @@ impl Bucket {
             Bucket::Legal => "Legal",
             Bucket::Credit => "Credit",
             Bucket::Alerts => "Alerts",
+            Bucket::Lists => "Lists",
+            Bucket::Repos => "Repos",
             Bucket::NeedsReply => "Needs Reply",
             Bucket::Trash => "Trash",
             Bucket::Keep => "Keep",
         }
+    }
+
+    /// Buckets only a rule may choose: codes past their window, and list and
+    /// repo mail, which is recognised by its headers.
+    pub fn rule_only(self) -> bool {
+        matches!(self, Bucket::Trash | Bucket::Lists | Bucket::Repos)
     }
 
     /// Case-insensitive; accepts "Needs Reply", "needs_reply" and "needsreply",
@@ -135,6 +149,8 @@ pub struct Proposal {
     pub reason: String,
     /// Not to be applied before this time (an unexpired verification code).
     pub not_before: Option<DateTime<Utc>>,
+    /// The list or repo whose folder a `Lists` or `Repos` message goes to.
+    pub list_name: Option<String>,
 }
 
 impl Proposal {
@@ -146,6 +162,7 @@ impl Proposal {
             model_id: None,
             reason: reason.into(),
             not_before: None,
+            list_name: None,
         }
     }
 }

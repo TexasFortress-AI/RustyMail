@@ -247,6 +247,7 @@ impl<B: DecisionBackend> DecisionClassifier<B> {
                 decision.personal, decision.asks, decision.kind, decision.kind_probability
             ),
             not_before: None,
+            list_name: None,
         })
     }
 }

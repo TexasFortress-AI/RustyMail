@@ -63,6 +63,7 @@ fn model(bucket: Bucket) -> Proposal {
         model_id: Some("m".into()),
         reason: "model".into(),
         not_before: None,
+        list_name: None,
     }
 }
 

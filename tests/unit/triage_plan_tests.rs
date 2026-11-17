@@ -135,6 +135,7 @@ fn proposal(bucket: &str, source: &str, confidence: Option<f64>) -> StoredPropos
         model_id: None,
         reason: "r".into(),
         not_before: None,
+        list_name: None,
         apply_error: None,
         created_at: "2026-11-14 00:00:00".into(),
     }
