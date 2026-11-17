@@ -24,13 +24,15 @@ const DEFAULT_NEEDS_REPLY_DAYS: i64 = 30;
 const DEFAULT_REPO_LIST_DOMAINS: &str = "github.com";
 /// Buckets apply moves by default. Needs Reply is mail from real people, which
 /// stays in the INBOX unless TRIAGE_APPLY_BUCKETS says otherwise.
-const DEFAULT_APPLY_BUCKETS: [Bucket; 7] = [
+const DEFAULT_APPLY_BUCKETS: [Bucket; 9] = [
     Bucket::Spam,
     Bucket::Noise,
     Bucket::Accounting,
     Bucket::Legal,
     Bucket::Credit,
     Bucket::Alerts,
+    Bucket::Lists,
+    Bucket::Repos,
     Bucket::Trash,
 ];
 

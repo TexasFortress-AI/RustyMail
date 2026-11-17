@@ -6,7 +6,7 @@
 //! including against a server that answers OK without moving anything.
 
 use super::fake_imap_server::{MoveBehavior, SharedMailbox};
-use super::triage::{folder_uids, ids_in, inbox, runner, store, ACCOUNT};
+use super::triage::{folder_uids, ids_in, inbox, raw, runner, store, ACCOUNT};
 use rustymail::imap::client::ImapClient;
 use rustymail::imap::session::AsyncImapSessionWrapper;
 use rustymail::triage::apply::{apply_account, ApplyOptions};
@@ -276,4 +276,65 @@ async fn unexpired_codes_wait() {
     assert_eq!(summary.moved, 0);
     assert_eq!(summary.skipped.values().sum::<usize>(), 1);
     assert_eq!(folder_uids(&mailbox, "INBOX"), [1, 2, 3, 4]);
+}
+
+#[tokio::test]
+#[serial]
+async fn list_and_repo_mail_moves_to_a_folder_per_list() {
+    let (client, mailbox) = inbox().await;
+    {
+        let mut state = mailbox.lock().unwrap();
+        state.raw_bodies.insert(
+            "<news@x.test>".to_string(),
+            raw(
+                "member@example.test",
+                "Re: socket options",
+                "List-Id: ZeroMQ development list <zeromq-dev.lists.zeromq.org>\r\n\
+                 List-Post: <mailto:zeromq-dev@lists.zeromq.org>\r\n",
+                "<news@x.test>",
+                "A reply",
+            ),
+        );
+        state.raw_bodies.insert(
+            "<scam@x.test>".to_string(),
+            raw(
+                "notifications@github.com",
+                "[TexasFortress-AI/RustyMail] A pull request",
+                "List-Id: TexasFortress-AI/RustyMail <RustyMail.TexasFortress-AI.github.com>\r\n\
+                 List-Post: noreply@github.com\r\n",
+                "<scam@x.test>",
+                "Merged",
+            ),
+        );
+    }
+    let runner = runner(store().await, Arc::new(AtomicBool::new(false)));
+    runner
+        .triage_folder(&client, ACCOUNT, RunOptions::default())
+        .await
+        .unwrap();
+    let mut options = default_options();
+    options.buckets.extend([Bucket::Lists, Bucket::Repos]);
+    let summary = apply_account(
+        &runner.store,
+        &client,
+        ACCOUNT,
+        "INBOX",
+        &FolderMap::default(),
+        &options,
+    )
+    .await
+    .unwrap();
+
+    assert!(summary.failures.is_empty(), "{:?}", summary.failures);
+    assert_eq!(ids_in(&mailbox, "Lists.zeromq-dev"), ["<news@x.test>"]);
+    assert_eq!(ids_in(&mailbox, "Repos.RustyMail"), ["<scam@x.test>"]);
+    let created = &summary.created_folders;
+    let position = |name: &str| created.iter().position(|f| f == name).unwrap();
+    for (parent, child) in [("Lists", "Lists.zeromq-dev"), ("Repos", "Repos.RustyMail")] {
+        assert!(
+            position(parent) < position(child),
+            "parent first: {:?}",
+            created
+        );
+    }
 }

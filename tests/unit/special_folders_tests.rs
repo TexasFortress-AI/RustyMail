@@ -8,7 +8,8 @@
 
 use async_imap::types::NameAttribute;
 use rustymail::imap::special_folders::{
-    find_outbox, find_special_folder, inbox_namespace, marked_folder, SpecialFolder, SpecialUse,
+    find_outbox, find_special_folder, inbox_namespace, marked_folder, server_delimiter,
+    SpecialFolder, SpecialUse,
 };
 use rustymail::imap::types::Folder;
 
@@ -249,4 +250,10 @@ fn a_missing_outbox_is_created_in_the_accounts_namespace() {
         find_outbox(&nested),
         SpecialFolder::Create("INBOX.Outbox".to_string())
     );
+}
+
+#[test]
+fn the_delimiter_is_the_servers_own() {
+    assert_eq!(server_delimiter(&gmail(&[])), "/");
+    assert_eq!(server_delimiter(&inbox_namespace_server()), ".");
 }
