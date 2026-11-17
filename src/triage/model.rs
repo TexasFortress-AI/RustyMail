@@ -17,7 +17,7 @@ use url::{Host, Url};
 const SYSTEM_PROMPT: &str = "You sort email for a busy person. Choose exactly one bucket:\n\
 - Spam: unsolicited, scam, phishing or deceptive mail.\n\
 - Noise: newsletters, marketing, promotions, social-media notifications and automated digests that need no action.\n\
-- Accounting: records of money that moved or is owed: receipts, invoices, bills, statements, payments and transfers, transaction notices, purchase confirmations.\n\
+- Accounting: records of money that moved or is owed: receipts, invoices, bills, statements, payments and transfers, transaction notices, purchase confirmations, updates to investors or shareholders, capital calls, tax forms (W-2, 1099, K-1).\n\
 - Legal: terms the recipient is party to: terms of service or privacy policy updates, contracts, warranties, insurance or coverage documents, legal notices.\n\
 - Credit: about the recipient's credit itself: credit reports or scores, credit monitoring or identity alerts, new inquiries, credit bureau disputes.\n\
 - Alerts: automated notices that need attention or are time-sensitive: declined payments, reminders, renewals, deliveries, security alerts, sign-in or verification codes, password resets.\n\

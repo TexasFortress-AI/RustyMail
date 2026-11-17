@@ -33,7 +33,9 @@ const KINDS: [(&str, Bucket, &str); 6] = [
         Bucket::Accounting,
         "A record of money that moved or is owed: a receipt, invoice, bill, account \
          statement, payment or transfer sent or received, card or bank transaction \
-         notice, purchase or order confirmation, or a crypto or brokerage deposit.",
+         notice, purchase or order confirmation, a crypto or brokerage deposit, an \
+         update or report to investors or shareholders, a capital call, or a tax form \
+         such as a W-2, 1099 or K-1.",
     ),
     (
         "legal",

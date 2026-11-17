@@ -111,6 +111,23 @@ fn every_kind_question_maps_to_a_bucket() {
 }
 
 #[test]
+fn investor_updates_and_tax_forms_are_accounting() {
+    let accounting = questions()["kind"]["criteria"]["accounting"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    for phrase in [
+        "investors or shareholders",
+        "capital call",
+        "W-2",
+        "1099",
+        "K-1",
+    ] {
+        assert!(accounting.contains(phrase), "{phrase}");
+    }
+}
+
+#[test]
 fn only_loopback_decision_servers_are_accepted() {
     let timeout = Duration::from_secs(1);
     assert!(LocalDecisionServer::new("http://127.0.0.1:11434", timeout).is_ok());
