@@ -43,6 +43,7 @@ pub mod special_folders_tests;
 pub mod triage_codes_tests;
 pub mod triage_decision_tests;
 pub mod triage_guards_tests;
+pub mod triage_lists_tests;
 pub mod triage_model_tests;
 pub mod triage_plan_tests;
 pub mod triage_rules_tests;

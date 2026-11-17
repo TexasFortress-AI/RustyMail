@@ -106,6 +106,9 @@ fn describe(p: &StoredProposal) -> String {
         "uid {} | {} | {} | [{}]",
         p.uid, p.from_address, subject, evidence
     );
+    if let Some(list) = &p.list_name {
+        let _ = write!(line, " | {} {}", p.bucket, list);
+    }
     if let Some(time) = p.not_before {
         let _ = write!(line, " | due {}", time.format("%Y-%m-%d %H:%M UTC"));
     }

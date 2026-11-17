@@ -143,6 +143,7 @@ pub(super) fn runner(
             needs_reply_max_age: chrono::Duration::MAX,
         },
         senders: SenderRules::default(),
+        lists: rustymail::triage::lists::ListRules::new(vec!["github.com".to_string()]),
         code_window: chrono::Duration::hours(24),
         folder: "INBOX".into(),
         fetch_batch: FETCH_BATCH,

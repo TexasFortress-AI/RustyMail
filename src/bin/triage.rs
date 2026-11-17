@@ -21,6 +21,7 @@ use rustymail::triage::config::TriageConfig;
 use rustymail::triage::decision::{DecisionClassifier, LocalDecisionServer};
 use rustymail::triage::folders::FolderMap;
 use rustymail::triage::guards::ModelGuards;
+use rustymail::triage::lists::ListRules;
 use rustymail::triage::model::{EscalatingClassifier, LocalModelServer};
 use rustymail::triage::report::{format_apply_summary, format_report};
 use rustymail::triage::rules::SenderRules;
@@ -165,6 +166,7 @@ async fn propose_all(
             needs_reply_max_age: config.needs_reply_max_age,
         },
         senders,
+        lists: ListRules::new(config.repo_list_domains.clone()),
         code_window: config.code_window,
         folder: config.folder.clone(),
         fetch_batch: config.fetch_batch,
