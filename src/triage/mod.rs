@@ -14,6 +14,7 @@ pub mod classifier;
 pub mod codes;
 pub mod config;
 pub mod decision;
+pub mod destinations;
 pub mod folders;
 pub mod guards;
 pub mod lists;

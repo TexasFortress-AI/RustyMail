@@ -200,6 +200,8 @@ fn config_defaults_keep_real_people_in_the_inbox() {
     assert_eq!(config.dashboard_url, "http://127.0.0.1:9437");
     assert!(!config.apply_buckets.contains(&Bucket::NeedsReply));
     assert!(config.apply_buckets.contains(&Bucket::Trash));
+    assert!(config.apply_buckets.contains(&Bucket::Lists));
+    assert!(config.apply_buckets.contains(&Bucket::Repos));
     assert_eq!(config.code_window, Duration::hours(24));
     assert_eq!(config.min_confidence, 0.8);
     assert_eq!(config.needs_reply_max_age, Duration::days(30));

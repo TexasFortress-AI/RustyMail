@@ -20,6 +20,9 @@ use std::fmt::Debug;
 /// The mailbox whose children, if any, form the account's folder namespace.
 const INBOX: &str = "INBOX";
 
+/// Hierarchy delimiter assumed when the server reports none.
+const DEFAULT_DELIMITER: &str = ".";
+
 /// RustyMail's Outbox is not an RFC 6154 folder, so it is found by name:
 /// the names used so far, then a new folder named `OUTBOX_LEAF`.
 const OUTBOX_NAMES: [&str; 2] = ["INBOX.Outbox", "Outbox"];
@@ -153,6 +156,25 @@ pub fn inbox_namespace(folders: &[Folder]) -> String {
         }
     }
     String::new()
+}
+
+/// The server's hierarchy delimiter: the INBOX's, else the first one listed.
+pub fn server_delimiter(folders: &[Folder]) -> String {
+    let mut all = Vec::new();
+    flatten_all(folders, &mut all);
+    all.iter()
+        .find(|f| f.full_path.eq_ignore_ascii_case(INBOX))
+        .or_else(|| all.iter().find(|f| f.delimiter.is_some()))
+        .and_then(|f| f.delimiter.clone())
+        .unwrap_or_else(|| DEFAULT_DELIMITER.to_string())
+}
+
+/// Every folder of the tree, selectable or not, depth first.
+fn flatten_all<'a>(folders: &'a [Folder], into: &mut Vec<&'a Folder>) {
+    for folder in folders {
+        into.push(folder);
+        flatten_all(&folder.children, into);
+    }
 }
 
 impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {

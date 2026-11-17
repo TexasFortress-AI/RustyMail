@@ -13,7 +13,8 @@
 //! expunged folder-wide; Trash is only a move into an existing trash folder.
 
 use super::codes::is_due;
-use super::folders::{bucket_namespace, special_use, Destination, FolderMap};
+use super::destinations::FolderResolver;
+use super::folders::FolderMap;
 use super::runner::Client;
 use super::store::{StoredProposal, TriageStore};
 use super::{Bucket, ProposalSource};
@@ -21,12 +22,9 @@ use crate::dashboard::services::cache_prune::remove_cached_message;
 use crate::imap::atomic::AtomicImapOperations;
 use crate::imap::error::ImapError;
 use crate::imap::session::AsyncImapOps;
-use crate::imap::special_folders::{inbox_namespace, marked_folder};
-use crate::imap::types::Folder;
 use crate::imap::verified_move::MoveVerifier;
 use chrono::{DateTime, Utc};
 use log::{info, warn};
-use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -137,35 +135,21 @@ pub async fn apply_account(
         return Ok(summary);
     }
 
-    let mut existing = client.list_folders().await?;
-    let tree = client.session().list_folders_hierarchical().await?;
-    let mut destinations: HashMap<Bucket, Result<String, String>> = HashMap::new();
+    let mut destinations = FolderResolver::new(client, account_id, folders).await?;
     for (proposal, bucket) in due {
-        let resolved = match destinations.entry(bucket) {
-            Entry::Occupied(known) => known.into_mut(),
-            Entry::Vacant(slot) => slot.insert(
-                destination(
-                    client,
-                    account_id,
-                    bucket,
-                    folders,
-                    &mut existing,
-                    &tree,
-                    &mut summary,
-                )
-                .await,
-            ),
-        };
+        let resolved = destinations
+            .folder_for(bucket, proposal.list_name.as_deref())
+            .await;
         let mut lost_connection = false;
         let outcome = match resolved {
-            Ok(target) => match verified_move(client, proposal.uid, folder, target).await {
-                Ok(confirmed) => Ok((target.clone(), confirmed)),
+            Ok(target) => match verified_move(client, proposal.uid, folder, &target).await {
+                Ok(confirmed) => Ok((target, confirmed)),
                 Err(e) => {
                     lost_connection = matches!(e, ImapError::Connection(_));
                     Err(e.to_string())
                 }
             },
-            Err(reason) => Err(reason.clone()),
+            Err(reason) => Err(reason),
         };
         match outcome {
             Ok((target, confirmed)) => {
@@ -206,6 +190,7 @@ pub async fn apply_account(
             }
         }
     }
+    summary.created_folders = destinations.created;
     info!(
         "{}: moved {}, unconfirmed {}, failed {}",
         account_id,
@@ -214,34 +199,6 @@ pub async fn apply_account(
         summary.failures.len()
     );
     Ok(summary)
-}
-
-/// Resolve a bucket's folder, creating it when allowed (never a trash folder).
-async fn destination(
-    client: &Client,
-    account_id: &str,
-    bucket: Bucket,
-    folders: &FolderMap,
-    existing: &mut Vec<String>,
-    tree: &[Folder],
-    summary: &mut ApplySummary,
-) -> Result<String, String> {
-    let marked = special_use(bucket).and_then(|kind| marked_folder(tree, kind));
-    let namespace = bucket_namespace(existing, &inbox_namespace(tree));
-    match folders.resolve(account_id, bucket, existing, marked.as_deref(), &namespace) {
-        Destination::Existing(name) => Ok(name),
-        Destination::Unavailable(reason) => Err(reason),
-        Destination::Create(name) => {
-            client
-                .create_folder(&name)
-                .await
-                .map_err(|e| format!("cannot create folder {}: {}", name, e))?;
-            info!("{}: created folder {}", account_id, name);
-            existing.push(name.clone());
-            summary.created_folders.push(name.clone());
-            Ok(name)
-        }
-    }
 }
 
 /// Move one message and check it left the source and reached the destination.
