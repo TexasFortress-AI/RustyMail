@@ -22,6 +22,8 @@ pub enum MoveBehavior {
     RefuseCopyAndMove,
     /// The server has no MOVE extension, so clients fall back to COPY + EXPUNGE.
     NoMoveCommand,
+    /// The server closes the connection when a move arrives.
+    DropConnection,
 }
 
 #[derive(Clone)]
@@ -351,6 +353,10 @@ async fn serve_connection(
     write_half.flush().await.unwrap();
     while let Ok(Some(line)) = lines.next_line().await {
         let (tag, command) = line.split_once(' ').unwrap_or((line.as_str(), ""));
+        let dropping = mailbox.lock().unwrap().move_behavior == MoveBehavior::DropConnection;
+        if dropping && command.to_ascii_uppercase().starts_with("UID MOVE ") {
+            break;
+        }
         let reply = mailbox.lock().unwrap().handle(&mut selected, tag, command);
         if write_half.write_all(reply.as_bytes()).await.is_err()
             || write_half.flush().await.is_err()
