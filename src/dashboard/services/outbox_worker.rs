@@ -12,7 +12,7 @@ use std::time::Duration;
 use tokio::sync::Mutex as TokioMutex;
 use tokio::time::sleep;
 
-const OUTBOX: FolderTarget<'static> = FolderTarget::Named("INBOX.Outbox");
+const OUTBOX: FolderTarget<'static> = FolderTarget::Outbox;
 const SENT: FolderTarget<'static> = FolderTarget::Special(SpecialUse::Sent);
 
 /// Background worker that processes the outbox queue
@@ -106,7 +106,7 @@ impl OutboxWorker {
         let mut saved_to_outbox = item.outbox_saved;
         if !item.outbox_saved {
             match self.save_to_folder(&item, OUTBOX).await {
-                Ok(_) => {
+                Ok(outbox) => {
                     info!(
                         "Email saved to Outbox folder - user can now see it in their email client"
                     );
@@ -115,16 +115,7 @@ impl OutboxWorker {
                         warn!("Failed to mark outbox saved for item {}: {}", id, e);
                     }
                     // Invalidate Outbox cache so UI shows the new email immediately
-                    if let Err(e) = self
-                        .cache_service
-                        .clear_folder_cache("INBOX.Outbox", &item.account_email)
-                        .await
-                    {
-                        warn!(
-                            "Failed to invalidate Outbox cache for {}: {}",
-                            item.account_email, e
-                        );
-                    }
+                    self.clear_cache(&outbox, &item.account_email).await;
                 }
                 Err(e) => {
                     // If we can't save to Outbox, just log and continue
@@ -164,8 +155,9 @@ impl OutboxWorker {
                     // Remove from Outbox now that it's in Sent folder
                     if saved_to_outbox {
                         match self.remove_from_outbox(&item).await {
-                            Ok(_) => {
+                            Ok(outbox) => {
                                 info!("Successfully moved email from Outbox to Sent folder");
+                                self.clear_cache(&outbox, &item.account_email).await;
                             }
                             Err(e) => {
                                 // Don't fail the whole operation - the email was sent and is in Sent folder
@@ -174,27 +166,8 @@ impl OutboxWorker {
                         }
                     }
 
-                    // Invalidate both Sent and Outbox caches so UI reflects the move
-                    if let Err(e) = self
-                        .cache_service
-                        .clear_folder_cache(&sent_folder, &item.account_email)
-                        .await
-                    {
-                        warn!(
-                            "Failed to invalidate Sent cache for {}: {}",
-                            item.account_email, e
-                        );
-                    }
-                    if let Err(e) = self
-                        .cache_service
-                        .clear_folder_cache("INBOX.Outbox", &item.account_email)
-                        .await
-                    {
-                        warn!(
-                            "Failed to invalidate Outbox cache for {}: {}",
-                            item.account_email, e
-                        );
-                    }
+                    // Invalidate the Sent cache so UI reflects the move
+                    self.clear_cache(&sent_folder, &item.account_email).await;
                 }
                 Err(e) => {
                     // Don't fail the whole operation, just log
@@ -274,11 +247,25 @@ impl OutboxWorker {
         Ok(folder)
     }
 
-    /// Remove email from Outbox folder after successful send
+    /// Clear a folder's cache so the UI shows the change; failures are logged.
+    async fn clear_cache(&self, folder: &str, account_email: &str) {
+        if let Err(e) = self
+            .cache_service
+            .clear_folder_cache(folder, account_email)
+            .await
+        {
+            warn!(
+                "Failed to invalidate {} cache for {}: {}",
+                folder, account_email, e
+            );
+        }
+    }
+
+    /// Remove email from Outbox folder after successful send; returns the folder.
     async fn remove_from_outbox(
         &self,
         item: &crate::dashboard::services::OutboxQueueItem,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         // Get the account for this email
         let account_service = self.account_service.lock().await;
         let account = account_service
@@ -293,8 +280,8 @@ impl OutboxWorker {
             .create_session_for_account(&account)
             .await?;
 
-        // Select Outbox folder
-        session.select_folder("INBOX.Outbox").await?;
+        let outbox = session.target_folder(OUTBOX).await?;
+        session.select_folder(&outbox).await?;
 
         // Search for the email by subject
         // Escape double quotes in subject for IMAP search
@@ -308,7 +295,7 @@ impl OutboxWorker {
                 "Email not found in Outbox for removal (subject: {})",
                 item.subject
             );
-            return Ok(()); // Not an error - email might have been manually moved
+            return Ok(outbox); // Not an error - email might have been manually moved
         }
 
         info!(
@@ -329,7 +316,7 @@ impl OutboxWorker {
             "Removed email from Outbox folder for account {}",
             item.account_email
         );
-        Ok(())
+        Ok(outbox)
     }
 
     /// Handle failure with retry logic
@@ -399,8 +386,14 @@ impl OutboxWorker {
                 }
             };
 
-            // Select Outbox folder
-            if let Err(e) = session.select_folder("INBOX.Outbox").await {
+            let outbox = match session.target_folder(OUTBOX).await {
+                Ok(outbox) => outbox,
+                Err(e) => {
+                    warn!("Failed to find Outbox folder for {}: {}", account_email, e);
+                    continue;
+                }
+            };
+            if let Err(e) = session.select_folder(&outbox).await {
                 warn!(
                     "Failed to select Outbox folder for {}: {}",
                     account_email, e
@@ -476,16 +469,7 @@ impl OutboxWorker {
                     );
 
                     // Invalidate cache after cleanup
-                    if let Err(e) = self
-                        .cache_service
-                        .clear_folder_cache("INBOX.Outbox", account_email)
-                        .await
-                    {
-                        warn!(
-                            "Failed to invalidate Outbox cache after cleanup for {}: {}",
-                            account_email, e
-                        );
-                    }
+                    self.clear_cache(&outbox, account_email).await;
                 }
             }
 

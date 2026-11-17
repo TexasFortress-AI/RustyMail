@@ -8,7 +8,7 @@
 
 use async_imap::types::NameAttribute;
 use rustymail::imap::special_folders::{
-    find_special_folder, inbox_namespace, marked_folder, SpecialFolder, SpecialUse,
+    find_outbox, find_special_folder, inbox_namespace, marked_folder, SpecialFolder, SpecialUse,
 };
 use rustymail::imap::types::Folder;
 
@@ -215,5 +215,38 @@ fn a_missing_folder_on_gmail_is_created_at_the_top_level() {
     assert_eq!(
         find_special_folder(&gmail(&[]), SpecialUse::Sent),
         SpecialFolder::Existing("[Gmail]/Sent Mail".to_string())
+    );
+}
+
+#[test]
+fn an_existing_outbox_is_kept() {
+    assert_eq!(find_outbox(&top_level_server()), existing("INBOX.Outbox"));
+    assert_eq!(
+        find_outbox(&inbox_namespace_server()),
+        existing("INBOX.Outbox")
+    );
+    assert_eq!(
+        find_outbox(&gmail(&[])),
+        existing("INBOX.Outbox"),
+        "the stray label is used until it is deleted"
+    );
+    let top_level = tree(&[("INBOX", &[]), ("outbox", &[])]);
+    assert_eq!(find_outbox(&top_level), existing("outbox"));
+}
+
+#[test]
+fn a_missing_outbox_is_created_in_the_accounts_namespace() {
+    let gmail_without_label: Vec<Folder> = gmail(&[])
+        .into_iter()
+        .filter(|f| f.name != "INBOX.Outbox")
+        .collect();
+    assert_eq!(
+        find_outbox(&gmail_without_label),
+        SpecialFolder::Create("Outbox".to_string())
+    );
+    let nested = tree(&[("INBOX", &[]), ("INBOX.Archive", &[])]);
+    assert_eq!(
+        find_outbox(&nested),
+        SpecialFolder::Create("INBOX.Outbox".to_string())
     );
 }
