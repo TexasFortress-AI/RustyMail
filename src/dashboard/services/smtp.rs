@@ -21,11 +21,13 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::time::timeout;
 
 use super::account::AccountService;
+use crate::imap::client::ImapClient;
+use crate::imap::error::ImapError;
+use crate::imap::session::AsyncImapSessionWrapper;
 use crate::imap::special_folders::{FolderTarget, SpecialUse};
 use crate::prelude::CloneableImapSessionFactory;
 
 // Folder name constants (can be configured via environment or config file in the future)
-const OUTBOX_FOLDER: &str = "INBOX.Outbox";
 
 fn smtp_transport_builder(
     host: &str,
@@ -215,26 +217,22 @@ impl SmtpService {
         let email_bytes = email.formatted();
 
         // Step 1: Save to Outbox FIRST (blocking, must succeed - proper Outbox pattern)
-        log::info!(
-            "Saving email to {} before sending (this may take up to 30 seconds)",
-            OUTBOX_FOLDER
-        );
+        log::info!("Saving email to the Outbox before sending (this may take up to 30 seconds)");
         match self
             .ensure_folder_exists_and_append(
                 &account.email_address,
                 &email_bytes,
-                FolderTarget::Named(OUTBOX_FOLDER),
+                FolderTarget::Outbox,
             )
             .await
         {
             Ok(_) => {
-                log::info!("Successfully saved email to {}", OUTBOX_FOLDER);
+                log::info!("Successfully saved email to the Outbox");
             }
             Err(e) => {
                 // CRITICAL: If we can't save to Outbox, abort the send completely
                 log::error!(
-                    "CRITICAL: Failed to save email to {}. Aborting send. Error: {}",
-                    OUTBOX_FOLDER,
+                    "CRITICAL: Failed to save email to the Outbox. Aborting send. Error: {}",
                     e
                 );
                 return Err(e);
@@ -419,72 +417,6 @@ impl SmtpService {
         }
     }
 
-    /// Append an email to the IMAP Outbox folder before sending
-    #[allow(dead_code)]
-    async fn append_to_outbox(
-        &self,
-        account_email: &str,
-        email_bytes: &[u8],
-    ) -> Result<(), SmtpError> {
-        // Get account to create IMAP session
-        let account_service = self.account_service.lock().await;
-        let account = account_service
-            .get_account(account_email)
-            .await
-            .map_err(|_| SmtpError::AccountNotFound(account_email.to_string()))?;
-        drop(account_service);
-
-        // Create IMAP session for this account
-        let session = self
-            .imap_session_factory
-            .create_session_for_account(&account)
-            .await
-            .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
-
-        // Common Outbox folder names to try
-        let outbox_folders = vec!["INBOX.Outbox", "Outbox", "Drafts", "INBOX.Drafts"];
-
-        let mut last_error = None;
-
-        // Try each possible Outbox folder name
-        for folder in &outbox_folders {
-            // No flags for outbox messages (not read, not flagged)
-            let flags: Vec<String> = vec![];
-            match session.append(folder, email_bytes, &flags).await {
-                Ok(_) => {
-                    log::info!("Successfully saved email to Outbox folder: {}", folder);
-                    // Log out so the server closes the IMAP session cleanly
-                    if let Err(e) = session.logout().await {
-                        log::warn!("Failed to logout IMAP session: {}", e);
-                    }
-                    return Ok(());
-                }
-                Err(e) => {
-                    log::debug!("Failed to append to Outbox folder '{}': {}", folder, e);
-                    last_error = Some(e);
-                }
-            }
-        }
-
-        // Log out so the server closes the IMAP session cleanly
-        if let Err(e) = session.logout().await {
-            log::warn!("Failed to logout IMAP session: {}", e);
-        }
-
-        // If all folders failed, return the last error
-        if let Some(err) = last_error {
-            Err(SmtpError::ConfigError(format!(
-                "Could not save to Outbox folder. Tried: {}. Last error: {}",
-                outbox_folders.join(", "),
-                err
-            )))
-        } else {
-            Err(SmtpError::ConfigError(
-                "No Outbox folders to try".to_string(),
-            ))
-        }
-    }
-
     /// Delete an email from the IMAP Outbox folder after successful send
     async fn delete_from_outbox(
         &self,
@@ -515,59 +447,17 @@ impl SmtpService {
             .await
             .map_err(|e| SmtpError::ConfigError(format!("Failed to create IMAP session: {}", e)))?;
 
-        // Common Outbox folder names to try
-        let outbox_folders = vec!["INBOX.Outbox", "Outbox", "Drafts", "INBOX.Drafts"];
-
-        let mut last_error = None;
-
-        // Try to find and delete from each possible Outbox folder
-        for folder in &outbox_folders {
-            // Select the folder
-            match session.select_folder(folder).await {
-                Ok(_) => {
-                    // Search for the message by Message-ID
-                    let search_criteria = format!("HEADER Message-ID {}", msg_id);
-                    match session.search_emails(&search_criteria).await {
-                        Ok(uids) => {
-                            if !uids.is_empty() {
-                                // Delete all matching messages (should be only one)
-                                match session.delete_messages(&uids).await {
-                                    Ok(_) => {
-                                        log::info!("Successfully deleted {} message(s) from Outbox folder: {}", uids.len(), folder);
-                                        // Log out so the server closes the IMAP session cleanly
-                                        if let Err(e) = session.logout().await {
-                                            log::warn!("Failed to logout IMAP session: {}", e);
-                                        }
-                                        return Ok(());
-                                    }
-                                    Err(e) => {
-                                        log::warn!(
-                                            "Failed to delete message from Outbox folder '{}': {}",
-                                            folder,
-                                            e
-                                        );
-                                        last_error = Some(e);
-                                    }
-                                }
-                            } else {
-                                log::debug!(
-                                    "No messages found in Outbox folder '{}' with Message-ID: {}",
-                                    folder,
-                                    msg_id
-                                );
-                            }
-                        }
-                        Err(e) => {
-                            log::debug!("Failed to search Outbox folder '{}': {}", folder, e);
-                            last_error = Some(e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::debug!("Failed to select Outbox folder '{}': {}", folder, e);
-                    last_error = Some(e);
-                }
+        // Best-effort: the message may already be gone, or the folder missing
+        match Self::delete_by_message_id(&session, msg_id).await {
+            Ok((folder, 0)) => log::debug!("No message {} in {}", msg_id, folder),
+            Ok((folder, deleted)) => {
+                log::info!(
+                    "Deleted {} message(s) from Outbox folder {}",
+                    deleted,
+                    folder
+                )
             }
+            Err(e) => log::warn!("Could not delete {} from the Outbox: {}", msg_id, e),
         }
 
         // Log out so the server closes the IMAP session cleanly
@@ -575,18 +465,25 @@ impl SmtpService {
             log::warn!("Failed to logout IMAP session: {}", e);
         }
 
-        // If we couldn't delete from any folder, log warning but don't fail
-        // (The message might have already been cleaned up or the folder might not exist)
-        if let Some(err) = last_error {
-            log::warn!(
-                "Could not delete from Outbox. Tried: {}. Last error: {}",
-                outbox_folders.join(", "),
-                err
-            );
-        }
-
         // Don't return error - cleanup is best-effort
         Ok(())
+    }
+
+    /// Delete the Outbox copy of `message_id`; returns the folder and how many
+    /// messages matched.
+    async fn delete_by_message_id(
+        session: &ImapClient<AsyncImapSessionWrapper>,
+        message_id: &str,
+    ) -> Result<(String, usize), ImapError> {
+        let folder = session.target_folder(FolderTarget::Outbox).await?;
+        session.select_folder(&folder).await?;
+        let uids = session
+            .search_emails(&format!("HEADER Message-ID {}", message_id))
+            .await?;
+        if !uids.is_empty() {
+            session.delete_messages(&uids).await?;
+        }
+        Ok((folder, uids.len()))
     }
 
     /// Append a sent message to the IMAP Sent folder

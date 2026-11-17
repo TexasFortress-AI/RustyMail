@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-//! The server's own Sent and Drafts folders.
+//! The server's own Sent, Drafts, Trash and Junk folders, and RustyMail's Outbox.
 //!
 //! Servers name them differently ("Sent Items", "Sent", "INBOX.Sent"), and an
 //! account moved between servers keeps the old names next to the new ones.
@@ -19,6 +19,11 @@ use std::fmt::Debug;
 
 /// The mailbox whose children, if any, form the account's folder namespace.
 const INBOX: &str = "INBOX";
+
+/// RustyMail's Outbox is not an RFC 6154 folder, so it is found by name:
+/// the names used so far, then a new folder named `OUTBOX_LEAF`.
+const OUTBOX_NAMES: [&str; 2] = ["INBOX.Outbox", "Outbox"];
+const OUTBOX_LEAF: &str = "Outbox";
 
 /// A special-use folder that RustyMail writes to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -72,11 +77,13 @@ impl SpecialFolder {
     }
 }
 
-/// A folder named outright, or the server's folder for a special use.
+/// A folder named outright, the server's folder for a special use, or
+/// RustyMail's Outbox.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FolderTarget<'a> {
     Named(&'a str),
     Special(SpecialUse),
+    Outbox,
 }
 
 /// The selectable folder the server marks with `kind`'s attribute, if any.
@@ -91,9 +98,20 @@ pub fn marked_folder(folders: &[Folder], kind: SpecialUse) -> Option<String> {
 
 /// Pick the folder for `kind` from the server's folder tree.
 pub fn find_special_folder(folders: &[Folder], kind: SpecialUse) -> SpecialFolder {
-    if let Some(name) = marked_folder(folders, kind) {
-        return SpecialFolder::Existing(name);
+    match marked_folder(folders, kind) {
+        Some(name) => SpecialFolder::Existing(name),
+        None => find_by_name(folders, kind.usual_names(), kind.default_leaf()),
     }
+}
+
+/// RustyMail's Outbox: an existing one, else a new one in the namespace.
+pub fn find_outbox(folders: &[Folder]) -> SpecialFolder {
+    find_by_name(folders, &OUTBOX_NAMES, OUTBOX_LEAF)
+}
+
+/// The first selectable folder named one of `names` (any case), else `leaf`
+/// in the account's namespace, to be created.
+fn find_by_name(folders: &[Folder], names: &[&str], leaf: &str) -> SpecialFolder {
     let mut selectable = Vec::new();
     flatten(folders, &mut selectable);
     let found = |name: &&str| {
@@ -102,14 +120,10 @@ pub fn find_special_folder(folders: &[Folder], kind: SpecialUse) -> SpecialFolde
             .find(|f| f.full_path.eq_ignore_ascii_case(name))
             .map(|f| f.full_path.clone())
     };
-    if let Some(name) = kind.usual_names().iter().find_map(found) {
-        return SpecialFolder::Existing(name);
+    match names.iter().find_map(found) {
+        Some(name) => SpecialFolder::Existing(name),
+        None => SpecialFolder::Create(format!("{}{}", inbox_namespace(folders), leaf)),
     }
-    SpecialFolder::Create(format!(
-        "{}{}",
-        inbox_namespace(folders),
-        kind.default_leaf()
-    ))
 }
 
 /// Selectable folders of the tree, depth first.
@@ -147,16 +161,28 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         match target {
             FolderTarget::Named(name) => Ok(name.to_string()),
             FolderTarget::Special(kind) => self.special_folder(kind).await,
+            FolderTarget::Outbox => self.outbox_folder().await,
         }
     }
 
     /// The server's folder for `kind` (Sent, Drafts), created if it has none.
     pub async fn special_folder(&self, kind: SpecialUse) -> Result<String, ImapError> {
         let folders = self.session().list_folders_hierarchical().await?;
-        match find_special_folder(&folders, kind) {
+        self.existing_or_created(find_special_folder(&folders, kind))
+            .await
+    }
+
+    /// RustyMail's Outbox on this server, created if it has none.
+    pub async fn outbox_folder(&self) -> Result<String, ImapError> {
+        let folders = self.session().list_folders_hierarchical().await?;
+        self.existing_or_created(find_outbox(&folders)).await
+    }
+
+    async fn existing_or_created(&self, folder: SpecialFolder) -> Result<String, ImapError> {
+        match folder {
             SpecialFolder::Existing(name) => Ok(name),
             SpecialFolder::Create(name) => {
-                info!("No {:?} folder on the server; creating {}", kind, name);
+                info!("Creating folder {}", name);
                 self.create_folder(&name).await?;
                 Ok(name)
             }

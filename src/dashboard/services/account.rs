@@ -7,7 +7,7 @@ use super::account_store::{AccountStore, AccountStoreError, StoredAccount};
 use super::connection_status::AccountConnectionStatus;
 use super::connection_status_store::{ConnectionStatusStore, ConnectionStatusStoreError};
 use super::encryption::{CredentialEncryption, EncryptionError};
-use crate::imap::special_folders::SpecialUse;
+use crate::imap::special_folders::{FolderTarget, SpecialUse};
 use chrono::Utc;
 use log::{debug, error, info, warn};
 use serde::{Deserialize, Serialize};
@@ -1057,28 +1057,14 @@ impl AccountService {
         &self,
         client: &crate::imap::client::ImapClient<crate::imap::session::AsyncImapSessionWrapper>,
     ) -> Result<(), AccountError> {
-        let essential_folders = vec!["INBOX.Outbox"];
-
-        for folder_name in essential_folders {
-            match client.create_folder(folder_name).await {
-                Ok(_) => {
-                    info!("Created essential folder: {}", folder_name);
-                }
-                Err(e) => {
-                    // Check if error is "folder already exists" - this is not an error
-                    let error_str = e.to_string().to_lowercase();
-                    if error_str.contains("already exists") || error_str.contains("alreadyexists") {
-                        debug!("Folder {} already exists (expected)", folder_name);
-                    } else {
-                        warn!("Failed to create folder {}: {}", folder_name, e);
-                        // Continue trying to create other folders even if one fails
-                    }
-                }
-            }
-        }
-        for kind in [SpecialUse::Sent, SpecialUse::Drafts] {
-            if let Err(e) = client.special_folder(kind).await {
-                warn!("Failed to find or create the {:?} folder: {}", kind, e);
+        let targets = [
+            FolderTarget::Outbox,
+            FolderTarget::Special(SpecialUse::Sent),
+            FolderTarget::Special(SpecialUse::Drafts),
+        ];
+        for target in targets {
+            if let Err(e) = client.target_folder(target).await {
+                warn!("Failed to find or create the {:?} folder: {}", target, e);
             }
         }
 
