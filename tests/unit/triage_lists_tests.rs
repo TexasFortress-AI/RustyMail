@@ -11,8 +11,12 @@ use rustymail::triage::message::TriageMessage;
 use rustymail::triage::Bucket;
 
 fn message(list_headers: &str) -> TriageMessage {
+    message_from("someone@example.test", list_headers)
+}
+
+fn message_from(from: &str, list_headers: &str) -> TriageMessage {
     let raw = format!(
-        "From: someone@example.test\r\nTo: me@example.test\r\nSubject: Hello\r\n\
+        "From: {from}\r\nTo: me@example.test\r\nSubject: Hello\r\n\
          Date: Fri, 13 Nov 2026 10:00:00 +0000\r\nMessage-ID: <l@example.test>\r\n\
          {list_headers}Content-Type: text/plain; charset=utf-8\r\n\r\nBody"
     );
@@ -138,4 +142,26 @@ fn only_rules_may_choose_lists_repos_and_trash() {
         r#"{"bucket": "Lists", "confidence": 0.9, "reason": "x"}"#
     )
     .is_err());
+}
+
+#[test]
+fn an_organisation_writing_to_its_own_group_is_not_a_list() {
+    // A Google Workspace group: a colleague posting to the company-wide list.
+    let company = "Precedence: list\r\n\
+        List-ID: <all-users.company.example>\r\n\
+        List-Post: <https://groups.google.com/a/company.example/group/all-users/post>, \
+        <mailto:all-users@company.example>\r\n";
+    let colleague = message_from("billy@company.example", company);
+    assert!(rules().proposal(&colleague).is_none());
+    // The same group posted to from outside the organisation is a list.
+    let outsider = message_from("vendor@elsewhere.example", company);
+    assert_eq!(rules().proposal(&outsider).unwrap().bucket, Bucket::Lists);
+    // A project's own people posting to its list host are still list posts:
+    // the list lives on lists.zeromq.org, they write from zeromq.org.
+    let maintainer = message_from(
+        "maintainer@zeromq.org",
+        "List-Id: <zeromq-dev.lists.zeromq.org>\r\n\
+         List-Post: <mailto:zeromq-dev@lists.zeromq.org>\r\n",
+    );
+    assert_eq!(rules().proposal(&maintainer).unwrap().bucket, Bucket::Lists);
 }

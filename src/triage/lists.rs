@@ -10,7 +10,9 @@
 //!   host marks only some of its notifications with a `List-Post`.
 //! - A mailing list: a `List-Id` and a `List-Post` (RFC 2369) with a `mailto:`
 //!   address, as Mailman, Google Groups and groups.io send. Newsletters carry
-//!   a `List-Id` but no address to post to, and stay with the classifier.
+//!   a `List-Id` but no address to post to, and stay with the classifier, as
+//!   does an organisation's own group posted to by its members (a company's
+//!   all-staff list), which is mail for the INBOX.
 //!
 //! The folder name is the first label of the `List-Id` (`RustyMail`,
 //! `zeromq-dev`). The sender writes that header, so the name is cut to safe
@@ -44,7 +46,7 @@ impl ListRules {
         let list_id = list_id(message)?;
         let (bucket, reason) = if self.is_repo(&list_id) {
             (Bucket::Repos, "code repository notification (List-Id)")
-        } else if has_post_address(message) {
+        } else if has_post_address(message) && !from_own_organisation(message, &list_id) {
             (Bucket::Lists, "mailing list post (List-Id and List-Post)")
         } else {
             return None;
@@ -79,6 +81,19 @@ fn has_post_address(message: &TriageMessage) -> bool {
     message
         .header("list-post")
         .is_some_and(|value| value.to_ascii_lowercase().contains("mailto:"))
+}
+
+/// The sender writes from the list's own domain: an organisation addressing
+/// its members through its group (`billy@company.example` to
+/// `all-users.company.example`). That is mail to the recipient as a member,
+/// for the INBOX, not a discussion they follow. Exact match only: a project
+/// list on `lists.zeromq.org` posted to from `zeromq.org` is still a list.
+fn from_own_organisation(message: &TriageMessage, list_id: &str) -> bool {
+    let list_domain = list_id.split_once('.').map(|(_, domain)| domain);
+    match (list_domain, message.from_domain()) {
+        (Some(list), Some(sender)) => list.eq_ignore_ascii_case(sender),
+        _ => false,
+    }
 }
 
 /// The first label of the list id, reduced to letters, digits, `-` and `_`.
