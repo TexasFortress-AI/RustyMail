@@ -92,6 +92,41 @@ fn body_phrase_needs_a_numeric_code() {
 }
 
 #[test]
+fn body_code_must_be_next_to_the_phrase() {
+    // A payroll notice: "sign-in link" in the body, a year and a ZIP code
+    // elsewhere in it. Neither number is a code.
+    let notice = message(
+        "",
+        "noreply@payroll.test",
+        "Your 2025 W-2 is ready",
+        "Sign in to take a look. Trouble logging in on mobile? Try copying your unique \
+         sign-in link and pasting it in your browser app. Ditch the snail mail! Get \
+         paperless W-2s for your 2025 taxes and save 25% when you file. \
+         2800 Commerce Center Place, Tucson, AZ 85706",
+    );
+    assert!(expiring_code(&notice, window()).is_none());
+}
+
+#[test]
+fn letter_and_digit_codes_next_to_the_phrase_count() {
+    let m = message(
+        "",
+        "notifications@tracker.test",
+        "Login for Tracker",
+        "If you can't click on the link, you can also copy the verification code into \
+         your browser:\n\nD7BJGIU2KK",
+    );
+    assert!(expiring_code(&m, window()).is_some());
+    let shouting = message(
+        "",
+        "a@x.test",
+        "Welcome",
+        "We will send a verification code to ACME CORPORATION members.",
+    );
+    assert!(expiring_code(&shouting, window()).is_none());
+}
+
+#[test]
 fn security_alerts_and_ordinary_mail_are_not_codes() {
     for (subject, body) in [
         (

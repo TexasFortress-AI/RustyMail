@@ -41,9 +41,14 @@ static SUPPORT_TICKET: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(ticket|case|request)\s*#\s*\d+").expect("valid support ticket pattern")
 });
 
-/// A 4-8 digit code on its own, as these messages carry.
-static CODE_DIGITS: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"\b\d{4,8}\b").expect("valid code digits pattern"));
+/// A candidate code token: digits, or capitals and digits ("D7BJGIU2KK").
+/// `is_code_token` decides which candidates are codes.
+static CODE_TOKEN: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b[A-Z0-9]{4,12}\b").expect("valid code token pattern"));
+
+/// How far, in bytes, a code may sit from its phrase in the body. Further
+/// away, a number is a year, an address or a price, not the code.
+const CODE_NEAR_BYTES: usize = 80;
 
 /// "expires in 10 minutes", "valid for 2 hours", "within 24 hours", "for 3 days".
 static STATED_WINDOW: LazyLock<Regex> = LazyLock::new(|| {
@@ -75,7 +80,7 @@ pub fn expiring_code(message: &TriageMessage, default_window: Duration) -> Optio
     Some(proposal)
 }
 
-/// A code phrase in the subject, or in the body next to a numeric code, but
+/// A code phrase in the subject, or in the body next to a code, but
 /// not in a support conversation.
 fn is_code_message(message: &TriageMessage) -> bool {
     if SUPPORT_TICKET.is_match(&message.subject) {
@@ -83,8 +88,32 @@ fn is_code_message(message: &TriageMessage) -> bool {
     }
     CODE_PHRASES.is_match(&message.subject)
         || SUBJECT_ONLY_PHRASES.is_match(&message.subject)
-        || (CODE_PHRASES.is_match(&message.body_excerpt)
-            && CODE_DIGITS.is_match(&message.body_excerpt))
+        || code_next_to_phrase(&message.body_excerpt)
+}
+
+/// A code phrase in `body` with a code token within `CODE_NEAR_BYTES` of it.
+fn code_next_to_phrase(body: &str) -> bool {
+    let codes: Vec<_> = CODE_TOKEN
+        .find_iter(body)
+        .filter(|token| is_code_token(token.as_str()))
+        .collect();
+    CODE_PHRASES.find_iter(body).any(|phrase| {
+        codes.iter().any(|code| {
+            code.start() <= phrase.end() + CODE_NEAR_BYTES
+                && phrase.start() <= code.end() + CODE_NEAR_BYTES
+        })
+    })
+}
+
+/// 4-8 digits, or 6-12 capitals and digits with at least one digit. Longer
+/// numbers are tracking and account numbers; all-capital words are words.
+fn is_code_token(token: &str) -> bool {
+    let digits = token.bytes().filter(u8::is_ascii_digit).count();
+    if digits == token.len() {
+        (4..=8).contains(&digits)
+    } else {
+        digits > 0 && token.len() >= 6
+    }
 }
 
 /// The longest window the message states, if any.
