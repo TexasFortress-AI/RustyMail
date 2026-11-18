@@ -48,8 +48,10 @@ const KINDS: [(&str, Bucket, &str); 6] = [
         "credit",
         Bucket::Credit,
         "About the recipient's credit itself: a new credit report or score, a credit \
-         monitoring or identity alert, a new inquiry or account on their credit file, or \
-         a dispute with a credit bureau.",
+         monitoring or identity alert, a new inquiry or account on their credit file, a \
+         dispute with a credit bureau, or a debt collection notice or settlement offer: \
+         any message from a collection agency about a balance owed to another company, \
+         including demands to pay so a service is restored.",
     ),
     (
         "alert",
