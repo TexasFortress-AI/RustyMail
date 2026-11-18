@@ -14,8 +14,8 @@
 //!   does an organisation's own group posted to by its members (a company's
 //!   all-staff list), which is mail for the INBOX.
 //!
-//! The folder name is the first label of the `List-Id` (`RustyMail`,
-//! `zeromq-dev`). The sender writes that header, so the name is cut to safe
+//! The folder name is the repository (`RustyMail`, `llama.cpp` as
+//! `llama-cpp`) or the list id's first label (`zeromq-dev`). The sender writes that header, so the name is cut to safe
 //! characters and a length cap before it can become a folder.
 
 use super::message::TriageMessage;
@@ -44,23 +44,41 @@ impl ListRules {
     /// A `Repos` or `Lists` proposal naming the folder, or None.
     pub fn proposal(&self, message: &TriageMessage) -> Option<Proposal> {
         let list_id = list_id(message)?;
-        let (bucket, reason) = if self.is_repo(&list_id) {
-            (Bucket::Repos, "code repository notification (List-Id)")
+        let (bucket, name, reason) = if let Some(repo) = self.repo_name(&list_id) {
+            (
+                Bucket::Repos,
+                repo,
+                "code repository notification (List-Id)",
+            )
         } else if has_post_address(message) && !from_own_organisation(message, &list_id) {
-            (Bucket::Lists, "mailing list post (List-Id and List-Post)")
+            let first_label = list_id.split('.').next()?;
+            (
+                Bucket::Lists,
+                first_label,
+                "mailing list post (List-Id and List-Post)",
+            )
         } else {
             return None;
         };
         let mut proposal = Proposal::from_rule(bucket, reason);
-        proposal.list_name = Some(folder_name(&list_id)?);
+        proposal.list_name = Some(folder_name(name)?);
         Some(proposal)
     }
 
-    fn is_repo(&self, list_id: &str) -> bool {
-        let list_id = list_id.to_ascii_lowercase();
-        self.repo_domains
+    /// The repository in a code host's `List-Id`, `<repo>.<owner>.<domain>`.
+    /// The repo name may itself hold dots (`llama.cpp.owner.github.com`).
+    fn repo_name<'l>(&self, list_id: &'l str) -> Option<&'l str> {
+        let lower = list_id.to_ascii_lowercase();
+        let domain = self
+            .repo_domains
             .iter()
-            .any(|domain| list_id.ends_with(&format!(".{}", domain)))
+            .find(|domain| lower.ends_with(&format!(".{}", domain)))?;
+        let without_domain = &list_id[..list_id.len() - domain.len() - 1];
+        Some(
+            without_domain
+                .rsplit_once('.')
+                .map_or(without_domain, |(repo, _owner)| repo),
+        )
     }
 }
 
@@ -96,12 +114,12 @@ fn from_own_organisation(message: &TriageMessage, list_id: &str) -> bool {
     }
 }
 
-/// The first label of the list id, reduced to letters, digits, `-` and `_`.
-fn folder_name(list_id: &str) -> Option<String> {
-    let name: String = list_id
-        .split('.')
-        .next()?
+/// A list or repo name reduced to letters, digits, `-` and `_`. Dots become
+/// `-`, since a dot is the folder delimiter on many servers.
+fn folder_name(name: &str) -> Option<String> {
+    let name: String = name
         .chars()
+        .map(|c| if c == '.' { '-' } else { c })
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_')
         .take(MAX_LIST_NAME_CHARS)
         .collect();

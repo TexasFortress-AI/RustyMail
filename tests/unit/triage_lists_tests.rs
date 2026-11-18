@@ -165,3 +165,15 @@ fn an_organisation_writing_to_its_own_group_is_not_a_list() {
     );
     assert_eq!(rules().proposal(&maintainer).unwrap().bucket, Bucket::Lists);
 }
+
+#[test]
+fn a_repo_name_with_dots_is_kept_whole() {
+    // GitHub's List-Id is <repo>.<owner>.github.com; repo names may hold dots.
+    let headers = "List-Id: FellowTraveler/llama.cpp <llama.cpp.FellowTraveler.github.com>\r\n\
+        List-Post: <mailto:noreply@github.com>\r\n";
+    assert_eq!(
+        routed(headers),
+        Some((Bucket::Repos, "llama-cpp".to_string())),
+        "dots become hyphens: a dot is a folder delimiter on many servers"
+    );
+}
