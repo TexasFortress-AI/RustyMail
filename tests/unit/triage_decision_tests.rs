@@ -128,6 +128,17 @@ fn investor_updates_and_tax_forms_are_accounting() {
 }
 
 #[test]
+fn debt_collection_is_credit() {
+    let credit = questions()["kind"]["criteria"]["credit"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    for phrase in ["debt collection", "settlement offer", "collection agency"] {
+        assert!(credit.contains(phrase), "{phrase}");
+    }
+}
+
+#[test]
 fn only_loopback_decision_servers_are_accepted() {
     let timeout = Duration::from_secs(1);
     assert!(LocalDecisionServer::new("http://127.0.0.1:11434", timeout).is_ok());

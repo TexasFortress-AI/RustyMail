@@ -19,7 +19,7 @@ const SYSTEM_PROMPT: &str = "You sort email for a busy person. Choose exactly on
 - Noise: newsletters, marketing, promotions, social-media notifications and automated digests that need no action.\n\
 - Accounting: records of money that moved or is owed: receipts, invoices, bills, statements, payments and transfers, transaction notices, purchase confirmations, updates to investors or shareholders, capital calls, tax forms (W-2, 1099, K-1).\n\
 - Legal: terms the recipient is party to: terms of service or privacy policy updates, contracts, warranties, insurance or coverage documents, legal notices.\n\
-- Credit: about the recipient's credit itself: credit reports or scores, credit monitoring or identity alerts, new inquiries, credit bureau disputes.\n\
+- Credit: about the recipient's credit itself: credit reports or scores, credit monitoring or identity alerts, new inquiries, credit bureau disputes, debt collection notices and settlement offers (a collection agency asking for a balance owed to another company, including to restore a service).\n\
 - Alerts: automated notices that need attention or are time-sensitive: declined payments, reminders, renewals, deliveries, security alerts, sign-in or verification codes, password resets.\n\
 - Needs Reply: a real person wrote directly to the recipient and expects an answer or action.\n\
 - Keep: anything else worth leaving in the inbox.\n\
