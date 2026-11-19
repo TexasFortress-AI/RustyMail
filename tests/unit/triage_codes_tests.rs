@@ -268,3 +268,48 @@ fn support_tickets_about_codes_are_not_codes() {
         assert!(expiring_code(&m, window()).is_none(), "{}", subject);
     }
 }
+
+#[test]
+fn security_events_that_carry_a_code_are_alerts_not_codes() {
+    // Someone tried to get in, or changed the account: the record matters
+    // after the code expires.
+    for (subject, body) in [
+        (
+            "amazon.com: Account data access attempt",
+            "Someone is attempting to access your account data. If this was you, \
+             your verification code is: 091773",
+        ),
+        (
+            "Brave Search API login attempt",
+            "To continue logging into your account, please enter the following \
+             verification code: 187010",
+        ),
+        (
+            "Action needed: Confirm your email address change to me@example.test",
+            "Confirm the change by clicking the link below.",
+        ),
+        (
+            "Did you sign in from a new device?",
+            "Your verification code is 552901.",
+        ),
+    ] {
+        let m = message("", "security@service.test", subject, body);
+        assert!(expiring_code(&m, window()).is_none(), "{}", subject);
+    }
+}
+
+#[test]
+fn a_subject_describing_verification_is_not_a_code() {
+    let m = message(
+        "",
+        "news@bank.test",
+        "Now you can use the Bank Mobile app to verify your identity",
+        "Say hello to mobile app verification, an easy way to verify your identity.",
+    );
+    assert!(expiring_code(&m, window()).is_none());
+    // The imperative forms are still codes.
+    for subject in ["Verify your email", "Confirm your email address on Slack"] {
+        let m = message("", "no-reply@service.test", subject, "Click the link.");
+        assert!(expiring_code(&m, window()).is_some(), "{}", subject);
+    }
+}
