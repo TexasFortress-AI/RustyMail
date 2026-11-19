@@ -63,6 +63,9 @@ static DESCRIBES_VERIFYING: LazyLock<Regex> = LazyLock::new(|| {
 static CODE_TOKEN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b[A-Z0-9]{4,12}\b").expect("valid code token pattern"));
 
+/// Four-digit numbers in this range are read as years, not codes.
+const YEARS: std::ops::RangeInclusive<u16> = 1900..=2099;
+
 /// How far, in bytes, a code may sit from its phrase in the body. Further
 /// away, a number is a year, an address or a price, not the code.
 const CODE_NEAR_BYTES: usize = 80;
@@ -127,14 +130,20 @@ fn code_next_to_phrase(body: &str) -> bool {
 }
 
 /// 4-8 digits, or 6-12 capitals and digits with at least one digit. Longer
-/// numbers are tracking and account numbers; all-capital words are words.
+/// numbers are tracking and account numbers; all-capital words are words; a
+/// year is the date of the message, not a code.
 fn is_code_token(token: &str) -> bool {
     let digits = token.bytes().filter(u8::is_ascii_digit).count();
     if digits == token.len() {
-        (4..=8).contains(&digits)
+        (4..=8).contains(&digits) && !is_year(token)
     } else {
         digits > 0 && token.len() >= 6
     }
+}
+
+/// A four-digit year in the range dates in mail use.
+fn is_year(token: &str) -> bool {
+    token.len() == 4 && token.parse::<u16>().is_ok_and(|year| YEARS.contains(&year))
 }
 
 /// The longest window the message states, if any.

@@ -313,3 +313,25 @@ fn a_subject_describing_verification_is_not_a_code() {
         assert!(expiring_code(&m, window()).is_some(), "{}", subject);
     }
 }
+
+#[test]
+fn a_year_near_a_code_phrase_is_not_a_code() {
+    // An identity-verification record: the only number near the phrase is
+    // the year in the date.
+    let m = message(
+        "",
+        "no-reply@id.example",
+        "You successfully verified your identity",
+        "You successfully verified your identity on November 19, 2026. You can now \
+         sign in. If you did not attempt to verify your identity, change your password.",
+    );
+    assert!(expiring_code(&m, window()).is_none());
+    // A code beside the phrase still counts, even with a year nearby.
+    let code = message(
+        "",
+        "no-reply@id.example",
+        "Welcome",
+        "On November 19, 2026 you asked to sign in. Your verification code is 552901.",
+    );
+    assert!(expiring_code(&code, window()).is_some());
+}
