@@ -185,6 +185,7 @@ impl<C: Classifier> TriageRunner<C> {
             if email.internal_date.is_some() {
                 message.received_at = email.internal_date;
             }
+            message.from_correspondent = known.contains(&message.from_address);
             let proposal = match self.propose(&message, known).await {
                 Ok(p) => p,
                 Err(e) => {

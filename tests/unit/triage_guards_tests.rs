@@ -93,7 +93,7 @@ fn an_unknown_sender_can_still_be_spam() {
 
 #[test]
 fn needs_reply_only_for_recent_mail() {
-    let known = KnownPeople::default();
+    let known = KnownPeople::new(["pat@example.test"]);
     let recent = checked(
         model(Bucket::NeedsReply),
         "pat@example.test",
@@ -199,4 +199,26 @@ async fn known_people_are_the_account_and_its_sent_recipients() {
         "only this account"
     );
     assert_eq!(known.len(), 4);
+}
+
+#[test]
+fn needs_reply_only_from_someone_you_correspond_with() {
+    // Cold outreach reads like a person asking something; what sets a real
+    // correspondent apart is that the owner has written to them.
+    let known = KnownPeople::new(["pat@example.test"]);
+    let stranger = checked(
+        model(Bucket::NeedsReply),
+        "sales@outreach.example",
+        Some(1),
+        &known,
+    );
+    assert_eq!(stranger.bucket, Bucket::Keep);
+    assert!(stranger.reason.contains("not someone you correspond with"));
+    let correspondent = checked(
+        model(Bucket::NeedsReply),
+        "pat@example.test",
+        Some(1),
+        &known,
+    );
+    assert_eq!(correspondent.bucket, Bucket::NeedsReply);
 }

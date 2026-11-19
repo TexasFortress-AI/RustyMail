@@ -22,6 +22,9 @@ pub struct TriageMessage {
     /// When the message arrived: the Date header after parsing; the runner
     /// replaces it with the server's INTERNALDATE when there is one.
     pub received_at: Option<DateTime<Utc>>,
+    /// The sender is someone the account owner has written to (from the Sent
+    /// folders). Set by the runner; false until then.
+    pub from_correspondent: bool,
 }
 
 impl TriageMessage {
@@ -45,6 +48,7 @@ impl TriageMessage {
             received_at: message
                 .date()
                 .and_then(|date| DateTime::from_timestamp(date.to_timestamp(), 0)),
+            from_correspondent: false,
         })
     }
 
