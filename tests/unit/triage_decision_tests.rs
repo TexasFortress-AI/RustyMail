@@ -128,6 +128,17 @@ fn investor_updates_and_tax_forms_are_accounting() {
 }
 
 #[test]
+fn investor_call_invitations_are_alerts() {
+    let criteria = &questions()["kind"]["criteria"];
+    let alert = criteria["alert"].as_str().unwrap();
+    assert!(alert.contains("investor call or shareholder meeting"));
+    let accounting = criteria["accounting"].as_str().unwrap();
+    assert!(
+        accounting.contains("invitation to an investor call or shareholder meeting is an alert")
+    );
+}
+
+#[test]
 fn debt_collection_is_credit() {
     let credit = questions()["kind"]["criteria"]["credit"]
         .as_str()

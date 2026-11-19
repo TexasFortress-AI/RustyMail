@@ -35,7 +35,8 @@ const KINDS: [(&str, Bucket, &str); 6] = [
          statement, payment or transfer sent or received, card or bank transaction \
          notice, purchase or order confirmation, a crypto or brokerage deposit, an \
          update or report to investors or shareholders, a capital call, or a tax form \
-         such as a W-2, 1099 or K-1.",
+         such as a W-2, 1099 or K-1. An invitation to an investor call or shareholder \
+         meeting is an alert, not accounting.",
     ),
     (
         "legal",
@@ -59,7 +60,8 @@ const KINDS: [(&str, Bucket, &str); 6] = [
         "Something about the recipient's own account that needs attention or is \
          time-sensitive: a declined or failed payment, a due date or final reminder, an \
          upcoming renewal, a delivery or shipping status, a security or sign-in notice, \
-         an invitation, chat or connection request, a shared file or a signature request.",
+         an invitation (including to an investor call or shareholder meeting), chat or \
+         connection request, a shared file or a signature request.",
     ),
     (
         "newsletter",
