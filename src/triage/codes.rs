@@ -41,6 +41,23 @@ static SUPPORT_TICKET: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\b(ticket|case|request)\s*#\s*\d+").expect("valid support ticket pattern")
 });
 
+/// A subject announcing a security event: someone tried to get in, or the
+/// account changed. The message may carry a code, but the record of the
+/// event matters after the code expires, so it is an alert, not a code.
+static SECURITY_EVENT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"(?i)\b(attempts?|attempted|changes?|changed|new (device|sign[- ]?in|log[- ]?in))\b",
+    )
+    .expect("valid security event pattern")
+});
+
+/// A subject that describes verifying rather than asking for it: "use the
+/// app to verify your identity" announces a feature; a code mail says
+/// "Verify your email" or names the code.
+static DESCRIBES_VERIFYING: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)\bto (verify|confirm|reset)\b").expect("valid describing pattern")
+});
+
 /// A candidate code token: digits, or capitals and digits ("D7BJGIU2KK").
 /// `is_code_token` decides which candidates are codes.
 static CODE_TOKEN: LazyLock<Regex> =
@@ -80,10 +97,14 @@ pub fn expiring_code(message: &TriageMessage, default_window: Duration) -> Optio
     Some(proposal)
 }
 
-/// A code phrase in the subject, or in the body next to a code, but
-/// not in a support conversation.
+/// A code phrase in the subject, or in the body next to a code, but not in a
+/// support conversation, a security event, or a subject describing verifying.
 fn is_code_message(message: &TriageMessage) -> bool {
-    if SUPPORT_TICKET.is_match(&message.subject) {
+    let subject = &message.subject;
+    if SUPPORT_TICKET.is_match(subject)
+        || SECURITY_EVENT.is_match(subject)
+        || DESCRIBES_VERIFYING.is_match(subject)
+    {
         return false;
     }
     CODE_PHRASES.is_match(&message.subject)
