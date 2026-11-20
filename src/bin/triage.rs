@@ -15,6 +15,7 @@
 use clap::Parser;
 use log::error;
 use rustymail::imap::account_connect::{load_active_accounts, ImapAccount};
+use rustymail::triage::answered::release_answered;
 use rustymail::triage::apply::{apply_account, ApplyOptions};
 use rustymail::triage::classifier::ConfiguredClassifier;
 use rustymail::triage::config::TriageConfig;
@@ -23,6 +24,7 @@ use rustymail::triage::folders::FolderMap;
 use rustymail::triage::guards::ModelGuards;
 use rustymail::triage::lists::ListRules;
 use rustymail::triage::model::{EscalatingClassifier, LocalModelServer};
+use rustymail::triage::people::KnownPeople;
 use rustymail::triage::report::{format_apply_summary, format_report};
 use rustymail::triage::rules::SenderRules;
 use rustymail::triage::runner::{AccountSummary, RunOptions, TriageRunner};
@@ -217,6 +219,32 @@ fn build_classifier(config: &TriageConfig) -> Result<ConfiguredClassifier, Strin
     )))
 }
 
+/// Answered mail leaves the Needs Reply folder for the INBOX. A failure is
+/// reported and does not fail the apply: the moves it made stand.
+async fn release_answered_mail(
+    store: &TriageStore,
+    client: &rustymail::triage::runner::Client,
+    email: &str,
+    inbox: &str,
+    folders: &FolderMap,
+) {
+    let released = match KnownPeople::load(store.pool(), email).await {
+        Ok(known) => release_answered(client, email, folders, &known, inbox).await,
+        Err(e) => Err(e.into()),
+    };
+    match released {
+        Ok(0) => {}
+        Ok(count) => println!(
+            "{}: {} answered message(s) back from Needs Reply",
+            email, count
+        ),
+        Err(e) => error!(
+            "{}: releasing answered Needs Reply mail failed: {}",
+            email, e
+        ),
+    }
+}
+
 fn describe_run(s: &AccountSummary) -> String {
     format!(
         "{}: examined {}, by rule {}, by model {}, unparseable {}, watermark {}{}",
@@ -267,6 +295,7 @@ async fn apply_all(
             }
         };
         let result = apply_account(store, &client, email, &config.folder, &folders, &options).await;
+        release_answered_mail(store, &client, email, &config.folder, &folders).await;
         if let Err(e) = client.logout().await {
             error!("{}: logout failed: {}", email, e);
         }

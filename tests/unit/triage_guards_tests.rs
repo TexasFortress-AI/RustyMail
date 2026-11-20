@@ -222,3 +222,32 @@ fn needs_reply_only_from_someone_you_correspond_with() {
     );
     assert_eq!(correspondent.bucket, Bucket::NeedsReply);
 }
+
+#[test]
+fn a_message_you_already_answered_is_not_needs_reply() {
+    let known = KnownPeople::new(["pat@example.test"]);
+    let mut m = message("pat@example.test", Some(1));
+    m.answered = true;
+    let p = guards().check(model(Bucket::NeedsReply), &m, &known, now());
+    assert_eq!(p.bucket, Bucket::Keep);
+    assert!(p.reason.contains("already replied"), "{}", p.reason);
+}
+
+#[test]
+fn replies_are_matched_by_message_id_with_or_without_brackets() {
+    let known = KnownPeople::default().with_replies(["<a1@x.test>", " b2@x.test "]);
+    assert!(known.replied_to(Some("a1@x.test")));
+    assert!(known.replied_to(Some("<b2@x.test>")));
+    assert!(!known.replied_to(Some("c3@x.test")));
+    assert!(!known.replied_to(None));
+}
+
+#[test]
+fn the_answered_flag_name_matches_what_the_imap_library_reports() {
+    // fetch_flags records format!("{:?}", flag); a library change here would
+    // silently stop answered mail leaving Needs Reply.
+    assert_eq!(
+        format!("{:?}", async_imap::types::Flag::Answered),
+        rustymail::triage::answered::ANSWERED_FLAG
+    );
+}

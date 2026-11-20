@@ -9,6 +9,7 @@
 //! local model. Proposals are recorded in `triage_proposals`; nothing moves
 //! until `rustymail-triage --apply`, which verifies every move.
 
+pub mod answered;
 pub mod apply;
 pub mod classifier;
 pub mod codes;

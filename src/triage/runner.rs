@@ -11,6 +11,7 @@
 //! is saved after every batch, so an interrupted run resumes where it stopped
 //! and later runs only see UIDs above it.
 
+use super::answered::answered_uids;
 use super::classifier::Classifier;
 use super::guards::ModelGuards;
 use super::lists::ListRules;
@@ -166,6 +167,7 @@ impl<C: Classifier> TriageRunner<C> {
     ) -> Result<Option<u32>, RunError> {
         let mut emails = client.fetch_emails(batch).await?;
         emails.sort_by_key(|e| e.uid);
+        let flagged_answered = answered_uids(client, batch).await;
         let mut last_done = None;
         for email in emails {
             summary.examined += 1;
@@ -186,6 +188,8 @@ impl<C: Classifier> TriageRunner<C> {
                 message.received_at = email.internal_date;
             }
             message.from_correspondent = known.contains(&message.from_address);
+            message.answered = flagged_answered.contains(&message.uid)
+                || known.replied_to(message.message_id.as_deref());
             let proposal = match self.propose(&message, known).await {
                 Ok(p) => p,
                 Err(e) => {
