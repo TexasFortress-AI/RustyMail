@@ -203,7 +203,12 @@ pub async fn apply_account(
 
 /// Move one message and check it left the source and reached the destination.
 /// Returns whether the destination copy was positively identified.
-async fn verified_move(client: &Client, uid: u32, from: &str, to: &str) -> Result<bool, ImapError> {
+pub(crate) async fn verified_move(
+    client: &Client,
+    uid: u32,
+    from: &str,
+    to: &str,
+) -> Result<bool, ImapError> {
     let session = client.session_arc();
     let verifier = MoveVerifier::new(session.clone() as Arc<dyn AsyncImapOps>);
     let pending = verifier.prepare(uid, from, to).await?;

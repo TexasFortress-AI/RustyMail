@@ -47,6 +47,8 @@ pub struct FakeMailbox {
     pub raw_bodies: HashMap<String, String>,
     /// INTERNALDATE by Message-ID, in IMAP date-time form.
     pub internal_dates: HashMap<String, String>,
+    /// Message-IDs carrying the \Answered flag (it moves with the message).
+    pub answered: HashSet<String>,
 }
 
 impl FakeMailbox {
@@ -63,6 +65,16 @@ impl FakeMailbox {
         }
         if upper.starts_with("UID SEARCH UID ") {
             return self.search_uid(selected, tag, &command[15..]);
+        }
+        if upper.starts_with("UID SEARCH ALL") {
+            let hits: String = self.folders[selected.as_str()]
+                .iter()
+                .map(|m| format!(" {}", m.uid))
+                .collect();
+            return format!("* SEARCH{}\r\n{} OK done\r\n", hits, tag);
+        }
+        if upper.starts_with("UID FETCH ") && upper.ends_with(" FLAGS") {
+            return self.fetch_flags(selected, tag, command);
         }
         if upper.starts_with("UID FETCH ") && upper.contains("BODY.PEEK[]") {
             return self.fetch_bodies(selected, tag, command);
@@ -167,6 +179,30 @@ impl FakeMailbox {
         };
         let hits: String = hits.iter().map(|uid| format!(" {}", uid)).collect();
         format!("* SEARCH{}\r\n{} OK done\r\n", hits, tag)
+    }
+
+    /// `UID FETCH <set> FLAGS` for each UID present.
+    fn fetch_flags(&self, selected: &str, tag: &str, command: &str) -> String {
+        let uids = uid_list(command.split_whitespace().nth(2).unwrap());
+        let mut out = String::new();
+        for (seq, message) in self.folders[selected]
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| uids.contains(&m.uid))
+        {
+            let flags = if self.answered.contains(&message.message_id) {
+                "\\Answered"
+            } else {
+                ""
+            };
+            out.push_str(&format!(
+                "* {} FETCH (UID {} FLAGS ({}))\r\n",
+                seq + 1,
+                message.uid,
+                flags
+            ));
+        }
+        format!("{}{} OK done\r\n", out, tag)
     }
 
     fn fetch_headers(&self, selected: &str, tag: &str, command: &str) -> String {
@@ -321,6 +357,7 @@ pub async fn spawn_fake_imap(messages: Vec<(u32, &str)>) -> (u16, SharedMailbox)
         uidplus: true,
         raw_bodies: HashMap::new(),
         internal_dates: HashMap::new(),
+        answered: HashSet::new(),
     }));
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

@@ -9,8 +9,10 @@ use super::fake_imap_server::{MoveBehavior, SharedMailbox};
 use super::triage::{folder_uids, ids_in, inbox, raw, runner, store, ACCOUNT};
 use rustymail::imap::client::ImapClient;
 use rustymail::imap::session::AsyncImapSessionWrapper;
+use rustymail::triage::answered::release_answered;
 use rustymail::triage::apply::{apply_account, ApplyOptions};
 use rustymail::triage::folders::FolderMap;
+use rustymail::triage::people::KnownPeople;
 use rustymail::triage::runner::RunOptions;
 use rustymail::triage::store::{MessageRef, TriageStore};
 use rustymail::triage::{Bucket, Proposal};
@@ -337,4 +339,50 @@ async fn list_and_repo_mail_moves_to_a_folder_per_list() {
             created
         );
     }
+}
+
+#[tokio::test]
+#[serial]
+async fn answered_mail_goes_back_from_needs_reply_to_the_inbox() {
+    let (client, mailbox) = inbox().await;
+    {
+        // Three messages already in Needs Reply: one the server marks
+        // \Answered, one sent mail replies to, one still unanswered.
+        let mut state = mailbox.lock().unwrap();
+        let inbox_messages = state.folders.remove("INBOX").unwrap();
+        let (needs_reply, rest): (Vec<_>, Vec<_>) = inbox_messages.into_iter().partition(|m| {
+            ["<friend@x.test>", "<news@x.test>", "<scam@x.test>"].contains(&m.message_id.as_str())
+        });
+        state.folders.insert("INBOX".to_string(), rest);
+        state.folders.insert("Needs Reply".to_string(), needs_reply);
+        state.answered.insert("<friend@x.test>".to_string());
+    }
+    let known = KnownPeople::default().with_replies(["<news@x.test>"]);
+    let moved = release_answered(&client, ACCOUNT, &FolderMap::default(), &known, "INBOX")
+        .await
+        .unwrap();
+
+    assert_eq!(moved, 2);
+    let mut back = ids_in(&mailbox, "INBOX");
+    back.sort();
+    assert!(back.contains(&"<friend@x.test>".to_string()), "{:?}", back);
+    assert!(back.contains(&"<news@x.test>".to_string()), "{:?}", back);
+    assert_eq!(ids_in(&mailbox, "Needs Reply"), ["<scam@x.test>"]);
+}
+
+#[tokio::test]
+#[serial]
+async fn an_account_without_a_needs_reply_folder_has_nothing_to_release() {
+    let (client, mailbox) = inbox().await;
+    let moved = release_answered(
+        &client,
+        ACCOUNT,
+        &FolderMap::default(),
+        &KnownPeople::default(),
+        "INBOX",
+    )
+    .await
+    .unwrap();
+    assert_eq!(moved, 0);
+    assert!(!mailbox.lock().unwrap().folders.contains_key("Needs Reply"));
 }

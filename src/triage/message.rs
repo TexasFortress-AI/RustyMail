@@ -25,6 +25,9 @@ pub struct TriageMessage {
     /// The sender is someone the account owner has written to (from the Sent
     /// folders). Set by the runner; false until then.
     pub from_correspondent: bool,
+    /// The owner has already replied (`\Answered`, or sent mail names it).
+    /// Set by the runner; false until then.
+    pub answered: bool,
 }
 
 impl TriageMessage {
@@ -49,6 +52,7 @@ impl TriageMessage {
                 .date()
                 .and_then(|date| DateTime::from_timestamp(date.to_timestamp(), 0)),
             from_correspondent: false,
+            answered: false,
         })
     }
 
