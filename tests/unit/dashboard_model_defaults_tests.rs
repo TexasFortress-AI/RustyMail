@@ -48,3 +48,22 @@ fn keep_alive_is_sent_only_when_configured() {
     assert_eq!(with["keep_alive"], "30m");
     assert_eq!(add_keep_alive(body.clone(), None), body);
 }
+
+#[test]
+fn ollama_chat_menus_list_only_models_that_can_chat() {
+    use rustymail::dashboard::services::ai::provider::can_chat;
+    use rustymail::dashboard::services::ai::provider::ollama::chat_model_names;
+    // The shape of Ollama 0.40's /api/tags.
+    let tags = json!({"models": [
+        {"name": "gemma4:26b-a4b-it-q4_K_M", "model": "gemma4:26b-a4b-it-q4_K_M",
+         "capabilities": ["completion", "vision", "tools", "thinking"]},
+        {"name": "autotrust-jev:9b", "model": "autotrust-jev:9b", "capabilities": ["decision"]},
+        {"name": "older-ollama:latest", "model": "older-ollama:latest"},
+    ]});
+    assert_eq!(
+        chat_model_names(&tags).unwrap(),
+        vec!["gemma4:26b-a4b-it-q4_K_M", "older-ollama:latest"]
+    );
+    assert!(can_chat(None), "no capabilities reported: assume it chats");
+    assert!(!can_chat(Some(&["embedding".to_string()])));
+}

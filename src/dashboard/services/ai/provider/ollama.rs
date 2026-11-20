@@ -6,7 +6,9 @@
 // src/dashboard/services/ai/providers/ollama.rs
 // Uses native Ollama API for full control over sampler settings
 
-use super::{get_ai_generation_timeout, get_ai_request_timeout, AiChatMessage, AiProvider};
+use super::{
+    can_chat, get_ai_generation_timeout, get_ai_request_timeout, AiChatMessage, AiProvider,
+};
 use crate::api::errors::ApiError as RestApiError;
 use crate::dashboard::services::ai::sampler_config::SamplerConfig;
 use async_trait::async_trait;
@@ -141,13 +143,25 @@ struct OllamaNativeChatResponse {
 /// OpenAI-compatible response (for models endpoint)
 #[derive(Deserialize, Debug)]
 struct OllamaModelsResponse {
-    data: Vec<OllamaModel>,
+    models: Vec<OllamaModel>,
 }
 
+/// One entry of Ollama's /api/tags list.
 #[derive(Deserialize, Debug)]
 struct OllamaModel {
-    id: String,
-    object: String,
+    name: String,
+    capabilities: Option<Vec<String>>,
+}
+
+/// Names of the models in an Ollama /api/tags reply that can chat.
+pub fn chat_model_names(tags: &serde_json::Value) -> Result<Vec<String>, serde_json::Error> {
+    let list: OllamaModelsResponse = serde_json::from_value(tags.clone())?;
+    Ok(list
+        .models
+        .into_iter()
+        .filter(|model| can_chat(model.capabilities.as_deref()))
+        .map(|model| model.name)
+        .collect())
 }
 
 #[derive(Clone)]
@@ -249,8 +263,8 @@ impl AiProvider for OllamaAdapter {
     async fn get_available_models(&self) -> Result<Vec<String>, RestApiError> {
         debug!("Fetching available models from Ollama API");
 
-        // Use OpenAI-compatible models endpoint (still works for listing)
-        let url = format!("{}/v1/models", self.base_url);
+        // Ollama's own list reports each model's capabilities
+        let url = format!("{}/api/tags", self.base_url);
 
         let response = self
             .http_client
@@ -281,18 +295,14 @@ impl AiProvider for OllamaAdapter {
             });
         }
 
-        let response_body = response.json::<OllamaModelsResponse>().await.map_err(|e| {
-            RestApiError::UnprocessableEntity {
-                message: format!("Failed to deserialize Ollama models response: {}", e),
-            }
-        })?;
-
-        let models: Vec<String> = response_body
-            .data
-            .into_iter()
-            .filter(|model| model.object == "model")
-            .map(|model| model.id)
-            .collect();
+        let unreadable = |e: String| RestApiError::UnprocessableEntity {
+            message: format!("Failed to deserialize Ollama models response: {}", e),
+        };
+        let tags = response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|e| unreadable(e.to_string()))?;
+        let models = chat_model_names(&tags).map_err(|e| unreadable(e.to_string()))?;
 
         debug!("Retrieved {} models from Ollama API", models.len());
         Ok(models)

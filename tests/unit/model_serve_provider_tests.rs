@@ -110,3 +110,15 @@ async fn the_adapter_sends_only_model_and_messages() {
     assert_eq!(sent, vec![chat_request("ms/gemma4", &hello())]);
     handle.stop(true).await;
 }
+
+#[test]
+fn models_that_cannot_chat_are_left_out_of_the_menu() {
+    // model_serve may report Ollama's capabilities; a decision-only model
+    // (the triage classifier) cannot chat.
+    let list = json!({"data": [
+        {"id": "ms/gemma4", "meta": {"model_serve": {"capabilities": ["completion", "tools"]}}},
+        {"id": "ms/autotrust-jev-9b", "meta": {"model_serve": {"capabilities": ["decision"]}}},
+        {"id": "ms/llama-swap-model"},
+    ]});
+    assert_eq!(model_ids(&list), vec!["ms/gemma4", "ms/llama-swap-model"]);
+}

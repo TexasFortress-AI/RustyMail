@@ -7,7 +7,9 @@
 //! the model and the messages, and nothing else, so one loaded copy of a
 //! model serves every caller. It speaks the OpenAI-compatible API.
 
-use super::{get_ai_generation_timeout, get_ai_request_timeout, AiChatMessage, AiProvider};
+use super::{
+    can_chat, get_ai_generation_timeout, get_ai_request_timeout, AiChatMessage, AiProvider,
+};
 use crate::api::errors::ApiError as RestApiError;
 use async_trait::async_trait;
 use log::{debug, error};
@@ -48,17 +50,30 @@ pub fn reply_text(body: &Value) -> Option<String> {
         .map(str::to_string)
 }
 
-/// Model ids from an OpenAI-compatible model list.
+/// Ids of the models that can chat in an OpenAI-compatible model list.
+/// model_serve may report a model's capabilities under
+/// meta.model_serve.capabilities; models without "completion" are left out.
 pub fn model_ids(body: &Value) -> Vec<String> {
     body["data"]
         .as_array()
         .map(|models| {
             models
                 .iter()
+                .filter(|model| can_chat(capabilities(model).as_deref()))
                 .filter_map(|model| model["id"].as_str().map(str::to_string))
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn capabilities(model: &Value) -> Option<Vec<String>> {
+    model["meta"]["model_serve"]["capabilities"]
+        .as_array()
+        .map(|list| {
+            list.iter()
+                .filter_map(|c| c.as_str().map(str::to_string))
+                .collect()
+        })
 }
 
 pub struct ModelServeAdapter {
