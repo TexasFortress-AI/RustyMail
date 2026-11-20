@@ -6,6 +6,7 @@
 //! trusted as they are; a model's bucket is overruled when facts the model
 //! cannot see say otherwise. An overruled message stays in the INBOX.
 
+use super::injection::addresses_the_sorter;
 use super::message::TriageMessage;
 use super::people::KnownPeople;
 use super::{Bucket, Proposal, ProposalSource};
@@ -26,6 +27,16 @@ impl ModelGuards {
     ) -> Proposal {
         if proposal.source != ProposalSource::Model {
             return proposal;
+        }
+        if addresses_the_sorter(message) {
+            return Proposal {
+                reason: format!(
+                    "contains instructions aimed at the mail sorter; model said {} ({})",
+                    proposal.bucket, proposal.reason
+                ),
+                bucket: Bucket::Keep,
+                ..proposal
+            };
         }
         let overrule = match proposal.bucket {
             Bucket::Spam | Bucket::Noise if known.contains(&message.from_address) => {

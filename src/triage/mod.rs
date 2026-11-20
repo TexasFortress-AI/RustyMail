@@ -18,6 +18,7 @@ pub mod decision;
 pub mod destinations;
 pub mod folders;
 pub mod guards;
+pub mod injection;
 pub mod lists;
 pub mod message;
 pub mod model;

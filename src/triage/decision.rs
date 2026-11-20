@@ -10,7 +10,7 @@
 //! Only loopback servers are accepted, as for the chat model.
 
 use super::message::TriageMessage;
-use super::model::{describe, ensure_loopback};
+use super::model::{describe, ensure_loopback, UNTRUSTED_NOTICE};
 use super::{Bucket, Proposal, ProposalSource};
 use serde_json::{json, Value};
 use std::future::Future;
@@ -237,7 +237,11 @@ impl<B: DecisionBackend> DecisionClassifier<B> {
     pub async fn classify(&self, message: &TriageMessage) -> Result<Proposal, String> {
         let answers = self
             .backend
-            .decide(&self.model, &describe(message), &self.questions)
+            .decide(
+                &self.model,
+                &format!("{}\n{}", UNTRUSTED_NOTICE, describe(message)),
+                &self.questions,
+            )
             .await?;
         let mut decision = parse_answers(&answers)?;
         // Mail from someone the owner has written to is from a person: the
