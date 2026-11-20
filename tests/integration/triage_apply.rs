@@ -263,6 +263,7 @@ async fn unexpired_codes_wait() {
         message_id: Some("<code@x.test>"),
         from_address: "no-reply@bank.test",
         subject: "Your sign-in code",
+        counterparty: None,
     };
     store.insert_proposal(&reference, &fresh).await.unwrap();
     let summary = apply_account(

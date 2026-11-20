@@ -26,6 +26,8 @@ pub struct MessageRef<'a> {
     pub message_id: Option<&'a str>,
     pub from_address: &'a str,
     pub subject: &'a str,
+    /// Who is behind the message (see `counterparty::counterparty`).
+    pub counterparty: Option<&'a str>,
 }
 
 /// A proposal as stored, for reporting and applying.
@@ -128,8 +130,9 @@ impl TriageStore {
         let result = sqlx::query(
             "INSERT OR IGNORE INTO triage_proposals
                  (account_id, folder, uidvalidity, uid, message_id, from_address, subject,
-                  bucket, confidence, source, model_id, reason, not_before, list_name)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                  bucket, confidence, source, model_id, reason, not_before, list_name,
+                  counterparty)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(message.account_id)
         .bind(message.folder)
@@ -145,6 +148,7 @@ impl TriageStore {
         .bind(&proposal.reason)
         .bind(proposal.not_before.map(|t| t.to_rfc3339()))
         .bind(proposal.list_name.as_deref())
+        .bind(message.counterparty)
         .execute(&self.pool)
         .await?;
         Ok(result.rows_affected() == 1)

@@ -269,6 +269,7 @@ impl<C: Classifier> TriageRunner<C> {
             message_id: message.message_id.as_deref(),
             from_address: &message.from_address,
             subject: &message.subject,
+            counterparty: counterparty(message, &self.platform_domains),
         };
         self.store
             .insert_proposal(&reference, proposal)

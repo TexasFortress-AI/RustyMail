@@ -27,6 +27,7 @@ fn message(account_id: &str, uid: u32) -> MessageRef<'_> {
         message_id: Some("<m@example.test>"),
         from_address: "news@example.test",
         subject: "Weekly digest",
+        counterparty: None,
     }
 }
 
@@ -186,4 +187,56 @@ async fn the_list_name_is_stored_with_the_proposal() {
     let stored = store.pending_proposals(None, 10).await.unwrap();
     assert_eq!(stored[0].bucket, "Lists");
     assert_eq!(stored[0].list_name.as_deref(), Some("zeromq-dev"));
+}
+
+#[tokio::test]
+async fn approving_a_shared_document_trusts_its_sharer_not_the_platform() {
+    use rustymail::triage::people::KnownPeople;
+    let store = store().await;
+    let owner = "me@owner.test";
+    let share = MessageRef {
+        from_address: "drive-shares-dm-noreply@google.com",
+        subject: "Document shared with you",
+        counterparty: Some("xenia@transformgroup.test"),
+        ..message(owner, 1)
+    };
+    let proposal = Proposal {
+        bucket: Bucket::Alerts,
+        confidence: Some(0.9),
+        source: ProposalSource::Model,
+        model_id: Some("m".into()),
+        reason: "a colleague's document".into(),
+        not_before: None,
+        list_name: None,
+        document: None,
+    };
+    assert!(store.insert_proposal(&share, &proposal).await.unwrap());
+    let before = KnownPeople::load(store.pool(), &[owner.to_string()])
+        .await
+        .unwrap();
+    assert!(
+        !before.deals_with("xenia@transformgroup.test"),
+        "not approved yet"
+    );
+    let id: i64 = sqlx::query_scalar("SELECT id FROM triage_proposals WHERE uid = 1")
+        .fetch_one(store.pool())
+        .await
+        .unwrap();
+    store.mark_applied(id, "Alerts").await.unwrap();
+    let after = KnownPeople::load(store.pool(), &[owner.to_string()])
+        .await
+        .unwrap();
+    assert!(
+        after.deals_with("xenia@transformgroup.test"),
+        "the sharer is trusted"
+    );
+    assert!(
+        after.deals_with("colleague@transformgroup.test"),
+        "and her organisation"
+    );
+    assert_eq!(
+        after.approved_count("drive-shares-dm-noreply@google.com"),
+        0,
+        "not Google"
+    );
 }
