@@ -205,3 +205,30 @@ async fn classify_passes_backend_errors_through() {
     let error = classifier.classify(&message()).await.unwrap_err();
     assert!(error.contains("500"));
 }
+
+#[tokio::test]
+async fn a_correspondent_is_a_person_whatever_the_model_guessed() {
+    // The Kraken thread's real answers: personal 0.75, asks 0.98. As a
+    // stranger that is Needs Reply at 0.73, under the 0.8 apply bar.
+    let classify = |personal: f64, asks: f64, correspondent: bool| async move {
+        let stub = StubDecider {
+            reply: Ok(answers(personal, asks, "alert", 0.8)),
+            sent: Mutex::new(Vec::new()),
+        };
+        let mut m = message();
+        m.from_correspondent = correspondent;
+        DecisionClassifier::new(stub, "decider".into())
+            .classify(&m)
+            .await
+            .unwrap()
+    };
+    let stranger = classify(0.75, 0.98, false).await;
+    assert!(close(stranger.confidence.unwrap(), 0.735));
+    let known = classify(0.75, 0.98, true).await;
+    assert_eq!(known.bucket, Bucket::NeedsReply);
+    assert!(close(known.confidence.unwrap(), 0.98));
+    // Even when the model doubts a person wrote it, a correspondent's mail
+    // takes the person path: asking is Needs Reply, informing is Keep.
+    let doubted = classify(0.2, 0.1, true).await;
+    assert_eq!(doubted.bucket, Bucket::Keep);
+}

@@ -239,7 +239,12 @@ impl<B: DecisionBackend> DecisionClassifier<B> {
             .backend
             .decide(&self.model, &describe(message), &self.questions)
             .await?;
-        let decision = parse_answers(&answers)?;
+        let mut decision = parse_answers(&answers)?;
+        // Mail from someone the owner has written to is from a person: the
+        // Sent folders answer the question the model can only guess at.
+        if message.from_correspondent {
+            decision.personal = 1.0;
+        }
         let (bucket, confidence) = combine(&decision)?;
         Ok(Proposal {
             bucket,

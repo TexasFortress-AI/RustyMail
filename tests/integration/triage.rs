@@ -131,6 +131,33 @@ pub(super) async fn store() -> TriageStore {
     TriageStore::new(pool)
 }
 
+/// Record that the account has written to `address`: one cached message in
+/// a Sent folder, where KnownPeople reads correspondents from.
+async fn record_correspondent(store: &TriageStore, address: &str) {
+    let pool = store.pool();
+    sqlx::query(
+        "INSERT OR IGNORE INTO accounts (email_address, display_name, imap_host, imap_user, imap_pass)
+         VALUES (?1, ?1, 'imap.example.test', ?1, 'pw')",
+    )
+    .bind(ACCOUNT)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query("INSERT INTO folders (account_id, name) VALUES (?, 'Sent Items')")
+        .bind(ACCOUNT)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO emails (folder_id, uid, to_addresses)
+         SELECT id, 1, ? FROM folders WHERE name = 'Sent Items'",
+    )
+    .bind(format!("[\"{}\"]", address))
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
 pub(super) fn runner(
     store: TriageStore,
     down: Arc<AtomicBool>,
@@ -170,7 +197,9 @@ pub(super) fn ids_in(mailbox: &SharedMailbox, folder: &str) -> Vec<String> {
 async fn propose_reads_the_backlog_in_batches_and_resumes_from_the_watermark() {
     let (client, mailbox) = inbox().await;
     let down = Arc::new(AtomicBool::new(false));
-    let runner = runner(store().await, down.clone());
+    let store = store().await;
+    record_correspondent(&store, "friend@example.test").await;
+    let runner = runner(store, down.clone());
 
     // First run: UIDs 1-2 only. Second run: UID 3 is decided by a rule, then
     // the model is down at UID 4. Third run: only UID 4 is left.
