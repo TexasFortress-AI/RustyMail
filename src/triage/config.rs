@@ -14,6 +14,7 @@ const DEFAULT_MODEL_TIMEOUT_SECONDS: u64 = 120;
 const DEFAULT_FETCH_BATCH: usize = 20;
 /// A short snippet is enough to classify; full bodies never go to the model.
 const DEFAULT_BODY_EXCERPT_CHARS: usize = 500;
+const DEFAULT_SECOND_PASS_EXCERPT_CHARS: usize = 2000;
 /// How long a code or reset that states no expiry stays useful.
 const DEFAULT_CODE_WINDOW_HOURS: i64 = 24;
 /// Model proposals below this confidence stay in the INBOX on apply.
@@ -53,6 +54,8 @@ pub struct TriageConfig {
     pub model_timeout: Duration,
     pub fetch_batch: usize,
     pub excerpt_chars: usize,
+    /// Characters of body text the second-pass model reads.
+    pub second_pass_excerpt_chars: usize,
     pub sender_rules_file: Option<PathBuf>,
     /// Domains whose `List-Id`s mark code-repository notifications.
     pub repo_list_domains: Vec<String>,
@@ -130,6 +133,11 @@ impl TriageConfig {
                 "TRIAGE_BODY_EXCERPT_CHARS",
                 DEFAULT_BODY_EXCERPT_CHARS,
             )?,
+            second_pass_excerpt_chars: parse_or(
+                value("TRIAGE_SECOND_PASS_EXCERPT_CHARS"),
+                "TRIAGE_SECOND_PASS_EXCERPT_CHARS",
+                DEFAULT_SECOND_PASS_EXCERPT_CHARS,
+            )?,
             sender_rules_file: value("TRIAGE_SENDER_RULES_FILE").map(PathBuf::from),
             repo_list_domains: value("TRIAGE_REPO_LIST_DOMAINS")
                 .unwrap_or_else(|| DEFAULT_REPO_LIST_DOMAINS.to_string())
@@ -159,6 +167,15 @@ impl TriageConfig {
     /// Decision-model URL and name, when both are set.
     pub fn decision_settings(&self) -> Option<(&str, &str)> {
         match (&self.decision_url, &self.decision_model) {
+            (Some(url), Some(model)) => Some((url, model)),
+            _ => None,
+        }
+    }
+
+    /// Model URL and large model name for the decision model's second pass,
+    /// when both are set.
+    pub fn second_pass_settings(&self) -> Option<(&str, &str)> {
+        match (&self.model_url, &self.large_model) {
             (Some(url), Some(model)) => Some((url, model)),
             _ => None,
         }

@@ -28,6 +28,7 @@ use rustymail::triage::people::KnownPeople;
 use rustymail::triage::report::{format_apply_summary, format_report};
 use rustymail::triage::rules::SenderRules;
 use rustymail::triage::runner::{AccountSummary, RunOptions, TriageRunner};
+use rustymail::triage::second_pass::SecondPass;
 use rustymail::triage::store::TriageStore;
 use sqlx::SqlitePool;
 
@@ -173,6 +174,7 @@ async fn propose_all(
         folder: config.folder.clone(),
         fetch_batch: config.fetch_batch,
         excerpt_chars: config.excerpt_chars,
+        fuller_excerpt_chars: config.second_pass_excerpt_chars,
     };
     let options = RunOptions {
         since_days: cli.since_days,
@@ -200,14 +202,24 @@ async fn propose_all(
     Ok(failed)
 }
 
-/// The decision model when TRIAGE_DECISION_URL and _MODEL are set, else the chat model.
+/// The decision model when TRIAGE_DECISION_URL and _MODEL are set, else the
+/// chat model. With TRIAGE_MODEL_URL and _LARGE also set, the decision
+/// model's answers below the apply bar get a second pass from the large model.
 fn build_classifier(config: &TriageConfig) -> Result<ConfiguredClassifier, String> {
     if let Some((url, model)) = config.decision_settings() {
         let backend = LocalDecisionServer::new(url, config.model_timeout)?;
-        return Ok(ConfiguredClassifier::Decision(DecisionClassifier::new(
-            backend,
-            model.to_string(),
-        )));
+        let second = match config.second_pass_settings() {
+            Some((large_url, large_model)) => Some(SecondPass::new(
+                LocalModelServer::new(large_url, config.model_timeout)?,
+                large_model.to_string(),
+                config.min_confidence,
+            )),
+            None => None,
+        };
+        return Ok(ConfiguredClassifier::Decision(
+            DecisionClassifier::new(backend, model.to_string()),
+            second,
+        ));
     }
     let (model_url, small_model) = config.model_settings()?;
     let backend = LocalModelServer::new(model_url, config.model_timeout)?;
