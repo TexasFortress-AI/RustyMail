@@ -77,6 +77,38 @@ struct OllamaNativeChatRequest {
     stream: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     options: Option<OllamaOptions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    keep_alive: Option<String>,
+}
+
+/// How long Ollama keeps the model loaded after a request (OLLAMA_KEEP_ALIVE,
+/// an Ollama duration such as "30m"; a bare number is ignored by Ollama).
+/// Unset: not sent, so the server's own setting applies. A proxy such as
+/// model_serve may replace it with its own.
+pub fn configured_keep_alive() -> Option<String> {
+    keep_alive_setting(std::env::var("OLLAMA_KEEP_ALIVE").ok())
+}
+
+/// A keep-alive setting, trimmed; blank means unset.
+pub fn keep_alive_setting(raw: Option<String>) -> Option<String> {
+    raw.map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+/// An Ollama /api/chat body with the configured keep-alive, if any.
+pub fn with_keep_alive(body: serde_json::Value) -> serde_json::Value {
+    add_keep_alive(body, configured_keep_alive())
+}
+
+/// `body` with `keep_alive` set when there is one.
+pub fn add_keep_alive(
+    mut body: serde_json::Value,
+    keep_alive: Option<String>,
+) -> serde_json::Value {
+    if let Some(keep_alive) = keep_alive {
+        body["keep_alive"] = serde_json::Value::String(keep_alive);
+    }
+    body
 }
 
 /// Ollama message format (same as OpenAI but explicit)
@@ -279,6 +311,7 @@ impl AiProvider for OllamaAdapter {
             messages: ollama_messages,
             stream: false,
             options: Some(self.options.clone()),
+            keep_alive: configured_keep_alive(),
         };
 
         info!("Sending request to Ollama native API: base_url={}, model={}, messages_count={}, options={:?}",
@@ -365,6 +398,7 @@ impl AiProvider for OllamaAdapter {
             messages: ollama_messages,
             stream: false,
             options: Some(options.clone()),
+            keep_alive: configured_keep_alive(),
         };
 
         info!("Sending request to Ollama native API with config: base_url={}, model={}, messages_count={}, options={:?}",

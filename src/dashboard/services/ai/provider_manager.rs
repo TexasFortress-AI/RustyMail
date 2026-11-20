@@ -1166,7 +1166,9 @@ impl ProviderManager {
         }
     }
 
-    // Update all provider models to use their first available model
+    // Give each provider a model: the configured one stays (a server may not
+    // list every model it serves); only a provider with no model takes the
+    // server's first.
     pub async fn update_models_from_api(&mut self) -> Result<(), RestApiError> {
         let mut updated_configs = Vec::new();
 
@@ -1184,20 +1186,7 @@ impl ProviderManager {
             let providers = self.providers.read().await;
             if let Some(provider) = providers.get(&config.name) {
                 match provider.get_available_models().await {
-                    Ok(models) => {
-                        if let Some(first_model) = models.first() {
-                            let mut updated_config = config.clone();
-                            updated_config.model = first_model.clone();
-                            updated_configs.push(updated_config);
-                            info!(
-                                "Updated {} provider to use model: {}",
-                                config.name, first_model
-                            );
-                        } else {
-                            warn!("No models available for provider: {}", config.name);
-                            updated_configs.push(config);
-                        }
-                    }
+                    Ok(models) => updated_configs.push(with_startup_model(config, &models)),
                     Err(e) => {
                         warn!(
                             "Failed to fetch models for provider {}: {:?}",
@@ -1215,6 +1204,41 @@ impl ProviderManager {
         // Update configs
         *self.configs.write().await = updated_configs;
         Ok(())
+    }
+}
+
+/// `config` with the model it starts with, given the models its server lists.
+fn with_startup_model(mut config: ProviderConfig, listed: &[String]) -> ProviderConfig {
+    if !config.model.is_empty() && !listed.contains(&config.model) {
+        warn!(
+            "{} does not list the configured model {}; using it anyway",
+            config.name, config.model
+        );
+    }
+    match startup_model(&config.model, listed) {
+        Some(first_model) => {
+            info!(
+                "Updated {} provider to use model: {}",
+                config.name, first_model
+            );
+            config.model = first_model;
+        }
+        None if config.model.is_empty() => {
+            warn!("No models available for provider: {}", config.name)
+        }
+        None => {}
+    }
+    config
+}
+
+/// The model a provider should start with, when it needs one: a provider
+/// with a configured model keeps it (None); one without takes the first the
+/// server lists.
+pub fn startup_model(configured: &str, listed: &[String]) -> Option<String> {
+    if configured.is_empty() {
+        listed.first().cloned()
+    } else {
+        None
     }
 }
 

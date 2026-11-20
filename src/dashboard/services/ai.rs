@@ -154,7 +154,7 @@ impl AiService {
             .await
             .ok();
 
-        // Update provider models to use first available model from APIs
+        // Give providers without a configured model the first one their server lists
         if has_real_provider {
             match provider_manager.update_models_from_api().await {
                 Ok(()) => info!("Successfully updated provider models from APIs"),
