@@ -5,7 +5,8 @@
 //! Cheap rules that decide a bucket from headers alone, before any model call.
 //!
 //! Order: authentication failures (Spam), expiring codes and resets (Trash,
-//! once expired), then Chris's known senders. Anything else goes to the
+//! once expired), the owner's known senders, then debt-collector notices
+//! (Credit). Anything else goes to the
 //! model. Authentication comes first because a sender that fails it is not
 //! who its From header claims.
 //!
@@ -154,6 +155,28 @@ pub fn apply_rules(
     authentication_failure(message)
         .or_else(|| expiring_code(message, code_window))
         .or_else(|| senders.lookup(message))
+        .or_else(|| debt_collection(message))
+}
+
+/// The disclosure US law requires on a debt collector's messages (FDCPA
+/// section 807(11), Regulation F). Mortgage servicers' statements say "an
+/// attempt to collect a debt" instead, and those are Accounting, not Credit.
+const DEBT_COLLECTOR_DISCLOSURE: &str = "this communication is from a debt collector";
+
+/// Whether a body carries the debt-collector disclosure (case and line
+/// breaks ignored). Checked on the whole body: collectors put it at the end.
+pub fn carries_debt_collector_disclosure(body: &str) -> bool {
+    body.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+        .contains(DEBT_COLLECTOR_DISCLOSURE)
+}
+
+fn debt_collection(message: &TriageMessage) -> Option<Proposal> {
+    message
+        .debt_collector_notice
+        .then(|| Proposal::from_rule(Bucket::Credit, "debt collector disclosure"))
 }
 
 /// Bulk mail is Noise unless the model says it is accounting, legal, credit or

@@ -19,6 +19,8 @@ pub struct TriageMessage {
     headers: Vec<(String, String)>,
     /// Plain-text body with whitespace collapsed, cut to the configured length.
     pub body_excerpt: String,
+    /// The whole body carries the legally required debt-collector disclosure.
+    pub debt_collector_notice: bool,
     /// The same text cut to the longer length a second-pass model reads;
     /// equal to `body_excerpt` unless a longer one was asked for.
     pub fuller_excerpt: String,
@@ -55,6 +57,7 @@ impl TriageMessage {
             .collect();
         let body = message.body_text(0).unwrap_or_default();
         let fuller_excerpt = excerpt(&body, fuller_chars.max(excerpt_chars));
+        let debt_collector_notice = super::rules::carries_debt_collector_disclosure(&body);
         Some(Self {
             uid,
             message_id: message.message_id().map(str::to_string),
@@ -64,6 +67,7 @@ impl TriageMessage {
             headers,
             body_excerpt: fuller_excerpt.chars().take(excerpt_chars).collect(),
             fuller_excerpt,
+            debt_collector_notice,
             received_at: message
                 .date()
                 .and_then(|date| DateTime::from_timestamp(date.to_timestamp(), 0)),
