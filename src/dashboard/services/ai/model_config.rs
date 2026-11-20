@@ -3,6 +3,7 @@
 // Handles database storage and retrieval of AI model settings
 
 use super::local_only;
+use super::provider::model_serve;
 use crate::api::errors::ApiError;
 use log::{debug, error};
 use serde::{Deserialize, Serialize};
@@ -104,17 +105,25 @@ pub async fn get_model_config(
                 additional_config,
             })
         }
-        None => default_model_config(role, std::env::var("OLLAMA_MODEL").ok()),
+        None => default_model_config(
+            role,
+            model_serve::configured_model(),
+            std::env::var("OLLAMA_MODEL").ok(),
+        ),
     }
 }
 
-/// A role nobody has set uses the one configured local model (OLLAMA_MODEL on
-/// OLLAMA_BASE_URL), so every role shares one loaded model unless chosen
-/// otherwise.
+/// A role nobody has set uses the one configured local model, so every role
+/// shares one loaded model unless chosen otherwise: model_serve's model when
+/// it is configured, else OLLAMA_MODEL (both on their provider's base URL).
 pub fn default_model_config(
     role: &str,
+    model_serve_model: Option<String>,
     ollama_model: Option<String>,
 ) -> Result<ModelConfiguration, ApiError> {
+    if let Some(model) = model_serve_model {
+        return Ok(ModelConfiguration::new(role, model_serve::PROVIDER, model));
+    }
     match ollama_model {
         Some(model) if !model.trim().is_empty() => {
             Ok(ModelConfiguration::new(role, "ollama", model.trim()))

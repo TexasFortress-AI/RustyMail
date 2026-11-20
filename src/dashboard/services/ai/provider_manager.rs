@@ -9,9 +9,10 @@
 use super::local_only;
 use super::model_config::{get_model_config, set_model_config, ModelConfiguration};
 use super::provider::{
-    AiChatMessage, AiProvider, AnthropicAdapter, AzureOpenAIAdapter, DeepSeekAdapter,
+    model_serve, AiChatMessage, AiProvider, AnthropicAdapter, AzureOpenAIAdapter, DeepSeekAdapter,
     GeminiAdapter, LlamaCppAdapter, LmStudioAdapter, MistralAdapter, MockAiProvider,
-    MorpheusAdapter, OllamaAdapter, OpenAiAdapter, OpenRouterAdapter, TogetherAdapter, XAIAdapter,
+    ModelServeAdapter, MorpheusAdapter, OllamaAdapter, OpenAiAdapter, OpenRouterAdapter,
+    TogetherAdapter, XAIAdapter,
 };
 use crate::api::errors::ApiError as RestApiError;
 use crate::api::errors::ApiError; // For pattern matching
@@ -47,6 +48,8 @@ pub enum ProviderType {
     Ollama,
     LlamaCpp,
     LmStudio,
+    /// model_serve: its routes own the inference settings.
+    ModelServe,
     Anthropic,
     DeepSeek,
     XAI,
@@ -546,6 +549,21 @@ impl ProviderManager {
                     })?;
                 Arc::new(LlamaCppAdapter::new(base_url, self.http_client.clone()))
             }
+            ProviderType::ModelServe => {
+                let base_url = std::env::var(model_serve::BASE_URL_ENV).map_err(|_| {
+                    RestApiError::UnprocessableEntity {
+                        message: format!(
+                            "model_serve provider requires {} to be set",
+                            model_serve::BASE_URL_ENV
+                        ),
+                    }
+                })?;
+                Arc::new(ModelServeAdapter::new(
+                    base_url,
+                    self.http_client.clone(),
+                    config.model.clone(),
+                ))
+            }
             ProviderType::LmStudio => {
                 // For LM Studio, we need a base URL from environment variable
                 let base_url = std::env::var("LMSTUDIO_BASE_URL")
@@ -1021,6 +1039,21 @@ impl ProviderManager {
                         message: "llama.cpp provider requires LLAMACPP_BASE_URL environment variable to be set".to_string()
                     })?;
                 Arc::new(LlamaCppAdapter::new(base_url, self.http_client.clone()))
+            }
+            ProviderType::ModelServe => {
+                let base_url = std::env::var(model_serve::BASE_URL_ENV).map_err(|_| {
+                    RestApiError::UnprocessableEntity {
+                        message: format!(
+                            "model_serve provider requires {} to be set",
+                            model_serve::BASE_URL_ENV
+                        ),
+                    }
+                })?;
+                Arc::new(ModelServeAdapter::new(
+                    base_url,
+                    self.http_client.clone(),
+                    config.model.clone(),
+                ))
             }
             ProviderType::LmStudio => {
                 let base_url = std::env::var("LMSTUDIO_BASE_URL")

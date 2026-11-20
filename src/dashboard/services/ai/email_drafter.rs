@@ -2,6 +2,7 @@
 // Email drafting service using configured AI models
 
 use super::model_config::{get_model_config, ModelConfiguration};
+use super::provider::model_serve;
 use super::provider::ollama::with_keep_alive;
 use super::sampler_config::{get_sampler_config, SamplerConfig};
 use crate::api::errors::ApiError;
@@ -13,7 +14,8 @@ use sqlx::SqlitePool;
 
 /// Providers that support email drafting
 /// These have been tested with their respective API formats
-pub const DRAFTING_PROVIDERS: &[&str] = &["ollama", "openai", "llamacpp", "lmstudio"];
+pub const DRAFTING_PROVIDERS: &[&str] =
+    &["ollama", "openai", "llamacpp", "lmstudio", "model_serve"];
 
 /// Email drafter service
 pub struct EmailDrafter {
@@ -190,6 +192,16 @@ Draft email body:"#,
                     prompt,
                     sampler_config,
                     "LMSTUDIO_BASE_URL",
+                )
+                .await
+            }
+            // model_serve's routes own the settings: none are sent.
+            model_serve::PROVIDER => {
+                self.generate_with_openai_compatible(
+                    config,
+                    prompt,
+                    None,
+                    model_serve::BASE_URL_ENV,
                 )
                 .await
             }
@@ -466,10 +478,13 @@ Draft email body:"#,
             url, config.model_name
         );
 
-        // Apply sampler config if available
-        let temperature = sampler_config
-            .map(|c| c.effective_temperature())
-            .unwrap_or(0.7);
+        // Apply sampler config if available; a server that owns its settings
+        // gets none, not even a default temperature.
+        let temperature = (!model_serve::server_owns_settings(&config.provider)).then(|| {
+            sampler_config
+                .map(|c| c.effective_temperature())
+                .unwrap_or(0.7)
+        });
         let top_p = sampler_config.and_then(|c| c.top_p);
         let min_p = sampler_config.and_then(|c| c.min_p);
 
@@ -481,9 +496,11 @@ Draft email body:"#,
                     "content": prompt
                 }
             ],
-            "temperature": temperature,
             "stream": false,
         });
+        if let Some(temperature) = temperature {
+            request_body["temperature"] = json!(temperature);
+        }
 
         // Add optional parameters if present
         if let Some(p) = top_p {

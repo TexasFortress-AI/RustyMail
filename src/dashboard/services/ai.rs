@@ -138,6 +138,25 @@ impl AiService {
             has_real_provider = true;
         }
 
+        // model_serve, when configured, comes before Ollama: its routes own
+        // the inference settings, so every caller shares one loaded model.
+        if let Some(model) = provider::model_serve::configured_model() {
+            provider_manager
+                .add_provider(provider_manager::ProviderConfig {
+                    name: provider::model_serve::PROVIDER.to_string(),
+                    provider_type: provider_manager::ProviderType::ModelServe,
+                    api_key: None,
+                    model,
+                    max_tokens: None,
+                    temperature: None,
+                    priority: 3,
+                    enabled: true,
+                })
+                .await
+                .ok();
+            has_real_provider = true;
+        }
+
         // Always add mock provider as fallback
         // Priority is lower so real providers are used first when available
         provider_manager
