@@ -177,6 +177,7 @@ pub(super) fn runner(
         excerpt_chars: 500,
         fuller_excerpt_chars: 500,
         owner_accounts: Vec::new(),
+        platform_domains: Vec::new(),
     }
 }
 

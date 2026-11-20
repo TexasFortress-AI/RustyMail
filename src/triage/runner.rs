@@ -13,6 +13,7 @@
 
 use super::answered::answered_uids;
 use super::classifier::Classifier;
+use super::counterparty::counterparty;
 use super::guards::ModelGuards;
 use super::lists::ListRules;
 use super::message::TriageMessage;
@@ -65,6 +66,9 @@ pub struct TriageRunner<C: Classifier> {
     /// All the owner's triaged accounts; their Sent folders define who the
     /// owner corresponds with.
     pub owner_accounts: Vec<String>,
+    /// Domains of platforms that deliver mail on someone's behalf; for their
+    /// mail the counterparty is the person in Reply-To.
+    pub platform_domains: Vec<String>,
 }
 
 impl<C: Classifier> TriageRunner<C> {
@@ -198,6 +202,8 @@ impl<C: Classifier> TriageRunner<C> {
                 message.received_at = email.internal_date;
             }
             message.from_correspondent = known.contains(&message.from_address);
+            message.new_counterparty = counterparty(&message, &self.platform_domains)
+                .is_none_or(|party| !known.deals_with(party));
             message.answered = flagged_answered.contains(&message.uid) || known.answered(&message);
             let proposal = match self.propose(&message, known).await {
                 Ok(p) => p,

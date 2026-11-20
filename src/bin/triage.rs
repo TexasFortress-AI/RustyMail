@@ -176,6 +176,7 @@ async fn propose_all(
         excerpt_chars: config.excerpt_chars,
         fuller_excerpt_chars: config.second_pass_excerpt_chars,
         owner_accounts: config.accounts.clone(),
+        platform_domains: config.platform_domains.clone(),
     };
     let options = RunOptions {
         since_days: cli.since_days,

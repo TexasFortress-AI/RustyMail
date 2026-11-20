@@ -43,6 +43,7 @@ pub mod rmcp_sdk_tests;
 pub mod smtp_service_tests;
 pub mod special_folders_tests;
 pub mod triage_codes_tests;
+pub mod triage_counterparty_tests;
 pub mod triage_decision_tests;
 pub mod triage_guards_tests;
 pub mod triage_injection_tests;
