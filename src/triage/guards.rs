@@ -42,9 +42,6 @@ impl ModelGuards {
             Bucket::Spam | Bucket::Noise if known.contains(&message.from_address) => {
                 Some("sender is someone you correspond with".to_string())
             }
-            Bucket::NeedsReply if !known.contains(&message.from_address) => {
-                Some("sender is not someone you correspond with".to_string())
-            }
             Bucket::NeedsReply if message.answered => Some("you have already replied".to_string()),
             Bucket::NeedsReply if self.too_old(message, now) => Some(format!(
                 "older than {} days",
