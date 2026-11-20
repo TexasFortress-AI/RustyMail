@@ -19,6 +19,9 @@ pub struct TriageMessage {
     headers: Vec<(String, String)>,
     /// Plain-text body with whitespace collapsed, cut to the configured length.
     pub body_excerpt: String,
+    /// The same text cut to the longer length a second-pass model reads;
+    /// equal to `body_excerpt` unless a longer one was asked for.
+    pub fuller_excerpt: String,
     /// When the message arrived: the Date header after parsing; the runner
     /// replaces it with the server's INTERNALDATE when there is one.
     pub received_at: Option<DateTime<Utc>>,
@@ -33,6 +36,17 @@ pub struct TriageMessage {
 impl TriageMessage {
     /// Parse a raw RFC 822 message. Returns None if it cannot be parsed.
     pub fn from_raw(uid: u32, raw: &[u8], excerpt_chars: usize) -> Option<Self> {
+        Self::from_raw_with_fuller(uid, raw, excerpt_chars, excerpt_chars)
+    }
+
+    /// As `from_raw`, also keeping `fuller_chars` of the body for a second
+    /// pass. Rules and the first model still see `excerpt_chars`.
+    pub fn from_raw_with_fuller(
+        uid: u32,
+        raw: &[u8],
+        excerpt_chars: usize,
+        fuller_chars: usize,
+    ) -> Option<Self> {
         let message = MessageParser::default().parse(raw)?;
         let (from_address, from_name) = first_sender(message.from());
         let headers = message
@@ -40,6 +54,7 @@ impl TriageMessage {
             .map(|(name, value)| (name.to_ascii_lowercase(), unfold(value)))
             .collect();
         let body = message.body_text(0).unwrap_or_default();
+        let fuller_excerpt = excerpt(&body, fuller_chars.max(excerpt_chars));
         Some(Self {
             uid,
             message_id: message.message_id().map(str::to_string),
@@ -47,7 +62,8 @@ impl TriageMessage {
             from_name,
             subject: message.subject().unwrap_or_default().to_string(),
             headers,
-            body_excerpt: excerpt(&body, excerpt_chars),
+            body_excerpt: fuller_excerpt.chars().take(excerpt_chars).collect(),
+            fuller_excerpt,
             received_at: message
                 .date()
                 .and_then(|date| DateTime::from_timestamp(date.to_timestamp(), 0)),

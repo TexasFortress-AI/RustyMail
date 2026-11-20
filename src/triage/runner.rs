@@ -60,6 +60,8 @@ pub struct TriageRunner<C: Classifier> {
     pub folder: String,
     pub fetch_batch: usize,
     pub excerpt_chars: usize,
+    /// Body characters kept for a second-pass model (at least `excerpt_chars`).
+    pub fuller_excerpt_chars: usize,
 }
 
 impl<C: Classifier> TriageRunner<C> {
@@ -171,10 +173,14 @@ impl<C: Classifier> TriageRunner<C> {
         let mut last_done = None;
         for email in emails {
             summary.examined += 1;
-            let parsed = email
-                .body
-                .as_deref()
-                .and_then(|raw| TriageMessage::from_raw(email.uid, raw, self.excerpt_chars));
+            let parsed = email.body.as_deref().and_then(|raw| {
+                TriageMessage::from_raw_with_fuller(
+                    email.uid,
+                    raw,
+                    self.excerpt_chars,
+                    self.fuller_excerpt_chars,
+                )
+            });
             let Some(mut message) = parsed else {
                 warn!(
                     "{}: uid {} could not be parsed; skipped",

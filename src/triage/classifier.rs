@@ -8,6 +8,7 @@
 use super::decision::{DecisionBackend, DecisionClassifier, LocalDecisionServer};
 use super::message::TriageMessage;
 use super::model::{EscalatingClassifier, LocalModelServer, ModelBackend};
+use super::second_pass::SecondPass;
 use super::Proposal;
 use std::future::Future;
 
@@ -31,15 +32,23 @@ impl<B: DecisionBackend> Classifier for DecisionClassifier<B> {
 pub enum ConfiguredClassifier {
     /// A chat model that answers with a JSON bucket.
     Chat(EscalatingClassifier<LocalModelServer>),
-    /// A decision model that returns probabilities for fixed questions.
-    Decision(DecisionClassifier<LocalDecisionServer>),
+    /// A decision model that returns probabilities for fixed questions, with
+    /// an optional larger model for the answers it is unsure about.
+    Decision(
+        DecisionClassifier<LocalDecisionServer>,
+        Option<SecondPass<LocalModelServer>>,
+    ),
 }
 
 impl Classifier for ConfiguredClassifier {
     async fn classify(&self, message: &TriageMessage) -> Result<Proposal, String> {
         match self {
             ConfiguredClassifier::Chat(chat) => chat.classify(message).await,
-            ConfiguredClassifier::Decision(decision) => decision.classify(message).await,
+            ConfiguredClassifier::Decision(decision, None) => decision.classify(message).await,
+            ConfiguredClassifier::Decision(decision, Some(second)) => {
+                let first = decision.classify(message).await?;
+                Ok(second.review(message, first).await)
+            }
         }
     }
 }

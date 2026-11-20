@@ -9,12 +9,13 @@
 
 use super::message::TriageMessage;
 use super::{Bucket, Proposal, ProposalSource};
+use log::warn;
 use serde::Deserialize;
 use std::future::Future;
 use std::time::Duration;
 use url::{Host, Url};
 
-const SYSTEM_PROMPT: &str = "You sort email for a busy person. Choose exactly one bucket:\n\
+pub(crate) const SYSTEM_PROMPT: &str = "You sort email for a busy person. Choose exactly one bucket:\n\
 - Spam: unsolicited, scam, phishing or deceptive mail.\n\
 - Noise: newsletters, marketing, promotions, social-media notifications and automated digests that need no action.\n\
 - Accounting: records of money that moved or is owed: receipts, invoices, bills, statements, payments and transfers, transaction notices, purchase confirmations, updates to investors or shareholders, capital calls, tax forms (W-2, 1099, K-1); not invitations to investor calls or shareholder meetings, which are Alerts.\n\
@@ -235,7 +236,13 @@ impl<B: ModelBackend> EscalatingClassifier<B> {
         }
         match (self.ask(large_model, message).await, first) {
             (Ok(verdict), _) => Ok(to_proposal(verdict, large_model)),
-            (Err(_), Ok(verdict)) => Ok(to_proposal(verdict, &self.small_model)),
+            (Err(e), Ok(verdict)) => {
+                warn!(
+                    "large model {} failed for uid {}; keeping {}'s answer: {}",
+                    large_model, message.uid, self.small_model, e
+                );
+                Ok(to_proposal(verdict, &self.small_model))
+            }
             (Err(e), Err(_)) => Err(e),
         }
     }

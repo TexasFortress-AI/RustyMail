@@ -148,6 +148,7 @@ async fn triage_never_logs_senders_subjects_or_model_reasons() {
         folder: "INBOX".into(),
         fetch_batch: 10,
         excerpt_chars: 500,
+        fuller_excerpt_chars: 500,
     };
     let summary = runner
         .triage_folder(&client, "chris@example.test", RunOptions::default())

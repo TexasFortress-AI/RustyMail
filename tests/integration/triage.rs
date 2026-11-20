@@ -175,6 +175,7 @@ pub(super) fn runner(
         folder: "INBOX".into(),
         fetch_batch: FETCH_BATCH,
         excerpt_chars: 500,
+        fuller_excerpt_chars: 500,
     }
 }
 
