@@ -24,7 +24,7 @@ use rustymail::triage::folders::FolderMap;
 use rustymail::triage::guards::ModelGuards;
 use rustymail::triage::lists::ListRules;
 use rustymail::triage::model::{EscalatingClassifier, LocalModelServer};
-use rustymail::triage::people::KnownPeople;
+use rustymail::triage::people::{owner_accounts, KnownPeople};
 use rustymail::triage::report::{format_apply_summary, format_report};
 use rustymail::triage::rules::SenderRules;
 use rustymail::triage::runner::{AccountSummary, RunOptions, TriageRunner};
@@ -175,6 +175,7 @@ async fn propose_all(
         fetch_batch: config.fetch_batch,
         excerpt_chars: config.excerpt_chars,
         fuller_excerpt_chars: config.second_pass_excerpt_chars,
+        owner_accounts: config.accounts.clone(),
     };
     let options = RunOptions {
         since_days: cli.since_days,
@@ -239,8 +240,9 @@ async fn release_answered_mail(
     email: &str,
     inbox: &str,
     folders: &FolderMap,
+    owner: &[String],
 ) {
-    let released = match KnownPeople::load(store.pool(), email).await {
+    let released = match KnownPeople::load(store.pool(), &owner_accounts(owner, email)).await {
         Ok(known) => release_answered(client, email, folders, &known, inbox).await,
         Err(e) => Err(e.into()),
     };
@@ -307,7 +309,15 @@ async fn apply_all(
             }
         };
         let result = apply_account(store, &client, email, &config.folder, &folders, &options).await;
-        release_answered_mail(store, &client, email, &config.folder, &folders).await;
+        release_answered_mail(
+            store,
+            &client,
+            email,
+            &config.folder,
+            &folders,
+            &config.accounts,
+        )
+        .await;
         if let Err(e) = client.logout().await {
             error!("{}: logout failed: {}", email, e);
         }

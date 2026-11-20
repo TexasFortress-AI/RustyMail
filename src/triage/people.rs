@@ -70,8 +70,22 @@ impl KnownPeople {
 
     /// The account itself plus every To and Cc recipient in its Sent folders,
     /// and every message those sent mails reply to.
-    pub async fn load(pool: &SqlitePool, account_id: &str) -> Result<Self, sqlx::Error> {
-        let rows = sqlx::query(
+    /// Everyone written to from the Sent folders of `accounts` (all the
+    /// owner's accounts), so a person written to from one account is a
+    /// correspondent on all of them.
+    pub async fn load(pool: &SqlitePool, accounts: &[String]) -> Result<Self, sqlx::Error> {
+        let mut rows = Vec::new();
+        for account_id in accounts {
+            rows.extend(Self::sent_rows(pool, account_id).await?);
+        }
+        Ok(Self::from_sent(accounts, rows))
+    }
+
+    async fn sent_rows(
+        pool: &SqlitePool,
+        account_id: &str,
+    ) -> Result<Vec<sqlx::sqlite::SqliteRow>, sqlx::Error> {
+        sqlx::query(
             "SELECT e.to_addresses, e.cc_addresses, e.in_reply_to, e.references_header,
                     e.message_id, e.date
              FROM emails e
@@ -81,8 +95,11 @@ impl KnownPeople {
         .bind(account_id)
         .bind(SENT_FOLDER_MARKER)
         .fetch_all(pool)
-        .await?;
-        let mut addresses = vec![account_id.to_string()];
+        .await
+    }
+
+    fn from_sent(accounts: &[String], rows: Vec<sqlx::sqlite::SqliteRow>) -> Self {
+        let mut addresses = accounts.to_vec();
         let mut replied = Vec::new();
         let mut threads = Vec::new();
         for row in rows {
@@ -108,9 +125,9 @@ impl KnownPeople {
             }
         }
         let known = Self::new(addresses).with_replies(replied);
-        Ok(threads.into_iter().fold(known, |known, (root, at)| {
+        threads.into_iter().fold(known, |known, (root, at)| {
             known.with_sent_in_thread(&root, at)
-        }))
+        })
     }
 
     /// The owner has answered this message: replied to it directly, or
@@ -160,4 +177,14 @@ fn normalize_id(id: &str) -> Option<String> {
 fn parse_address_list(list: Option<&str>) -> Vec<String> {
     list.and_then(|text| serde_json::from_str::<Vec<String>>(text).ok())
         .unwrap_or_default()
+}
+
+/// The owner's accounts whose Sent folders define correspondents: the
+/// configured triage accounts, plus `account_id` if a run names another.
+pub fn owner_accounts(configured: &[String], account_id: &str) -> Vec<String> {
+    let mut accounts = configured.to_vec();
+    if !accounts.iter().any(|a| a.eq_ignore_ascii_case(account_id)) {
+        accounts.push(account_id.to_string());
+    }
+    accounts
 }

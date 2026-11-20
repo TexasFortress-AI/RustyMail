@@ -7,7 +7,7 @@
 use chrono::{DateTime, Duration, Utc};
 use rustymail::triage::guards::ModelGuards;
 use rustymail::triage::message::TriageMessage;
-use rustymail::triage::people::KnownPeople;
+use rustymail::triage::people::{owner_accounts, KnownPeople};
 use rustymail::triage::{Bucket, Proposal, ProposalSource};
 use sqlx::sqlite::SqlitePoolOptions;
 
@@ -182,7 +182,9 @@ async fn known_people_are_the_account_and_its_sent_recipients() {
         .unwrap();
     }
 
-    let known = KnownPeople::load(&pool, ACCOUNT).await.unwrap();
+    let known = KnownPeople::load(&pool, &[ACCOUNT.to_string()])
+        .await
+        .unwrap();
     for address in [
         ACCOUNT,
         "ann@example.test",
@@ -197,7 +199,17 @@ async fn known_people_are_the_account_and_its_sent_recipients() {
     );
     assert!(
         !known.contains("other-account@example.test"),
-        "only this account"
+        "only the accounts given"
+    );
+    // Someone written to from another of the owner's accounts is a
+    // correspondent here too (a father written to from the work account).
+    let owner = owner_accounts(&["other@example.test".to_string()], ACCOUNT);
+    let pooled = KnownPeople::load(&pool, &owner).await.unwrap();
+    assert!(pooled.contains("other-account@example.test"));
+    assert!(pooled.contains("ann@example.test"));
+    assert!(
+        pooled.contains("other@example.test"),
+        "the owner's own address"
     );
     assert_eq!(known.len(), 4);
 }
@@ -306,4 +318,15 @@ fn a_question_not_left_for_a_reply_is_filed_as_its_document() {
         &known,
     );
     assert_eq!(p.bucket, Bucket::Keep);
+}
+
+#[test]
+fn the_owners_accounts_include_the_one_being_triaged() {
+    let configured = vec!["a@x.test".to_string(), "b@x.test".to_string()];
+    assert_eq!(owner_accounts(&configured, "B@x.test"), configured);
+    assert_eq!(
+        owner_accounts(&configured, "c@x.test"),
+        vec!["a@x.test", "b@x.test", "c@x.test"]
+    );
+    assert_eq!(owner_accounts(&[], "c@x.test"), vec!["c@x.test"]);
 }
