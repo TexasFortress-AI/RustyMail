@@ -149,6 +149,7 @@ async fn triage_never_logs_senders_subjects_or_model_reasons() {
         fetch_batch: 10,
         excerpt_chars: 500,
         fuller_excerpt_chars: 500,
+        owner_accounts: Vec::new(),
     };
     let summary = runner
         .triage_folder(&client, "chris@example.test", RunOptions::default())

@@ -176,6 +176,7 @@ pub(super) fn runner(
         fetch_batch: FETCH_BATCH,
         excerpt_chars: 500,
         fuller_excerpt_chars: 500,
+        owner_accounts: Vec::new(),
     }
 }
 

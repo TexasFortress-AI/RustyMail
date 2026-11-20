@@ -16,7 +16,7 @@ use super::classifier::Classifier;
 use super::guards::ModelGuards;
 use super::lists::ListRules;
 use super::message::TriageMessage;
-use super::people::KnownPeople;
+use super::people::{owner_accounts, KnownPeople};
 use super::rules::{apply_rules, bulk_mail_default, SenderRules};
 use super::scan::{advance, plan_scan, select_uids};
 use super::store::{MessageRef, TriageStore, Watermark};
@@ -62,6 +62,9 @@ pub struct TriageRunner<C: Classifier> {
     pub excerpt_chars: usize,
     /// Body characters kept for a second-pass model (at least `excerpt_chars`).
     pub fuller_excerpt_chars: usize,
+    /// All the owner's triaged accounts; their Sent folders define who the
+    /// owner corresponds with.
+    pub owner_accounts: Vec<String>,
 }
 
 impl<C: Classifier> TriageRunner<C> {
@@ -109,7 +112,8 @@ impl<C: Classifier> TriageRunner<C> {
             .proposed_uids(account_id, &self.folder, uidvalidity)
             .await?;
         let uids = select_uids(&found, plan.above, &proposed, options.limit);
-        let known = KnownPeople::load(self.store.pool(), account_id).await?;
+        let owner = owner_accounts(&self.owner_accounts, account_id);
+        let known = KnownPeople::load(self.store.pool(), &owner).await?;
         info!(
             "{}: {} message(s) to triage ({})",
             account_id,
