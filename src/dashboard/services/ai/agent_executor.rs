@@ -2,6 +2,7 @@
 // Agent executor for running sub-agents with iterative tool calling
 
 use super::model_config::{get_model_config, ModelConfiguration};
+use super::provider::ollama::with_keep_alive;
 use super::sampler_config::{get_sampler_config, SamplerConfig};
 use super::tool_converter::{mcp_to_ollama_tools, parse_ollama_tool_call};
 use crate::api::errors::ApiError;
@@ -351,7 +352,7 @@ impl AgentExecutor {
             .http_client
             .post(&url)
             .header("Content-Type", "application/json")
-            .json(&request_body)
+            .json(&with_keep_alive(request_body))
             .timeout(std::time::Duration::from_secs(300)) // 5 minutes for large tool contexts
             .send()
             .await

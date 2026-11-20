@@ -2,6 +2,7 @@
 // Email drafting service using configured AI models
 
 use super::model_config::{get_model_config, ModelConfiguration};
+use super::provider::ollama::with_keep_alive;
 use super::sampler_config::{get_sampler_config, SamplerConfig};
 use crate::api::errors::ApiError;
 use log::{debug, error, info, warn};
@@ -276,7 +277,7 @@ Draft email body:"#,
             .http_client
             .post(&url)
             .header("Content-Type", "application/json")
-            .json(&request_body)
+            .json(&with_keep_alive(request_body))
             .timeout(std::time::Duration::from_secs(120)) // Longer timeout for generation
             .send()
             .await

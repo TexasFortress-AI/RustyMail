@@ -10,6 +10,7 @@ pub mod api;
 pub mod api_key_source_tests;
 pub mod api_key_tests;
 pub mod config;
+pub mod dashboard_model_defaults_tests;
 pub mod dashboard_static_site_tests;
 pub mod imap;
 pub mod rest_v1_flag_tests;

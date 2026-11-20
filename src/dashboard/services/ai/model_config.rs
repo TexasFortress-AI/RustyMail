@@ -104,7 +104,22 @@ pub async fn get_model_config(
                 additional_config,
             })
         }
-        None => Err(ApiError::NotFound {
+        None => default_model_config(role, std::env::var("OLLAMA_MODEL").ok()),
+    }
+}
+
+/// A role nobody has set uses the one configured local model (OLLAMA_MODEL on
+/// OLLAMA_BASE_URL), so every role shares one loaded model unless chosen
+/// otherwise.
+pub fn default_model_config(
+    role: &str,
+    ollama_model: Option<String>,
+) -> Result<ModelConfiguration, ApiError> {
+    match ollama_model {
+        Some(model) if !model.trim().is_empty() => {
+            Ok(ModelConfiguration::new(role, "ollama", model.trim()))
+        }
+        _ => Err(ApiError::NotFound {
             resource: format!("Model configuration for role: {}", role),
         }),
     }
