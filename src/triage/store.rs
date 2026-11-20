@@ -47,6 +47,8 @@ pub struct StoredProposal {
     pub not_before: Option<DateTime<Utc>>,
     /// The list or repo folder name for `Lists` and `Repos` proposals.
     pub list_name: Option<String>,
+    /// The bucket the owner chose on review, when the proposal was wrong.
+    pub correction: Option<String>,
     pub apply_error: Option<String>,
     pub created_at: String,
 }
@@ -61,8 +63,8 @@ pub struct BucketCount {
 }
 
 const PROPOSAL_COLUMNS: &str = "id, account_id, folder, uidvalidity, uid, message_id, from_address,
-     subject, bucket, confidence, source, model_id, reason, not_before, list_name, apply_error,
-     created_at";
+     subject, bucket, confidence, source, model_id, reason, not_before, list_name, correction,
+     apply_error, created_at";
 
 pub struct TriageStore {
     pool: SqlitePool,
@@ -280,6 +282,7 @@ fn stored_proposal(r: &SqliteRow) -> StoredProposal {
             .and_then(|t| DateTime::parse_from_rfc3339(&t).ok())
             .map(|t| t.with_timezone(&Utc)),
         list_name: r.get("list_name"),
+        correction: r.get("correction"),
         apply_error: r.get("apply_error"),
         created_at: r.get::<String, _>("created_at"),
     }

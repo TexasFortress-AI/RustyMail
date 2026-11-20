@@ -59,7 +59,9 @@ pub fn decide(
     now: DateTime<Utc>,
     options: &ApplyOptions,
 ) -> Result<Bucket, Skip> {
-    let bucket = Bucket::parse(&proposal.bucket)
+    // The owner's correction, when there is one, is the decision.
+    let chosen = proposal.correction.as_deref().unwrap_or(&proposal.bucket);
+    let bucket = Bucket::parse(chosen)
         .filter(|b| *b != Bucket::Keep)
         .ok_or(Skip::StaysInInbox)?;
     if proposal.uidvalidity != uidvalidity {
@@ -68,7 +70,9 @@ pub fn decide(
     if !options.buckets.contains(&bucket) {
         return Err(Skip::BucketNotApplied);
     }
-    let from_model = proposal.source == ProposalSource::Model.as_str();
+    // A model's doubt doesn't hold back a bucket the owner chose.
+    let from_model =
+        proposal.source == ProposalSource::Model.as_str() && proposal.correction.is_none();
     if from_model && proposal.confidence.unwrap_or(0.0) < options.min_confidence {
         return Err(Skip::LowConfidence);
     }

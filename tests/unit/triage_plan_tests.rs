@@ -136,6 +136,7 @@ fn proposal(bucket: &str, source: &str, confidence: Option<f64>) -> StoredPropos
         reason: "r".into(),
         not_before: None,
         list_name: None,
+        correction: None,
         apply_error: None,
         created_at: "2026-11-14 00:00:00".into(),
     }
@@ -371,4 +372,23 @@ fn bucket_folders_keep_the_accounts_existing_prefix() {
     // Gmail: only a stray Outbox label and a leftover trash; no bucket folders.
     let gmail = names(&["INBOX", "INBOX.Outbox", "INBOX.Trash", "[Gmail]/Sent Mail"]);
     assert_eq!(bucket_namespace(&gmail, ""), "");
+}
+
+#[test]
+fn the_owners_correction_is_applied_whatever_the_models_confidence() {
+    let now = Utc::now();
+    let o = options();
+    // The model was unsure (0.5) and wrong; the owner said Noise.
+    let mut corrected = proposal("Spam", "model", Some(0.5));
+    corrected.correction = Some("Noise".into());
+    assert_eq!(decide(&corrected, 5, now, &o).unwrap(), Bucket::Noise);
+    // "Leave it in the INBOX" wins over a confident model.
+    let mut kept = proposal("Spam", "model", Some(0.95));
+    kept.correction = Some("Keep".into());
+    assert!(matches!(decide(&kept, 5, now, &o), Err(Skip::StaysInInbox)));
+    // Without a correction, the model's doubt still holds it back.
+    assert!(matches!(
+        decide(&proposal("Spam", "model", Some(0.5)), 5, now, &o),
+        Err(Skip::LowConfidence)
+    ));
 }
