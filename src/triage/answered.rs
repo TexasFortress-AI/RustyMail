@@ -4,8 +4,10 @@
 
 //! Needs Reply holds only mail still waiting on the owner. A message counts
 //! as answered when the server marks it `\Answered` (mail clients set it when
-//! you reply) or when sent mail names it in In-Reply-To or References (a reply
-//! from a phone or another app that sets no flag). Answered mail is never
+//! you reply), when sent mail names it in In-Reply-To or References (a reply
+//! from a phone or another app that sets no flag), or when the owner wrote in
+//! its conversation after it arrived (a later reply in a thread covers the
+//! messages before it). Answered mail is never
 //! proposed for Needs Reply, and answered mail already in the Needs Reply
 //! folder goes back to the INBOX.
 
@@ -102,11 +104,11 @@ async fn needs_reply_folder(
     )
 }
 
-/// Whether sent mail replies to this message, by its Message-ID.
+/// Whether the owner's sent mail answers this message (see `KnownPeople::answered`).
 async fn replied_in_sent_mail(client: &Client, uid: u32, known: &KnownPeople) -> bool {
     let Ok(raw) = client.fetch_raw_message(uid).await else {
         return false;
     };
     TriageMessage::from_raw(uid, &raw, ID_ONLY_EXCERPT_CHARS)
-        .is_some_and(|message| known.replied_to(message.message_id.as_deref()))
+        .is_some_and(|message| known.answered(&message))
 }

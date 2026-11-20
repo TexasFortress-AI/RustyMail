@@ -188,8 +188,7 @@ impl<C: Classifier> TriageRunner<C> {
                 message.received_at = email.internal_date;
             }
             message.from_correspondent = known.contains(&message.from_address);
-            message.answered = flagged_answered.contains(&message.uid)
-                || known.replied_to(message.message_id.as_deref());
+            message.answered = flagged_answered.contains(&message.uid) || known.answered(&message);
             let proposal = match self.propose(&message, known).await {
                 Ok(p) => p,
                 Err(e) => {
