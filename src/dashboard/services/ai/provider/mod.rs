@@ -44,6 +44,15 @@ pub mod openrouter;
 pub mod together;
 pub mod xai;
 
+/// Whether a model a server lists can hold a conversation. Servers that report
+/// capabilities (Ollama's "completion", "tools", "decision", ...) mark models
+/// that only answer fixed questions, such as a triage decision model, by
+/// leaving out "completion"; those are kept out of chat menus. A model with no
+/// reported capabilities is assumed to chat.
+pub fn can_chat(capabilities: Option<&[String]>) -> bool {
+    capabilities.is_none_or(|capabilities| capabilities.iter().any(|c| c == "completion"))
+}
+
 /// Common message structure for AI chat completion APIs (OpenAI, OpenRouter)
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct AiChatMessage {
