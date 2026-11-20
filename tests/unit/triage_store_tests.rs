@@ -99,6 +99,7 @@ async fn proposal_is_recorded_once_and_listed_per_account() {
         reason: "direct question".to_string(),
         not_before: None,
         list_name: None,
+        document: None,
     };
     assert!(store
         .insert_proposal(&message("b@example.test", 2), &model)

@@ -154,6 +154,9 @@ pub struct Proposal {
     pub not_before: Option<DateTime<Utc>>,
     /// The list or repo whose folder a `Lists` or `Repos` message goes to.
     pub list_name: Option<String>,
+    /// For mail from a person: what it is as a document (Accounting, Legal or
+    /// Credit) and how sure, used when it is not left for a reply.
+    pub document: Option<(Bucket, f64)>,
 }
 
 impl Proposal {
@@ -166,6 +169,7 @@ impl Proposal {
             reason: reason.into(),
             not_before: None,
             list_name: None,
+            document: None,
         }
     }
 }

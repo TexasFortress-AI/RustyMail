@@ -42,8 +42,9 @@ const KINDS: [(&str, Bucket, &str); 6] = [
         "legal",
         Bucket::Legal,
         "Terms the recipient is party to: updated terms of service or privacy policy, \
-         a contract or agreement, a warranty, insurance or coverage document, or a \
-         legal notice.",
+         a contract or agreement (including a signed or completed one, a draft under \
+         negotiation, or a business associate, non-disclosure or non-compete agreement), \
+         a warranty, insurance or coverage document, or a legal notice.",
     ),
     (
         "credit",
@@ -61,7 +62,8 @@ const KINDS: [(&str, Bucket, &str); 6] = [
          time-sensitive: a declined or failed payment, a due date or final reminder, an \
          upcoming renewal, a delivery or shipping status, a security or sign-in notice, \
          an invitation (including to an investor call or shareholder meeting), chat or \
-         connection request, a shared file or a signature request.",
+         connection request, a shared file or a request to sign a document (the signed \
+         or completed agreement itself is legal).",
     ),
     (
         "newsletter",
@@ -197,13 +199,16 @@ pub fn parse_answers(answers: &Value) -> Result<Decision, String> {
     })
 }
 
-/// A person asking something: Needs Reply. A person only informing: Keep.
-/// Automated mail: the bucket of its kind. Confidence multiplies the
+/// A person asking something: Needs Reply. A person only informing: the
+/// bucket of the document it is (a contract is Legal whoever sends it), else
+/// Keep. Automated mail: the bucket of its kind. Confidence multiplies the
 /// probabilities along the path taken, so doubt at any step lowers it.
 pub fn combine(decision: &Decision) -> Result<(Bucket, f64), String> {
     if decision.personal >= YES_AT {
         return Ok(if decision.asks >= YES_AT {
             (Bucket::NeedsReply, decision.personal * decision.asks)
+        } else if let Some(document) = document(decision) {
+            document
         } else {
             (Bucket::Keep, decision.personal * (1.0 - decision.asks))
         });
@@ -217,6 +222,20 @@ pub fn combine(decision: &Decision) -> Result<(Bucket, f64), String> {
         bucket,
         (1.0 - decision.personal) * decision.kind_probability,
     ))
+}
+
+/// What a person's message is as a document, when the model is fairly sure
+/// it is a record for one of the agents: Accounting, Legal or Credit. The
+/// confidence is the model's for that kind; who sent it does not change what
+/// the document is.
+pub fn document(decision: &Decision) -> Option<(Bucket, f64)> {
+    let bucket = KINDS
+        .iter()
+        .find(|(name, _, _)| *name == decision.kind)
+        .map(|(_, bucket, _)| *bucket)?;
+    (matches!(bucket, Bucket::Accounting | Bucket::Legal | Bucket::Credit)
+        && decision.kind_probability >= YES_AT)
+        .then_some((bucket, decision.kind_probability))
 }
 
 pub struct DecisionClassifier<B: DecisionBackend> {
@@ -261,6 +280,9 @@ impl<B: DecisionBackend> DecisionClassifier<B> {
             ),
             not_before: None,
             list_name: None,
+            document: (decision.personal >= YES_AT)
+                .then(|| document(&decision))
+                .flatten(),
         })
     }
 }
