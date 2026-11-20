@@ -118,3 +118,17 @@ fn rules_and_the_first_model_see_the_usual_excerpt() {
     assert_eq!(plain.fuller_excerpt, plain.body_excerpt);
     assert_eq!(with_fuller.fuller_excerpt, "one two three four five");
 }
+
+#[tokio::test]
+async fn a_correspondents_mail_is_only_left_for_a_reply_or_filed_as_a_document() {
+    let mut from_colleague = message();
+    from_colleague.from_correspondent = true;
+    let unsure = first(Bucket::Legal, 0.75);
+    // "I resent the DocuSigns with the updated NCA": not an alert from a person.
+    let (alerts, _) = second_pass(Ok(r#"{"bucket": "Alerts", "confidence": 0.9}"#));
+    assert_eq!(alerts.review(&from_colleague, unsure.clone()).await, unsure);
+    // A W-9 from a colleague is still filed as a document.
+    let (pass, _) = second_pass(Ok(SURE_ACCOUNTING));
+    let p = pass.review(&from_colleague, unsure).await;
+    assert_eq!(p.bucket, Bucket::Accounting);
+}
