@@ -212,3 +212,43 @@ fn sender_rules_reject_unknown_buckets() {
 fn plain_personal_mail_has_no_rule() {
     assert_eq!(bucket(&parse("", "friend@example.test")), None);
 }
+
+#[test]
+fn a_debt_collectors_notice_is_credit_even_when_the_disclosure_is_at_the_end() {
+    // Collectors put the required disclosure far below the excerpt the
+    // models read; it is found in the whole body.
+    let body = format!(
+        "Take action to restore your services. {}This is an attempt to collect a debt and any \
+         information obtained will be used for that purpose. This communication is from a\r\n\
+         DEBT COLLECTOR.",
+        "Your account balance is past due. ".repeat(40)
+    );
+    let notice =
+        TriageMessage::from_raw(1, &raw("", "notices@collector.example", &body), 100).unwrap();
+    assert!(notice.debt_collector_notice);
+    assert!(!notice
+        .body_excerpt
+        .to_lowercase()
+        .contains("debt collector"));
+    let proposal = apply_rules(&notice, &SenderRules::default(), code_window()).unwrap();
+    assert_eq!(proposal.bucket, Bucket::Credit);
+    assert_eq!(proposal.source, ProposalSource::Rule);
+}
+
+#[test]
+fn a_mortgage_statements_collection_disclosure_is_not_a_collector() {
+    // Servicers' statements say "an attempt to collect a debt"; they are
+    // Accounting, decided by the model, not Credit.
+    let statement = TriageMessage::from_raw(
+        1,
+        &raw(
+            "",
+            "statements@servicer.example",
+            "Your mortgage statement is ready. This is an attempt to collect a debt.",
+        ),
+        100,
+    )
+    .unwrap();
+    assert!(!statement.debt_collector_notice);
+    assert_eq!(bucket(&statement), None);
+}
