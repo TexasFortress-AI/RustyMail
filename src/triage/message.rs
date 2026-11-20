@@ -14,6 +14,12 @@ pub struct TriageMessage {
     /// Lowercased sender address, empty if the From header has none.
     pub from_address: String,
     pub from_name: Option<String>,
+    /// Lowercased Reply-To address, empty if none: platforms that deliver
+    /// mail on someone's behalf name that person here.
+    pub reply_to_address: String,
+    /// Nobody behind this message has dealt with the owner before (no sent
+    /// mail, no approved documents). Set by the runner; false until then.
+    pub new_counterparty: bool,
     pub subject: String,
     /// Header names lowercased, in message order (topmost first).
     headers: Vec<(String, String)>,
@@ -51,6 +57,7 @@ impl TriageMessage {
     ) -> Option<Self> {
         let message = MessageParser::default().parse(raw)?;
         let (from_address, from_name) = first_sender(message.from());
+        let (reply_to_address, _) = first_sender(message.reply_to());
         let headers = message
             .headers_raw()
             .map(|(name, value)| (name.to_ascii_lowercase(), unfold(value)))
@@ -63,6 +70,8 @@ impl TriageMessage {
             message_id: message.message_id().map(str::to_string),
             from_address,
             from_name,
+            reply_to_address,
+            new_counterparty: false,
             subject: message.subject().unwrap_or_default().to_string(),
             headers,
             body_excerpt: fuller_excerpt.chars().take(excerpt_chars).collect(),

@@ -9,6 +9,7 @@
 //! A model must not file mail from these people as Spam or Noise; Needs Reply
 //! is only for them, and only until the owner has replied.
 
+use super::counterparty::history_key;
 use super::message::{thread_root, TriageMessage};
 use chrono::{DateTime, Utc};
 use sqlx::{Row, SqlitePool};
@@ -25,6 +26,9 @@ pub struct KnownPeople {
     replied_to: HashSet<String>,
     /// When the owner last wrote in each conversation, by its root ID.
     last_sent_in_thread: HashMap<String, DateTime<Utc>>,
+    /// Mail the owner approved into Accounting, Legal, Credit or Alerts, by
+    /// sender (see `counterparty::history_key`): his payables history.
+    approved: HashMap<String, usize>,
 }
 
 impl KnownPeople {
@@ -41,7 +45,44 @@ impl KnownPeople {
                 .collect(),
             replied_to: HashSet::new(),
             last_sent_in_thread: HashMap::new(),
+            approved: HashMap::new(),
         }
+    }
+
+    /// Record senders whose mail the owner approved into a trusted bucket.
+    pub fn with_approved<I, S>(mut self, senders: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        for sender in senders {
+            if let Some(key) = history_key(sender.as_ref()) {
+                *self.approved.entry(key).or_default() += 1;
+            }
+        }
+        self
+    }
+
+    /// How many approved messages the owner has from this sender's
+    /// organisation (or from this address, at a shared mailbox provider).
+    pub fn approved_count(&self, address: &str) -> usize {
+        history_key(address)
+            .and_then(|key| self.approved.get(&key).copied())
+            .unwrap_or(0)
+    }
+
+    /// Whether the owner deals with this sender: has written to them or to
+    /// their organisation, or has approved their documents before.
+    pub fn deals_with(&self, address: &str) -> bool {
+        let Some(key) = history_key(address) else {
+            return false;
+        };
+        self.contains(address)
+            || self.approved.contains_key(&key)
+            || self
+                .addresses
+                .iter()
+                .any(|a| history_key(a).as_deref() == Some(&key))
     }
 
     /// Record that the owner wrote in a conversation at a given time.
@@ -75,10 +116,32 @@ impl KnownPeople {
     /// correspondent on all of them.
     pub async fn load(pool: &SqlitePool, accounts: &[String]) -> Result<Self, sqlx::Error> {
         let mut rows = Vec::new();
+        let mut approved = Vec::new();
         for account_id in accounts {
             rows.extend(Self::sent_rows(pool, account_id).await?);
+            approved.extend(Self::approved_senders(pool, account_id).await?);
         }
-        Ok(Self::from_sent(accounts, rows))
+        Ok(Self::from_sent(accounts, rows).with_approved(approved))
+    }
+
+    /// Senders of mail moved into Accounting, Legal, Credit or Alerts, as
+    /// proposed or as the owner corrected it.
+    async fn approved_senders(
+        pool: &SqlitePool,
+        account_id: &str,
+    ) -> Result<Vec<String>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT from_address FROM triage_proposals
+             WHERE account_id = ? AND applied_at IS NOT NULL
+               AND bucket IN ('Accounting', 'Legal', 'Credit', 'Alerts')",
+        )
+        .bind(account_id)
+        .fetch_all(pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| r.get::<String, _>("from_address"))
+            .collect())
     }
 
     async fn sent_rows(

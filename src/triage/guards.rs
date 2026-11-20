@@ -38,6 +38,24 @@ impl ModelGuards {
                 ..proposal
             };
         }
+        // A document that would be trusted (a payment, an agreement, an alert)
+        // from someone the owner has never dealt with waits for the owner,
+        // as a payables clerk verifies a new vendor before paying.
+        if message.new_counterparty
+            && matches!(
+                proposal.bucket,
+                Bucket::Accounting | Bucket::Legal | Bucket::Credit | Bucket::Alerts
+            )
+        {
+            return Proposal {
+                reason: format!(
+                    "new sender: verify (no approved mail or sent mail with them); model said {} ({})",
+                    proposal.bucket, proposal.reason
+                ),
+                bucket: Bucket::Keep,
+                ..proposal
+            };
+        }
         let overrule = match proposal.bucket {
             Bucket::Spam | Bucket::Noise if known.contains(&message.from_address) => {
                 Some("sender is someone you correspond with".to_string())

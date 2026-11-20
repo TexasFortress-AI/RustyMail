@@ -21,6 +21,10 @@ const DEFAULT_CODE_WINDOW_HOURS: i64 = 24;
 const DEFAULT_MIN_CONFIDENCE: f64 = 0.8;
 /// Model Needs Reply proposals only for mail newer than this; older stays put.
 const DEFAULT_NEEDS_REPLY_DAYS: i64 = 30;
+/// Platforms that deliver mail on someone's behalf (TRIAGE_PLATFORM_DOMAINS):
+/// for their mail the counterparty is the person in Reply-To.
+const DEFAULT_PLATFORM_DOMAINS: &str =
+    "google.com,docusign.net,docusign.com,zoom.us,paypal.com,booking.com,ccsend.com,dropbox.com,dropboxmail.com";
 /// Code hosts whose `List-Id`s name repositories (TRIAGE_REPO_LIST_DOMAINS).
 const DEFAULT_REPO_LIST_DOMAINS: &str = "github.com";
 /// Buckets apply moves by default. Needs Reply is mail from real people, which
@@ -59,6 +63,7 @@ pub struct TriageConfig {
     pub sender_rules_file: Option<PathBuf>,
     /// Domains whose `List-Id`s mark code-repository notifications.
     pub repo_list_domains: Vec<String>,
+    pub platform_domains: Vec<String>,
     /// Per-account bucket-to-folder overrides.
     pub folder_map_file: Option<PathBuf>,
     pub code_window: chrono::Duration,
@@ -139,6 +144,12 @@ impl TriageConfig {
                 DEFAULT_SECOND_PASS_EXCERPT_CHARS,
             )?,
             sender_rules_file: value("TRIAGE_SENDER_RULES_FILE").map(PathBuf::from),
+            platform_domains: value("TRIAGE_PLATFORM_DOMAINS")
+                .unwrap_or_else(|| DEFAULT_PLATFORM_DOMAINS.to_string())
+                .split(',')
+                .map(|domain| domain.trim().to_ascii_lowercase())
+                .filter(|domain| !domain.is_empty())
+                .collect(),
             repo_list_domains: value("TRIAGE_REPO_LIST_DOMAINS")
                 .unwrap_or_else(|| DEFAULT_REPO_LIST_DOMAINS.to_string())
                 .split(',')

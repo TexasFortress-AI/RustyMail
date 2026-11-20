@@ -14,6 +14,7 @@ pub mod apply;
 pub mod classifier;
 pub mod codes;
 pub mod config;
+pub mod counterparty;
 pub mod decision;
 pub mod destinations;
 pub mod folders;
