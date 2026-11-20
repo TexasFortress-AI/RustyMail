@@ -203,25 +203,21 @@ async fn known_people_are_the_account_and_its_sent_recipients() {
 }
 
 #[test]
-fn needs_reply_only_from_someone_you_correspond_with() {
-    // Cold outreach reads like a person asking something; what sets a real
-    // correspondent apart is that the owner has written to them.
+fn a_stranger_asking_something_can_need_a_reply() {
+    // A recruiter's job offer comes from someone the owner has never written
+    // to; the models tell cold sales pitches (Spam) from personal requests,
+    // so the guard no longer turns a stranger's request into Keep.
     let known = KnownPeople::new(["pat@example.test"]);
-    let stranger = checked(
+    let recruiter = checked(
         model(Bucket::NeedsReply),
-        "sales@outreach.example",
+        "jonathan@onepay.example",
         Some(1),
         &known,
     );
-    assert_eq!(stranger.bucket, Bucket::Keep);
-    assert!(stranger.reason.contains("not someone you correspond with"));
-    let correspondent = checked(
-        model(Bucket::NeedsReply),
-        "pat@example.test",
-        Some(1),
-        &known,
-    );
-    assert_eq!(correspondent.bucket, Bucket::NeedsReply);
+    assert_eq!(recruiter.bucket, Bucket::NeedsReply);
+    // Spam from someone the owner writes to still stays in the INBOX.
+    let colleague = checked(model(Bucket::Spam), "pat@example.test", Some(1), &known);
+    assert_eq!(colleague.bucket, Bucket::Keep);
 }
 
 #[test]
