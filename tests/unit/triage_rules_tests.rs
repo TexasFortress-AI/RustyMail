@@ -64,6 +64,7 @@ fn model(bucket: Bucket) -> Proposal {
         reason: "model".into(),
         not_before: None,
         list_name: None,
+        document: None,
     }
 }
 

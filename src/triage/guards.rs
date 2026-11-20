@@ -52,8 +52,17 @@ impl ModelGuards {
             )),
             _ => None,
         };
-        match overrule {
-            Some(why) => Proposal {
+        match (overrule, proposal.document) {
+            // Not left for a reply: filed as the document it is.
+            (Some(why), Some((document, confidence))) if proposal.bucket == Bucket::NeedsReply => {
+                Proposal {
+                    reason: format!("{}; filed as {} ({})", why, document, proposal.reason),
+                    bucket: document,
+                    confidence: Some(confidence),
+                    ..proposal
+                }
+            }
+            (Some(why), _) => Proposal {
                 reason: format!(
                     "{}; model said {} ({})",
                     why, proposal.bucket, proposal.reason
@@ -61,7 +70,7 @@ impl ModelGuards {
                 bucket: Bucket::Keep,
                 ..proposal
             },
-            None => proposal,
+            (None, _) => proposal,
         }
     }
 

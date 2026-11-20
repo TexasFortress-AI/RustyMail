@@ -64,6 +64,7 @@ fn a_model_answer_about_such_mail_stays_in_the_inbox() {
         reason: "statement".into(),
         not_before: None,
         list_name: None,
+        document: None,
     };
     let guards = ModelGuards {
         needs_reply_max_age: chrono::Duration::days(30),

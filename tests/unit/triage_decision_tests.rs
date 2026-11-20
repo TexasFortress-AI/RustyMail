@@ -232,3 +232,55 @@ async fn a_correspondent_is_a_person_whatever_the_model_guessed() {
     let doubted = classify(0.2, 0.1, true).await;
     assert_eq!(doubted.bucket, Bucket::Keep);
 }
+
+#[test]
+fn a_person_sending_a_contract_is_filed_as_legal() {
+    // "Re: Signed contract": a person, not asking, and plainly a contract.
+    let (bucket, confidence) = combine(&decision(0.8, 0.1, "legal", 0.92)).unwrap();
+    assert_eq!(bucket, Bucket::Legal);
+    assert!(close(confidence, 0.92));
+    // A person sharing news is still left in the INBOX.
+    let (bucket, _) = combine(&decision(0.8, 0.1, "newsletter", 0.9)).unwrap();
+    assert_eq!(bucket, Bucket::Keep);
+    // Too unsure what the document is: left in the INBOX.
+    let (bucket, _) = combine(&decision(0.8, 0.1, "legal", 0.4)).unwrap();
+    assert_eq!(bucket, Bucket::Keep);
+}
+
+#[tokio::test]
+async fn a_persons_question_carries_its_document_type() {
+    let stub = StubDecider {
+        reply: Ok(answers(0.53, 0.94, "legal", 0.81)),
+        sent: Mutex::new(Vec::new()),
+    };
+    let proposal = DecisionClassifier::new(stub, "decider".into())
+        .classify(&message())
+        .await
+        .unwrap();
+    assert_eq!(proposal.bucket, Bucket::NeedsReply);
+    assert_eq!(proposal.document, Some((Bucket::Legal, 0.81)));
+    // Automated mail goes by its kind directly and carries no document.
+    let stub = StubDecider {
+        reply: Ok(answers(0.1, 0.2, "legal", 0.9)),
+        sent: Mutex::new(Vec::new()),
+    };
+    let automated = DecisionClassifier::new(stub, "decider".into())
+        .classify(&message())
+        .await
+        .unwrap();
+    assert_eq!(automated.bucket, Bucket::Legal);
+    assert_eq!(automated.document, None);
+}
+
+#[test]
+fn signed_agreements_are_legal_and_requests_to_sign_are_alerts() {
+    let criteria = &questions()["kind"]["criteria"];
+    assert!(criteria["legal"]
+        .as_str()
+        .unwrap()
+        .contains("signed or completed"));
+    assert!(criteria["alert"]
+        .as_str()
+        .unwrap()
+        .contains("request to sign"));
+}

@@ -43,6 +43,7 @@ fn model(bucket: Bucket) -> Proposal {
         reason: "looks suspicious".into(),
         not_before: None,
         list_name: None,
+        document: None,
     }
 }
 
@@ -289,4 +290,24 @@ fn the_conversation_root_is_the_first_reference() {
         rustymail::triage::message::thread_root(None, None, Some("own@x")).as_deref(),
         Some("own@x")
     );
+}
+
+#[test]
+fn a_question_not_left_for_a_reply_is_filed_as_its_document() {
+    // "Signed contract", too old for Needs Reply: Legal, not the INBOX.
+    let known = KnownPeople::new(["drreed@example.test"]);
+    let mut contract = model(Bucket::NeedsReply);
+    contract.document = Some((Bucket::Legal, 0.81));
+    let p = checked(contract, "drreed@example.test", Some(200), &known);
+    assert_eq!(p.bucket, Bucket::Legal);
+    assert_eq!(p.confidence, Some(0.81));
+    assert!(p.reason.contains("filed as Legal"), "{}", p.reason);
+    // Without a document type it stays in the INBOX, as before.
+    let p = checked(
+        model(Bucket::NeedsReply),
+        "drreed@example.test",
+        Some(200),
+        &known,
+    );
+    assert_eq!(p.bucket, Bucket::Keep);
 }
