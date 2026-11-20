@@ -13,6 +13,7 @@ pub mod config;
 pub mod dashboard_model_defaults_tests;
 pub mod dashboard_static_site_tests;
 pub mod imap;
+pub mod model_serve_provider_tests;
 pub mod rest_v1_flag_tests;
 pub mod session_manager;
 pub mod targeted_expunge_tests;

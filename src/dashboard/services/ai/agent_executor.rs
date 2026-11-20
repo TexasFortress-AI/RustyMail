@@ -2,6 +2,7 @@
 // Agent executor for running sub-agents with iterative tool calling
 
 use super::model_config::{get_model_config, ModelConfiguration};
+use super::provider::model_serve;
 use super::provider::ollama::with_keep_alive;
 use super::sampler_config::{get_sampler_config, SamplerConfig};
 use super::tool_converter::{mcp_to_ollama_tools, parse_ollama_tool_call};
@@ -15,7 +16,7 @@ use sqlx::SqlitePool;
 
 /// Providers that support tool calling
 /// Note: These providers have been tested with the tool-calling API format
-pub const TOOL_CALLING_PROVIDERS: &[&str] = &["ollama", "llamacpp", "lmstudio"];
+pub const TOOL_CALLING_PROVIDERS: &[&str] = &["ollama", "llamacpp", "lmstudio", "model_serve"];
 
 /// Check if a provider supports tool calling
 pub fn supports_tool_calling(provider: &str) -> bool {
@@ -267,6 +268,17 @@ impl AgentExecutor {
                     tools,
                     sampler_config,
                     "LMSTUDIO_BASE_URL",
+                )
+                .await
+            }
+            // model_serve's routes own the settings: none are sent.
+            model_serve::PROVIDER => {
+                self.call_openai_compatible_with_tools(
+                    config,
+                    messages,
+                    tools,
+                    None,
+                    model_serve::BASE_URL_ENV,
                 )
                 .await
             }

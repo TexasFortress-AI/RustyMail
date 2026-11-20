@@ -12,7 +12,7 @@ use super::provider_manager::ProviderType;
 use url::{Host, Url};
 
 /// Providers that run on this machine. `mock` makes no network calls.
-pub const LOCAL_PROVIDERS: &[&str] = &["ollama", "llamacpp", "lmstudio", "mock"];
+pub const LOCAL_PROVIDERS: &[&str] = &["ollama", "llamacpp", "lmstudio", "model_serve", "mock"];
 
 /// Environment variable holding a local provider's base URL.
 pub fn base_url_env_var(provider: &str) -> Option<&'static str> {
@@ -20,6 +20,7 @@ pub fn base_url_env_var(provider: &str) -> Option<&'static str> {
         "ollama" => Some("OLLAMA_BASE_URL"),
         "llamacpp" => Some("LLAMACPP_BASE_URL"),
         "lmstudio" => Some("LMSTUDIO_BASE_URL"),
+        "model_serve" => Some("MODEL_SERVE_BASE_URL"),
         _ => None,
     }
 }
@@ -30,6 +31,7 @@ pub fn provider_key(provider_type: &ProviderType) -> Option<&'static str> {
         ProviderType::Ollama => Some("ollama"),
         ProviderType::LlamaCpp => Some("llamacpp"),
         ProviderType::LmStudio => Some("lmstudio"),
+        ProviderType::ModelServe => Some("model_serve"),
         ProviderType::Mock => Some("mock"),
         _ => None,
     }

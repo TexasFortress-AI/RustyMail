@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Sliders, Save, Loader2, RotateCcw, Trash2, Info, Download, Check } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { isServerManaged, ServerManagedSettings } from './ServerManagedSettings';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -46,6 +47,7 @@ const ALL_SUPPORTED_PROVIDERS = [
   { name: 'ollama', label: 'Ollama' },
   { name: 'llamacpp', label: 'llama.cpp' },
   { name: 'lmstudio', label: 'LM Studio' },
+  { name: 'model_serve', label: 'model_serve' },
   { name: 'openai', label: 'OpenAI' },
   { name: 'anthropic', label: 'Anthropic' },
   { name: 'openrouter', label: 'OpenRouter' },
@@ -474,7 +476,9 @@ const SamplerConfigPanel: React.FC = () => {
           </CardContent>
         </Card>
 
-        {selectedProvider && selectedModel && (
+        {isServerManaged(selectedProvider) ? (
+          <ServerManagedSettings provider={selectedProvider} />
+        ) : selectedProvider && selectedModel && (
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">

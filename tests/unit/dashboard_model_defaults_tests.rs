@@ -26,13 +26,13 @@ fn a_configured_model_is_kept_at_startup() {
 
 #[test]
 fn unset_roles_use_the_configured_ollama_model() {
-    let config = default_model_config("tool_calling", Some(" gemma4:26b ".into())).unwrap();
+    let config = default_model_config("tool_calling", None, Some(" gemma4:26b ".into())).unwrap();
     assert_eq!(config.role, "tool_calling");
     assert_eq!(config.provider, "ollama");
     assert_eq!(config.model_name, "gemma4:26b");
     assert_eq!(config.base_url, None, "uses OLLAMA_BASE_URL");
-    assert!(default_model_config("drafting", None).is_err());
-    assert!(default_model_config("drafting", Some("  ".into())).is_err());
+    assert!(default_model_config("drafting", None, None).is_err());
+    assert!(default_model_config("drafting", None, Some("  ".into())).is_err());
 }
 
 #[test]
