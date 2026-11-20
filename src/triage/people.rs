@@ -9,8 +9,10 @@
 //! A model must not file mail from these people as Spam or Noise; Needs Reply
 //! is only for them, and only until the owner has replied.
 
+use super::message::{thread_root, TriageMessage};
+use chrono::{DateTime, Utc};
 use sqlx::{Row, SqlitePool};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Folders whose name contains this (case-insensitive) hold sent mail, e.g.
 /// `Sent`, `INBOX.Sent`, `Sent Items`. The cache has no \Sent attribute.
@@ -21,6 +23,8 @@ pub struct KnownPeople {
     addresses: HashSet<String>,
     /// Message-IDs named by In-Reply-To or References in sent mail.
     replied_to: HashSet<String>,
+    /// When the owner last wrote in each conversation, by its root ID.
+    last_sent_in_thread: HashMap<String, DateTime<Utc>>,
 }
 
 impl KnownPeople {
@@ -36,7 +40,18 @@ impl KnownPeople {
                 .filter(|a| !a.is_empty())
                 .collect(),
             replied_to: HashSet::new(),
+            last_sent_in_thread: HashMap::new(),
         }
+    }
+
+    /// Record that the owner wrote in a conversation at a given time.
+    pub fn with_sent_in_thread(mut self, root: &str, sent_at: DateTime<Utc>) -> Self {
+        let latest = self
+            .last_sent_in_thread
+            .entry(root.to_string())
+            .or_insert(sent_at);
+        *latest = (*latest).max(sent_at);
+        self
     }
 
     /// Record Message-IDs the owner has replied to.
@@ -57,7 +72,8 @@ impl KnownPeople {
     /// and every message those sent mails reply to.
     pub async fn load(pool: &SqlitePool, account_id: &str) -> Result<Self, sqlx::Error> {
         let rows = sqlx::query(
-            "SELECT e.to_addresses, e.cc_addresses, e.in_reply_to, e.references_header
+            "SELECT e.to_addresses, e.cc_addresses, e.in_reply_to, e.references_header,
+                    e.message_id, e.date
              FROM emails e
              JOIN folders f ON f.id = e.folder_id
              WHERE f.account_id = ? AND instr(lower(f.name), ?) > 0",
@@ -68,7 +84,20 @@ impl KnownPeople {
         .await?;
         let mut addresses = vec![account_id.to_string()];
         let mut replied = Vec::new();
+        let mut threads = Vec::new();
         for row in rows {
+            let root = thread_root(
+                row.get::<Option<String>, _>("references_header").as_deref(),
+                row.get::<Option<String>, _>("in_reply_to").as_deref(),
+                row.get::<Option<String>, _>("message_id").as_deref(),
+            );
+            let sent_at = row
+                .get::<Option<String>, _>("date")
+                .and_then(|d| DateTime::parse_from_rfc3339(&d).ok())
+                .map(|d| d.with_timezone(&Utc));
+            if let (Some(root), Some(sent_at)) = (root, sent_at) {
+                threads.push((root, sent_at));
+            }
             for column in ["to_addresses", "cc_addresses"] {
                 let list: Option<String> = row.get(column);
                 addresses.extend(parse_address_list(list.as_deref()));
@@ -78,7 +107,22 @@ impl KnownPeople {
                 replied.extend(ids.unwrap_or_default().split_whitespace().map(String::from));
             }
         }
-        Ok(Self::new(addresses).with_replies(replied))
+        let known = Self::new(addresses).with_replies(replied);
+        Ok(threads.into_iter().fold(known, |known, (root, at)| {
+            known.with_sent_in_thread(&root, at)
+        }))
+    }
+
+    /// The owner has answered this message: replied to it directly, or
+    /// written in its conversation after it arrived.
+    pub fn answered(&self, message: &TriageMessage) -> bool {
+        if self.replied_to(message.message_id.as_deref()) {
+            return true;
+        }
+        let latest = message
+            .thread_root()
+            .and_then(|root| self.last_sent_in_thread.get(&root).copied());
+        matches!((latest, message.received_at), (Some(sent), Some(arrived)) if sent > arrived)
     }
 
     /// Whether the owner has sent a reply to this message.

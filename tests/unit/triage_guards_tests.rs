@@ -251,3 +251,42 @@ fn the_answered_flag_name_matches_what_the_imap_library_reports() {
         rustymail::triage::answered::ANSWERED_FLAG
     );
 }
+
+fn in_thread(from: &str, arrived_days_ago: i64) -> TriageMessage {
+    let raw = format!(
+        "From: {from}\r\nTo: {ACCOUNT}\r\nSubject: Re: Account\r\nMessage-ID: <later@x.test>\r\n\
+         References: <root@x.test> <middle@x.test>\r\nContent-Type: text/plain\r\n\r\nHello\r\n"
+    );
+    let mut message = TriageMessage::from_raw(1, raw.as_bytes(), 100).unwrap();
+    message.received_at = Some(now() - Duration::days(arrived_days_ago));
+    message
+}
+
+#[test]
+fn writing_later_in_the_conversation_answers_earlier_messages() {
+    let known =
+        KnownPeople::default().with_sent_in_thread("root@x.test", now() - Duration::days(1));
+    // Arrived before the owner's latest message in the thread: answered.
+    assert!(known.answered(&in_thread("pat@example.test", 3)));
+    // Arrived after it: still waiting on the owner.
+    let newer =
+        KnownPeople::default().with_sent_in_thread("root@x.test", now() - Duration::days(5));
+    assert!(!newer.answered(&in_thread("pat@example.test", 3)));
+    // Another conversation does not count.
+    let other = KnownPeople::default().with_sent_in_thread("elsewhere@x.test", now());
+    assert!(!other.answered(&in_thread("pat@example.test", 3)));
+}
+
+#[test]
+fn the_conversation_root_is_the_first_reference() {
+    let m = in_thread("pat@example.test", 1);
+    assert_eq!(m.thread_root().as_deref(), Some("root@x.test"));
+    assert_eq!(
+        rustymail::triage::message::thread_root(None, Some("<parent@x>"), Some("own@x")).as_deref(),
+        Some("parent@x")
+    );
+    assert_eq!(
+        rustymail::triage::message::thread_root(None, None, Some("own@x")).as_deref(),
+        Some("own@x")
+    );
+}

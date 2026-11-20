@@ -65,6 +65,15 @@ impl TriageMessage {
             .map(|(_, v)| v.as_str())
     }
 
+    /// The conversation this message belongs to (see `thread_root`).
+    pub fn thread_root(&self) -> Option<String> {
+        thread_root(
+            self.header("references"),
+            self.header("in-reply-to"),
+            self.message_id.as_deref(),
+        )
+    }
+
     pub fn has_header(&self, name: &str) -> bool {
         self.header(name).is_some()
     }
@@ -90,6 +99,22 @@ fn first_sender(value: Option<&Address<'_>>) -> (String, Option<String>) {
 }
 
 /// Join folded header lines into one line.
+/// A conversation's original Message-ID: the first ID in References (the
+/// message the thread started from), else In-Reply-To, else the message's
+/// own ID. Angle brackets are dropped.
+pub fn thread_root(
+    references: Option<&str>,
+    in_reply_to: Option<&str>,
+    message_id: Option<&str>,
+) -> Option<String> {
+    [references, in_reply_to, message_id]
+        .into_iter()
+        .flatten()
+        .find_map(|value| value.split_whitespace().next())
+        .map(|id| id.trim_start_matches('<').trim_end_matches('>').to_string())
+        .filter(|id| !id.is_empty())
+}
+
 fn unfold(value: &str) -> String {
     value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
