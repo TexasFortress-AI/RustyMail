@@ -124,14 +124,15 @@ impl KnownPeople {
         Ok(Self::from_sent(accounts, rows).with_approved(approved))
     }
 
-    /// Senders of mail moved into Accounting, Legal, Credit or Alerts, as
-    /// proposed or as the owner corrected it.
+    /// Who was behind mail moved into Accounting, Legal, Credit or Alerts, as
+    /// proposed or as the owner corrected it: the recorded counterparty (the
+    /// person behind a platform message), else the sender.
     async fn approved_senders(
         pool: &SqlitePool,
         account_id: &str,
     ) -> Result<Vec<String>, sqlx::Error> {
         let rows = sqlx::query(
-            "SELECT from_address FROM triage_proposals
+            "SELECT coalesce(counterparty, from_address) AS from_address FROM triage_proposals
              WHERE account_id = ? AND applied_at IS NOT NULL
                AND bucket IN ('Accounting', 'Legal', 'Credit', 'Alerts')",
         )
