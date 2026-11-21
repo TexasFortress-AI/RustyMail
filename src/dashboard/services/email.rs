@@ -778,9 +778,10 @@ impl EmailService {
             .create_session_with_status(&account, account_id, "delete")
             .await?;
 
+        // A targeted delete (UID EXPUNGE): a plain EXPUNGE would also remove
+        // every other message in the folder already flagged \Deleted.
         client.select_folder(folder).await?;
-        client.mark_as_deleted(uids).await?;
-        client.expunge().await?;
+        client.delete_messages(uids).await?;
 
         // Log out so the server closes the IMAP session cleanly
         if let Err(e) = client.logout().await {
