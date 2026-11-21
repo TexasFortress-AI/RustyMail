@@ -25,6 +25,7 @@ use sqlx::SqlitePool;
 pub mod account;
 pub mod account_store;
 pub mod ai;
+pub mod attachment_presence;
 pub mod attachment_storage;
 pub mod autodiscovery;
 pub mod cache;

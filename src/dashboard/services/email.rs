@@ -980,7 +980,10 @@ impl EmailService {
                 attachment_storage::get_attachments_metadata(db_pool, account_email, msg_id)
                     .await?;
 
-            if !existing_attachments.is_empty() {
+            // Rows alone are not enough: sync records attachments as metadata only.
+            if crate::dashboard::services::attachment_presence::all_downloaded(
+                &existing_attachments,
+            ) {
                 debug!(
                     "Attachments already cached for email {}, returning {} attachments",
                     uid,

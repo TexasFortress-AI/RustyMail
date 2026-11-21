@@ -3274,10 +3274,11 @@ pub async fn execute_mcp_tool_inner(
                 }
             };
 
-            // If no attachments found in database and we have folder+uid, fetch from IMAP
-            if let (true, Some(folder), Some(uid)) =
-                (attachments.is_empty(), folder_opt.as_ref(), uid_opt)
-            {
+            // Unless every attachment is already on disk (sync records them as
+            // metadata only), fetch them from IMAP when we have folder+uid
+            let on_disk =
+                crate::dashboard::services::attachment_presence::all_downloaded(&attachments);
+            if let (false, Some(folder), Some(uid)) = (on_disk, folder_opt.as_ref(), uid_opt) {
                 debug!(
                     "No attachments in database for message_id {}. Fetching from IMAP...",
                     message_id
