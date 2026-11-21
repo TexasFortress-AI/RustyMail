@@ -5878,6 +5878,9 @@ pub async fn send_email(
     // Build email message
     let mut email_builder = Message::builder()
         .from(from_mailbox)
+        .message_id(Some(
+            crate::dashboard::services::message_id::new_message_id(&account.email_address),
+        ))
         .subject(&request.subject);
 
     // Add recipients
