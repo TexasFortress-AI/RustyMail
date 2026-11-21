@@ -257,8 +257,9 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
                         "description": "Target folder"
                     },
                     "uids": {
-                        "type": "string",
-                        "description": "Comma-separated list of UIDs"
+                        "type": "array",
+                        "items": { "type": "integer" },
+                        "description": "Array of message UIDs, e.g. [101, 102]"
                     },
                     "account_id": {
                         "type": "string",
@@ -279,8 +280,9 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
                         "description": "Folder containing messages"
                     },
                     "uids": {
-                        "type": "string",
-                        "description": "Comma-separated list of UIDs"
+                        "type": "array",
+                        "items": { "type": "integer" },
+                        "description": "Array of message UIDs, e.g. [101, 102]"
                     },
                     "account_id": {
                         "type": "string",
@@ -301,8 +303,9 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
                         "description": "Folder containing messages"
                     },
                     "uids": {
-                        "type": "string",
-                        "description": "Comma-separated list of UIDs"
+                        "type": "array",
+                        "items": { "type": "integer" },
+                        "description": "Array of message UIDs, e.g. [101, 102]"
                     },
                     "account_id": {
                         "type": "string",
@@ -323,8 +326,9 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
                         "description": "Folder containing messages"
                     },
                     "uids": {
-                        "type": "string",
-                        "description": "Comma-separated list of UIDs"
+                        "type": "array",
+                        "items": { "type": "integer" },
+                        "description": "Array of message UIDs, e.g. [101, 102]"
                     },
                     "account_id": {
                         "type": "string",
@@ -363,8 +367,9 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
                         "description": "Folder containing messages"
                     },
                     "uids": {
-                        "type": "string",
-                        "description": "Comma-separated list of UIDs"
+                        "type": "array",
+                        "items": { "type": "integer" },
+                        "description": "Array of message UIDs, e.g. [101, 102]"
                     },
                     "account_id": {
                         "type": "string",
@@ -385,8 +390,9 @@ pub fn get_mcp_tools_jsonrpc_format() -> Vec<serde_json::Value> {
                         "description": "Folder containing messages"
                     },
                     "uids": {
-                        "type": "string",
-                        "description": "Comma-separated list of UIDs"
+                        "type": "array",
+                        "items": { "type": "integer" },
+                        "description": "Array of message UIDs, e.g. [101, 102]"
                     },
                     "account_id": {
                         "type": "string",
@@ -1125,7 +1131,7 @@ pub async fn list_mcp_tools(
                 "parameters": {
                     "source_folder": "Source folder",
                     "target_folder": "Target folder",
-                    "uids": "Comma-separated list of UIDs",
+                    "uids": "Array of message UIDs, e.g. [101, 102]",
                     "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
                 }
             }),
@@ -1134,7 +1140,7 @@ pub async fn list_mcp_tools(
                 "description": "Mark messages as deleted",
                 "parameters": {
                     "folder": "Folder containing messages",
-                    "uids": "Comma-separated list of UIDs",
+                    "uids": "Array of message UIDs, e.g. [101, 102]",
                     "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
                 }
             }),
@@ -1143,7 +1149,7 @@ pub async fn list_mcp_tools(
                 "description": "Permanently delete messages",
                 "parameters": {
                     "folder": "Folder containing messages",
-                    "uids": "Comma-separated list of UIDs",
+                    "uids": "Array of message UIDs, e.g. [101, 102]",
                     "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
                 }
             }),
@@ -1152,7 +1158,7 @@ pub async fn list_mcp_tools(
                 "description": "Unmark messages as deleted",
                 "parameters": {
                     "folder": "Folder containing messages",
-                    "uids": "Comma-separated list of UIDs",
+                    "uids": "Array of message UIDs, e.g. [101, 102]",
                     "account_id": "REQUIRED. Email address of the account (e.g., user@example.com)"
                 }
             }),

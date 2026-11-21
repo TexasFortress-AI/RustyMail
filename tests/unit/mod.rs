@@ -37,6 +37,7 @@ pub mod child_reaper_tests;
 pub mod hardcoded_detection;
 pub mod imap_keepalive_tests;
 pub mod mail_provider_tests;
+pub mod mcp_uids_schema_tests;
 pub mod new_tools_tests;
 pub mod oauth_tests;
 pub mod rmcp_sdk_tests;
