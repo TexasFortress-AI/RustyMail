@@ -3456,8 +3456,8 @@ pub async fn execute_mcp_tool_inner(
             }
         }
         "get_attachment_content" => {
+            use crate::dashboard::api::attachment_content_reply::attachment_content_reply;
             use crate::dashboard::services::attachment_storage;
-            use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 
             let account_id = match get_account_id_to_use(&params, &state_data).await {
                 Ok(id) => id,
@@ -3548,17 +3548,13 @@ pub async fn execute_mcp_tool_inner(
             )
             .await
             {
-                Ok((_name, content_type, content)) => {
-                    serde_json::json!({
-                        "success": true,
-                        "filename": filename,
-                        "content_type": content_type,
-                        "size_bytes": content.len(),
-                        "content_base64": BASE64.encode(&content),
-                        "message_id": message_id,
-                        "tool": tool_name
-                    })
-                }
+                Ok((_name, content_type, content)) => attachment_content_reply(
+                    tool_name,
+                    &filename,
+                    &content_type,
+                    &content,
+                    &message_id,
+                ),
                 Err(attachment_storage::AttachmentError::NotFound(msg))
                     if msg.contains("not yet downloaded") =>
                 {
@@ -3584,17 +3580,13 @@ pub async fn execute_mcp_tool_inner(
                                 )
                                 .await
                                 {
-                                    Ok((_name, content_type, content)) => {
-                                        serde_json::json!({
-                                            "success": true,
-                                            "filename": filename,
-                                            "content_type": content_type,
-                                            "size_bytes": content.len(),
-                                            "content_base64": BASE64.encode(&content),
-                                            "message_id": message_id,
-                                            "tool": tool_name
-                                        })
-                                    }
+                                    Ok((_name, content_type, content)) => attachment_content_reply(
+                                        tool_name,
+                                        &filename,
+                                        &content_type,
+                                        &content,
+                                        &message_id,
+                                    ),
                                     Err(e) => serde_json::json!({
                                         "success": false,
                                         "error": format!("Failed to read after IMAP fetch: {}", e),
