@@ -21,6 +21,7 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::time::timeout;
 
 use super::account::AccountService;
+use super::message_id::new_message_id;
 use crate::imap::client::ImapClient;
 use crate::imap::error::ImapError;
 use crate::imap::session::AsyncImapSessionWrapper;
@@ -159,6 +160,7 @@ impl SmtpService {
         // Build email message
         let mut email_builder = Message::builder()
             .from(from_mailbox)
+            .message_id(Some(new_message_id(&account.email_address)))
             .subject(&request.subject);
 
         // Add To recipients
@@ -614,6 +616,7 @@ impl SmtpService {
         // Build email message
         let mut email_builder = Message::builder()
             .from(from_mailbox)
+            .message_id(Some(new_message_id(&account.email_address)))
             .subject(&request.subject);
 
         // Add To recipients
