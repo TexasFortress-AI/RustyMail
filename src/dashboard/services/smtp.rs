@@ -106,11 +106,16 @@ impl SmtpService {
         request: SendEmailRequest,
     ) -> Result<SendEmailResponse, SmtpError> {
         // Get account details
-        let account_service = self.account_service.lock().await;
-        let account = account_service
-            .get_account(account_email)
-            .await
-            .map_err(|_| SmtpError::AccountNotFound(account_email.to_string()))?;
+        // Read the account, then release the lock: the Outbox, Sent and IMAP
+        // helpers called below take it themselves, and a Tokio mutex is not
+        // re-entrant, so holding it here would deadlock them.
+        let account = {
+            let account_service = self.account_service.lock().await;
+            account_service
+                .get_account(account_email)
+                .await
+                .map_err(|_| SmtpError::AccountNotFound(account_email.to_string()))?
+        };
 
         // Validate SMTP configuration
         let smtp_host = account
@@ -558,11 +563,16 @@ impl SmtpService {
         request: SendEmailRequest,
     ) -> Result<String, SmtpError> {
         // Get account details
-        let account_service = self.account_service.lock().await;
-        let account = account_service
-            .get_account(account_email)
-            .await
-            .map_err(|_| SmtpError::AccountNotFound(account_email.to_string()))?;
+        // Read the account, then release the lock: the Outbox, Sent and IMAP
+        // helpers called below take it themselves, and a Tokio mutex is not
+        // re-entrant, so holding it here would deadlock them.
+        let account = {
+            let account_service = self.account_service.lock().await;
+            account_service
+                .get_account(account_email)
+                .await
+                .map_err(|_| SmtpError::AccountNotFound(account_email.to_string()))?
+        };
 
         // Validate SMTP configuration
         let smtp_host = account
