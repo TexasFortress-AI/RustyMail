@@ -29,6 +29,7 @@ pub mod account_connect_tests;
 pub mod account_service_tests;
 pub mod ai_local_only_tests;
 pub mod ai_service_tests;
+pub mod attachment_content_reply_tests;
 pub mod attachment_presence_tests;
 pub mod attachment_tests;
 pub mod backoff_tests;

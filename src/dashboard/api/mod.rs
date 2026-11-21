@@ -9,6 +9,7 @@
 // Dashboard API module
 
 pub mod accounts;
+pub mod attachment_content_reply;
 pub mod attachments;
 pub mod auth_middleware;
 pub mod config;
