@@ -342,3 +342,27 @@ async fn failed_copy_never_deletes_the_same_uid_in_the_destination() {
         commands
     );
 }
+
+#[tokio::test]
+#[serial]
+async fn deleting_messages_never_expunges_other_deleted_mail() {
+    // Another mail client flagged message 2 \Deleted but has not expunged it
+    // (Thunderbird's "mark as deleted" works this way): deleting message 1
+    // must not take message 2 with it.
+    let h = harness(vec![(1, "<m1@example.test>"), (2, "<m2@example.test>")]).await;
+    {
+        let mut b = h.box_b.lock().unwrap();
+        b.uidplus = true;
+        b.deleted.insert(("INBOX".to_string(), 2));
+    }
+    h.service
+        .delete_messages_for_account("INBOX", &[1], ACCOUNT_B)
+        .await
+        .unwrap();
+    assert_only_b_used(&h);
+    assert_eq!(
+        uids_in(&h.box_b, "INBOX"),
+        vec![2],
+        "only the named message goes"
+    );
+}
