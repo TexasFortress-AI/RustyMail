@@ -275,7 +275,7 @@ impl SmtpService {
                     .await
                 {
                     Ok(_) => {
-                        log::info!("Successfully removed email from Outbox");
+                        log::debug!("Outbox cleanup finished (outcome logged above)");
                     }
                     Err(e) => {
                         log::warn!(
@@ -456,7 +456,7 @@ impl SmtpService {
 
         // Best-effort: the message may already be gone, or the folder missing
         match Self::delete_by_message_id(&session, msg_id).await {
-            Ok((folder, 0)) => log::debug!("No message {} in {}", msg_id, folder),
+            Ok((folder, 0)) => log::warn!("No Outbox copy of {} found in {}", msg_id, folder),
             Ok((folder, deleted)) => {
                 log::info!(
                     "Deleted {} message(s) from Outbox folder {}",
@@ -484,9 +484,9 @@ impl SmtpService {
     ) -> Result<(String, usize), ImapError> {
         let folder = session.target_folder(FolderTarget::Outbox).await?;
         session.select_folder(&folder).await?;
-        let uids = session
-            .search_emails(&format!("HEADER Message-ID {}", message_id))
-            .await?;
+        // Not SEARCH HEADER: some servers answer it with no hits (see message_id_lookup).
+        let uids =
+            crate::imap::message_id_lookup::uids_with_message_id(session, message_id).await?;
         if !uids.is_empty() {
             session.delete_messages(&uids).await?;
         }

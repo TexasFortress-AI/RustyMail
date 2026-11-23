@@ -20,6 +20,7 @@ pub mod dashboard_static_site; // Backend serves the built dashboard at /
 pub mod fake_imap_server; // TLS fake IMAP server shared by account-routing tests
 pub mod mcp_http; // MCP HTTP endpoint integration tests
 pub mod mcp_stdio; // MCP stdio proxy integration tests
+pub mod message_id_lookup; // finding a message by Message-ID without SEARCH HEADER
 pub mod multi_account_sync;
 pub mod security_tests;
 pub mod smtp_send_lock; // send_email must not deadlock on the account-service lock

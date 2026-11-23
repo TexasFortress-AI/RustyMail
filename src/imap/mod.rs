@@ -11,6 +11,7 @@ pub mod account_connect;
 pub mod atomic;
 pub mod client;
 pub mod error;
+pub mod message_id_lookup;
 pub mod oauth2;
 pub mod session;
 pub mod special_folders;
