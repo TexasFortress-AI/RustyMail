@@ -349,7 +349,7 @@ async fn test_mcp_tools_list() {
     );
 
     let tools = body["result"]["tools"].as_array().unwrap();
-    assert_eq!(tools.len(), 38, "Should have exactly 38 tools");
+    assert_eq!(tools.len(), 37, "Should have exactly 37 tools");
 
     // Verify each tool has required fields
     let expected_tool_names = vec![
@@ -370,7 +370,6 @@ async fn test_mcp_tools_list() {
         "get_folder_stats",
         "search_cached_emails",
         "list_accounts",
-        "set_current_account",
         "mark_as_read",
         "mark_as_unread",
         "send_email",
@@ -909,8 +908,8 @@ async fn test_mcp_dashboard_api_consistency() {
     );
     assert_eq!(
         mcp_tools.len(),
-        38,
-        "Should have 38 tools in both interfaces"
+        37,
+        "Should have 37 tools in both interfaces"
     );
 
     // Verify all tool names match

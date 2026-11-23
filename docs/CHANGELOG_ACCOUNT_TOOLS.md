@@ -1,5 +1,9 @@
 # Changelog - MCP Account Management Tools
 
+> **Superseded (November 2026):** `set_current_account` and the session's `current_account_id`
+> were removed. The tool never stored anything; every email tool now takes a required
+> `account_id`. See [ACCOUNT_TOOLS_QUICKSTART.md](ACCOUNT_TOOLS_QUICKSTART.md). This file is kept as history.
+
 **Date:** 2025-10-03  
 **Feature:** Multi-Account Support for MCP Interface  
 **Status:** ✅ Complete and Tested

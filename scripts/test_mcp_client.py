@@ -71,7 +71,6 @@ EXPECTED_TOOLS = [
     "get_folder_stats",
     "search_cached_emails",
     "list_accounts",
-    "set_current_account",
 ]
 
 

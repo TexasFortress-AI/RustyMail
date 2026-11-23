@@ -299,7 +299,6 @@ RustyMail implements the Model Context Protocol (MCP) over stdio and Streamable 
 
 #### Account Management
 - `list_accounts` - List all configured email accounts
-- `set_current_account` - Set the active account for operations
 
 #### Folder Operations
 - `list_folders` - List all folders for current account

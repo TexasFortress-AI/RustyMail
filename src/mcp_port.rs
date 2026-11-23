@@ -15,7 +15,6 @@ use crate::mcp_cache_tools::{
 use crate::prelude::AsyncImapOps;
 use async_trait::async_trait;
 use futures_util::future::BoxFuture;
-use log::info;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::future::Future;
@@ -722,50 +721,15 @@ pub async fn mark_as_unread_tool(
 /// with the dashboard state.
 pub async fn list_accounts_tool(
     _session: Arc<dyn AsyncImapOps>,
-    state: Arc<TokioMutex<McpPortState>>,
+    _state: Arc<TokioMutex<McpPortState>>,
     _params: Option<Value>,
 ) -> Result<Value, JsonRpcError> {
-    let state_guard = state.lock().await;
-
-    // For now, return a simple response indicating the current account
     // The actual account list will be fetched by the dashboard handler
     // which has access to the DashboardState
     Ok(json!({
         "success": true,
         "message": "Account listing requires dashboard integration",
-        "current_account_id": state_guard.current_account_id,
         "note": "Use the dashboard API endpoint /api/dashboard/accounts for full account list"
-    }))
-}
-
-/// Tool for setting the current account context
-/// This sets the account ID in the MCP session state, which will be used
-/// by all subsequent email operations to determine which account to operate on.
-pub async fn set_current_account_tool(
-    _session: Arc<dyn AsyncImapOps>,
-    state: Arc<TokioMutex<McpPortState>>,
-    params: Option<Value>,
-) -> Result<Value, JsonRpcError> {
-    let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
-
-    // Extract account_id from params
-    let account_id = params
-        .get("account_id")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            JsonRpcError::invalid_params("account_id parameter is required as string")
-        })?;
-
-    // Set the current account ID in the state
-    let mut state_guard = state.lock().await;
-    state_guard.current_account_id = Some(account_id.to_string());
-
-    info!("MCP session: Current account set to {}", account_id);
-
-    Ok(json!({
-        "success": true,
-        "message": format!("Current account set to: {}", account_id),
-        "account_id": account_id
     }))
 }
 
@@ -774,7 +738,7 @@ pub async fn set_current_account_tool(
 /// When called through the dashboard API, this will use the SmtpService to send emails.
 pub async fn send_email_tool(
     _session: Arc<dyn AsyncImapOps>,
-    state: Arc<TokioMutex<McpPortState>>,
+    _state: Arc<TokioMutex<McpPortState>>,
     params: Option<Value>,
 ) -> Result<Value, JsonRpcError> {
     let params = params.ok_or_else(|| JsonRpcError::invalid_params("Parameters are required"))?;
@@ -831,11 +795,9 @@ pub async fn send_email_tool(
 
     // This tool is a placeholder - actual SMTP sending is handled by the dashboard handler
     // which has access to SmtpService. See execute_mcp_tool_inner in dashboard/api/handlers.rs
-    let state_guard = state.lock().await;
     Ok(json!({
         "success": false,
         "message": "SMTP sending requires dashboard integration",
-        "current_account_id": state_guard.current_account_id,
         "note": "This tool should be called through the dashboard API /api/dashboard/mcp/execute",
         "params": {
             "to": to,
@@ -930,10 +892,6 @@ pub fn create_mcp_tool_registry() -> McpToolRegistry {
     registry.register(
         "list_accounts",
         DefaultMcpTool::new("list_accounts", list_accounts_tool),
-    );
-    registry.register(
-        "set_current_account",
-        DefaultMcpTool::new("set_current_account", set_current_account_tool),
     );
 
     // SMTP email sending
