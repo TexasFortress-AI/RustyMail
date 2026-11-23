@@ -239,6 +239,14 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         self.session.fetch_emails(uids).await
     }
 
+    pub async fn fetch_flag_changes(
+        &self,
+        folder: &str,
+        since: Option<u64>,
+    ) -> Result<crate::imap::flag_changes::FlagChanges, ImapError> {
+        self.session.fetch_flag_changes(folder, since).await
+    }
+
     pub async fn fetch_flags(&self, uids: &[u32]) -> Result<Vec<(u32, Vec<String>)>, ImapError> {
         self.session.fetch_flags(uids).await
     }

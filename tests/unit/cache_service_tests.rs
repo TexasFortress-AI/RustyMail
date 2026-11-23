@@ -659,6 +659,38 @@ async fn test_cache_stats() {
 
 #[tokio::test]
 #[serial]
+async fn recaching_a_body_without_flags_keeps_the_stored_flags() {
+    // Bodies are fetched without FLAGS, so a re-fetched message carries an
+    // empty list; it must not wipe the flags the flag refresh stored.
+    let test_name = "email_keeps_flags";
+    cleanup_test_db(test_name);
+    let account_id = "test@account.com";
+    let service = setup_service_with_account(test_name, account_id).await;
+
+    let mut read = create_test_email(1, "Subject", "test@example.com");
+    read.flags = vec!["Seen".to_string()];
+    service
+        .cache_email("INBOX", &read, account_id)
+        .await
+        .unwrap();
+    let mut refetched = create_test_email(1, "Subject", "test@example.com");
+    refetched.flags = Vec::new(); // as a body fetch returns it
+    service
+        .cache_email("INBOX", &refetched, account_id)
+        .await
+        .unwrap();
+
+    let cached = service
+        .get_email_by_uid_for_account("INBOX", 1, account_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(cached.flags, vec!["Seen".to_string()]);
+    cleanup_test_db(test_name);
+}
+
+#[tokio::test]
+#[serial]
 async fn test_email_update_on_conflict() {
     let test_name = "email_update";
     cleanup_test_db(test_name);

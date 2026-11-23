@@ -8,6 +8,9 @@
 //! Its own test binary, because it installs a process-wide logger that
 //! captures every record.
 
+#[path = "integration/fake_imap_flags.rs"]
+#[allow(dead_code)]
+mod fake_imap_flags;
 #[path = "integration/fake_imap_server.rs"]
 #[allow(dead_code)]
 mod fake_imap_server;

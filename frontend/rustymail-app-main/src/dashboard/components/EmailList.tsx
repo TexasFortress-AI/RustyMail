@@ -927,7 +927,7 @@ const EmailList: React.FC<EmailListProps> = ({
                                   : 'No recipients')
                               : (email.from_name || email.from_address || 'Unknown sender')}
                           </span>
-                          {email.flags.includes('\\Seen') ? null : (
+                          {email.flags.includes('Seen') ? null : (
                             <Badge variant="default" className="text-xs">Unread</Badge>
                           )}
                         </div>
