@@ -45,7 +45,6 @@ fn test_legacy_registry_contains_expected_tools() {
         "get_folder_stats",
         "search_cached_emails",
         "list_accounts",
-        "set_current_account",
         "send_email",
         "list_email_attachments",
         "download_email_attachments",
@@ -67,8 +66,8 @@ fn test_legacy_registry_tool_count() {
     let registry = rustymail::mcp_port::create_mcp_tool_registry();
     let count = registry.keys().count();
     assert_eq!(
-        count, 24,
-        "Legacy registry should have exactly 24 tools, found {}",
+        count, 23,
+        "Legacy registry should have exactly 23 tools, found {}",
         count
     );
 }
@@ -95,8 +94,8 @@ fn test_low_level_tools_jsonrpc_format() {
     let tools = rustymail::dashboard::api::handlers::get_mcp_tools_jsonrpc_format();
     assert_eq!(
         tools.len(),
-        38,
-        "Should have 38 low-level tools, found {}",
+        37,
+        "Should have 37 low-level tools, found {}",
         tools.len()
     );
 }

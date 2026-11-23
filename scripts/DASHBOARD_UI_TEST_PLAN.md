@@ -140,7 +140,7 @@ mcp__puppeteer__puppeteer_screenshot(name="assistant-complex-query")
   * expunge, list_cached_emails
   * get_email_by_uid, get_email_by_index
   * count_emails_in_folder, get_folder_stats
-  * search_cached_emails, list_accounts, set_current_account
+  * search_cached_emails, list_accounts
 
 **Puppeteer Commands:**
 ```python

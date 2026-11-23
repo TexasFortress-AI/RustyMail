@@ -1,5 +1,9 @@
 # RustyMail Complete Workflow Integration Tests
 
+> **Superseded (November 2026):** `set_current_account` and the session's `current_account_id`
+> were removed. The tool never stored anything; every email tool now takes a required
+> `account_id`. See [ACCOUNT_TOOLS_QUICKSTART.md](../docs/ACCOUNT_TOOLS_QUICKSTART.md). The account-switching scenarios below are obsolete.
+
 ## Overview
 
 This document defines comprehensive end-to-end workflow tests that validate complete email operations from MCP client through the dashboard UI to the IMAP backend (Task 69.6). These tests ensure cross-interface consistency and proper data flow through all system layers.

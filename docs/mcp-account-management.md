@@ -1,5 +1,9 @@
 # MCP Account Management Implementation
 
+> **Superseded (November 2026):** `set_current_account` and the session's `current_account_id`
+> were removed. The tool never stored anything; every email tool now takes a required
+> `account_id`. See [ACCOUNT_TOOLS_QUICKSTART.md](ACCOUNT_TOOLS_QUICKSTART.md). This file is kept as history.
+
 ## Overview
 
 This document describes the implementation of account management tools for the RustyMail MCP (Model Context Protocol) server. These tools enable multi-account support through the MCP interface, mirroring the account context pattern used in the web UI.
