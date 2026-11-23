@@ -20,6 +20,7 @@ use async_imap::{
 // Local types
 use crate::imap::{
     error::ImapError,
+    flag_changes::{self, FlagChanges},
     targeted_expunge,
     types::{Email, FlagOperation, MailboxInfo, SearchCriteria},
 };
@@ -59,6 +60,17 @@ pub trait AsyncImapOps: Send + Sync + Debug {
     async fn fetch_emails(&self, uids: &[u32]) -> Result<Vec<Email>, ImapError>;
     /// Fetch only FLAGS for the given UIDs (lightweight, no body download).
     async fn fetch_flags(&self, uids: &[u32]) -> Result<Vec<(u32, Vec<String>)>, ImapError>;
+    /// Select `folder` and fetch the flags changed since `since` (a
+    /// HIGHESTMODSEQ), or all of them; see `flag_changes`.
+    async fn fetch_flag_changes(
+        &self,
+        _folder: &str,
+        _since: Option<u64>,
+    ) -> Result<FlagChanges, ImapError> {
+        Err(ImapError::Other(
+            "fetch_flag_changes is not supported by this session".to_string(),
+        ))
+    }
     /// Fetch only the Message-ID for a UID (lightweight, no body download).
     async fn fetch_message_id(&self, _uid: u32) -> Result<Option<String>, ImapError> {
         Ok(None)
@@ -560,6 +572,18 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
             );
         }
         Ok(emails)
+    }
+
+    async fn fetch_flag_changes(
+        &self,
+        folder: &str,
+        since: Option<u64>,
+    ) -> Result<FlagChanges, ImapError> {
+        let mut session_guard = self.session.lock().await;
+        let result = flag_changes::fetch_flag_changes(&mut session_guard, folder, since).await;
+        // It selected `folder`; after a failure nothing may be selected.
+        *self.current_folder.lock().await = result.as_ref().ok().map(|_| folder.to_string());
+        result
     }
 
     async fn fetch_flags(&self, uids: &[u32]) -> Result<Vec<(u32, Vec<String>)>, ImapError> {

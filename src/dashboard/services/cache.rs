@@ -503,7 +503,9 @@ impl CacheService {
                 date = excluded.date,
                 internal_date = excluded.internal_date,
                 size = excluded.size,
-                flags = excluded.flags,
+                -- Bodies are fetched without FLAGS: an empty list must not wipe
+                -- the flags the flag refresh stored (cache_flags).
+                flags = CASE WHEN excluded.flags = '[]' THEN emails.flags ELSE excluded.flags END,
                 headers = excluded.headers,
                 body_text = excluded.body_text,
                 body_html = excluded.body_html,

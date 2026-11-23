@@ -17,7 +17,9 @@ pub mod dashboard_auth; // Every /api/dashboard route requires the API key
 pub mod dashboard_session; // Browser login: HttpOnly session cookie, same-origin only
 pub mod dashboard_smtp_attachments; // Dashboard SMTP and attachment endpoints integration tests
 pub mod dashboard_static_site; // Backend serves the built dashboard at /
+pub mod fake_imap_flags; // \Seen and CONDSTORE for the fake IMAP server
 pub mod fake_imap_server; // TLS fake IMAP server shared by account-routing tests
+pub mod flag_changes; // FLAGS-only refresh with CONDSTORE
 pub mod mcp_http; // MCP HTTP endpoint integration tests
 pub mod mcp_stdio; // MCP stdio proxy integration tests
 pub mod message_id_lookup; // finding a message by Message-ID without SEARCH HEADER

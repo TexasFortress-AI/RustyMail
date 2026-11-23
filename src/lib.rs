@@ -14,6 +14,7 @@
 pub mod api;
 pub mod backoff;
 pub mod batch_synopsis;
+pub mod cache_flags;
 pub mod config;
 pub mod connection_pool;
 pub mod dashboard;

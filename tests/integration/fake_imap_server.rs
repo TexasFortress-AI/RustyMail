@@ -49,11 +49,16 @@ pub struct FakeMailbox {
     pub internal_dates: HashMap<String, String>,
     /// Message-IDs carrying the \Answered flag (it moves with the message).
     pub answered: HashSet<String>,
+    /// \Seen, mod-sequences and CONDSTORE (see fake_imap_flags).
+    pub flags: super::fake_imap_flags::FlagState,
 }
 
 impl FakeMailbox {
     fn handle(&mut self, selected: &mut String, tag: &str, command: &str) -> String {
         self.commands.push(command.to_string());
+        if let Some(reply) = self.flags_reply(selected, tag, command) {
+            return reply;
+        }
         let upper = command.to_uppercase();
         if self.move_behavior == MoveBehavior::RefuseCopyAndMove
             && (upper.starts_with("UID MOVE ") || upper.starts_with("UID COPY "))
@@ -358,6 +363,7 @@ pub async fn spawn_fake_imap(messages: Vec<(u32, &str)>) -> (u16, SharedMailbox)
         raw_bodies: HashMap::new(),
         internal_dates: HashMap::new(),
         answered: HashSet::new(),
+        flags: Default::default(),
     }));
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

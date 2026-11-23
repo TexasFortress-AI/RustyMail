@@ -25,9 +25,11 @@ use chrono::Utc;
 use clap::Parser;
 use log::{debug, error, info, warn};
 use rustymail::backoff::BackoffPolicy;
+use rustymail::cache_flags::FlagCache;
 use rustymail::dashboard::services::cache_prune::{prune_missing_folders, prune_missing_messages};
 use rustymail::dashboard::services::sync_backoff::SyncBackoffStore;
 use rustymail::imap::account_connect::{load_active_accounts, ImapAccount};
+use rustymail::imap::error::ImapError;
 use sqlx::SqlitePool;
 use std::fs::File;
 use std::io::Write as IoWrite;
@@ -313,6 +315,15 @@ async fn sync_account(
         }
     }
 
+    refresh_flags(
+        pool,
+        &client,
+        &account.email_address,
+        &folders_to_sync,
+        force,
+    )
+    .await;
+
     // Log out so the server closes the IMAP session cleanly
     if let Err(e) = client.logout().await {
         warn!("Failed to logout IMAP session: {}", e);
@@ -320,6 +331,53 @@ async fn sync_account(
 
     info!("Finished syncing account: {}", account.email_address);
     Ok(())
+}
+
+/// Bring the cached flags (read, answered, flagged...) in step with the
+/// server, after the messages themselves are synced. With CONDSTORE only what
+/// changed since the last refresh is fetched (nothing when nothing changed);
+/// `force` fetches everything. A folder the server refuses is skipped; any
+/// other failure can leave the connection unusable (see
+/// `imap::flag_changes`), so it ends this account's flag refresh.
+async fn refresh_flags(
+    pool: &SqlitePool,
+    client: &rustymail::imap::client::ImapClient<rustymail::imap::session::AsyncImapSessionWrapper>,
+    account_email: &str,
+    folders: &[String],
+    force: bool,
+) {
+    let cache = FlagCache::new(pool);
+    for folder in folders {
+        let since = if force {
+            None
+        } else {
+            cache
+                .highest_modseq(account_email, folder)
+                .await
+                .unwrap_or(None)
+        };
+        let changes = match client.fetch_flag_changes(folder, since).await {
+            Ok(changes) => changes,
+            // The server refused this folder (e.g. a \Noselect parent such as
+            // "[Gmail]"): the connection is fine, go on to the next one.
+            Err(e @ (ImapError::Operation(_) | ImapError::BadResponse(_))) => {
+                debug!("Flags of {} not refreshed: {}", folder, e);
+                continue;
+            }
+            Err(e) => {
+                warn!(
+                    "Could not refresh flags of {} for {}: {}; skipping its remaining folders",
+                    folder, account_email, e
+                );
+                return;
+            }
+        };
+        match cache.save(account_email, folder, &changes).await {
+            Ok(0) => {}
+            Ok(changed) => info!("Updated the flags of {} message(s) in {}", changed, folder),
+            Err(e) => warn!("Could not save the flags of {}: {}", folder, e),
+        }
+    }
 }
 
 /// Sync a single folder for an account
@@ -508,6 +566,12 @@ async fn check_uidvalidity_change(
                     .await?;
 
                 sqlx::query("DELETE FROM sync_state WHERE folder_id = ?")
+                    .bind(fid)
+                    .execute(pool)
+                    .await?;
+
+                // Mod-sequences restart with the new mailbox: refresh all flags.
+                sqlx::query("UPDATE folders SET highest_modseq = NULL WHERE id = ?")
                     .bind(fid)
                     .execute(pool)
                     .await?;
@@ -758,7 +822,9 @@ async fn cache_email(
             date = excluded.date,
             internal_date = excluded.internal_date,
             size = excluded.size,
-            flags = excluded.flags,
+            -- Bodies are fetched without FLAGS: an empty list must not wipe
+            -- the flags the flag refresh stored (cache_flags).
+            flags = CASE WHEN excluded.flags = '[]' THEN emails.flags ELSE excluded.flags END,
             headers = excluded.headers,
             body_text = excluded.body_text,
             body_html = excluded.body_html,
