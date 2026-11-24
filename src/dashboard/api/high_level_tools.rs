@@ -452,6 +452,24 @@ pub async fn execute_high_level_tool(
     tool_name: &str,
     arguments: Value,
 ) -> Value {
+    if tool_name == "process_email_instructions" {
+        debug!(
+            "Executing high-level tool: {} with args: {:?}",
+            tool_name, arguments
+        );
+        return handle_process_email_instructions(state, arguments).await;
+    }
+    execute_high_level_tool_without_agent(state, tool_name, arguments).await
+}
+
+/// Every high-level tool except the agent itself. The agent runs its tools
+/// through this (via `tool_dispatch`), so it can never start another agent,
+/// and its future does not contain itself.
+pub async fn execute_high_level_tool_without_agent(
+    state: &DashboardState,
+    tool_name: &str,
+    arguments: Value,
+) -> Value {
     debug!(
         "Executing high-level tool: {} with args: {:?}",
         tool_name, arguments
@@ -483,8 +501,7 @@ pub async fn execute_high_level_tool(
                 .await
         }
 
-        // Agentic/drafting tools
-        "process_email_instructions" => handle_process_email_instructions(state, arguments).await,
+        // Drafting tools (the agent itself is in execute_high_level_tool)
         "draft_reply" => handle_draft_reply(state, arguments).await,
         "draft_email" => handle_draft_email(state, arguments).await,
 
