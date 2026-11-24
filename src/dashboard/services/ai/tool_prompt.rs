@@ -18,7 +18,6 @@ pub fn describe_tools(tools: &[Value]) -> String {
     prompt.push_str("You have access to the following tools. To use a tool, respond with:\n");
     prompt.push_str("TOOL_CALL: tool_name {\"param1\": \"value1\", \"param2\": \"value2\"}\n");
     prompt.push_str("Use exactly the parameter names listed under each tool.\n\n");
-    prompt.push_str("In your first message, you MUST greet the user and then list ALL of the tools available in a numbered list. Do not add any extra commentary or summarization. Just the list.\n\n");
     for (i, tool) in tools.iter().enumerate() {
         let text = |key: &str, default: &'static str| {
             tool.get(key)

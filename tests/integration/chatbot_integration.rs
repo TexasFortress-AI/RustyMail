@@ -115,6 +115,9 @@ This shouldn't parse."#;
             assert!(prompt.contains(line), "missing {line:?} in {prompt}");
         }
         assert!(!prompt.contains("   - body"), "no invented parameters");
+        // The dashboard shows the tools beside the chat; the model must not
+        // spend its first reply listing them.
+        assert!(!prompt.contains("list ALL of the tools"), "{prompt}");
     }
 
     /// Test AiService initialization in mock mode
