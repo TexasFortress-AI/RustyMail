@@ -33,6 +33,9 @@ const SHARED_MAILBOX_DOMAINS: &[&str] = &[
     "zoho.com",
     "fastmail.com",
     "nifty.com",
+    // Apple's Hide My Email relay (privaterelay.appleid.com): every sender
+    // gets its own relay address, so the domain says nothing about who it is.
+    "appleid.com",
 ];
 
 /// Second-level labels under which organisations register (example.co.uk).

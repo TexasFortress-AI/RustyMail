@@ -127,3 +127,18 @@ fn a_trusted_document_from_a_new_counterparty_waits_for_the_owner() {
         Bucket::Credit
     );
 }
+
+#[test]
+fn each_apple_hide_my_email_sender_is_its_own_counterparty() {
+    // Approving one relayed receipt must not vouch for every sender that
+    // uses Apple's relay: each gets its own address there.
+    let receipt = "receipts_at_shop_test_abc123@privaterelay.appleid.com";
+    let stranger = "billing_at_evil_test_xyz789@privaterelay.appleid.com";
+    assert_eq!(history_key(receipt).as_deref(), Some(receipt));
+    let known = KnownPeople::default().with_approved([receipt]);
+    assert!(known.deals_with(receipt));
+    assert!(
+        !known.deals_with(stranger),
+        "another relay sender is a stranger"
+    );
+}
