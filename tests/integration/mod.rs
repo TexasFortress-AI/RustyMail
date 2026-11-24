@@ -11,6 +11,7 @@ pub mod api_auth;
 pub mod api_errors;
 pub mod api_rest;
 pub mod api_validation;
+pub mod cache_after_move; // Moves and deletes drop the source folder's cached rows
 pub mod chatbot_integration; // Email Assistant chatbot MCP client integration tests
 pub mod connection_pool; // Connection pool integration tests
 pub mod dashboard; // Dashboard API endpoints integration tests

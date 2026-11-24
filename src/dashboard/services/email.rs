@@ -528,6 +528,23 @@ impl EmailService {
         Ok(client)
     }
 
+    /// Drop cached rows of messages that just left `folder` on the server, so
+    /// the cache does not show them there until the next full sync.
+    async fn forget_cached(&self, account_email: &str, folder: &str, uids: &[u32]) {
+        let Some(cache) = &self.cache_service else {
+            return;
+        };
+        if let Err(e) = cache
+            .delete_emails_by_uids(folder, uids, account_email)
+            .await
+        {
+            warn!(
+                "Failed to drop cached messages {:?} in {}: {}",
+                uids, folder, e
+            );
+        }
+    }
+
     /// Log out so the server closes the IMAP session cleanly
     async fn logout_session(client: &AccountImapClient) {
         if let Err(e) = client.logout().await {
@@ -573,8 +590,9 @@ impl EmailService {
         let result = Self::verified_move(&client, uid, from_folder, to_folder).await;
         Self::logout_session(&client).await;
         let destination_verified = result?;
+        self.forget_cached(&account.email_address, from_folder, &[uid])
+            .await;
 
-        // Note: Cache will be invalidated naturally on next access
         info!(
             "Successfully moved email {} from {} to {} for account {}",
             uid, from_folder, to_folder, account_id
@@ -619,6 +637,8 @@ impl EmailService {
             }
         }
         Self::logout_session(&client).await;
+        self.forget_cached(&account.email_address, from_folder, &moved)
+            .await;
 
         if !failures.is_empty() {
             return Err(ImapError::Other(format!(
@@ -782,6 +802,7 @@ impl EmailService {
         // every other message in the folder already flagged \Deleted.
         client.select_folder(folder).await?;
         client.delete_messages(uids).await?;
+        self.forget_cached(account_email, folder, uids).await;
 
         // Log out so the server closes the IMAP session cleanly
         if let Err(e) = client.logout().await {

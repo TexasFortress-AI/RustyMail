@@ -21,7 +21,7 @@ use tempfile::TempDir;
 use tokio::sync::Mutex as TokioMutex;
 
 const ACCOUNT_A: &str = "default-box@example.test";
-const ACCOUNT_B: &str = "named-box@example.test";
+pub(super) const ACCOUNT_B: &str = "named-box@example.test";
 
 fn fake_account(email: &str, port: u16) -> Account {
     Account {
@@ -52,15 +52,15 @@ fn fake_account(email: &str, port: u16) -> Account {
 }
 
 /// Two accounts on separate fake servers, plus a default session that must never be used.
-struct RoutingHarness {
-    service: EmailService,
+pub(super) struct RoutingHarness {
+    pub(super) service: EmailService,
     box_a: SharedMailbox,
-    box_b: SharedMailbox,
+    pub(super) box_b: SharedMailbox,
     default_session_uses: Arc<AtomicUsize>,
-    _config_dir: TempDir,
+    pub(super) _config_dir: TempDir,
 }
 
-async fn harness(messages_in_b: Vec<(u32, &str)>) -> RoutingHarness {
+pub(super) async fn harness(messages_in_b: Vec<(u32, &str)>) -> RoutingHarness {
     std::env::set_var("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS", "true");
     let config_dir = TempDir::new().unwrap();
     let config_path = config_dir.path().join("accounts.json");
