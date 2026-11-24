@@ -172,6 +172,24 @@ impl TriageStore {
         Ok(rows.iter().map(|r| r.get::<i64, _>("uid") as u32).collect())
     }
 
+    /// Message-IDs (without angle brackets) of mail triage itself moved to
+    /// Spam, as proposed or as the owner corrected it. The spam-folder review
+    /// leaves these alone: they are there by the owner's own reviewed decision.
+    pub async fn filed_as_spam(&self, account_id: &str) -> Result<HashSet<String>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT message_id FROM triage_proposals
+             WHERE account_id = ? AND applied_at IS NOT NULL AND message_id IS NOT NULL
+               AND coalesce(correction, bucket) = 'Spam'",
+        )
+        .bind(account_id)
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| bare_message_id(&r.get::<String, _>("message_id")))
+            .collect())
+    }
+
     /// Proposals not yet applied, newest first, optionally for one account.
     pub async fn pending_proposals(
         &self,
@@ -290,4 +308,12 @@ fn stored_proposal(r: &SqliteRow) -> StoredProposal {
         apply_error: r.get("apply_error"),
         created_at: r.get::<String, _>("created_at"),
     }
+}
+
+/// A Message-ID without surrounding whitespace or angle brackets.
+pub fn bare_message_id(id: &str) -> String {
+    id.trim()
+        .trim_start_matches('<')
+        .trim_end_matches('>')
+        .to_string()
 }
