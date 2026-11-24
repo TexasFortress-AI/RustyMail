@@ -116,6 +116,20 @@ impl ModelGuards {
         (message.new_counterparty && trusted_document).then_some(Hold::NewSender)
     }
 
+    /// `hold`, for the spam folder: there a model's Keep or Needs Reply for
+    /// someone the owner has never dealt with waits too. Mail caught as spam
+    /// that asks to be read or answered is mostly a lure ("MatterFi file",
+    /// "acquisition offer"); rescuing it puts it in the INBOX.
+    pub fn hold_in_spam(&self, proposal: &Proposal, message: &TriageMessage) -> Option<Hold> {
+        let asks_for_the_owner = matches!(proposal.bucket, Bucket::Keep | Bucket::NeedsReply);
+        self.hold(proposal, message).or_else(|| {
+            (proposal.source == ProposalSource::Model
+                && message.new_counterparty
+                && asks_for_the_owner)
+                .then_some(Hold::NewSender)
+        })
+    }
+
     /// A message without a date counts as old: it cannot show it is recent.
     fn too_old(&self, message: &TriageMessage, now: DateTime<Utc>) -> bool {
         message
