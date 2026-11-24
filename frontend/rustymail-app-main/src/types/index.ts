@@ -75,6 +75,18 @@ export interface ChatbotResponse {
   conversation_id: string;
   emailData?: EmailData;
   followupSuggestions?: string[];
+  pendingActions?: PendingAction[];
+}
+
+/** A call the assistant's model made that only the owner can run (send,
+ * delete, move...). It was not run; the owner confirms it with a click. */
+export interface PendingAction {
+  id: string;
+  tool: string;
+  variant: string;
+  parameters: Record<string, unknown>;
+  /** The messages it acts on, described by the server: "uid N: sender, subject". */
+  affected: string[];
 }
 
 export interface ChatMessage {
@@ -84,6 +96,7 @@ export interface ChatMessage {
   timestamp: string;
   emailData?: EmailData;
   followupSuggestions?: string[];
+  pendingActions?: PendingAction[];
 }
 
 export interface EmailData {

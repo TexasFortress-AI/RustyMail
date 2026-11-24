@@ -4484,7 +4484,8 @@ pub async fn stream_chatbot(
                         "text": response.text,
                         "conversation_id": response.conversation_id,
                         "email_data": response.email_data,
-                        "followup_suggestions": response.followup_suggestions
+                        "followup_suggestions": response.followup_suggestions,
+                        "pending_actions": response.pending_actions
                     })
                     .to_string(),
                 )

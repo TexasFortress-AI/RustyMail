@@ -4,6 +4,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 pub mod agent_executor;
+pub mod chat_tool_gate;
 pub mod email_drafter;
 pub mod local_only;
 pub mod model_config;
@@ -21,10 +22,11 @@ use crate::dashboard::api::models::{
 use crate::dashboard::services::ai::nlp_processor::NlpProcessor;
 use crate::dashboard::services::ai::provider::AiChatMessage;
 use crate::dashboard::services::ai::provider_manager::ProviderManager;
+use chat_tool_gate::ChatToolOutcome;
 use log::{debug, error, info, warn};
 use reqwest::Client;
 use serde_json::{json, Value};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use thiserror::Error;
 use tokio::sync::RwLock;
@@ -352,6 +354,18 @@ impl AiService {
         // Agentic loop: AI → tool calls → execute → feed back → repeat
         let max_iterations = 3;
         let mut final_response = String::new();
+        // What the model may call (the toolset its prompt advertised), and
+        // the calls held for the owner (chat_tool_gate).
+        let offered: HashSet<String> = tools
+            .iter()
+            .filter_map(|t| t.get("name").and_then(Value::as_str).map(str::to_string))
+            .collect();
+        let low_level_tools: HashSet<String> =
+            crate::dashboard::api::handlers::get_mcp_tools_jsonrpc_format()
+                .iter()
+                .filter_map(|t| t.get("name").and_then(Value::as_str).map(str::to_string))
+                .collect();
+        let mut pending_actions = Vec::new();
 
         for iteration in 0..max_iterations {
             info!(
@@ -400,18 +414,25 @@ impl AiService {
             // Execute tool calls and collect results
             let mut tool_results = Vec::new();
             for (tool_name, params) in tool_calls {
-                info!("Executing tool: {} with params: {}", tool_name, params);
-
-                match self.call_mcp_tool(&tool_name, params).await {
-                    Ok(result) => {
-                        tool_results.push(format!(
-                            "TOOL_RESULT {}: {}",
-                            tool_name,
-                            serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string())
-                        ));
+                info!("Model called tool: {} with params: {}", tool_name, params);
+                let outcome = chat_tool_gate::handle_call(
+                    &tool_name,
+                    params,
+                    &offered,
+                    &low_level_tools,
+                    |name, args| async move { self.call_mcp_tool(&name, args).await },
+                )
+                .await;
+                match outcome {
+                    ChatToolOutcome::Ran(line) => tool_results.push(line),
+                    ChatToolOutcome::AwaitingOwner(action, line) => {
+                        warn!("Held '{}' for the owner's confirmation", tool_name);
+                        pending_actions.push(action);
+                        tool_results.push(line);
                     }
-                    Err(e) => {
-                        tool_results.push(format!("TOOL_ERROR {}: {}", tool_name, e));
+                    ChatToolOutcome::Refused(line) => {
+                        warn!("Refused '{}': not offered in this conversation", tool_name);
+                        tool_results.push(line);
                     }
                 }
             }
@@ -460,6 +481,7 @@ impl AiService {
             conversation_id,
             email_data: None, // No longer using hardcoded email context
             followup_suggestions: Some(suggestions),
+            pending_actions: (!pending_actions.is_empty()).then_some(pending_actions),
         })
     }
 
