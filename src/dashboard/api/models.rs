@@ -120,6 +120,10 @@ pub struct ChatbotResponse {
     pub email_data: Option<EmailData>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub followup_suggestions: Option<Vec<String>>,
+    /// Calls the model made that only the owner can run (send, delete,
+    /// move...): not run, shown with a Confirm button.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_actions: Option<Vec<crate::dashboard::services::ai::chat_tool_gate::PendingAction>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

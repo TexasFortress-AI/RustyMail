@@ -83,12 +83,13 @@ export function useSSEChatbot(options: StreamChatbotOptions = {}) {
                   options.onContent?.(parsed.text, false);
 
                   // When we get the full content, call onComplete
-                  if (parsed.email_data || parsed.followup_suggestions) {
+                  if (parsed.email_data || parsed.followup_suggestions || parsed.pending_actions) {
                     options.onComplete?.({
                       text: parsed.text,
                       conversation_id: parsed.conversation_id,
                       emailData: parsed.email_data,
-                      followupSuggestions: parsed.followup_suggestions
+                      followupSuggestions: parsed.followup_suggestions,
+                      pendingActions: parsed.pending_actions
                     });
                   }
                   break;

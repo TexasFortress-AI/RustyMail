@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useChatbotMutation, useMcpTools } from '@/dashboard/api/hooks';
 import { useSSEChatbot } from '@/dashboard/api/useSSEChatbot';
+import { PendingActions } from '@/dashboard/components/PendingActions';
 import { ChatMessage, ChatbotQuery, ChatbotResponse } from '@/types';
 import { Send, Bot, User, Loader2, Mail, Folder, Download, Copy, Trash2, Bug, CheckCircle, AlertCircle, XCircle, ChevronDown, ChevronUp, Settings } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
@@ -113,7 +114,8 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
           ...streamingMessage,
           text: response.text,
           emailData: response.emailData,
-          followupSuggestions: response.followupSuggestions
+          followupSuggestions: response.followupSuggestions,
+          pendingActions: response.pendingActions
         };
         setMessages(prev => {
           // Replace the streaming message with the final one
@@ -264,7 +266,8 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
               text: response.text,
               timestamp: new Date().toISOString(),
               emailData: response.emailData,
-              followupSuggestions: response.followupSuggestions
+              followupSuggestions: response.followupSuggestions,
+          pendingActions: response.pendingActions
             };
 
             setMessages(prev => [...prev, aiMessage]);
@@ -525,6 +528,10 @@ const ChatbotPanel: React.FC<ChatbotPanelProps> = ({ currentFolder, accountId })
                     <div className="text-sm whitespace-pre-line">
                       {message.text}
                     </div>
+
+                    {message.pendingActions && message.pendingActions.length > 0 && (
+                      <PendingActions actions={message.pendingActions} />
+                    )}
                     
                     {/* Email data display */}
                     {message.emailData && (

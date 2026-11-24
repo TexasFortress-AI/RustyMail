@@ -210,6 +210,7 @@ export const apiClient = {
       conversationId: response.conversation_id,
       emailData: response.email_data,
       followupSuggestions: response.followup_suggestions || [],
+      pendingActions: response.pending_actions || [],
     };
   },
 

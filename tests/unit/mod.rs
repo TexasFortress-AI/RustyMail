@@ -36,6 +36,7 @@ pub mod backoff_tests;
 pub mod cache_flags_tests;
 pub mod cache_prune_tests;
 pub mod cache_service_tests;
+pub mod chat_tool_gate_tests;
 pub mod child_reaper_tests;
 pub mod hardcoded_detection;
 pub mod imap_keepalive_tests;
