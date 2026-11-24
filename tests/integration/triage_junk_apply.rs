@@ -82,12 +82,9 @@ async fn applying_the_spam_folder_rescues_reviewed_mail_and_keeps_it_out() {
         .iter()
         .find(|p| p.folder == "INBOX" && p.subject == "You won")
         .expect("the INBOX pass saw the rescued message");
-    assert_eq!(again.bucket, "Keep");
-    assert!(
-        again
-            .reason
-            .starts_with("rescued from spam earlier; model now says Spam"),
-        "{}",
-        again.reason
-    );
+    // The owner's Keep makes the sender kept (#158), which already overrules
+    // the Spam verdict; the rescue pin (tests/unit/triage_pinned_tests.rs)
+    // covers rescues without such a correction.
+    assert_eq!(again.bucket, "Keep", "{}", again.reason);
+    assert!(again.reason.contains("model said Spam"), "{}", again.reason);
 }
