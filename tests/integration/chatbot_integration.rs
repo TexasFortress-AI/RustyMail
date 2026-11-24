@@ -74,32 +74,47 @@ This shouldn't parse."#;
         assert!(response.contains("broken_tool"));
     }
 
-    /// Test the format_tools_for_prompt method
+    /// The model is shown each tool's parameters, so it uses the real names
+    /// (it guessed "body" for draft_email, failed and retried before).
     #[test]
     fn test_format_tools_for_prompt() {
-        let _tools = [
+        use rustymail::dashboard::services::ai::tool_prompt::describe_tools;
+        let tools = [
             json!({
-                "name": "count_emails_in_folder",
-                "description": "Count emails in a specific folder",
+                "name": "draft_email",
+                "description": "Generate a draft email from scratch using AI",
                 "parameters": {
-                    "account_id": "Email account identifier",
-                    "folder": "Folder name (e.g., INBOX)"
+                    "account_id": "REQUIRED. Email address of the account",
+                    "context": "Context or instructions for the email content",
+                    "subject": "Email subject",
+                    "to": "Recipient email address"
                 }
             }),
             json!({
                 "name": "list_folders",
-                "description": "List all available folders",
-                "parameters": {
-                    "account_id": "Email account identifier"
+                "description": "List all email folders in the account",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {"account_id": {"type": "string", "description": "Email address"}},
+                    "required": ["account_id"]
                 }
             }),
         ];
-
-        // We'll need to test this through a public interface or make it pub(crate)
-        // For now, verify the expected format structure
-        let expected_format = "TOOL_CALL: tool_name {\"param1\": \"value1\"}";
-        assert!(expected_format.contains("TOOL_CALL:"));
-        assert!(expected_format.contains("{\""));
+        let prompt = describe_tools(&tools);
+        assert!(prompt.contains("AVAILABLE TOOLS (2 total)"), "{prompt}");
+        assert!(
+            prompt.contains("1. **draft_email**: Generate a draft email"),
+            "{prompt}"
+        );
+        for line in [
+            "   - context: Context or instructions for the email content",
+            "   - to: Recipient email address",
+            "   - account_id: REQUIRED. Email address of the account",
+            "   - account_id: REQUIRED. Email address",
+        ] {
+            assert!(prompt.contains(line), "missing {line:?} in {prompt}");
+        }
+        assert!(!prompt.contains("   - body"), "no invented parameters");
     }
 
     /// Test AiService initialization in mock mode
