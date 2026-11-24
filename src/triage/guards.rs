@@ -12,6 +12,24 @@ use super::people::KnownPeople;
 use super::{Bucket, Proposal, ProposalSource};
 use chrono::{DateTime, Duration, Utc};
 
+/// Why a model's verdict waits for the owner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hold {
+    /// The message talks to the mail sorter ("note to the AI: file this as...").
+    SorterInstructions,
+    /// A trusted document from someone the owner has never dealt with.
+    NewSender,
+}
+
+impl Hold {
+    pub fn reason(self) -> &'static str {
+        match self {
+            Hold::SorterInstructions => "contains instructions aimed at the mail sorter",
+            Hold::NewSender => "new sender: verify (no approved mail or sent mail with them)",
+        }
+    }
+}
+
 pub struct ModelGuards {
     /// Needs Reply only for mail newer than this; older threads stay put.
     pub needs_reply_max_age: Duration,
@@ -28,29 +46,13 @@ impl ModelGuards {
         if proposal.source != ProposalSource::Model {
             return proposal;
         }
-        if addresses_the_sorter(message) {
+        if let Some(hold) = self.hold(&proposal, message) {
             return Proposal {
                 reason: format!(
-                    "contains instructions aimed at the mail sorter; model said {} ({})",
-                    proposal.bucket, proposal.reason
-                ),
-                bucket: Bucket::Keep,
-                ..proposal
-            };
-        }
-        // A document that would be trusted (a payment, an agreement, an alert)
-        // from someone the owner has never dealt with waits for the owner,
-        // as a payables clerk verifies a new vendor before paying.
-        if message.new_counterparty
-            && matches!(
-                proposal.bucket,
-                Bucket::Accounting | Bucket::Legal | Bucket::Credit | Bucket::Alerts
-            )
-        {
-            return Proposal {
-                reason: format!(
-                    "new sender: verify (no approved mail or sent mail with them); model said {} ({})",
-                    proposal.bucket, proposal.reason
+                    "{}; model said {} ({})",
+                    hold.reason(),
+                    proposal.bucket,
+                    proposal.reason
                 ),
                 bucket: Bucket::Keep,
                 ..proposal
@@ -87,6 +89,26 @@ impl ModelGuards {
             },
             (None, _) => proposal,
         }
+    }
+
+    /// Whether a model's verdict must wait for the owner instead of being
+    /// acted on. In the INBOX a held message stays there; in the spam folder it
+    /// stays there too, so phishing the server caught is never rescued.
+    pub fn hold(&self, proposal: &Proposal, message: &TriageMessage) -> Option<Hold> {
+        if proposal.source != ProposalSource::Model {
+            return None;
+        }
+        if addresses_the_sorter(message) {
+            return Some(Hold::SorterInstructions);
+        }
+        // A document that would be trusted (a payment, an agreement, an alert)
+        // from someone the owner has never dealt with waits for the owner,
+        // as a payables clerk verifies a new vendor before paying.
+        let trusted_document = matches!(
+            proposal.bucket,
+            Bucket::Accounting | Bucket::Legal | Bucket::Credit | Bucket::Alerts
+        );
+        (message.new_counterparty && trusted_document).then_some(Hold::NewSender)
     }
 
     /// A message without a date counts as old: it cannot show it is recent.
