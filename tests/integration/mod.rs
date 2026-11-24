@@ -6,6 +6,7 @@
 // Integration tests for RustyMail
 // This module organizes all integration tests
 
+pub mod agent_tool_gate; // the agent cannot send, delete or move mail
 pub mod api_auth;
 pub mod api_errors;
 pub mod api_rest;

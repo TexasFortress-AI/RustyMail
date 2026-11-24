@@ -450,7 +450,7 @@ Best for **AI-powered workflows** with natural language email management and red
 
 #### AI-Powered Tools
 
-- **`process_email_instructions`** - Execute complex email workflows from natural language
+- **`process_email_instructions`** - Answer questions and prepare work from natural language. The agent reads, searches and drafts; it cannot send, move, delete, flag or rename mail (an email it reads could tell it to), so it reports what it would do for you to do
   - Example: "Find all unread emails from john@example.com in the last week and draft replies"
   - Uses sub-agent with iterative tool calling
   - MAX_ITERATIONS: 10 to prevent infinite loops

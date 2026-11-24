@@ -32,7 +32,7 @@ fn get_test_api_key() -> String {
 }
 
 /// Initialize test environment with required environment variables
-fn setup_test_env() {
+pub fn setup_test_env() {
     // Set required environment variables for tests
     std::env::set_var("REST_HOST", "127.0.0.1");
     std::env::set_var("REST_PORT", "9437");
@@ -47,7 +47,7 @@ fn setup_test_env() {
 }
 
 /// Helper function to create a test DashboardState with all required services
-async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardState> {
+pub async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardState> {
     use std::time::Duration;
 
     // Create unique test database path
@@ -191,7 +191,7 @@ async fn create_test_dashboard_state(test_name: &str) -> web::Data<DashboardStat
 }
 
 /// Helper function to clean up test database files
-fn cleanup_test_db(test_name: &str) {
+pub fn cleanup_test_db(test_name: &str) {
     let db_path = format!("test_data/mcp_{}_test.db", test_name);
     let _ = fs::remove_file(&db_path);
     let _ = fs::remove_file(format!("{}-shm", db_path));

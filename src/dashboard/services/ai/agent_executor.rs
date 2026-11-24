@@ -6,6 +6,7 @@ use super::provider::model_serve;
 use super::provider::ollama::with_keep_alive;
 use super::sampler_config::{get_sampler_config, SamplerConfig};
 use super::tool_converter::{mcp_to_ollama_tools, parse_ollama_tool_call};
+use super::tool_policy;
 use crate::api::errors::ApiError;
 use crate::dashboard::services::DashboardState;
 use log::{debug, error, info, warn};
@@ -13,6 +14,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sqlx::SqlitePool;
+use std::collections::HashSet;
 
 /// Providers that support tool calling
 /// Note: These providers have been tested with the tool-calling API format
@@ -28,6 +30,11 @@ pub fn supports_tool_calling(provider: &str) -> bool {
 const DEFAULT_MAX_ITERATIONS: usize = 1000;
 
 /// Get max iterations from environment or use default
+/// The name in an MCP tool definition.
+fn tool_name_of(tool: &Value) -> Option<&str> {
+    tool.get("name").and_then(Value::as_str)
+}
+
 fn get_max_iterations() -> usize {
     std::env::var("AGENT_MAX_ITERATIONS")
         .ok()
@@ -76,6 +83,16 @@ impl AgentExecutor {
         tools: Vec<Value>, // MCP tool definitions
         job_id: Option<&str>,
     ) -> Result<AgentResult, ApiError> {
+        // The model reads email written by strangers, so it only gets the
+        // tools it may run on its own (tool_policy), and nothing else runs.
+        let tools: Vec<Value> = tools
+            .into_iter()
+            .filter(|tool| tool_name_of(tool).is_some_and(tool_policy::model_may_run))
+            .collect();
+        let offered: HashSet<String> = tools
+            .iter()
+            .filter_map(|tool| tool_name_of(tool).map(str::to_string))
+            .collect();
         info!("Executing instruction with {} tools available", tools.len());
 
         // Get tool-calling model configuration
@@ -187,13 +204,27 @@ impl AgentExecutor {
 
                     debug!("Executing tool: {} with args: {:?}", tool_name, arguments);
 
-                    // Execute the tool using existing handlers
-                    let result = crate::dashboard::api::handlers::execute_mcp_tool_inner(
-                        state,
-                        &tool_name,
-                        arguments.clone(),
-                    )
-                    .await;
+                    // Only tools the model was offered run; anything else is
+                    // refused (tool_policy), whatever the model was told.
+                    let result = if offered.contains(&tool_name) {
+                        crate::dashboard::api::handlers::execute_mcp_tool_inner(
+                            state,
+                            &tool_name,
+                            arguments.clone(),
+                        )
+                        .await
+                    } else {
+                        warn!(
+                            "Agent asked to run '{}', which it may not; refused",
+                            tool_name
+                        );
+                        json!({
+                            "success": false,
+                            "blocked": true,
+                            "error": tool_policy::refusal(&tool_name),
+                            "tool": tool_name
+                        })
+                    };
 
                     // Log the action
                     actions_taken.push(ActionLog {

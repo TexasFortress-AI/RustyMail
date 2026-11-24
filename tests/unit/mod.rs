@@ -47,6 +47,7 @@ pub mod oauth_tests;
 pub mod rmcp_sdk_tests;
 pub mod smtp_service_tests;
 pub mod special_folders_tests;
+pub mod tool_policy_tests;
 pub mod triage_codes_tests;
 pub mod triage_counterparty_tests;
 pub mod triage_decision_tests;

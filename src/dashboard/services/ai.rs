@@ -12,6 +12,7 @@ pub mod provider;
 pub mod provider_manager;
 pub mod sampler_config;
 pub mod tool_converter;
+pub mod tool_policy;
 
 use crate::api::errors::ApiError;
 use crate::dashboard::api::models::{
