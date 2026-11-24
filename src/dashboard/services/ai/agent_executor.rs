@@ -7,6 +7,7 @@ use super::provider::ollama::with_keep_alive;
 use super::sampler_config::{get_sampler_config, SamplerConfig};
 use super::tool_converter::{mcp_to_ollama_tools, parse_ollama_tool_call};
 use super::tool_policy;
+use super::untrusted;
 use crate::api::errors::ApiError;
 use crate::dashboard::services::DashboardState;
 use log::{debug, error, info, warn};
@@ -128,10 +129,20 @@ impl AgentExecutor {
         };
 
         // Initialize conversation with user instruction
-        let mut messages = vec![json!({
-            "role": "user",
-            "content": full_instruction
-        })];
+        let mut messages = vec![
+            json!({
+                "role": "system",
+                "content": format!(
+                    "You are RustyMail's email agent. You can read, search and draft email; \
+                     you cannot send, move, delete or flag it. {}",
+                    untrusted::TOOL_DATA_RULE
+                )
+            }),
+            json!({
+                "role": "user",
+                "content": full_instruction
+            }),
+        ];
 
         let mut actions_taken = Vec::new();
         let mut iteration = 0;
@@ -242,7 +253,9 @@ impl AgentExecutor {
                     messages.push(json!({
                         "role": "tool",
                         "tool_call_id": tool_call_id,
-                        "content": serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string())
+                        "content": untrusted::fence(
+                            &serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string())
+                        )
                     }));
                 }
             } else {
