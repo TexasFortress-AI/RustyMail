@@ -17,6 +17,7 @@ const DEFAULT_BODY_EXCERPT_CHARS: usize = 500;
 const DEFAULT_SECOND_PASS_EXCERPT_CHARS: usize = 2000;
 /// How long a code or reset that states no expiry stays useful.
 const DEFAULT_CODE_WINDOW_HOURS: i64 = 24;
+const DEFAULT_REVIEW_JUNK: bool = true;
 /// Model proposals below this confidence stay in the INBOX on apply.
 const DEFAULT_MIN_CONFIDENCE: f64 = 0.8;
 /// Model Needs Reply proposals only for mail newer than this; older stays put.
@@ -66,6 +67,9 @@ pub struct TriageConfig {
     pub platform_domains: Vec<String>,
     /// Per-account bucket-to-folder overrides.
     pub folder_map_file: Option<PathBuf>,
+    /// Also review each account's spam folder and propose rescuing mail
+    /// that does not belong there (TRIAGE_REVIEW_JUNK).
+    pub review_junk: bool,
     pub code_window: chrono::Duration,
     pub min_confidence: f64,
     /// Buckets whose proposals apply moves; `Keep` is never moved.
@@ -157,6 +161,11 @@ impl TriageConfig {
                 .filter(|domain| !domain.is_empty())
                 .collect(),
             folder_map_file: value("TRIAGE_FOLDER_MAP_FILE").map(PathBuf::from),
+            review_junk: parse_or(
+                value("TRIAGE_REVIEW_JUNK"),
+                "TRIAGE_REVIEW_JUNK",
+                DEFAULT_REVIEW_JUNK,
+            )?,
             code_window: chrono::Duration::hours(parse_or(
                 value("TRIAGE_CODE_WINDOW_HOURS"),
                 "TRIAGE_CODE_WINDOW_HOURS",

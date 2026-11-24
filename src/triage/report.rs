@@ -73,24 +73,50 @@ fn format_rows(proposals: &[StoredProposal], dashboard_url: &str) -> String {
 
     let mut out = String::new();
     for account in accounts {
-        let mine: Vec<&StoredProposal> = proposals
+        // The INBOX first, then each spam folder the review read.
+        let mut folders: Vec<&str> = proposals
             .iter()
             .filter(|p| p.account_id == account)
+            .map(|p| p.folder.as_str())
             .collect();
-        let _ = writeln!(out, "== {} ({} proposals)", account, mine.len());
-        for bucket in Bucket::ALL {
-            let rows: Vec<&&StoredProposal> = mine
+        folders.sort_unstable_by_key(|f| (!f.eq_ignore_ascii_case("INBOX"), *f));
+        folders.dedup();
+        for folder in folders {
+            let mine: Vec<&StoredProposal> = proposals
                 .iter()
-                .filter(|p| p.bucket == bucket.as_str())
+                .filter(|p| p.account_id == account && p.folder == folder)
                 .collect();
-            if rows.is_empty() {
-                continue;
+            if folder.eq_ignore_ascii_case("INBOX") {
+                let _ = writeln!(out, "== {} ({} proposals)", account, mine.len());
+            } else {
+                let _ = writeln!(
+                    out,
+                    "== {} {}: spam-folder review ({} proposals; Spam stays, anything else is a rescue)",
+                    account,
+                    folder,
+                    mine.len()
+                );
             }
-            let _ = writeln!(out, "  {} ({})", bucket, rows.len());
-            for p in rows {
-                let _ = writeln!(out, "    {}", describe(p));
-                let _ = writeln!(out, "      {}", deep_link(dashboard_url, p));
-            }
+            out.push_str(&format_buckets(&mine, dashboard_url));
+        }
+    }
+    out
+}
+
+fn format_buckets(mine: &[&StoredProposal], dashboard_url: &str) -> String {
+    let mut out = String::new();
+    for bucket in Bucket::ALL {
+        let rows: Vec<&&StoredProposal> = mine
+            .iter()
+            .filter(|p| p.bucket == bucket.as_str())
+            .collect();
+        if rows.is_empty() {
+            continue;
+        }
+        let _ = writeln!(out, "  {} ({})", bucket, rows.len());
+        for p in rows {
+            let _ = writeln!(out, "    {}", describe(p));
+            let _ = writeln!(out, "      {}", deep_link(dashboard_url, p));
         }
     }
     out

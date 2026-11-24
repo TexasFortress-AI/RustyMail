@@ -58,6 +58,7 @@ pub mod triage_injection_tests;
 pub mod triage_lists_tests;
 pub mod triage_model_tests;
 pub mod triage_plan_tests;
+pub mod triage_report_tests;
 pub mod triage_rules_tests;
 pub mod triage_second_pass_tests;
 pub mod triage_store_tests;

@@ -61,6 +61,23 @@ impl<'a> FolderResolver<'a> {
         result
     }
 
+    /// The bucket's folder only if it already exists (the folder the server
+    /// marks for it, or the configured one); never creates a folder.
+    pub fn existing_folder(&self, bucket: Bucket) -> Option<String> {
+        let marked = special_use(bucket).and_then(|kind| marked_folder(&self.tree, kind));
+        let namespace = bucket_namespace(&self.existing, &inbox_namespace(&self.tree));
+        match self.folders.resolve(
+            self.account_id,
+            bucket,
+            &self.existing,
+            marked.as_deref(),
+            &namespace,
+        ) {
+            Destination::Existing(name) => Some(name),
+            Destination::Create(_) | Destination::Unavailable(_) => None,
+        }
+    }
+
     async fn resolve(&mut self, bucket: Bucket, list_name: Option<&str>) -> Result<String, String> {
         let parent = self.bucket_folder(bucket).await?;
         if !matches!(bucket, Bucket::Lists | Bucket::Repos) {

@@ -177,6 +177,11 @@ async fn propose_all(
         fuller_excerpt_chars: config.second_pass_excerpt_chars,
         owner_accounts: config.accounts.clone(),
         platform_domains: config.platform_domains.clone(),
+        junk_review: match (&config.review_junk, &config.folder_map_file) {
+            (false, _) => None,
+            (true, Some(path)) => Some(FolderMap::load(path)?),
+            (true, None) => Some(FolderMap::default()),
+        },
     };
     let options = RunOptions {
         since_days: cli.since_days,
@@ -197,6 +202,18 @@ async fn propose_all(
             }
             Err(e) => {
                 error!("{}: triage failed: {}", email, e);
+                failed = true;
+            }
+        }
+        // Then the spam folder: propose rescuing mail the server misfiled.
+        match runner.review_junk(&account, options).await {
+            Ok(Some(summary)) => {
+                eprintln!("spam folder: {}", describe_run(&summary));
+                failed |= summary.stopped_early.is_some();
+            }
+            Ok(None) => {}
+            Err(e) => {
+                error!("{}: spam-folder review failed: {}", email, e);
                 failed = true;
             }
         }
@@ -262,7 +279,7 @@ async fn release_answered_mail(
 
 fn describe_run(s: &AccountSummary) -> String {
     format!(
-        "{}: examined {}, by rule {}, by model {}, unparseable {}, watermark {}{}",
+        "{}: examined {}, by rule {}, by model {}, unparseable {}, watermark {}{}{}",
         s.account,
         s.examined,
         s.by_rule,
@@ -270,6 +287,11 @@ fn describe_run(s: &AccountSummary) -> String {
         s.unparseable,
         s.watermark
             .map_or_else(|| "none".to_string(), |uid| format!("UID {}", uid)),
+        if s.filed_by_triage > 0 {
+            format!(", left alone (filed by triage) {}", s.filed_by_triage)
+        } else {
+            String::new()
+        },
         s.stopped_early
             .as_deref()
             .map(|e| format!(", stopped early: {}", e))
