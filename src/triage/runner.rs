@@ -219,7 +219,6 @@ impl<C: Classifier> TriageRunner<C> {
             let last_done = self
                 .triage_batch(
                     client,
-                    account_id,
                     pass,
                     uidvalidity,
                     batch,
@@ -259,7 +258,6 @@ impl<C: Classifier> TriageRunner<C> {
     async fn triage_batch(
         &self,
         client: &Client,
-        account_id: &str,
         pass: &Pass<'_>,
         uidvalidity: u32,
         batch: &[u32],
@@ -267,6 +265,8 @@ impl<C: Classifier> TriageRunner<C> {
         options: RunOptions,
         summary: &mut AccountSummary,
     ) -> Result<Option<u32>, RunError> {
+        let account_id = summary.account.clone();
+        let account_id = account_id.as_str();
         let mut emails = client.fetch_emails(batch).await?;
         emails.sort_by_key(|e| e.uid);
         let flagged_answered = answered_uids(client, batch).await;
