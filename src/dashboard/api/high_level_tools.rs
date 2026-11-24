@@ -15,7 +15,7 @@ pub fn get_mcp_high_level_tools_jsonrpc_format() -> Vec<Value> {
         // === Agentic/Action Tools (3) ===
         json!({
             "name": "process_email_instructions",
-            "description": "Execute complex email workflows using natural language instructions. The AI agent will use available email tools to complete the task.",
+            "description": "Answer questions about email and prepare work, from natural language instructions. The AI agent can read, search and draft (drafts are saved, never sent). It cannot send, move, delete, flag or rename mail: it reports what it would do, for the owner to do.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
