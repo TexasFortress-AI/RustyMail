@@ -29,6 +29,9 @@ pub struct KnownPeople {
     /// Mail the owner approved into Accounting, Legal, Credit or Alerts, by
     /// sender (see `counterparty::history_key`): his payables history.
     approved: HashMap<String, usize>,
+    /// Addresses whose mail the owner corrected to Needs Reply or Keep: the
+    /// owner wants their mail, so a model may not call it Spam again.
+    kept: HashSet<String>,
 }
 
 impl KnownPeople {
@@ -46,6 +49,7 @@ impl KnownPeople {
             replied_to: HashSet::new(),
             last_sent_in_thread: HashMap::new(),
             approved: HashMap::new(),
+            kept: HashSet::new(),
         }
     }
 
@@ -61,6 +65,27 @@ impl KnownPeople {
             }
         }
         self
+    }
+
+    /// Record addresses whose mail the owner kept (corrected to Needs Reply
+    /// or Keep).
+    pub fn with_kept<I, S>(mut self, senders: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.kept.extend(
+            senders
+                .into_iter()
+                .map(|a| a.as_ref().trim().to_ascii_lowercase())
+                .filter(|a| !a.is_empty()),
+        );
+        self
+    }
+
+    /// Whether the owner kept this sender's mail before (per address).
+    pub fn kept(&self, address: &str) -> bool {
+        self.kept.contains(&address.trim().to_ascii_lowercase())
     }
 
     /// How many approved messages the owner has from this sender's
@@ -117,11 +142,15 @@ impl KnownPeople {
     pub async fn load(pool: &SqlitePool, accounts: &[String]) -> Result<Self, sqlx::Error> {
         let mut rows = Vec::new();
         let mut approved = Vec::new();
+        let mut kept = Vec::new();
         for account_id in accounts {
             rows.extend(Self::sent_rows(pool, account_id).await?);
             approved.extend(Self::approved_senders(pool, account_id).await?);
+            kept.extend(Self::kept_senders(pool, account_id).await?);
         }
-        Ok(Self::from_sent(accounts, rows).with_approved(approved))
+        Ok(Self::from_sent(accounts, rows)
+            .with_approved(approved)
+            .with_kept(kept))
     }
 
     /// Who was behind mail moved into Accounting, Legal, Credit or Alerts, as
@@ -135,6 +164,21 @@ impl KnownPeople {
             "SELECT coalesce(counterparty, from_address) AS from_address FROM triage_proposals
              WHERE account_id = ? AND applied_at IS NOT NULL
                AND bucket IN ('Accounting', 'Legal', 'Credit', 'Alerts')",
+        )
+        .bind(account_id)
+        .fetch_all(pool)
+        .await?;
+        Ok(rows
+            .iter()
+            .map(|r| r.get::<String, _>("from_address"))
+            .collect())
+    }
+
+    /// Senders of mail the owner corrected to Needs Reply or Keep.
+    async fn kept_senders(pool: &SqlitePool, account_id: &str) -> Result<Vec<String>, sqlx::Error> {
+        let rows = sqlx::query(
+            "SELECT from_address FROM triage_proposals
+             WHERE account_id = ? AND correction IN ('Needs Reply', 'Keep')",
         )
         .bind(account_id)
         .fetch_all(pool)

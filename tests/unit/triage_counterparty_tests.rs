@@ -181,3 +181,31 @@ fn hold_names_why_a_verdict_waits_for_the_owner() {
         p.reason
     );
 }
+
+#[test]
+fn a_sender_the_owner_kept_is_never_filed_as_spam_by_a_model() {
+    // The owner corrected a message from this sender to Needs Reply; a later
+    // one the model calls Spam stays in the INBOX. Noise still applies.
+    let guards = ModelGuards {
+        needs_reply_max_age: Duration::days(30),
+    };
+    let known = KnownPeople::default().with_kept(["Friend@Gmail.com"]);
+    assert!(known.kept("friend@gmail.com"));
+    assert!(
+        !known.kept("stranger@gmail.com"),
+        "per address, not per provider"
+    );
+    let later = msg("friend@gmail.com", None);
+    let p = guards.check(model(Bucket::Spam), &later, &known, Utc::now());
+    assert_eq!(p.bucket, Bucket::Keep);
+    assert!(
+        p.reason.contains("you kept this sender's mail before"),
+        "{}",
+        p.reason
+    );
+    let noise = guards.check(model(Bucket::Noise), &later, &known, Utc::now());
+    assert_eq!(noise.bucket, Bucket::Noise);
+    let stranger = msg("stranger@gmail.com", None);
+    let s = guards.check(model(Bucket::Spam), &stranger, &known, Utc::now());
+    assert_eq!(s.bucket, Bucket::Spam);
+}
