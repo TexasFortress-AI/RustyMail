@@ -4,6 +4,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 pub mod agent_executor;
+pub mod chat_closing;
 pub mod chat_tool_gate;
 pub mod email_drafter;
 pub mod local_only;
@@ -358,8 +359,12 @@ impl AiService {
         };
 
         // Agentic loop: AI → tool calls → execute → feed back → repeat
-        let max_iterations = 3;
+        let max_iterations = chat_closing::max_tool_rounds();
         let mut final_response = String::new();
+        // Whether the model answered (or the provider failed) before the
+        // rounds ran out, and the tools that ran (for the closing reply).
+        let mut finished = false;
+        let mut tools_ran: Vec<chat_closing::ToolRun> = Vec::new();
         // What the model may call (the toolset its prompt advertised), and
         // the calls held for the owner (chat_tool_gate).
         let offered: HashSet<String> = tools
@@ -380,20 +385,9 @@ impl AiService {
                 max_iterations
             );
 
-            // Get AI response
-            let response_result = if provider_override.is_some() || model_override.is_some() {
-                self.provider_manager
-                    .generate_response_with_override(
-                        &messages_history,
-                        provider_override.clone(),
-                        model_override.clone(),
-                    )
-                    .await
-            } else {
-                self.provider_manager
-                    .generate_response(&messages_history)
-                    .await
-            };
+            let response_result = self
+                .model_reply(&messages_history, &provider_override, &model_override)
+                .await;
 
             let ai_response = match response_result {
                 Ok(text) => text,
@@ -401,6 +395,7 @@ impl AiService {
                     error!("AI Service failed: {}", e);
                     final_response =
                         format!("[Error - Provider: {} failed]\n\n{}", provider_name, e);
+                    finished = true;
                     break;
                 }
             };
@@ -412,6 +407,7 @@ impl AiService {
                 // No tool calls - we're done
                 info!("No tool calls found. Final response ready.");
                 final_response = ai_response;
+                finished = true;
                 break;
             }
 
@@ -430,7 +426,10 @@ impl AiService {
                 )
                 .await;
                 match outcome {
-                    ChatToolOutcome::Ran(line) => tool_results.push(line),
+                    ChatToolOutcome::Ran(line) => {
+                        tools_ran.push(chat_closing::ToolRun::from_result_line(&tool_name, &line));
+                        tool_results.push(line);
+                    }
                     ChatToolOutcome::AwaitingOwner(action, line) => {
                         warn!("Held '{}' for the owner's confirmation", tool_name);
                         pending_actions.push(action);
@@ -459,6 +458,26 @@ impl AiService {
             });
 
             // Continue loop for next iteration
+        }
+
+        // The rounds ran out while the model was still calling tools: ask it
+        // once more, without tools, to tell the owner what happened.
+        if !finished {
+            info!(
+                "Tool rounds used up ({}); asking for a closing reply",
+                max_iterations
+            );
+            messages_history.push(AiChatMessage {
+                role: "user".to_string(),
+                content: chat_closing::CLOSING_REQUEST.to_string(),
+            });
+            let reply = self
+                .model_reply(&messages_history, &provider_override, &model_override)
+                .await
+                .map_err(|e| warn!("Closing reply failed: {}", e))
+                .ok();
+            final_response =
+                chat_closing::closing_reply(reply.as_deref(), &tools_ran, &pending_actions);
         }
 
         // Format final response with provider/model info
@@ -831,6 +850,26 @@ impl AiService {
             prompt.push_str(&format!("{}. **{}**: {}\n", i + 1, name, description));
         }
         prompt
+    }
+
+    /// The model's next reply to `history`, with the provider/model override if any.
+    async fn model_reply(
+        &self,
+        history: &[AiChatMessage],
+        provider_override: &Option<String>,
+        model_override: &Option<String>,
+    ) -> Result<String, crate::api::errors::ApiError> {
+        if provider_override.is_some() || model_override.is_some() {
+            self.provider_manager
+                .generate_response_with_override(
+                    history,
+                    provider_override.clone(),
+                    model_override.clone(),
+                )
+                .await
+        } else {
+            self.provider_manager.generate_response(history).await
+        }
     }
 
     /// Parse AI response for tool calls
