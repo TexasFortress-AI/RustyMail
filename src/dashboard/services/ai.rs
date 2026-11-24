@@ -15,6 +15,7 @@ pub mod provider_manager;
 pub mod sampler_config;
 pub mod tool_converter;
 pub mod tool_policy;
+pub mod tool_prompt;
 pub mod untrusted;
 
 use crate::api::errors::ApiError;
@@ -831,25 +832,7 @@ impl AiService {
 
     /// Format MCP tools for inclusion in system prompt (provider-agnostic)
     fn format_tools_for_prompt(tools: &[Value]) -> String {
-        let tool_count = tools.len();
-        let mut prompt = format!("\n\nAVAILABLE TOOLS ({} total):\n", tool_count);
-        prompt.push_str("You have access to the following tools. To use a tool, respond with:\n");
-        prompt
-            .push_str("TOOL_CALL: tool_name {\"param1\": \"value1\", \"param2\": \"value2\"}\n\n");
-        prompt.push_str("In your first message, you MUST greet the user and then list ALL of the tools available in a numbered list. Do not add any extra commentary or summarization. Just the list.\n\n");
-
-        for (i, tool) in tools.iter().enumerate() {
-            let name = tool
-                .get("name")
-                .and_then(|n| n.as_str())
-                .unwrap_or("unknown");
-            let description = tool
-                .get("description")
-                .and_then(|d| d.as_str())
-                .unwrap_or("No description");
-            prompt.push_str(&format!("{}. **{}**: {}\n", i + 1, name, description));
-        }
-        prompt
+        tool_prompt::describe_tools(tools)
     }
 
     /// The model's next reply to `history`, with the provider/model override if any.
