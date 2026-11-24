@@ -23,6 +23,7 @@ pub mod oauth;
 pub mod routes;
 pub mod session;
 pub mod sse;
+pub mod tool_dispatch;
 
 // Re-export main types needed elsewhere
 pub use routes::configure as init_routes;

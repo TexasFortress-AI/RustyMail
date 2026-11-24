@@ -26,8 +26,9 @@ pub mod mcp_stdio; // MCP stdio proxy integration tests
 pub mod message_id_lookup; // finding a message by Message-ID without SEARCH HEADER
 pub mod multi_account_sync;
 pub mod security_tests;
-pub mod smtp_send_lock; // send_email must not deadlock on the account-service lock
+pub mod smtp_send_lock;
 pub mod targeted_expunge; // Moves and deletes never purge other \Deleted messages
+pub mod tool_dispatch; // high-level tools reach the dispatcher that has them // send_email must not deadlock on the account-service lock
 pub mod triage; // Triage propose against the fake IMAP server
 pub mod triage_apply; // Triage apply: verified moves against the fake IMAP server
 pub mod write_tools_account_routing; // Write tools hit the named account's IMAP server; moves are verified // Security-focused tests for CORS, origin, auth, path traversal, rate limiting

@@ -672,7 +672,13 @@ impl AiService {
 
     /// Call an MCP tool through the HTTP API
     async fn call_mcp_tool(&self, tool_name: &str, args: Value) -> Result<Value, String> {
-        let url = format!("{}/dashboard/mcp/execute", self.mcp_base_url);
+        // The variant that has the tool: high-level-only tools (the agent,
+        // drafting, jobs) are not in the default, low-level dispatcher.
+        let url = format!(
+            "{}/dashboard/mcp/execute?variant={}",
+            self.mcp_base_url,
+            crate::dashboard::api::tool_dispatch::variant_of(tool_name)
+        );
 
         let body = json!({
             "tool": tool_name,

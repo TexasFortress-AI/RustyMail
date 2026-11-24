@@ -218,7 +218,8 @@ impl AgentExecutor {
                     // Only tools the model was offered run; anything else is
                     // refused (tool_policy), whatever the model was told.
                     let result = if offered.contains(&tool_name) {
-                        crate::dashboard::api::handlers::execute_mcp_tool_inner(
+                        // The dispatcher that has the tool (drafting is high-level only).
+                        crate::dashboard::api::tool_dispatch::execute(
                             state,
                             &tool_name,
                             arguments.clone(),
