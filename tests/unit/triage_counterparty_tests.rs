@@ -209,3 +209,30 @@ fn a_sender_the_owner_kept_is_never_filed_as_spam_by_a_model() {
     let s = guards.check(model(Bucket::Spam), &stranger, &known, Utc::now());
     assert_eq!(s.bucket, Bucket::Spam);
 }
+
+#[test]
+fn in_the_spam_folder_a_new_senders_keep_or_needs_reply_waits_too() {
+    let guards = ModelGuards {
+        needs_reply_max_age: Duration::days(30),
+    };
+    let mut lure = msg("files@walnutridgeforge.test", None);
+    lure.new_counterparty = true;
+    for bucket in [Bucket::Keep, Bucket::NeedsReply] {
+        assert_eq!(
+            guards.hold_in_spam(&model(bucket), &lure),
+            Some(rustymail::triage::guards::Hold::NewSender),
+            "{bucket}"
+        );
+        // In the INBOX the same verdict is not held: it is already there.
+        assert_eq!(guards.hold(&model(bucket), &lure), None, "{bucket}");
+    }
+    // Noise is rescued as before, and someone the owner deals with is not held.
+    assert_eq!(guards.hold_in_spam(&model(Bucket::Noise), &lure), None);
+    let mut colleague = msg("mehow@matterfi.test", None);
+    colleague.new_counterparty = false;
+    assert_eq!(guards.hold_in_spam(&model(Bucket::Keep), &colleague), None);
+    // Still covers what hold() covers.
+    assert!(guards
+        .hold_in_spam(&model(Bucket::Accounting), &lure)
+        .is_some());
+}

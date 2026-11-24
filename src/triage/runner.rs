@@ -361,7 +361,7 @@ impl<C: Classifier> TriageRunner<C> {
         // In the spam folder a held verdict means the message stays there:
         // phishing the server caught is never rescued on a model's word.
         if role == Role::Junk {
-            if let Some(hold) = self.guards.hold(&proposal, message) {
+            if let Some(hold) = self.guards.hold_in_spam(&proposal, message) {
                 return Ok(Proposal {
                     reason: format!(
                         "stays in spam, {}; model said {} ({})",
