@@ -24,6 +24,7 @@ pub mod lists;
 pub mod message;
 pub mod model;
 pub mod people;
+pub mod pinned;
 pub mod report;
 pub mod rules;
 pub mod runner;

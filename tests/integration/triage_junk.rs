@@ -7,7 +7,7 @@
 //! the owner marked was all of this kind), and mail triage itself filed as
 //! Spam stays unless the owner corrects it, even when today's verdict differs.
 
-use super::fake_imap_server::{spawn_fake_imap, FakeMessage};
+use super::fake_imap_server::{spawn_fake_imap, FakeMessage, SharedMailbox};
 use super::triage::{raw, store, ACCOUNT};
 use rustymail::imap::client::ImapClient;
 use rustymail::imap::session::AsyncImapSessionWrapper;
@@ -18,10 +18,10 @@ use rustymail::triage::runner::{RunOptions, TriageRunner};
 use serial_test::serial;
 use std::collections::HashMap;
 
-const JUNK: &str = "Junk";
+pub(super) const JUNK: &str = "Junk";
 
 /// Calls a vendor's "invoice" Accounting and everything else Spam.
-struct VendorModel;
+pub(super) struct VendorModel;
 
 impl ModelBackend for VendorModel {
     async fn complete(&self, _model: &str, _system: &str, user: &str) -> Result<String, String> {
@@ -60,9 +60,13 @@ fn runner(
     }
 }
 
-#[tokio::test]
-#[serial]
-async fn the_spam_folder_review_rescues_misfiled_mail_and_keeps_the_rest() {
+/// A spam folder holding a newsletter, a new vendor's invoice, a message
+/// triage filed as Spam earlier, and a scam; nothing proposed yet.
+pub(super) async fn junk_setup() -> (
+    ImapClient<AsyncImapSessionWrapper>,
+    SharedMailbox,
+    TriageRunner<EscalatingClassifier<VendorModel>>,
+) {
     std::env::set_var("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS", "true");
     let (port, mailbox) = spawn_fake_imap(Vec::new()).await;
     let junk: Vec<(u32, &str, String)> = vec![
@@ -143,7 +147,13 @@ async fn the_spam_folder_review_rescues_misfiled_mail_and_keeps_the_rest() {
             .await
             .unwrap();
 
-    let runner = runner(store);
+    (client, mailbox, runner(store))
+}
+
+#[tokio::test]
+#[serial]
+async fn the_spam_folder_review_rescues_misfiled_mail_and_keeps_the_rest() {
+    let (client, mailbox, runner) = junk_setup().await;
     let summary = runner
         .triage_junk(&client, ACCOUNT, JUNK, RunOptions::default())
         .await

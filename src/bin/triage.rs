@@ -16,10 +16,11 @@ use clap::Parser;
 use log::error;
 use rustymail::imap::account_connect::{load_active_accounts, ImapAccount};
 use rustymail::triage::answered::release_answered;
-use rustymail::triage::apply::{apply_account, ApplyOptions};
+use rustymail::triage::apply::{apply_account, apply_folder, ApplyIn, ApplyOptions, ApplySummary};
 use rustymail::triage::classifier::ConfiguredClassifier;
 use rustymail::triage::config::TriageConfig;
 use rustymail::triage::decision::{DecisionClassifier, LocalDecisionServer};
+use rustymail::triage::destinations::FolderResolver;
 use rustymail::triage::folders::FolderMap;
 use rustymail::triage::guards::ModelGuards;
 use rustymail::triage::lists::ListRules;
@@ -27,9 +28,11 @@ use rustymail::triage::model::{EscalatingClassifier, LocalModelServer};
 use rustymail::triage::people::{owner_accounts, KnownPeople};
 use rustymail::triage::report::{format_apply_summary, format_report};
 use rustymail::triage::rules::SenderRules;
+use rustymail::triage::runner::Client;
 use rustymail::triage::runner::{AccountSummary, RunOptions, TriageRunner};
 use rustymail::triage::second_pass::SecondPass;
 use rustymail::triage::store::TriageStore;
+use rustymail::triage::Bucket;
 use sqlx::SqlitePool;
 
 #[derive(Parser)]
@@ -332,6 +335,11 @@ async fn apply_all(
             }
         };
         let result = apply_account(store, &client, email, &config.folder, &folders, &options).await;
+        let rescues = if config.review_junk {
+            apply_spam_folder(store, &client, email, &config.folder, &folders, &options).await
+        } else {
+            None
+        };
         release_answered_mail(
             store,
             &client,
@@ -344,16 +352,36 @@ async fn apply_all(
         if let Err(e) = client.logout().await {
             error!("{}: logout failed: {}", email, e);
         }
-        match result {
-            Ok(summary) => {
-                print!("{}", format_apply_summary(&summary));
-                failed |= !summary.failures.is_empty();
-            }
-            Err(e) => {
-                error!("{}: apply failed: {}", email, e);
-                failed = true;
+        for result in std::iter::once(result).chain(rescues) {
+            match result {
+                Ok(summary) => {
+                    print!("{}", format_apply_summary(&summary));
+                    failed |= !summary.failures.is_empty();
+                }
+                Err(e) => {
+                    error!("{}: apply failed: {}", email, e);
+                    failed = true;
+                }
             }
         }
     }
     Ok(failed)
+}
+
+/// Apply the reviewed proposals for the account's spam folder: Spam stays,
+/// the rest is rescued. None when the account has no spam folder.
+async fn apply_spam_folder(
+    store: &TriageStore,
+    client: &Client,
+    email: &str,
+    inbox: &str,
+    folders: &FolderMap,
+    options: &ApplyOptions,
+) -> Option<Result<ApplySummary, Box<dyn std::error::Error>>> {
+    let junk = match FolderResolver::new(client, email, folders).await {
+        Ok(resolver) => resolver.existing_folder(Bucket::Spam)?,
+        Err(e) => return Some(Err(e)),
+    };
+    let role = ApplyIn::SpamFolder { inbox };
+    Some(apply_folder(store, client, email, &junk, role, folders, options).await)
 }

@@ -147,10 +147,12 @@ fn describe(p: &StoredProposal) -> String {
 /// What an apply run did for one account.
 pub fn format_apply_summary(summary: &ApplySummary) -> String {
     let mut out = format!(
-        "{}: moved {} (verified), {} left the INBOX but could not be found by Message-ID, {} failed\n",
+        "{} {}: moved {} (verified), {} left {} but could not be found by Message-ID, {} failed\n",
         summary.account,
+        summary.folder,
         summary.moved,
         summary.moved_unconfirmed,
+        summary.folder,
         summary.failures.len()
     );
     for folder in &summary.created_folders {
@@ -181,6 +183,7 @@ pub fn format_apply_summary(summary: &ApplySummary) -> String {
 fn skip_label(skip: Skip) -> &'static str {
     match skip {
         Skip::StaysInInbox => "Keep",
+        Skip::StaysInSpam => "Spam (stays in the spam folder)",
         Skip::BucketNotApplied => "bucket not in TRIAGE_APPLY_BUCKETS",
         Skip::LowConfidence => "below minimum confidence",
         Skip::NotYetDue => "code or reset not expired yet",

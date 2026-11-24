@@ -20,6 +20,7 @@ use super::guards::ModelGuards;
 use super::lists::ListRules;
 use super::message::TriageMessage;
 use super::people::{owner_accounts, KnownPeople};
+use super::pinned::{stays_filed, stays_rescued};
 use super::rules::{apply_rules, bulk_mail_default, SenderRules};
 use super::scan::{advance, plan_scan, select_uids};
 use super::store::{bare_message_id, MessageRef, TriageStore, Watermark};
@@ -72,8 +73,9 @@ pub enum Role {
 struct Pass<'a> {
     folder: &'a str,
     role: Role,
-    /// Junk only: Message-IDs of mail triage itself filed as Spam.
-    filed_as_spam: HashSet<String>,
+    /// Message-IDs whose verdict the owner settled: in the spam folder, mail
+    /// triage filed as Spam; in the INBOX, mail rescued from the spam folder.
+    pinned: HashSet<String>,
 }
 
 pub struct TriageRunner<C: Classifier> {
@@ -156,7 +158,7 @@ impl<C: Classifier> TriageRunner<C> {
         let pass = Pass {
             folder,
             role: Role::Junk,
-            filed_as_spam: self.store.filed_as_spam(account_id).await?,
+            pinned: self.store.filed_as_spam(account_id).await?,
         };
         self.triage_pass(client, account_id, &pass, options).await
     }
@@ -171,7 +173,10 @@ impl<C: Classifier> TriageRunner<C> {
         let pass = Pass {
             folder: &self.folder,
             role: Role::Inbox,
-            filed_as_spam: HashSet::new(),
+            pinned: self
+                .store
+                .rescued_from_spam(account_id, &self.folder)
+                .await?,
         };
         self.triage_pass(client, account_id, &pass, options).await
     }
@@ -290,12 +295,11 @@ impl<C: Classifier> TriageRunner<C> {
                 last_done = Some(email.uid);
                 continue;
             };
-            let filed_by_triage = pass.role == Role::Junk
-                && message
-                    .message_id
-                    .as_deref()
-                    .map(bare_message_id)
-                    .is_some_and(|id| pass.filed_as_spam.contains(&id));
+            let pinned = message
+                .message_id
+                .as_deref()
+                .map(bare_message_id)
+                .is_some_and(|id| pass.pinned.contains(&id));
             if email.internal_date.is_some() {
                 message.received_at = email.internal_date;
             }
@@ -304,12 +308,13 @@ impl<C: Classifier> TriageRunner<C> {
                 .is_none_or(|party| !known.deals_with(party));
             message.answered = flagged_answered.contains(&message.uid) || known.answered(&message);
             let proposal = match self.propose(&message, known, pass.role).await {
-                // Triage filed it as Spam earlier with the owner's review: today's
-                // verdict is shown, but only the owner's correction moves it.
-                Ok(p) if filed_by_triage => {
+                // The owner settled it earlier: today's verdict is shown, but
+                // only the owner's correction moves it.
+                Ok(p) if pinned && pass.role == Role::Junk => {
                     summary.filed_by_triage += 1;
                     stays_filed(p)
                 }
+                Ok(p) if pinned => stays_rescued(p),
                 Ok(p) => p,
                 Err(e) => {
                     summary.stopped_early = Some(e);
@@ -397,21 +402,5 @@ impl<C: Classifier> TriageRunner<C> {
             .insert_proposal(&reference, proposal)
             .await
             .map(|_| ())
-    }
-}
-
-/// A message triage itself filed as Spam: it stays, whatever today's verdict,
-/// and the reason says what that verdict is so the owner can correct it.
-fn stays_filed(proposal: Proposal) -> Proposal {
-    if proposal.bucket == Bucket::Spam {
-        return proposal;
-    }
-    Proposal {
-        reason: format!(
-            "stays in spam, filed by triage earlier; model now says {} ({})",
-            proposal.bucket, proposal.reason
-        ),
-        bucket: Bucket::Spam,
-        ..proposal
     }
 }

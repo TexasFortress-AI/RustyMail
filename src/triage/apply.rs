@@ -22,6 +22,7 @@ use crate::dashboard::services::cache_prune::remove_cached_message;
 use crate::imap::atomic::AtomicImapOperations;
 use crate::imap::error::ImapError;
 use crate::imap::session::AsyncImapOps;
+use crate::imap::types::FlagOperation;
 use crate::imap::verified_move::MoveVerifier;
 use chrono::{DateTime, Utc};
 use log::{info, warn};
@@ -43,6 +44,8 @@ pub struct ApplyOptions {
 pub enum Skip {
     /// Keep, or a bucket the stored row does not name.
     StaysInInbox,
+    /// Spam, in the spam-folder review: it is where it belongs.
+    StaysInSpam,
     /// The bucket is not in TRIAGE_APPLY_BUCKETS.
     BucketNotApplied,
     LowConfidence,
@@ -52,22 +55,46 @@ pub enum Skip {
     Stale,
 }
 
-/// Whether to move this proposal now, and to which bucket.
+/// Whether to move an INBOX proposal now, and to which bucket.
 pub fn decide(
     proposal: &StoredProposal,
     uidvalidity: u32,
     now: DateTime<Utc>,
     options: &ApplyOptions,
 ) -> Result<Bucket, Skip> {
+    decide_in(proposal, uidvalidity, now, options, Bucket::Keep)
+}
+
+/// Whether to move a proposal now, and to which bucket, in a folder where
+/// `stays` is the bucket that belongs there: Keep for the INBOX, Spam for the
+/// spam folder. In the spam folder, Keep, or a bucket that is not applied,
+/// means the INBOX (where an INBOX run would have left it).
+pub fn decide_in(
+    proposal: &StoredProposal,
+    uidvalidity: u32,
+    now: DateTime<Utc>,
+    options: &ApplyOptions,
+    stays: Bucket,
+) -> Result<Bucket, Skip> {
     // The owner's correction, when there is one, is the decision.
     let chosen = proposal.correction.as_deref().unwrap_or(&proposal.bucket);
-    let bucket = Bucket::parse(chosen)
-        .filter(|b| *b != Bucket::Keep)
-        .ok_or(Skip::StaysInInbox)?;
+    let in_spam_folder = stays == Bucket::Spam;
+    let stay = if in_spam_folder {
+        Skip::StaysInSpam
+    } else {
+        Skip::StaysInInbox
+    };
+    let bucket = match Bucket::parse(chosen) {
+        // Where it belongs, or a bucket the stored row does not name.
+        Some(b) if b == stays => return Err(stay),
+        None => return Err(stay),
+        Some(b) if in_spam_folder && !options.buckets.contains(&b) => Bucket::Keep,
+        Some(b) => b,
+    };
     if proposal.uidvalidity != uidvalidity {
         return Err(Skip::Stale);
     }
-    if !options.buckets.contains(&bucket) {
+    if bucket != Bucket::Keep && !options.buckets.contains(&bucket) {
         return Err(Skip::BucketNotApplied);
     }
     // A model's doubt doesn't hold back a bucket the owner chose.
@@ -93,6 +120,8 @@ pub struct ApplyFailure {
 #[derive(Debug, Default)]
 pub struct ApplySummary {
     pub account: String,
+    /// The folder the messages were moved out of.
+    pub folder: String,
     /// Verified: gone from the source and found in the destination.
     pub moved: usize,
     /// Gone from the source, but the destination copy could not be identified
@@ -106,7 +135,22 @@ pub struct ApplySummary {
     pub connection_lost: Option<String>,
 }
 
-/// Apply one account's pending proposals for `folder`.
+/// Keywords mail servers and clients use to mark junk, and not-junk. A rescue
+/// clears the first and sets the second, so neither the server nor a client
+/// such as Thunderbird files the message back into spam.
+const JUNK_KEYWORDS: [&str; 2] = ["$Junk", "Junk"];
+const NOT_JUNK_KEYWORDS: [&str; 2] = ["$NotJunk", "NonJunk"];
+
+/// Which folder is being applied, and so which bucket stays put there.
+#[derive(Debug, Clone, Copy)]
+pub enum ApplyIn<'a> {
+    /// The INBOX: Keep stays.
+    Inbox,
+    /// The spam folder: Spam stays, and Keep goes to this INBOX.
+    SpamFolder { inbox: &'a str },
+}
+
+/// Apply one account's pending proposals for its INBOX `folder`.
 pub async fn apply_account(
     store: &TriageStore,
     client: &Client,
@@ -115,8 +159,35 @@ pub async fn apply_account(
     folders: &FolderMap,
     options: &ApplyOptions,
 ) -> Result<ApplySummary, Box<dyn std::error::Error>> {
+    apply_folder(
+        store,
+        client,
+        account_id,
+        folder,
+        ApplyIn::Inbox,
+        folders,
+        options,
+    )
+    .await
+}
+
+/// Apply one account's pending proposals for `folder`.
+pub async fn apply_folder(
+    store: &TriageStore,
+    client: &Client,
+    account_id: &str,
+    folder: &str,
+    role: ApplyIn<'_>,
+    folders: &FolderMap,
+    options: &ApplyOptions,
+) -> Result<ApplySummary, Box<dyn std::error::Error>> {
+    let stays = match role {
+        ApplyIn::Inbox => Bucket::Keep,
+        ApplyIn::SpamFolder { .. } => Bucket::Spam,
+    };
     let mut summary = ApplySummary {
         account: account_id.to_string(),
+        folder: folder.to_string(),
         ..Default::default()
     };
     let uidvalidity = client
@@ -127,7 +198,7 @@ pub async fn apply_account(
     let now = Utc::now();
     let mut due = Vec::new();
     for proposal in store.proposals_to_apply(account_id, folder).await? {
-        match decide(&proposal, uidvalidity, now, options) {
+        match decide_in(&proposal, uidvalidity, now, options, stays) {
             Ok(bucket) => due.push((proposal, bucket)),
             Err(skip) => *summary.skipped.entry(skip).or_default() += 1,
         }
@@ -138,12 +209,21 @@ pub async fn apply_account(
     if due.is_empty() {
         return Ok(summary);
     }
+    if let ApplyIn::SpamFolder { .. } = role {
+        let uids: Vec<u32> = due.iter().map(|(p, _)| p.uid).collect();
+        clear_junk_marks(client, account_id, &uids).await;
+    }
 
     let mut destinations = FolderResolver::new(client, account_id, folders).await?;
     for (proposal, bucket) in due {
-        let resolved = destinations
-            .folder_for(bucket, proposal.list_name.as_deref())
-            .await;
+        let resolved = match role {
+            ApplyIn::SpamFolder { inbox } if bucket == Bucket::Keep => Ok(inbox.to_string()),
+            _ => {
+                destinations
+                    .folder_for(bucket, proposal.list_name.as_deref())
+                    .await
+            }
+        };
         let mut lost_connection = false;
         let outcome = match resolved {
             Ok(target) => match verified_move(client, proposal.uid, folder, &target).await {
@@ -203,6 +283,23 @@ pub async fn apply_account(
         summary.failures.len()
     );
     Ok(summary)
+}
+
+/// Clear the junk keywords on messages about to leave the selected spam
+/// folder and mark them not-junk. Best effort: a server that refuses custom
+/// keywords still gets the move, and the refusal is logged.
+async fn clear_junk_marks(client: &Client, account_id: &str, uids: &[u32]) {
+    let junk: Vec<String> = JUNK_KEYWORDS.iter().map(|k| k.to_string()).collect();
+    let not_junk: Vec<String> = NOT_JUNK_KEYWORDS.iter().map(|k| k.to_string()).collect();
+    if let Err(e) = client.store_flags(uids, FlagOperation::Remove, &junk).await {
+        warn!("{}: could not clear junk keywords: {}", account_id, e);
+    }
+    if let Err(e) = client
+        .store_flags(uids, FlagOperation::Add, &not_junk)
+        .await
+    {
+        warn!("{}: could not set not-junk keywords: {}", account_id, e);
+    }
 }
 
 /// Move one message and check it left the source and reached the destination.

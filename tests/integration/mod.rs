@@ -32,5 +32,6 @@ pub mod tool_dispatch; // High-level tools reach the dispatcher that has them
 pub mod triage; // Triage propose against the fake IMAP server
 pub mod triage_apply; // Triage apply: verified moves against the fake IMAP server
 pub mod triage_junk; // The spam-folder review against the fake IMAP server
+pub mod triage_junk_apply; // Applying it: rescues, junk marks, no loop back
 pub mod write_tools_account_routing; // Write tools hit the named account's IMAP server; moves are verified
                                      // pub mod test_uid_search_fix; // TODO: Fix ImapSession import
