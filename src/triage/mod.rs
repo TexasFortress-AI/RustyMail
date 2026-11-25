@@ -30,7 +30,9 @@ pub mod rules;
 pub mod runner;
 pub mod scan;
 pub mod second_pass;
+pub mod spam_tag;
 pub mod store;
+pub mod untag_move;
 
 use chrono::{DateTime, Utc};
 use std::fmt;

@@ -109,3 +109,17 @@ pub fn flag_names(fetch: &Fetch) -> Vec<String> {
         .filter(|name| seen.insert(name.clone()))
         .collect()
 }
+
+/// A flag named as RustyMail stores it ("Seen", `Custom("$Junk")`) in the
+/// form IMAP commands take ("\Seen", "$Junk"), for copying flags onto an
+/// APPENDed message. \Deleted and \Recent are never copied: None.
+pub fn wire_flag(name: &str) -> Option<String> {
+    match name {
+        "Seen" | "Answered" | "Flagged" | "Draft" => Some(format!("\\{}", name)),
+        "Deleted" | "Recent" | "MayCreate" => None,
+        _ => name
+            .strip_prefix("Custom(\"")
+            .and_then(|rest| rest.strip_suffix("\")"))
+            .map(str::to_string),
+    }
+}

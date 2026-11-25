@@ -17,6 +17,7 @@ use super::destinations::FolderResolver;
 use super::folders::FolderMap;
 use super::runner::Client;
 use super::store::{StoredProposal, TriageStore};
+use super::untag_move::move_untagged;
 use super::{Bucket, ProposalSource};
 use crate::dashboard::services::cache_prune::remove_cached_message;
 use crate::imap::atomic::AtomicImapOperations;
@@ -130,6 +131,8 @@ pub struct ApplySummary {
     pub failures: Vec<ApplyFailure>,
     pub skipped: HashMap<Skip, usize>,
     pub created_folders: Vec<String>,
+    /// Rescues whose subject lost the spam filter's tag (see untag_move).
+    pub untagged: usize,
     /// Set when the server connection was lost and the run stopped early;
     /// the moves not yet attempted stay pending for the next run.
     pub connection_lost: Option<String>,
@@ -226,13 +229,15 @@ pub async fn apply_folder(
         };
         let mut lost_connection = false;
         let outcome = match resolved {
-            Ok(target) => match verified_move(client, proposal.uid, folder, &target).await {
-                Ok(confirmed) => Ok((target, confirmed)),
-                Err(e) => {
-                    lost_connection = matches!(e, ImapError::Connection(_));
-                    Err(e.to_string())
+            Ok(target) => {
+                match move_one(client, role, proposal.uid, folder, &target, &mut summary).await {
+                    Ok(confirmed) => Ok((target, confirmed)),
+                    Err(e) => {
+                        lost_connection = matches!(e, ImapError::Connection(_));
+                        Err(e.to_string())
+                    }
                 }
-            },
+            }
             Err(reason) => Err(reason),
         };
         match outcome {
@@ -283,6 +288,25 @@ pub async fn apply_folder(
         summary.failures.len()
     );
     Ok(summary)
+}
+
+/// Move one message: in the INBOX a verified move; out of the spam folder an
+/// untagged copy when its subject carries the spam filter's tag.
+async fn move_one(
+    client: &Client,
+    role: ApplyIn<'_>,
+    uid: u32,
+    from: &str,
+    to: &str,
+    summary: &mut ApplySummary,
+) -> Result<bool, ImapError> {
+    if let ApplyIn::SpamFolder { .. } = role {
+        if let Some(confirmed) = move_untagged(client, uid, from, to).await? {
+            summary.untagged += 1;
+            return Ok(confirmed);
+        }
+    }
+    verified_move(client, uid, from, to).await
 }
 
 /// Clear the junk keywords on messages about to leave the selected spam

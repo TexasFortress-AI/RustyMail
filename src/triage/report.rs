@@ -158,6 +158,13 @@ pub fn format_apply_summary(summary: &ApplySummary) -> String {
     for folder in &summary.created_folders {
         let _ = writeln!(out, "  created folder {}", folder);
     }
+    if summary.untagged > 0 {
+        let _ = writeln!(
+            out,
+            "  spam tag removed from the subject: {}",
+            summary.untagged
+        );
+    }
     let mut skipped: Vec<(&Skip, &usize)> = summary.skipped.iter().collect();
     skipped.sort_by_key(|(skip, _)| format!("{:?}", skip));
     for (skip, count) in skipped {

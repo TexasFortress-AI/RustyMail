@@ -89,6 +89,18 @@ pub trait AsyncImapOps: Send + Sync + Debug {
     ) -> Result<(), ImapError>;
     async fn append(&self, folder: &str, content: &[u8], flags: &[String])
         -> Result<(), ImapError>;
+    /// APPEND keeping the message's arrival time (INTERNALDATE, "dd-Mon-yyyy hh:mm:ss
+    /// +zzzz"); without it the server stamps the copy with the time of the APPEND.
+    /// The default ignores the date, for test doubles.
+    async fn append_dated(
+        &self,
+        folder: &str,
+        content: &[u8],
+        flags: &[String],
+        _internal_date: &str,
+    ) -> Result<(), ImapError> {
+        self.append(folder, content, flags).await
+    }
     async fn fetch_raw_message(&self, uid: u32) -> Result<Vec<u8>, ImapError>;
     async fn expunge(&self) -> Result<(), ImapError>;
     /// Permanently removes only these UIDs (already marked `\Deleted`) from
@@ -116,6 +128,72 @@ pub struct AsyncImapSessionWrapper {
 }
 
 impl AsyncImapSessionWrapper {
+    /// APPEND, with the INTERNALDATE ("dd-Mon-yyyy hh:mm:ss +zzzz") when given.
+    async fn append_with_date(
+        &self,
+        folder: &str,
+        content: &[u8],
+        flags: &[String],
+        internal_date: Option<&str>,
+    ) -> Result<(), ImapError> {
+        let session_arc = self.session.clone();
+        // async-imap takes the flag list as written on the wire: "(\Seen \Draft)".
+        let flag_list = (!flags.is_empty()).then(|| format!("({})", flags.join(" ")));
+        let date = internal_date.map(|d| format!("\"{}\"", d));
+        let folder_str = folder.to_string();
+        let folder_for_error = folder_str.clone();
+        let content = content.to_vec();
+        let append_timeout = self.append_timeout;
+
+        info!(
+            "Starting IMAP APPEND to folder '{}' with spawn_blocking (timeout: {:?})",
+            folder_str, append_timeout
+        );
+
+        let blocking_task = tokio::task::spawn_blocking(move || {
+            let runtime_handle = tokio::runtime::Handle::current();
+            let mut session_guard = runtime_handle.block_on(session_arc.lock());
+            debug!(
+                "Executing IMAP APPEND in blocking thread for folder '{}'",
+                folder_str
+            );
+            runtime_handle.block_on(session_guard.append(
+                folder_str,
+                flag_list.as_deref(),
+                date.as_deref(),
+                &content,
+            ))
+        });
+
+        match tokio::time::timeout(append_timeout, blocking_task).await {
+            Ok(Ok(Ok(()))) => {
+                info!(
+                    "APPEND to folder '{}' completed successfully",
+                    folder_for_error
+                );
+                Ok(())
+            }
+            Ok(Ok(Err(e))) => {
+                error!("APPEND to folder '{}' failed: {}", folder_for_error, e);
+                Err(ImapError::from(e))
+            }
+            Ok(Err(join_err)) => {
+                error!("APPEND spawn_blocking task panicked: {}", join_err);
+                Err(ImapError::Other(format!(
+                    "APPEND task panicked: {}",
+                    join_err
+                )))
+            }
+            Err(_elapsed) => {
+                error!("APPEND to folder '{}' timed out after {:?}. The blocking thread was terminated.", folder_for_error, append_timeout);
+                Err(ImapError::Timeout(format!(
+                    "APPEND operation timed out after {:?}.",
+                    append_timeout
+                )))
+            }
+        }
+    }
+
     pub fn new(session: TlsImapSession) -> Self {
         Self::with_append_timeout(session, Duration::from_secs(35))
     }
@@ -700,61 +778,18 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
         content: &[u8],
         flags: &[String],
     ) -> Result<(), ImapError> {
-        let session_arc = self.session.clone();
-        // async-imap takes the flag list as written on the wire: "(\Seen \Draft)".
-        let flag_list = (!flags.is_empty()).then(|| format!("({})", flags.join(" ")));
-        let folder_str = folder.to_string();
-        let folder_for_error = folder_str.clone();
-        let content = content.to_vec();
-        let append_timeout = self.append_timeout;
+        self.append_with_date(folder, content, flags, None).await
+    }
 
-        info!(
-            "Starting IMAP APPEND to folder '{}' with spawn_blocking (timeout: {:?})",
-            folder_str, append_timeout
-        );
-
-        let blocking_task = tokio::task::spawn_blocking(move || {
-            let runtime_handle = tokio::runtime::Handle::current();
-            let mut session_guard = runtime_handle.block_on(session_arc.lock());
-            debug!(
-                "Executing IMAP APPEND in blocking thread for folder '{}'",
-                folder_str
-            );
-            runtime_handle.block_on(session_guard.append(
-                folder_str,
-                flag_list.as_deref(),
-                None,
-                &content,
-            ))
-        });
-
-        match tokio::time::timeout(append_timeout, blocking_task).await {
-            Ok(Ok(Ok(()))) => {
-                info!(
-                    "APPEND to folder '{}' completed successfully",
-                    folder_for_error
-                );
-                Ok(())
-            }
-            Ok(Ok(Err(e))) => {
-                error!("APPEND to folder '{}' failed: {}", folder_for_error, e);
-                Err(ImapError::from(e))
-            }
-            Ok(Err(join_err)) => {
-                error!("APPEND spawn_blocking task panicked: {}", join_err);
-                Err(ImapError::Other(format!(
-                    "APPEND task panicked: {}",
-                    join_err
-                )))
-            }
-            Err(_elapsed) => {
-                error!("APPEND to folder '{}' timed out after {:?}. The blocking thread was terminated.", folder_for_error, append_timeout);
-                Err(ImapError::Timeout(format!(
-                    "APPEND operation timed out after {:?}.",
-                    append_timeout
-                )))
-            }
-        }
+    async fn append_dated(
+        &self,
+        folder: &str,
+        content: &[u8],
+        flags: &[String],
+        internal_date: &str,
+    ) -> Result<(), ImapError> {
+        self.append_with_date(folder, content, flags, Some(internal_date))
+            .await
     }
 
     async fn fetch_raw_message(&self, uid: u32) -> Result<Vec<u8>, ImapError> {

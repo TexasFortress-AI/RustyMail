@@ -278,6 +278,19 @@ impl<T: AsyncImapOps + Send + Sync + Debug + 'static> ImapClient<T> {
         self.session.append(folder, content, flags).await
     }
 
+    /// APPEND keeping the message's INTERNALDATE ("dd-Mon-yyyy hh:mm:ss +zzzz").
+    pub async fn append_dated(
+        &self,
+        folder: &str,
+        content: &[u8],
+        flags: &[String],
+        internal_date: &str,
+    ) -> Result<(), ImapError> {
+        self.session
+            .append_dated(folder, content, flags, internal_date)
+            .await
+    }
+
     pub async fn fetch_raw_message(&self, uid: u32) -> Result<Vec<u8>, ImapError> {
         self.session.fetch_raw_message(uid).await
     }
