@@ -23,6 +23,13 @@ pub struct PendingMove {
     destination_uid_next: Option<u32>,
 }
 
+impl PendingMove {
+    /// Whether the destination copy can be found afterwards (by Message-ID).
+    pub fn identifiable(&self) -> bool {
+        self.message_id.is_some() && self.destination_uid_next.is_some()
+    }
+}
+
 /// Checks a single message's location before and after a move, over the given session.
 pub struct MoveVerifier {
     session: Arc<dyn AsyncImapOps>,
@@ -71,22 +78,36 @@ impl MoveVerifier {
                 pending.uid, from_folder
             )));
         }
+        match self.arrived(pending, to_folder).await? {
+            None => Ok(false),
+            Some(true) => Ok(true),
+            Some(false) => Err(ImapError::Other(format!(
+                "UID {} left {} but was not found in {}",
+                pending.uid, from_folder, to_folder
+            ))),
+        }
+    }
+
+    /// Whether the message is in `to_folder` now, found by Message-ID among
+    /// UIDs at or above the destination's UIDNEXT before the move. None when
+    /// it cannot be identified (it has no Message-ID).
+    pub async fn arrived(
+        &self,
+        pending: &PendingMove,
+        to_folder: &str,
+    ) -> Result<Option<bool>, ImapError> {
         let (Some(message_id), Some(uid_next)) =
             (&pending.message_id, pending.destination_uid_next)
         else {
-            return Ok(false);
+            return Ok(None);
         };
-
         self.session.select_folder(to_folder).await?;
         for uid in self.uids_from(uid_next).await? {
             if self.message_id_or_none(uid).await.as_ref() == Some(message_id) {
-                return Ok(true);
+                return Ok(Some(true));
             }
         }
-        Err(ImapError::Other(format!(
-            "UID {} left {} but was not found in {}",
-            pending.uid, from_folder, to_folder
-        )))
+        Ok(Some(false))
     }
 
     async fn selected_folder_contains(&self, uid: u32) -> Result<bool, ImapError> {

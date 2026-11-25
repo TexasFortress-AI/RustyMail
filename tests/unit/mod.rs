@@ -67,3 +67,4 @@ pub mod triage_spam_tag_tests;
 pub mod triage_store_tests;
 pub mod triage_subject_rules_tests;
 pub mod untrusted_tests;
+pub mod wire_flag_tests;

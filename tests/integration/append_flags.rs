@@ -42,3 +42,30 @@ async fn append_sends_its_flags_and_stores_the_message() {
     assert_eq!(state.appended[0].message_id, "<sent@x.test>");
     assert_eq!(state.appended[1].flags, None, "no flags: no list");
 }
+
+#[tokio::test]
+#[serial]
+async fn a_dated_append_keeps_the_messages_arrival_time() {
+    std::env::set_var("RUSTYMAIL_ALLOW_INVALID_MAIL_CERTS", "true");
+    let (port, mailbox) = spawn_fake_imap(Vec::new()).await;
+    let client =
+        ImapClient::<AsyncImapSessionWrapper>::connect("127.0.0.1", port, "user", "password")
+            .await
+            .unwrap();
+    let raw = b"Message-ID: <old@x.test>\r\nSubject: Hello\r\n\r\nBody\r\n";
+    client
+        .append_dated(
+            "INBOX",
+            raw,
+            &["\\Seen".to_string()],
+            "04-Jan-2026 10:00:00 +0000",
+        )
+        .await
+        .unwrap();
+    let state = mailbox.lock().unwrap();
+    assert_eq!(state.appended[0].flags.as_deref(), Some("(\\Seen)"));
+    assert_eq!(
+        state.appended[0].internal_date.as_deref(),
+        Some("\"04-Jan-2026 10:00:00 +0000\"")
+    );
+}
