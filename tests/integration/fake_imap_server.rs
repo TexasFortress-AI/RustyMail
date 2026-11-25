@@ -7,7 +7,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 use tokio_rustls::rustls::pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 use tokio_rustls::rustls::ServerConfig;
@@ -51,6 +51,8 @@ pub struct FakeMailbox {
     pub answered: HashSet<String>,
     /// \Seen, mod-sequences and CONDSTORE (see fake_imap_flags).
     pub flags: super::fake_imap_flags::FlagState,
+    /// Every APPEND received (see fake_imap_append).
+    pub appended: Vec<super::fake_imap_append::Appended>,
 }
 
 impl FakeMailbox {
@@ -364,6 +366,7 @@ pub async fn spawn_fake_imap(messages: Vec<(u32, &str)>) -> (u16, SharedMailbox)
         internal_dates: HashMap::new(),
         answered: HashSet::new(),
         flags: Default::default(),
+        appended: Vec::new(),
     }));
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -400,7 +403,22 @@ async fn serve_connection(
         if dropping && command.to_ascii_uppercase().starts_with("UID MOVE ") {
             break;
         }
-        let reply = mailbox.lock().unwrap().handle(&mut selected, tag, command);
+        let reply = match super::fake_imap_append::literal_len(command) {
+            Some(len) => {
+                // Ask for the literal, read it and the line ending after it.
+                write_half.write_all(b"+ go ahead\r\n").await.unwrap();
+                write_half.flush().await.unwrap();
+                let mut literal = vec![0; len];
+                if lines.get_mut().read_exact(&mut literal).await.is_err() {
+                    break;
+                }
+                let _ = lines.next_line().await;
+                let mut state = mailbox.lock().unwrap();
+                state.commands.push(command.to_string());
+                state.append(tag, command, &String::from_utf8_lossy(&literal))
+            }
+            None => mailbox.lock().unwrap().handle(&mut selected, tag, command),
+        };
         if write_half.write_all(reply.as_bytes()).await.is_err()
             || write_half.flush().await.is_err()
         {

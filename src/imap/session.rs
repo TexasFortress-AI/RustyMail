@@ -698,9 +698,11 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
         &self,
         folder: &str,
         content: &[u8],
-        _flags: &[String],
+        flags: &[String],
     ) -> Result<(), ImapError> {
         let session_arc = self.session.clone();
+        // async-imap takes the flag list as written on the wire: "(\Seen \Draft)".
+        let flag_list = (!flags.is_empty()).then(|| format!("({})", flags.join(" ")));
         let folder_str = folder.to_string();
         let folder_for_error = folder_str.clone();
         let content = content.to_vec();
@@ -718,7 +720,12 @@ impl AsyncImapOps for AsyncImapSessionWrapper {
                 "Executing IMAP APPEND in blocking thread for folder '{}'",
                 folder_str
             );
-            runtime_handle.block_on(session_guard.append(folder_str, None, None, &content))
+            runtime_handle.block_on(session_guard.append(
+                folder_str,
+                flag_list.as_deref(),
+                None,
+                &content,
+            ))
         });
 
         match tokio::time::timeout(append_timeout, blocking_task).await {
