@@ -30,6 +30,7 @@ pub mod rules;
 pub mod runner;
 pub mod scan;
 pub mod second_pass;
+pub mod spam_tag;
 pub mod store;
 
 use chrono::{DateTime, Utc};

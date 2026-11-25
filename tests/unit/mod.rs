@@ -63,6 +63,7 @@ pub mod triage_report_tests;
 pub mod triage_rules_tests;
 pub mod triage_second_pass_tests;
 pub mod triage_spam_apply_tests;
+pub mod triage_spam_tag_tests;
 pub mod triage_store_tests;
 pub mod triage_subject_rules_tests;
 pub mod untrusted_tests;
