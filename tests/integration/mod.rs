@@ -11,6 +11,7 @@ pub mod api_auth;
 pub mod api_errors;
 pub mod api_rest;
 pub mod api_validation;
+pub mod append_flags; // APPEND sends the flags it is given
 pub mod cache_after_move; // Moves and deletes drop the source folder's cached rows
 pub mod chatbot_integration; // Email Assistant chatbot MCP client integration tests
 pub mod connection_pool; // Connection pool integration tests
@@ -19,6 +20,7 @@ pub mod dashboard_auth; // Every /api/dashboard route requires the API key
 pub mod dashboard_session; // Browser login: HttpOnly session cookie, same-origin only
 pub mod dashboard_smtp_attachments; // Dashboard SMTP and attachment endpoints integration tests
 pub mod dashboard_static_site; // Backend serves the built dashboard at /
+pub mod fake_imap_append; // APPEND for the fake IMAP server
 pub mod fake_imap_flags; // \Seen and CONDSTORE for the fake IMAP server
 pub mod fake_imap_server; // TLS fake IMAP server shared by account-routing tests
 pub mod flag_changes; // FLAGS-only refresh with CONDSTORE
