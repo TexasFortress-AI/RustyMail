@@ -3,7 +3,8 @@
 # Time from TRIAGE_DAILY_HOUR / TRIAGE_DAILY_MINUTE in .env. Remove with --uninstall.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-env_value() { grep -E "^$1=" "$REPO/.env" 2>/dev/null | tail -1 | cut -d= -f2-; }
+# A setting from .env, or empty when it is not there.
+env_value() { { grep -E "^$1=" "$REPO/.env" 2>/dev/null || true; } | tail -1 | cut -d= -f2-; }
 LABEL="${TRIAGE_DAILY_LABEL:-$(env_value TRIAGE_DAILY_LABEL)}"
 LABEL="${LABEL:-ai.texasfortress.rustymail.triage-daily}"
 HOUR="${TRIAGE_DAILY_HOUR:-$(env_value TRIAGE_DAILY_HOUR)}"

@@ -5,7 +5,8 @@
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
-env_value() { grep -E "^$1=" .env 2>/dev/null | tail -1 | cut -d= -f2-; }
+# A setting from .env, or empty when it is not there.
+env_value() { { grep -E "^$1=" .env 2>/dev/null || true; } | tail -1 | cut -d= -f2-; }
 BIN="${TRIAGE_DAILY_BIN:-$(env_value TRIAGE_DAILY_BIN)}"
 BIN="${BIN:-$REPO/target/release/rustymail-triage}"
 REPORT_DIR="${TRIAGE_REPORT_DIR:-$(env_value TRIAGE_REPORT_DIR)}"
