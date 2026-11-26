@@ -22,15 +22,21 @@ fn model(bucket: Bucket) -> Proposal {
 }
 
 #[test]
-fn rescued_mail_is_not_sent_back_to_spam() {
+fn mail_the_owner_moved_to_the_inbox_is_not_filed_away_again() {
     let p = stays_rescued(model(Bucket::Spam));
     assert_eq!(p.bucket, Bucket::Keep);
     assert_eq!(
         p.reason,
-        "rescued from spam earlier; model now says Spam (stub)"
+        "moved to the INBOX by your review earlier; now says Spam (stub)"
     );
-    // Any other verdict is a normal proposal for the owner's review.
-    assert_eq!(stays_rescued(model(Bucket::Noise)).bucket, Bucket::Noise);
+    // A team meeting recap the owner pulled out of Noise does not go back.
+    assert_eq!(stays_rescued(model(Bucket::Noise)).bucket, Bucket::Keep);
+    assert_eq!(stays_rescued(model(Bucket::Alerts)).bucket, Bucket::Keep);
+    // Needs Reply keeps it in view, so it still applies.
+    assert_eq!(
+        stays_rescued(model(Bucket::NeedsReply)).bucket,
+        Bucket::NeedsReply
+    );
 }
 
 #[test]
