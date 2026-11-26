@@ -28,7 +28,7 @@ fi
 # New proposals a review would act on: INBOX mail to file, and spam-folder mail to rescue.
 NEW="applied_at IS NULL AND created_at >= '$STARTED'"
 WAITING=$(sqlite3 "$DB" ".timeout 60000" "SELECT count(*) FROM triage_proposals WHERE $NEW
-  AND ((folder = 'INBOX' AND coalesce(correction, bucket) <> 'Keep') OR (folder <> 'INBOX' AND coalesce(correction, bucket) <> 'Spam')))")
+  AND ((folder = 'INBOX' AND coalesce(correction, bucket) <> 'Keep') OR (folder <> 'INBOX' AND coalesce(correction, bucket) <> 'Spam'))")
 RESCUES=$(sqlite3 "$DB" ".timeout 60000" "SELECT count(*) FROM triage_proposals WHERE $NEW
   AND folder <> 'INBOX' AND coalesce(correction, bucket) <> 'Spam'")
 if [ "$WAITING" -gt 0 ]; then
