@@ -191,7 +191,8 @@ impl TriageStore {
     }
 
     /// Bare Message-IDs of mail moved out of a folder other than the INBOX
-    /// `inbox` (the spam folder) to anywhere but Spam: rescued mail.
+    /// `inbox` (the spam folder, Noise) to anywhere but Spam: mail the owner's
+    /// review rescued, which the INBOX pass leaves where it is.
     pub async fn rescued_from_spam(
         &self,
         account_id: &str,
